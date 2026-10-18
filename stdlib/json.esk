@@ -16,6 +16,7 @@
 //   JsonValue_free(v);
 
 import <string>;
+import <result>;
 
 extern double atof(string s);
 
@@ -995,4 +996,14 @@ void JsonValue_pretty(JsonValue* v, int indent, String* out) {
         first = false;
     }
     return v;
+}
+
+// json_parse as a Result: the value tree, or an error for malformed input. Free the
+// tree with JsonValue_free.
+Result<JsonValue*, string> json_parse_result(string src) {
+    *JsonValue v = json_parse(src);
+    if (v == null) {
+        return Err<JsonValue*, string>("invalid JSON");
+    }
+    return Ok<JsonValue*, string>(v);
 }

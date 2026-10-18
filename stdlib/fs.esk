@@ -43,6 +43,7 @@ extern int ferror(*void fp);
 import <mem>;   // heap allocation via the built-in alloc<T>, not raw malloc
 import <string>;
 import <list>;
+import <result>;
 
 // ── Open / close ──────────────────────────────────────────────────────────
 
@@ -2197,4 +2198,34 @@ int fs_temp_dir(string prefix, String* out) {
     }
     return 0;
 #endif
+}
+
+// ── Result forms ───────────────────────────────────────────────────────────
+
+// fs_read_text as a Result: the file's text, or an error. fs_last_error gives the OS
+// reason. Free the text with String_free.
+Result<String, string> fs_read_text_result(string path) {
+    let text: String;
+    String_init(&text, 256);
+    if (fs_read_text(path, &text) != 0) {
+        String_free(&text);
+        return Err<String, string>("cannot read the file");
+    }
+    return Ok<String, string>(text);
+}
+
+// fs_write_text as a Result (the value is 0). fs_last_error gives the OS reason.
+Result<int, string> fs_write_text_result(string path, string text) {
+    if (fs_write_text(path, text) != 0) {
+        return Err<int, string>("cannot write the file");
+    }
+    return Ok<int, string>(0);
+}
+
+// fs_append_text as a Result (the value is 0). fs_last_error gives the OS reason.
+Result<int, string> fs_append_text_result(string path, string text) {
+    if (fs_append_text(path, text) != 0) {
+        return Err<int, string>("cannot append to the file");
+    }
+    return Ok<int, string>(0);
 }

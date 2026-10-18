@@ -1336,3 +1336,26 @@ async int fetch_async(EventLoop* lp, string url, FetchOptions* o, Response* out)
     }
     return rc;
 }
+
+// ── Result forms ───────────────────────────────────────────────────────────
+
+// fetch as a Result: the response (whatever its status: a 404 is a response), or the
+// failure described by fetch_last_error. Free the response with Response_free.
+Result<Response, string> fetch_result(string url) {
+    let r: Response;
+    if (fetch(url, &r) != 0) {
+        Response_free(&r);
+        return Err<Response, string>(fetch_last_error());
+    }
+    return Ok<Response, string>(r);
+}
+
+// fetch_with as a Result, like fetch_result.
+Result<Response, string> fetch_with_result(string url, FetchOptions* o) {
+    let r: Response;
+    if (fetch_with(url, o, &r) != 0) {
+        Response_free(&r);
+        return Err<Response, string>(fetch_last_error());
+    }
+    return Ok<Response, string>(r);
+}

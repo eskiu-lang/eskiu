@@ -41,6 +41,7 @@ import <list>;
 import <time>;
 import <fs>;
 import <env>;
+import <result>;
 
 struct ProcessOptions {
     string stdin_text;      // process_run: written to the child's stdin, which is then closed
@@ -1207,4 +1208,28 @@ int64 Process_read_all(Process* p, int stream, String* out) {
 // Run `command` through the shell with default options (capture both streams).
 int sh(string command, ProcessResult* out) {
     return sh_with(command, null, out);
+}
+
+// ── Result forms ───────────────────────────────────────────────────────────
+
+// process_run as a Result: the finished process (whatever its exit code), or an error
+// when it could not be started; process_last_error gives the reason. Free the result
+// with ProcessResult_free.
+Result<ProcessResult, string> process_run_result(List<string>* argv, ProcessOptions* opts) {
+    let r: ProcessResult;
+    if (process_run(argv, opts, &r) != 0) {
+        ProcessResult_free(&r);
+        return Err<ProcessResult, string>("the command could not be started");
+    }
+    return Ok<ProcessResult, string>(r);
+}
+
+// sh as a Result, like process_run_result.
+Result<ProcessResult, string> sh_result(string command) {
+    let r: ProcessResult;
+    if (sh(command, &r) != 0) {
+        ProcessResult_free(&r);
+        return Err<ProcessResult, string>("the command could not be started");
+    }
+    return Ok<ProcessResult, string>(r);
 }
