@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# safe_mode.sh — verify `--safe` inserts runtime bounds checks that trap on an
+# safe_mode.sh: verify `--safe` inserts runtime bounds checks that trap on an
 # out-of-range slice / array index, that in-bounds access is unaffected, and that
 # the checks are OFF by default (opt-in, zero release cost).
 set -u
@@ -72,6 +72,29 @@ printf '%s\n' 'int main() { int a = 2147483647; int b = a + 1; return b == -2147
 code=$(run "$WORK/t.esk" "");      check "signed overflow wraps (default)" 0 "$code"
 printf '%s\n' 'int main() { uint32 u = 4294967295; u = u + (uint32)1; int8 c = 127; c = c + (int8)1; int x = 5; *int p = &x; return u == (uint32)0 && c == (int8)-128 && *p == 5 ? 0 : 1; }' > "$WORK/t.esk"
 code=$(run "$WORK/t.esk" --safe); check "unsigned, narrow and non-null pass (--safe)" 0 "$code"
+
+# --- --safe=LIST: each check traps only when its category is on ---
+# A trap is SIGTRAP (133) or SIGILL (132), never a segfault (139).
+is_trap() { [ "$1" = 133 ] || [ "$1" = 132 ]; }
+cat_case() { # name source category-that-traps
+    printf '%s\n' "$2" > "$WORK/t.esk"
+    for c in bounds overflow null; do
+        code=$(run "$WORK/t.esk" "--safe=$c")
+        if [ "$c" = "$3" ]; then
+            is_trap "$code" && check "$1 traps (--safe=$c)" trap trap || check "$1 traps (--safe=$c)" trap "exit $code"
+        else
+            ! is_trap "$code" && check "$1 no trap (--safe=$c)" ok ok || check "$1 no trap (--safe=$c)" ok "exit $code"
+        fi
+    done
+}
+cat_case "array OOB" 'int main() { int[5] a = {1,2,3,4,5}; int i = 7; int x = a[i]; return 0; }' bounds
+cat_case "int + overflow" 'int main() { int a = 2147483647; int b = a; b = b - 2147483646; return a + b == -2147483647 - 1 ? 0 : 1; }' overflow
+cat_case "null deref" 'int main() { *int p = null; return *p; }' null
+printf '%s\n' 'int main() { int a = 2147483647; int b = a; b = b - 2147483646; return a + b == -2147483647 - 1 ? 0 : 1; }' > "$WORK/t.esk"
+code=$(run "$WORK/t.esk" "--safe=bounds,null"); check "overflow off in --safe=bounds,null" 0 "$code"
+code=$(run "$WORK/t.esk" "--safe=null,overflow"); is_trap "$code" && code=trap; check "overflow on in --safe=null,overflow" trap "$code"
+msg=$("$BIN" --safe=bounds,bogus "$WORK/t.esk" -o "$WORK/t.o" 2>&1); rc=$?
+check "unknown --safe name is an error" "1 error: unknown --safe check 'bogus' (valid: bounds, overflow, null)" "$rc $msg"
 
 echo "----"
 [ "$fail" = 0 ] && echo "safe mode: OK" || echo "safe mode: FAILURES"

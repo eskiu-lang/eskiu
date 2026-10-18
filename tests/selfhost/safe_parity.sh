@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# safe_parity.sh — behavioral parity for the `--safe` bounds-check mirror.
+# safe_parity.sh: behavioral parity for the `--safe` run-time checks.
 #
 # The self-hosted back-end (selfhost/codegen.esk) must insert the same runtime
-# slice/array bounds checks as the C++ `eskiuc` under `--safe`: an out-of-range
-# index traps, an in-bounds one does not, and without `--safe` there is no check.
+# checks as the C++ `eskiuc` under `--safe` and `--safe=LIST` (bounds, overflow,
+# null): an out-of-range index traps, an in-bounds one does not, each check is on
+# only with its category, and without `--safe` there is no check.
 # For each program this builds a native binary with BOTH compilers and asserts the
 # exit codes agree (a trap shows up as the same non-zero signal exit on both).
 #
@@ -73,6 +74,26 @@ parity "array OOB traps (--safe)"     "$WORK/array_oob.esk"    --safe
 parity "in-bounds ok (--safe)"        "$WORK/inbounds.esk"     --safe
 parity "slice of slice lo > hi traps"  "$WORK/slice_order.esk"  --safe
 parity "no check without --safe"      "$WORK/default_noop.esk" ""
+
+cat > "$WORK/overflow.esk" <<'EOF'
+int main() { int a = 2147483647; int b = a; b = b - 2147483646; return a + b == -2147483647 - 1 ? 0 : 1; }
+EOF
+cat > "$WORK/nullderef.esk" <<'EOF'
+int main() { *int p = null; return *p; }
+EOF
+cat > "$WORK/array_oob_read.esk" <<'EOF'
+int main() { int[5] a = {1,2,3,4,5}; int i = 7; int x = a[i]; return 0; }
+EOF
+for c in bounds overflow null bounds,null overflow,null,bounds; do
+    parity "overflow (--safe=$c)"  "$WORK/overflow.esk"       "--safe=$c"
+    parity "null deref (--safe=$c)" "$WORK/nullderef.esk"     "--safe=$c"
+    parity "array OOB (--safe=$c)" "$WORK/array_oob_read.esk" "--safe=$c"
+done
+# An unknown name: the same driver error from both.
+cpp_msg="$(ESKIU_ROOT="$(pwd)" "$BIN" --safe=null,bogus "$WORK/overflow.esk" -o "$WORK/t.o" 2>&1; echo "rc=$?")"
+self_msg="$(ESKIU_ROOT="$(pwd)" "$ESKMAIN" --safe=null,bogus "$WORK/overflow.esk" -o "$WORK/t" 2>&1; echo "rc=$?")"
+if [ "$cpp_msg" = "$self_msg" ]; then echo "  ok    unknown --safe name  ($cpp_msg)" | tr '\n' ' '; echo; else
+    echo "  FAIL  unknown --safe name"; echo "    cpp:  $cpp_msg"; echo "    self: $self_msg"; fail=1; fi
 
 echo "----"
 [ "$fail" = 0 ] && echo "safe parity: OK" || echo "safe parity: MISMATCH"
