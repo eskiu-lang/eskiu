@@ -97,7 +97,7 @@ postfix     f() a[i] a.b ++ -- ?
 | `eskiuc fmt [--check] file.esk` | Format source in place                      |
 | `-Wall` / `-Wextra`         | Lint warnings / signed-unsigned comparison warnings |
 | `--asan` / `--ubsan`        | AddressSanitizer / trapping bounds checks       |
-| `--safe`                    | Runtime index and slice bounds checks (trap on violation) |
+| `--safe[=LIST]`             | Run-time checks that trap: `bounds`, `overflow`, `null` (all without a list) |
 | `--target TRIPLE`           | Cross-compile for the given target triple        |
 | `--mcpu` / `--mattr` / `--reloc` | Target CPU, feature string, relocation model |
 | `--freestanding`            | Use `esk_alloc`/`esk_free` instead of libc      |

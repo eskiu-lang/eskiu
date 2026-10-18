@@ -351,8 +351,8 @@ sum(a[0..6]);            // the whole array as a slice
 
 `int[]` lowers to `{ ptr, i64 }` in LLVM IR. By default an out-of-range slice or array
 index is undefined, as in C; compile with `--safe` to bounds-check every index at runtime
-(an out-of-range access aborts instead of corrupting memory). `--safe` is opt-in, so
-release builds carry no overhead.
+(an out-of-range access aborts instead of corrupting memory), or with `--safe=bounds` for
+this check alone. `--safe` is opt-in, so release builds carry no overhead.
 
 ### 3.4 Struct Types
 
@@ -3427,6 +3427,7 @@ Sections are separated by `:`. Trailing sections may be omitted if empty.
 | `eskiuc file.esk --asan -o prog` | Instrument with AddressSanitizer (memory errors) and link its runtime |
 | `eskiuc file.esk --ubsan -o prog` | Insert trapping bounds checks (traps on out-of-bounds; no runtime) |
 | `eskiuc file.esk --safe -o prog` | Run-time safety checks that trap instead of continuing: every array and slice index is bounds-checked, a signed `+`, `-` or `*` on `int`/`int64` that overflows traps (instead of wrapping), and dereferencing a null pointer (`*p`, `p.f`, `p[i]`) traps; off by default |
+| `eskiuc file.esk --safe=bounds,null -o prog` | Only the named checks, a comma-separated subset of `bounds` (array and slice indexes, slice ranges), `overflow` (signed `+ - *` on `int`/`int64`) and `null` (dereferencing a null pointer). An unknown name is an error that lists the valid ones. A bare `--safe` is all three |
 | `eskiuc file.esk -Wall -o prog` | Enable lint warnings in the program's own files (not in imported modules): unused vars/params/functions, assignment-in-condition, a local that may be used uninitialized |
 | `eskiuc file.esk -Wextra -o prog` | Extra warnings on top of `-Wall`: signed/unsigned comparison mismatches |
 | `eskiuc file.esk -Wno-format -o prog` | Turn off one of the default-on warnings (see Diagnostics): `-Wno-string-compare`, `-Wno-format`, `-Wno-address-of-packed-member`, `-Wno-dangling-pointer`, `-Wno-frame-larger-than`, `-Wno-deprecated` |

@@ -1705,10 +1705,12 @@ void  esk_free(*void ptr)  { bump_free(ptr); }
 
 ### Safe mode
 
-Pass `--safe` to insert runtime safety checks. Today it bounds-checks slice and
-fixed-array indexing: an out-of-range index traps (aborts) instead of reading or writing
-past the end. The checks are **off by default**, so release builds carry no overhead;
-turn them on for development and test runs.
+Pass `--safe` to insert runtime safety checks. It bounds-checks slice and fixed-array
+indexing (an out-of-range index traps instead of reading or writing past the end), traps
+on a signed `int`/`int64` `+ - *` that overflows, and traps on a null pointer dereference.
+`--safe=LIST` turns on only some of them: `--safe=bounds`, `--safe=overflow,null`. The
+checks are **off by default**, so release builds carry no overhead; turn them on for
+development and test runs.
 
 ```bash
 eskiuc app.esk --safe -o app     # a[i] / s[i] out of range now aborts instead of corrupting memory

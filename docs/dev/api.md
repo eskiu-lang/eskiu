@@ -220,7 +220,7 @@ public:
     bool freestanding = false;    // alloc/free → esk_alloc/esk_free instead of calloc/free
     bool asan  = false;           // AddressSanitizer instrumentation
     bool ubsan = false;           // trapping bounds checks
-    bool safe  = false;           // --safe: runtime slice/array bounds checks (trap on OOB)
+    unsigned safeChecks = 0;      // --safe[=LIST]: SafeBounds | SafeOverflow | SafeNull
     unsigned optLevel = 0;        // -O level; 1..3 run the LLVM middle-end (0 = none)
 
     const std::map<Expr*, std::string>* resolvedExprTypes = nullptr;  // the type checker's table
