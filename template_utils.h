@@ -59,11 +59,14 @@ splitTemplateType(const std::string& type) {
     std::string name = type.substr(0, lt);
     std::string inner = type.substr(lt + 1, type.size() - lt - 2);
     std::vector<std::string> args;
+    // A comma splits only at the top level: not inside a nested `<...>`, a fn type's
+    // `(...)` or an array's `[...]`, and the `>` of a `->` closes nothing.
     int depth = 0; std::string cur;
-    for (char c : inner) {
-        if (c == '<') { depth++; cur += c; }
-        else if (c == '>') { depth--; cur += c; }
-        else if (c == ',' && depth == 0) { args.push_back(cur); cur.clear(); }
+    for (size_t i = 0; i < inner.size(); ++i) {
+        char c = inner[i];
+        if (c == '<' || c == '(' || c == '[') depth++;
+        else if ((c == '>' && !(i > 0 && inner[i - 1] == '-')) || c == ')' || c == ']') depth--;
+        if (c == ',' && depth == 0) { args.push_back(cur); cur.clear(); }
         else cur += c;
     }
     if (!cur.empty()) args.push_back(cur);
