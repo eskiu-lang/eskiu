@@ -108,7 +108,8 @@ public:
     // A use of a `deprecated` function warns unless -Wno-deprecated.
     bool warnDeprecated = true;
     // Warnings on by default (each silenced by -Wno-<name>): string-compare,
-    // address-of-packed-member, dangling-pointer, frame-larger-than, format. Off for
+    // address-of-packed-member, dangling-pointer, frame-larger-than, format,
+    // unused-result, await-holding-lock. Off for
     // the internal re-checks (after the async lowering, editor queries).
     bool warnDefaults = true;
     bool warningsAsErrors = false;   // -Werror: every warning is reported as an error
@@ -456,6 +457,9 @@ private:
     bool isSliceLen(Expr* e);
     std::string localStorageRoot(Expr* e);
     std::string discardedMustUse(Expr* e);
+    void warnUnusedResult(ExprStmt* node);
+    std::string mutexCallKey(Stmt* s, bool lock);
+    void warnAwaitHoldingLock(BlockStmt* node);
     void checkAssignment(class BinaryExpr* node);
     // Type one operator whose operands were already visited (see visit(BinaryExpr)).
     void finishBinary(class BinaryExpr* node);

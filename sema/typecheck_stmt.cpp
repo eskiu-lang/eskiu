@@ -55,8 +55,116 @@ void TypeChecker::visit(BlockStmt* node) {
         }
     }
     undoNarrowings(guardNarrowed);
+    if (inAsyncFn) warnAwaitHoldingLock(node);
 
     popScope();
+}
+
+// The place a lock call names: `m`, `a.b.m` (identifiers and fields only), "" otherwise.
+static std::string lockPlaceKey(Expr* e) {
+    if (auto* id = dynamic_cast<IdentExpr*>(e)) return id->name;
+    if (auto* m = dynamic_cast<MemberExpr*>(e)) {
+        std::string base = lockPlaceKey(m->base.get());
+        return base.empty() ? "" : base + "." + m->member;
+    }
+    return "";
+}
+
+// The earliest `await` (by line, then column) in a subtree, lambda bodies excluded.
+static void earliestAwait(Stmt* s, AwaitExpr*& best);
+static void earliestAwait(Expr* e, AwaitExpr*& best) {
+    if (!e) return;
+    if (auto* a = dynamic_cast<AwaitExpr*>(e)) {
+        if (!best || a->line < best->line || (a->line == best->line && a->col < best->col)) best = a;
+    }
+    astwalk::forEachChildExpr(e, [&](ExprPtr& c) { earliestAwait(c.get(), best); });
+}
+static void earliestAwait(const std::vector<BlockItem>& items, AwaitExpr*& best) {
+    for (auto& it : items) {
+        if (std::holds_alternative<StmtPtr>(it)) earliestAwait(std::get<StmtPtr>(it).get(), best);
+        else if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get())) earliestAwait(vd->initializer.get(), best);
+    }
+}
+static void earliestAwait(Stmt* s, AwaitExpr*& best) {
+    if (!s) return;
+    auto E = [&](const ExprPtr& e) { earliestAwait(e.get(), best); };
+    auto S = [&](const StmtPtr& st) { earliestAwait(st.get(), best); };
+    if (auto* b = dynamic_cast<BlockStmt*>(s)) earliestAwait(b->items, best);
+    else if (auto* i = dynamic_cast<IfStmt*>(s)) {
+        for (IfStmt* n = i; n;) {
+            E(n->condition); S(n->thenBranch);
+            auto* next = dynamic_cast<IfStmt*>(n->elseBranch.get());
+            if (!next) S(n->elseBranch);
+            n = next;
+        }
+    }
+    else if (auto* f = dynamic_cast<ForStmt*>(s))       { S(f->init); E(f->condition); E(f->step); S(f->body); }
+    else if (auto* fi = dynamic_cast<ForInStmt*>(s))    { E(fi->iterable); S(fi->body); }
+    else if (auto* w = dynamic_cast<WhileStmt*>(s))     { E(w->condition); S(w->body); }
+    else if (auto* dw = dynamic_cast<DoWhileStmt*>(s))  { S(dw->body); E(dw->condition); }
+    else if (auto* r = dynamic_cast<ReturnStmt*>(s))    { E(r->value); }
+    else if (auto* sw = dynamic_cast<SwitchStmt*>(s)) {
+        E(sw->subject);
+        for (auto& c : sw->cases) { E(c.value); earliestAwait(c.stmts, best); }
+    }
+    else if (auto* m = dynamic_cast<MatchStmt*>(s))     { E(m->subject); for (auto& a : m->arms) S(a.body); }
+    else if (auto* th = dynamic_cast<ThrowStmt*>(s))    { E(th->value); }
+    else if (auto* t = dynamic_cast<TryStmt*>(s))       { S(t->body); for (auto& c : t->catches) S(c.body); S(t->finally); }
+    else if (auto* d = dynamic_cast<DeferStmt*>(s))     { S(d->body); }
+    else if (auto* tj = dynamic_cast<ThreadJoinStmt*>(s)) { E(tj->tid); }
+    else if (auto* a = dynamic_cast<AsmStmt*>(s))       { for (auto& o : a->outputs) E(o.second); for (auto& in : a->inputs) E(in.second); }
+    else if (auto* es = dynamic_cast<ExprStmt*>(s))     { E(es->expr); }
+}
+
+// The mutex a statement locks (`lock` true) or unlocks: `Mutex_lock(&m)` /
+// `Mutex_lock(p)` by name, or `m.lock()` on a `Mutex` / `*Mutex`. Its place key, or "".
+std::string TypeChecker::mutexCallKey(Stmt* s, bool lock) {
+    auto* es = dynamic_cast<ExprStmt*>(s);
+    auto* c = es ? dynamic_cast<CallExpr*>(es->expr.get()) : nullptr;
+    if (!c) return "";
+    if (auto* id = dynamic_cast<IdentExpr*>(c->callee.get())) {
+        if (id->name != (lock ? "Mutex_lock" : "Mutex_unlock") || c->args.size() != 1) return "";
+        Expr* a = c->args[0].get();
+        if (auto* u = dynamic_cast<UnaryExpr*>(a); u && u->op == "&") a = u->operand.get();
+        return lockPlaceKey(a);
+    }
+    if (auto* m = dynamic_cast<MemberExpr*>(c->callee.get())) {
+        if (m->member != (lock ? "lock" : "unlock") || !c->args.empty()) return "";
+        if (ty::Type::parse(normalizeType(tyq::strip(getExpressionType(m->base.get())))).nominalName() != "Mutex") return "";
+        return lockPlaceKey(m->base.get());
+    }
+    return "";
+}
+
+// -Wawait-holding-lock: in an async function, a statement of this block locks a mutex
+// and a later statement of the same block awaits before one unlocks the same place
+// (a `defer` does not unlock: its body runs at the block's end). Reported at the
+// earliest await of the first statement that awaits.
+void TypeChecker::warnAwaitHoldingLock(BlockStmt* node) {
+    const auto& items = node->items;
+    for (size_t i = 0; i < items.size(); ++i) {
+        if (!std::holds_alternative<StmtPtr>(items[i])) continue;
+        Stmt* ls = std::get<StmtPtr>(items[i]).get();
+        std::string key = mutexCallKey(ls, true);
+        if (key.empty()) continue;
+        for (size_t j = i + 1; j < items.size(); ++j) {
+            AwaitExpr* aw = nullptr;
+            if (std::holds_alternative<StmtPtr>(items[j])) {
+                Stmt* s = std::get<StmtPtr>(items[j]).get();
+                if (mutexCallKey(s, false) == key) break;
+                if (dynamic_cast<DeferStmt*>(s)) continue;
+                earliestAwait(s, aw);
+            } else if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(items[j]).get())) {
+                earliestAwait(vd->initializer.get(), aw);
+            }
+            if (aw) {
+                noteWarning("await-holding-lock", aw->line, aw->col,
+                            "await while the mutex '" + key + "' is locked (locked at line " +
+                            std::to_string(ls->line) + "); unlock it before the await");
+                break;
+            }
+        }
+    }
 }
 
 void TypeChecker::visit(IfStmt* node) {
@@ -383,6 +491,33 @@ void TypeChecker::visit(ExprStmt* node) {
             errorAt(node->line > 0 ? static_cast<ASTNode*>(node) : node->expr.get(),
                     "result of '" + fnDisplay(fn) + "' must be used (it is marked must_use)");
     }
+    if (node->expr) warnUnusedResult(node);
+}
+
+// -Wunused-result: a call statement (`f(x);`, `x.m();`, `f<T>(x);`) whose value is a
+// `Result<...>` instance (also through an alias) drops the error it may carry.
+void TypeChecker::warnUnusedResult(ExprStmt* node) {
+    Expr* e = node->expr.get();
+    std::string fn;
+    if (auto* c = dynamic_cast<CallExpr*>(e)) {
+        if (c->dbgBuiltin) return;
+        if (auto* id = dynamic_cast<IdentExpr*>(c->callee.get())) fn = id->name;
+        else if (auto* m = dynamic_cast<MemberExpr*>(c->callee.get())) fn = m->member;
+        else return;
+    } else if (auto* tc = dynamic_cast<TemplateCallExpr*>(e)) {
+        fn = tc->templateName;
+    } else {
+        return;
+    }
+    ty::Type t = ty::Type::parse(normalizeType(tyq::strip(getExpressionType(e))));
+    if (t.kind == ty::Type::Kind::Pointer) return;
+    bool isResult = t.kind == ty::Type::Kind::Template && t.name == "Result";
+    if (auto it = templateInstanceArgs.find(t.nominalName()); it != templateInstanceArgs.end())
+        isResult = isResult || it->second.first == "Result";
+    if (!isResult) return;
+    ASTNode* at = node->line > 0 ? static_cast<ASTNode*>(node) : e;
+    noteWarning("unused-result", at->line, at->col,
+                "result of '" + fn + "' is a Result and is ignored (check it or use '?')");
 }
 
 // The `must_use` function whose result `e`, evaluated for its side effects only, would
