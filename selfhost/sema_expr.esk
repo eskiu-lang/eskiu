@@ -3189,6 +3189,36 @@ void sema_check_lambda(Sema* s, *ExprNode e) {
 // The `must_use` function whose result `ex`, evaluated for its side effects only, would
 // discard: a call (also through a method or an operator overload) or either arm of a `?:`
 // (mirrors the C++ discardedMustUse). "" if none.
+// -Wunused-result: a call statement (`f(x);`, `x.m();`, `f<T>(x);`) whose value is a
+// `Result<...>` instance (also through an alias) drops the error it may carry (mirrors
+// the C++ warnUnusedResult; reported at the statement).
+void sema_warn_unused_result(Sema* s, *ExprNode ex) {
+    if (ex == null) {
+        return;
+    }
+    string fname = "";
+    if (ex.kind == EK_CALL && ex.a != null && ex.dbg_builtin == 0) {
+        if (ex.a.kind == EK_IDENT || ex.a.kind == EK_MEMBER) {
+            fname = ex.a.sval;
+        }
+    } else if (ex.kind == EK_TEMPLATECALL) {
+        int j = 0;   // up to '<'
+        while (ex.sval[j] != 0 && (int)ex.sval[j] != 60) {
+            j = j + 1;
+        }
+        fname = sema_sub_str(ex.sval, 0, j);
+    }
+    if (fname[0] == 0) {
+        return;
+    }
+    string t = sema_canon(s, sema_infer_type(s, ex));
+    if (sema_starts_with(t, "Result<") == 0) {
+        return;
+    }
+    sema_warn(s, "unused-result", s.line, s.col,
+              sema_cat(sema_cat("result of '", fname), "' is a Result and is ignored (check it or use '?')"));
+}
+
 string sema_discarded_must_use(Sema* s, *ExprNode ex) {
     if (ex == null) {
         return "";

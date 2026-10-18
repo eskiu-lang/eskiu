@@ -1229,7 +1229,8 @@ int esk_main(int argc, string* argv) {
         }
         else if (cg_streq(a, "-Wno-string-compare") == 1 || cg_streq(a, "-Wno-address-of-packed-member") == 1
               || cg_streq(a, "-Wno-dangling-pointer") == 1 || cg_streq(a, "-Wno-frame-larger-than") == 1
-              || cg_streq(a, "-Wno-format") == 1) {
+              || cg_streq(a, "-Wno-format") == 1 || cg_streq(a, "-Wno-unused-result") == 1
+              || cg_streq(a, "-Wno-await-holding-lock") == 1) {
             List_push<string>(&wno, (string)((*uint8)a + 5));
         }
         else if (cg_streq(a, "-Wall") == 1 || cg_streq(a, "--Wall") == 1) {

@@ -330,6 +330,152 @@ void sema_warn_assign_cond(Sema* s, *ExprNode c) {
     sema_lint(s, c.line, c.col, "assignment used as a condition \342\200\224 did you mean '=='?");
 }
 
+// The place a lock call names: `m`, `a.b.m` (identifiers and fields only), "" otherwise.
+string sema_lock_key(*ExprNode e) {
+    if (e == null) {
+        return "";
+    }
+    if (e.kind == EK_IDENT) {
+        return e.sval;
+    }
+    if (e.kind == EK_MEMBER) {
+        string base = sema_lock_key(e.a);
+        if (base[0] == 0) {
+            return "";
+        }
+        return sema_cat(sema_cat(base, "."), e.sval);
+    }
+    return "";
+}
+
+// The earliest `await` (by line, then column) in a subtree, lambda bodies excluded
+// (mirrors the C++ earliestAwait).
+*ExprNode sema_earlier_await(*ExprNode a, *ExprNode b) {
+    if (a == null) {
+        return b;
+    }
+    if (b == null) {
+        return a;
+    }
+    if (b.line < a.line || (b.line == a.line && b.col < a.col)) {
+        return b;
+    }
+    return a;
+}
+
+*ExprNode sema_earliest_await_e(*ExprNode e) {
+    if (e == null) {
+        return null;
+    }
+    *ExprNode best = null;
+    if (e.kind == EK_AWAIT) {
+        best = e;
+    }
+    int k = e.kind;
+    if (k == EK_BINARY || k == EK_INDEX || k == EK_TERNARY || k == EK_ALLOCWITH) {
+        best = sema_earlier_await(best, sema_earliest_await_e(e.a));
+        best = sema_earlier_await(best, sema_earliest_await_e(e.b));
+    } else if (k == EK_UNARY || k == EK_INCDEC || k == EK_MEMBER || k == EK_CAST || k == EK_QUESTION
+               || k == EK_AWAIT || k == EK_CALL || k == EK_FREECLOSURE || k == EK_THREADCREATE) {
+        best = sema_earlier_await(best, sema_earliest_await_e(e.a));
+    }
+    if (k == EK_CALL || k == EK_TEMPLATECALL || k == EK_STRUCTINIT || k == EK_ARRAYLIT
+        || k == EK_INDEX || k == EK_TERNARY) {
+        int i = 0;
+        while (i < List_len<*ExprNode>(&e.kids)) {
+            best = sema_earlier_await(best, sema_earliest_await_e(List_get<*ExprNode>(&e.kids, i)));
+            i = i + 1;
+        }
+    }
+    return best;
+}
+
+*ExprNode sema_earliest_await_s(*StmtNode st) {
+    if (st == null) {
+        return null;
+    }
+    *ExprNode best = sema_earliest_await_e(st.expr);
+    best = sema_earlier_await(best, sema_earliest_await_e(st.expr2));
+    best = sema_earlier_await(best, sema_earliest_await_s(st.s1));
+    best = sema_earlier_await(best, sema_earliest_await_s(st.s2));
+    int i = 0;
+    while (i < List_len<*StmtNode>(&st.items)) {
+        best = sema_earlier_await(best, sema_earliest_await_s(List_get<*StmtNode>(&st.items, i)));
+        i = i + 1;
+    }
+    return best;
+}
+
+// The mutex a statement locks (`lock` 1) or unlocks: `Mutex_lock(&m)` / `Mutex_lock(p)`
+// by name, or `m.lock()` on a `Mutex` / `*Mutex`. Its place key, or "".
+string sema_mutex_call_key(Sema* s, *StmtNode st, int lock) {
+    if (st == null || st.kind != SK_EXPR || st.expr == null || st.expr.kind != EK_CALL || st.expr.a == null) {
+        return "";
+    }
+    *ExprNode c = st.expr;
+    if (c.a.kind == EK_IDENT) {
+        string want = "Mutex_unlock";
+        if (lock == 1) {
+            want = "Mutex_lock";
+        }
+        if (sema_streq(c.a.sval, want) == 0 || List_len<*ExprNode>(&c.kids) != 1) {
+            return "";
+        }
+        *ExprNode a = List_get<*ExprNode>(&c.kids, 0);
+        if (a != null && a.kind == EK_UNARY && sema_streq(a.sval, "&") == 1) {
+            a = a.a;
+        }
+        return sema_lock_key(a);
+    }
+    if (c.a.kind == EK_MEMBER) {
+        string want = "unlock";
+        if (lock == 1) {
+            want = "lock";
+        }
+        if (sema_streq(c.a.sval, want) == 0 || List_len<*ExprNode>(&c.kids) != 0) {
+            return "";
+        }
+        if (sema_streq(sema_struct_of_type(sema_canon(s, sema_infer_type(s, c.a.a))), "Mutex") == 0) {
+            return "";
+        }
+        return sema_lock_key(c.a.a);
+    }
+    return "";
+}
+
+// -Wawait-holding-lock: in an async function, a statement of this block locks a mutex
+// and a later statement of the same block awaits before one unlocks the same place (a
+// `defer` does not unlock: its body runs at the block's end). Reported at the earliest
+// await of the first statement that awaits (mirrors the C++ warnAwaitHoldingLock).
+void sema_warn_await_lock(Sema* s, *StmtNode blk) {
+    int n = List_len<*StmtNode>(&blk.items);
+    int i = 0;
+    while (i < n) {
+        *StmtNode ls = List_get<*StmtNode>(&blk.items, i);
+        string key = sema_mutex_call_key(s, ls, 1);
+        if (key[0] != 0) {
+            int j = i + 1;
+            while (j < n) {
+                *StmtNode it = List_get<*StmtNode>(&blk.items, j);
+                if (sema_streq(sema_mutex_call_key(s, it, 0), key) == 1) {
+                    break;
+                }
+                if (it != null && it.kind != SK_DEFER) {
+                    *ExprNode aw = sema_earliest_await_s(it);
+                    if (aw != null) {
+                        string msg = sema_cat(sema_cat("await while the mutex '", key), "' is locked (locked at line ");
+                        msg = sema_cat(sema_cat(msg, sema_i64_text((int64)ls.line)), "); unlock it before the await");
+                        sema_warn(s, "await-holding-lock", aw.line, aw.col, msg);
+                        break;
+                    }
+                }
+                j = j + 1;
+            }
+        }
+        i = i + 1;
+    }
+}
+
 void sema_stmt_k(Sema* s, *StmtNode st) {
     if (st == null) {
         return;
@@ -378,6 +524,9 @@ void sema_stmt_k(Sema* s, *StmtNode st) {
             i = i + 1;
         }
         sema_narrow_undo(s, &guard);
+        if (s.in_async == 1) {
+            sema_warn_await_lock(s, st);
+        }
         sema_pop(s);
         return;
     }
@@ -650,6 +799,7 @@ void sema_stmt_k(Sema* s, *StmtNode st) {
             s.had_error = 1;
             dprintf(2, "error: %s:%d:%d: result of '%s' must be used (it is marked must_use)\n", s.filename, s.line, s.col, fname);
         }
+        sema_warn_unused_result(s, st.expr);
         return;
     }
     if (k == SK_IF) {
