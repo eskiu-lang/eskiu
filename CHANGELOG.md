@@ -7,7 +7,7 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
-## [0.12.0] - Unreleased
+## [0.12.0] - 2026-10-17
 
 The first public release. Code that compiles with 0.12.0 keeps compiling in every 0.12.x
 ([stability.md](docs/lang/stability.md)).
