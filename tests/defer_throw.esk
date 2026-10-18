@@ -47,7 +47,7 @@ int main() {
     try { on_fallthrough(6); } catch (int c) { printf("c %d\n", c); }
     try { on_break(5); } catch (int c) { printf("c %d\n", c); }
     try { on_continue(3); } catch (int c) { printf("c %d\n", c); }
-    try { on_question(1); } catch (int c) { printf("c %d\n", c); }
+    try { (void)on_question(1); } catch (int c) { printf("c %d\n", c); }
     try { printf("%d\n", conditional(2)); conditional(9); } catch (int c) { printf("c %d\n", c); }
     return 0;
 }

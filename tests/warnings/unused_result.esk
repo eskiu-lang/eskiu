@@ -1,0 +1,39 @@
+// EXPECT-WARNING: unused_result.esk:28:5: warning: result of 'parse' is a Result and is ignored (check it or use '?') [-Wunused-result]
+// EXPECT-WARNING: unused_result.esk:29:5: warning: result of 'parse_alias' is a Result and is ignored (check it or use '?') [-Wunused-result]
+// EXPECT-WARNING: unused_result.esk:30:5: warning: result of 'check' is a Result and is ignored (check it or use '?') [-Wunused-result]
+// EXPECT-WARNING: unused_result.esk:31:5: warning: result of 'Ok' is a Result and is ignored (check it or use '?') [-Wunused-result]
+// A call statement whose value is a Result drops the error it may carry. Using the
+// value, propagating it with `?` or a call that returns something else is fine.
+import <result>;
+
+type IntRes = Result<int, string>;
+
+Result<int, string> parse(int x) {
+    if (x < 0) { return Err<int, string>("negative"); }
+    return Ok<int, string>(x);
+}
+
+IntRes parse_alias(int x) { return parse(x); }
+
+struct Checker { int limit; }
+Result<int, string> Checker_check(*Checker self, int x) { return parse(x - self.limit); }
+
+int used() { return 1; }
+
+Result<int, string> run() {
+    let c: Checker = Checker{ limit: 1 };
+    let r: Result<int, string> = parse(1);
+    int v = parse(2)?;
+    used();
+    parse(3);
+    parse_alias(4);
+    c.check(5);
+    Ok<int, string>(6);
+    if (r.ok) { return Ok<int, string>(v); }
+    return r;
+}
+
+int main() {
+    let r: Result<int, string> = run();
+    return r.ok ? 0 : 1;
+}

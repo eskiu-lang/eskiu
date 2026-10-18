@@ -1,0 +1,73 @@
+// EXPECT-WARNING: await_holding_lock.esk:25:9: warning: await while the mutex 'm' is locked (locked at line 24); unlock it before the await [-Wawait-holding-lock]
+// EXPECT-WARNING: await_holding_lock.esk:33:26: warning: await while the mutex 'b.m' is locked (locked at line 31); unlock it before the await [-Wawait-holding-lock]
+// EXPECT-WARNING: await_holding_lock.esk:41:17: warning: await while the mutex 'p' is locked (locked at line 39); unlock it before the await [-Wawait-holding-lock]
+// An await while a Mutex taken in the same block is still locked: the task parks
+// holding the lock, so another task on the same thread that locks it deadlocks.
+// Unlocking first, or locking a different mutex, is fine. On by default.
+import <future>;
+import <threading>;
+
+struct Box { Mutex m; int v; }
+
+Mutex m;
+Mutex other;
+
+Future<int>* produce() {
+    Future<int>* f = future_new<int>();
+    Future_complete<int>(f, 41);
+    return f;
+}
+
+async int direct() {
+    int n = 0;
+    Mutex_unlock(&m);
+    Mutex_lock(&m);
+    n = await produce();
+    Mutex_unlock(&m);
+    return n;
+}
+
+async int deferred(*Box b) {
+    b.m.lock();
+    defer b.m.unlock();
+    if (b.v > 0) { b.v = await produce(); }
+    return b.v;
+}
+
+async int by_pointer(*Mutex p) {
+    int n = 0;
+    Mutex_lock(p);
+    other.lock();
+    int x = 1 + await produce();
+    Mutex_unlock(p);
+    return n + x;
+}
+
+async int fine() {
+    Mutex_lock(&m);
+    int n = 1;
+    Mutex_unlock(&m);
+    n = n + await produce();
+    other.lock();
+    other.unlock();
+    n = n + await produce();
+    return n;
+}
+
+int main() {
+    Mutex_init(&m);
+    Mutex_init(&other);
+    let b: Box;
+    Mutex_init(&b.m);
+    Future<int>* f = fine();
+    int r = f.value;
+    Future_free<int>(f);
+    Future<int>* g = direct();
+    r = r + g.value;
+    Future_free<int>(g);
+    Future<int>* h = deferred(&b);
+    Future_free<int>(h);
+    Future<int>* k = by_pointer(&b.m);
+    Future_free<int>(k);
+    return r > 0 ? 0 : 1;
+}

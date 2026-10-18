@@ -425,6 +425,15 @@ else
     bad "cli/werror-and-w" "-Werror exit $we_code, -w exit $wn_code: $(grep -m2 -E 'error|warning' "$work/we.out" "$work/wn.out" | tr '\n' ' ')"
 fi
 
+# -Wno-unused-result / -Wno-await-holding-lock silence those default-on warnings.
+wno_out="$("$ESKIUC" -Wno-unused-result --test-typechecker "$here/warnings/unused_result.esk" 2>&1; "$ESKIUC" -Wno-await-holding-lock --test-typechecker "$here/warnings/await_holding_lock.esk" 2>&1)"
+wyes_out="$("$ESKIUC" --test-typechecker "$here/warnings/await_holding_lock.esk" 2>&1)"
+if ! grep -q "warning:" <<<"$wno_out" && grep -q "\[-Wawait-holding-lock\]" <<<"$wyes_out"; then
+    ok "cli/wno-unused-result-await-lock"
+else
+    bad "cli/wno-unused-result-await-lock" "$(grep -m2 warning <<<"$wno_out" | tr '\n' ' ')"
+fi
+
 # A successful compile prints nothing to stdout (no output-file echo).
 printf 'int main() { return 0; }\n' > "$work/quiet.esk"
 q_out="$("$ESKIUC" "$work/quiet.esk" -o "$work/quiet" 2>/dev/null)"

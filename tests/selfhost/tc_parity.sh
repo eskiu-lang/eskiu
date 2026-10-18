@@ -182,9 +182,10 @@ done
 echo "Hint and deprecation text (byte-exact):"
 for esk in tests/errors/did_you_mean_*.esk tests/warnings/deprecated_use.esk tests/errors/match_*nonexhaustive*.esk \
            tests/warnings/string_compare.esk tests/warnings/packed_address.esk tests/warnings/dangling_pointer.esk \
-           tests/warnings/frame_larger.esk tests/warnings/format.esk; do
+           tests/warnings/frame_larger.esk tests/warnings/format.esk tests/warnings/unused_result.esk \
+           tests/warnings/await_holding_lock.esk; do
     [ -e "$esk" ] || continue
-    for flags in "" "-Wno-deprecated"; do
+    for flags in "" "-Wno-deprecated" "-Wno-unused-result -Wno-await-holding-lock"; do
         pick() { grep -E "did you mean|warning: '.*' is deprecated|non-exhaustive match|\[-W[a-z-]+\]" || true; }
         ref="$("$BIN" --test-typechecker $flags "$esk" 2>&1 | pick)"
         got="$(ESKIU_ROOT="$(pwd)" "$TCBIN" --test-typechecker $flags "$esk" 2>&1 | pick)"
