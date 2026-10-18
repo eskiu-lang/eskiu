@@ -1375,6 +1375,75 @@ CgVal cg_expr_i(Codegen* g, *ExprNode e) {
         cg_emit(g, ", ptr ");
         cg_emit(g, tmp);
         cg_emit(g, "\n");
+        // A Result of another success type with the same error type: a fresh one (zeroed)
+        // gets the `ok` flag and the error (mirrors the C++).
+        if (cg_streq(g.cur_ret, llty) == 0 && (int)g.cur_ret[0] == 37) {
+            int rl = 0;
+            while (g.cur_ret[rl] != 0) {
+                rl = rl + 1;
+            }
+            CgStruct rs = cg_find_struct(g, cg_sub_str(g.cur_ret, 1, rl));
+            if (rs.name[0] != 0) {
+                string out = cg_entry_alloca(g, g.cur_ret);
+                cg_emit(g, "  store ");
+                cg_emit(g, g.cur_ret);
+                cg_emit(g, " zeroinitializer, ptr ");
+                cg_emit(g, out);
+                cg_emit(g, "\n");
+                int fi = 0;
+                while (fi < List_len<string>(&s.fnames)) {
+                    string fnm = List_get<string>(&s.fnames, fi);
+                    int ri = cg_field_idx(&rs, fnm);
+                    if ((cg_streq(fnm, "ok") == 1 || cg_streq(fnm, "error") == 1) && ri >= 0) {
+                        string fty = cg_lltype(g, List_get<string>(&s.fetys, fi));
+                        string src = cg_tmp(g);
+                        cg_emit(g, "  ");
+                        cg_emit(g, src);
+                        cg_emit(g, " = getelementptr ");
+                        cg_emit(g, llty);
+                        cg_emit(g, ", ptr ");
+                        cg_emit(g, tmp);
+                        cg_emit(g, ", i32 0, i32 ");
+                        cg_emit(g, cg_itoa(fi));
+                        cg_emit(g, "\n");
+                        string fv = cg_tmp(g);
+                        cg_emit(g, "  ");
+                        cg_emit(g, fv);
+                        cg_emit(g, " = load ");
+                        cg_emit(g, fty);
+                        cg_emit(g, ", ptr ");
+                        cg_emit(g, src);
+                        cg_emit(g, "\n");
+                        string dst = cg_tmp(g);
+                        cg_emit(g, "  ");
+                        cg_emit(g, dst);
+                        cg_emit(g, " = getelementptr ");
+                        cg_emit(g, g.cur_ret);
+                        cg_emit(g, ", ptr ");
+                        cg_emit(g, out);
+                        cg_emit(g, ", i32 0, i32 ");
+                        cg_emit(g, cg_itoa(ri));
+                        cg_emit(g, "\n");
+                        cg_emit(g, "  store ");
+                        cg_emit(g, fty);
+                        cg_emit(g, " ");
+                        cg_emit(g, fv);
+                        cg_emit(g, ", ptr ");
+                        cg_emit(g, dst);
+                        cg_emit(g, "\n");
+                    }
+                    fi = fi + 1;
+                }
+                whole = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, whole);
+                cg_emit(g, " = load ");
+                cg_emit(g, g.cur_ret);
+                cg_emit(g, ", ptr ");
+                cg_emit(g, out);
+                cg_emit(g, "\n");
+            }
+        }
         cg_run_cleanups(g, 0, 1);                        // ? error exit: defers + errdefers
         cg_emit(g, "  ret ");
         cg_emit(g, g.cur_ret);

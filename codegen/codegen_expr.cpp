@@ -587,10 +587,31 @@ void CodeGen::visit(QuestionExpr* node) {
     llvm::BasicBlock* contBB = llvm::BasicBlock::Create(*context, "try.cont", currentFunction);
     builder->CreateCondBr(isErr, errBB, contBB);
 
-    // Error path: propagate the Result unchanged out of the enclosing function.
-    // This is an early function exit, so run pending defers/finally first.
+    // Error path: propagate the error out of the enclosing function. Its Result type may
+    // differ in the success type only: then a fresh one (zeroed) gets the `ok` flag and
+    // the error. This is an early function exit, so run pending defers/finally first.
     builder->SetInsertPoint(errBB);
     llvm::Value* whole = builder->CreateLoad(st, tmp, "try.whole");
+    llvm::Type* retTy = currentFunction->getReturnType();
+    if (currentSretParam != nullptr)
+        if (auto rs = funcSretTypes.find(currentFunction->getName().str()); rs != funcSretTypes.end())
+            retTy = rs->second;
+    auto* retSt = llvm::dyn_cast<llvm::StructType>(retTy);
+    if (retSt && retSt != st && retSt->hasName() && structFields.count(retSt->getName().str())) {
+        const auto& rf = structFields[retSt->getName().str()];
+        llvm::Value* out = entryAlloca(retSt, nullptr, "try.out");
+        builder->CreateStore(llvm::Constant::getNullValue(retSt), out);
+        for (unsigned i = 0; i < fIt->second.size(); ++i) {
+            const std::string& fname = fIt->second[i].name;
+            if (fname != "ok" && fname != "error") continue;
+            for (unsigned j = 0; j < rf.size(); ++j)
+                if (rf[j].name == fname) {
+                    llvm::Value* v = builder->CreateLoad(st->getElementType(i), builder->CreateStructGEP(st, tmp, i));
+                    builder->CreateStore(v, builder->CreateStructGEP(retSt, out, j));
+                }
+        }
+        whole = builder->CreateLoad(retSt, out, "try.whole");
+    }
     if (currentSretParam != nullptr) {
         builder->CreateStore(whole, currentSretParam);
         runCleanupsToDepth(0, /*errorPath=*/true);      // ? error exit: defers + errdefers
