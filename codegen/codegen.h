@@ -64,9 +64,11 @@ public:
     // --freestanding: no libc, so the optimizer may not introduce calls to memset,
     // memcpy and the like (clang -ffreestanding).
     bool freestanding = false;
-    // Safe mode (--safe): insert runtime safety checks (slice bounds). Off by default,
-    // so release builds carry no overhead. On a violation the check calls @llvm.trap.
-    bool safe = false;
+    // Safe mode (--safe[=LIST]): the run-time checks to insert, a set of the Safe*
+    // bits (array/slice bounds, signed + - * overflow, null dereference). Off by
+    // default, so release builds carry no overhead. A violation calls @llvm.trap.
+    enum : unsigned { SafeBounds = 1, SafeOverflow = 2, SafeNull = 4, SafeAll = 7 };
+    unsigned safeChecks = 0;
     // Emit a trap (via @llvm.trap) when `idx` (sext to i64) is < 0 or >= `len`.
     void emitBoundsCheck(llvm::Value* idx, llvm::Value* len);
     // --safe check for a slice construction `base[lo..hi]`: 0 <= lo <= hi <= len. A null

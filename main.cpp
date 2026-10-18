@@ -97,9 +97,32 @@ static llvm::cl::opt<bool> Freestanding("freestanding",
     llvm::cl::desc("Compile without libc — alloc/free use esk_alloc/esk_free"),
     llvm::cl::cat(EskiuCat));
 
-static llvm::cl::opt<bool> Safe("safe",
-    llvm::cl::desc("Insert runtime safety checks (slice bounds); traps on violation"),
-    llvm::cl::cat(EskiuCat));
+static llvm::cl::opt<std::string> Safe("safe",
+    llvm::cl::desc("Insert run-time checks that trap on violation: all, or --safe=LIST of bounds,overflow,null"),
+    llvm::cl::value_desc("list"), llvm::cl::ValueOptional, llvm::cl::cat(EskiuCat));
+
+// The CodeGen::Safe* bits named by --safe[=LIST]: none without the flag, all three
+// for a bare --safe, else the comma-separated subset. An unknown name is an error.
+static bool safeChecksFromFlag(unsigned& mask) {
+    mask = 0;
+    if (Safe.getNumOccurrences() == 0) return true;
+    std::string list = Safe;
+    if (list.empty()) { mask = CodeGen::SafeAll; return true; }
+    size_t start = 0;
+    while (true) {
+        size_t comma = list.find(',', start);
+        std::string name = list.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+        if (name == "bounds") mask |= CodeGen::SafeBounds;
+        else if (name == "overflow") mask |= CodeGen::SafeOverflow;
+        else if (name == "null") mask |= CodeGen::SafeNull;
+        else {
+            std::cerr << "error: unknown --safe check '" << name << "' (valid: bounds, overflow, null)" << std::endl;
+            return false;
+        }
+        if (comma == std::string::npos) return true;
+        start = comma + 1;
+    }
+}
 
 static llvm::cl::opt<bool> WnoDeprecated("Wno-deprecated",
     llvm::cl::desc("Do not warn when a deprecated function is used"),
@@ -320,7 +343,7 @@ static int testCodegen(const std::string& filename) {
         if (!TargetFeatures.empty()) codegen.targetFeatures = std::string(TargetFeatures);
         if (!RelocModel.empty()) codegen.relocModel = std::string(RelocModel);
         codegen.freestanding = Freestanding;
-        codegen.safe = Safe;
+        { unsigned m = 0; safeChecksFromFlag(m); codegen.safeChecks = m; }
         codegen.optLevel = OptLevel;
         llvm::Module* module = codegen.generateCode(program);
 
@@ -449,6 +472,8 @@ static int compilerMain(int argc, char** argv) {
                   << "' (use -O0, -O1, -O2 or -O3)" << std::endl;
         return 1;
     }
+    unsigned safeChecks = 0;
+    if (!safeChecksFromFlag(safeChecks)) return 1;
     // Refuse an output path that names one of the inputs: `-o prog.esk` would
     // silently replace the source with an object file or executable.
     if (!OutputFilename.empty()) {
@@ -736,7 +761,7 @@ static int compilerMain(int argc, char** argv) {
         if (!TargetFeatures.empty()) codegen.targetFeatures = std::string(TargetFeatures);
         if (!RelocModel.empty()) codegen.relocModel = std::string(RelocModel);
         codegen.freestanding = Freestanding;
-        codegen.safe = Safe;
+        codegen.safeChecks = safeChecks;
         codegen.asan = Asan;
         codegen.ubsan = Ubsan;
         codegen.optLevel = OptLevel;

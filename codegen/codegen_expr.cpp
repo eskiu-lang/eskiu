@@ -248,7 +248,7 @@ void CodeGen::emitAssignment(BinaryExpr* node) {
 
 // Under --safe, trap when the pointer about to be dereferenced is null.
 llvm::Value* CodeGen::safeNonNull(llvm::Value* p) {
-    if (!safe || !p->getType()->isPointerTy() || llvm::isa<llvm::AllocaInst>(p) || llvm::isa<llvm::GlobalValue>(p)) return p;
+    if (!(safeChecks & SafeNull) || !p->getType()->isPointerTy() || llvm::isa<llvm::AllocaInst>(p) || llvm::isa<llvm::GlobalValue>(p)) return p;
     emitSafeTrap(builder->CreateIsNull(p), "null");
     return p;
 }
@@ -269,7 +269,7 @@ void CodeGen::emitSafeTrap(llvm::Value* cond, const char* name) {
 // ReleaseSafe and -fsanitize=signed-integer-overflow -fsanitize-trap). `id` is the
 // matching llvm.s*.with.overflow intrinsic.
 llvm::Value* CodeGen::safeArith(llvm::Intrinsic::ID id, llvm::Value* l, llvm::Value* r, bool uns) {
-    if (!safe || uns || !l->getType()->isIntegerTy() || l->getType()->getIntegerBitWidth() < 32) {
+    if (!(safeChecks & SafeOverflow) || uns || !l->getType()->isIntegerTy() || l->getType()->getIntegerBitWidth() < 32) {
         if (id == llvm::Intrinsic::sadd_with_overflow) return builder->CreateAdd(l, r);
         if (id == llvm::Intrinsic::ssub_with_overflow) return builder->CreateSub(l, r);
         return builder->CreateMul(l, r);
@@ -876,14 +876,14 @@ llvm::Value* CodeGen::indexElemAddr(const ExprPtr& base, llvm::Value* idx, bool 
     if (bt.kind == ty::Type::Kind::Array) {
         llvm::Value* zero = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context), 0);
         uint64_t n = 0;
-        if (safe && doCheck && resolveArrayDim(bt.dim, n))   // bounds-check against the static length
+        if ((safeChecks & SafeBounds) && doCheck && resolveArrayDim(bt.dim, n))   // bounds-check against the static length
             emitBoundsCheck(idx, llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context), n));
         return builder->CreateGEP(getTypeFromString(baseType), evaluateLValue(base), {zero, idx});
     }
     if (bt.kind == ty::Type::Kind::Slice) {
         llvm::Value* fat  = evaluateExpr(base);                     // evaluate the slice once
         llvm::Value* data = builder->CreateExtractValue(fat, {0});  // fat.ptr
-        if (safe && doCheck) emitBoundsCheck(idx, builder->CreateExtractValue(fat, {1}));   // vs fat.len
+        if ((safeChecks & SafeBounds) && doCheck) emitBoundsCheck(idx, builder->CreateExtractValue(fat, {1}));   // vs fat.len
         return builder->CreateGEP(getTypeFromString(bt.elem->str()), data, idx);
     }
     if (isPointerType(baseType)) {
@@ -945,7 +945,7 @@ void CodeGen::visit(IndexExpr* node) {
         } else {
             data = indexElemAddr(node->base, lo, /*doCheck=*/false);   // string / pointer: len unknown
         }
-        if (safe) emitSliceBoundsCheck(lo, hi, baseLen);
+        if (safeChecks & SafeBounds) emitSliceBoundsCheck(lo, hi, baseLen);
         llvm::Value* len = builder->CreateSub(hi, lo);
         llvm::Type* sliceTy = getTypeFromString(elemStr + "[]");
         llvm::Value* s = llvm::UndefValue::get(sliceTy);
