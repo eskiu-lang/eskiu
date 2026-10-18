@@ -1166,6 +1166,14 @@ control-flow construct containing an await (`if`/`while`/`do`-`while`/C-style
 `for`/`switch`/`match`/`for-in`, with `break`/`continue`, and `try`/`catch`) are
 supported; a pending future is cancelled with `Future_drop`.
 
+A task suspends only at an `await`: everything between two `await`s runs without
+interruption, and a function can only `await` if it is declared `async`. The locals of an
+async function live in its frame across a suspension, so memory allocated before an
+`await` is still valid after it and is freed by the function's `defer`, which runs when
+the function finishes, or when its future is dropped while it is waiting. The event loop
+runs every task on one thread, so do not hold a `<threading>` mutex across an `await`:
+another task that locks it on the same thread would block forever.
+
 An `await` may appear anywhere in an expression: a `let` initializer, a `return` value,
 an assignment or compound assignment (`x += await f();`), a call argument, an operand
 (`a + await f()`), a condition (`while (await more())`), a `switch` or `match` subject, a
@@ -1312,6 +1320,34 @@ eskiuc file.esk -o file            # no -l flag needed
 ```
 
 ---
+
+### 6.10 Which error mechanism to use
+
+Eskiu code reports an expected failure (a missing file, bad input, a refused connection)
+with `Result<T, E>` and passes it up with `?` (§10.5). `throw` is for errors that are not
+part of normal operation: a broken invariant, a state the program cannot continue from,
+or a failure that has to unwind through many frames at once. A function's signature then
+says whether it can fail, and `?` keeps the propagation visible at each call.
+
+The standard library modules that wrap C report failures the way C does, with a status
+code or `null` (`fetch` returns 0 or a negative `FETCH_ERR_*`, `json_parse` returns
+`null`). Check that value at the call, and turn it into a `Result` when the failure has to
+travel further:
+
+```eskiu
+import <fetch>;
+import <result>;
+
+Result<int, string> status_of(string url) {
+    let r: Response;
+    if (fetch(url, &r) != 0) {
+        return Err<int, string>("request failed");
+    }
+    int code = r.status;
+    Response_free(&r);
+    return Ok<int, string>(code);
+}
+```
 
 ## 7. Control Flow
 
@@ -2368,6 +2404,11 @@ int main() {
     return 0;
 }
 ```
+
+A pointer is passed to a C function as it is. The `--safe` checks and the `?*T` rules
+apply to Eskiu code, not inside the C function, so a C function that does not accept
+`null` must be given a pointer the program has checked: keep it as a `?*T` until an
+`if (p != null)` and pass it inside that branch.
 
 ### 13.4 C ABI Compatibility
 

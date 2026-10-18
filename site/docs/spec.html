@@ -1375,6 +1375,13 @@ thread_join(t);
 control-flow construct containing an await (<code>if</code>/<code>while</code>/<code>do</code>-<code>while</code>/C-style
 <code>for</code>/<code>switch</code>/<code>match</code>/<code>for-in</code>, with <code>break</code>/<code>continue</code>, and <code>try</code>/<code>catch</code>) are
 supported; a pending future is cancelled with <code>Future_drop</code>.</p>
+<p>A task suspends only at an <code>await</code>: everything between two <code>await</code>s runs without
+interruption, and a function can only <code>await</code> if it is declared <code>async</code>. The locals of an
+async function live in its frame across a suspension, so memory allocated before an
+<code>await</code> is still valid after it and is freed by the function's <code>defer</code>, which runs when
+the function finishes, or when its future is dropped while it is waiting. The event loop
+runs every task on one thread, so do not hold a <code>&lt;threading&gt;</code> mutex across an <code>await</code>:
+another task that locks it on the same thread would block forever.</p>
 <p>An <code>await</code> may appear anywhere in an expression: a <code>let</code> initializer, a <code>return</code> value,
 an assignment or compound assignment (<code>x += await f();</code>), a call argument, an operand
 (<code>a + await f()</code>), a condition (<code>while (await more())</code>), a <code>switch</code> or <code>match</code> subject, a
@@ -1484,6 +1491,29 @@ error: uncaught exception: ParseError
 <pre><code class="language-bash">eskiuc file.esk -o file            # no -l flag needed
 </code></pre>
 <hr>
+<h3 id="610-which-error-mechanism-to-use">6.10 Which error mechanism to use</h3>
+<p>Eskiu code reports an expected failure (a missing file, bad input, a refused connection)
+with <code>Result&lt;T, E&gt;</code> and passes it up with <code>?</code> (§10.5). <code>throw</code> is for errors that are not
+part of normal operation: a broken invariant, a state the program cannot continue from,
+or a failure that has to unwind through many frames at once. A function's signature then
+says whether it can fail, and <code>?</code> keeps the propagation visible at each call.</p>
+<p>The standard library modules that wrap C report failures the way C does, with a status
+code or <code>null</code> (<code>fetch</code> returns 0 or a negative <code>FETCH_ERR_*</code>, <code>json_parse</code> returns
+<code>null</code>). Check that value at the call, and turn it into a <code>Result</code> when the failure has to
+travel further:</p>
+<pre><code class="language-eskiu">import &lt;fetch&gt;;
+import &lt;result&gt;;
+
+Result&lt;int, string&gt; status_of(string url) {
+    let r: Response;
+    if (fetch(url, &amp;r) != 0) {
+        return Err&lt;int, string&gt;(&quot;request failed&quot;);
+    }
+    int code = r.status;
+    Response_free(&amp;r);
+    return Ok&lt;int, string&gt;(code);
+}
+</code></pre>
 <h2 id="7-control-flow">7. Control Flow</h2>
 <h3 id="71-if-else-if-else">7.1 if / else if / else</h3>
 <pre><code class="language-eskiu">if (x &gt; 0) {
@@ -2289,6 +2319,10 @@ int main() {
     return 0;
 }
 </code></pre>
+<p>A pointer is passed to a C function as it is. The <code>--safe</code> checks and the <code>?*T</code> rules
+apply to Eskiu code, not inside the C function, so a C function that does not accept
+<code>null</code> must be given a pointer the program has checked: keep it as a <code>?*T</code> until an
+<code>if (p != null)</code> and pass it inside that branch.</p>
 <h3 id="134-c-abi-compatibility">13.4 C ABI Compatibility</h3>
 <p><code>extern</code> declarations emit standard C-ABI-compatible LLVM IR <code>call</code> instructions. Any function exported from a C library, including system libraries, OpenSSL, or any other C-compatible library, may be called this way.</p>
 <p>For functions that accept or return <code>void*</code>, use <code>*void</code> on the Eskiu side:</p>

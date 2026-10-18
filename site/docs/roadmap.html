@@ -198,6 +198,18 @@ first-class in the language without giving up general systems use.</p>
   oracle checked against clang, a negative-program corpus, and the stdlib parsers under
   AddressSanitizer).</li>
 </ul>
+<h2 id="next-013">Next: 0.13</h2>
+<ul>
+<li><strong>Errors.</strong> <code>Result</code>-returning forms of the stdlib calls that report a status code or
+  <code>null</code> today, so <code>?</code> works with the stdlib; the current functions stay.</li>
+<li><strong>Safety by category.</strong> <code>--safe=bounds,null,overflow</code> to enable each run-time check on
+  its own.</li>
+<li><strong>Lints.</strong> An unused <code>Result</code>, and an <code>await</code> while a mutex is held.</li>
+<li><strong>Formatter.</strong> Spacing inside type arguments (<code>List &lt; int &gt;</code> to <code>List&lt;int&gt;</code>) and
+  breaking lines that are too long.</li>
+<li><strong>Build times.</strong> Measure a package with several dependencies, then decide whether
+  modules need a cache.</li>
+</ul>
 <h2 id="next-10">Next: 1.0</h2>
 <ul>
 <li><strong>Packages beyond git.</strong> Today the package manager resolves git and path dependencies pinned
@@ -229,7 +241,7 @@ first-class in the language without giving up general systems use.</p>
   covers the same needs.</li>
 </ul>
     </main>
-    <nav class="toc" aria-label="On this page"><span class="grp">On this page</span><a href="#goal">Goal</a><a href="#where-it-is-today">Where it is today</a><a href="#next-10">Next: 1.0</a><a href="#later-not-scheduled">Later, not scheduled</a><a href="#non-goals">Non-goals</a></nav>
+    <nav class="toc" aria-label="On this page"><span class="grp">On this page</span><a href="#goal">Goal</a><a href="#where-it-is-today">Where it is today</a><a href="#next-013">Next: 0.13</a><a href="#next-10">Next: 1.0</a><a href="#later-not-scheduled">Later, not scheduled</a><a href="#non-goals">Non-goals</a></nav>
   </div>
   <footer class="foot">
     <div class="bar foot-in">

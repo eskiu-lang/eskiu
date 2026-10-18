@@ -40,6 +40,18 @@ first-class in the language without giving up general systems use.
   oracle checked against clang, a negative-program corpus, and the stdlib parsers under
   AddressSanitizer).
 
+## Next: 0.13
+
+- **Errors.** `Result`-returning forms of the stdlib calls that report a status code or
+  `null` today, so `?` works with the stdlib; the current functions stay.
+- **Safety by category.** `--safe=bounds,null,overflow` to enable each run-time check on
+  its own.
+- **Lints.** An unused `Result`, and an `await` while a mutex is held.
+- **Formatter.** Spacing inside type arguments (`List < int >` to `List<int>`) and
+  breaking lines that are too long.
+- **Build times.** Measure a package with several dependencies, then decide whether
+  modules need a cache.
+
 ## Next: 1.0
 
 - **Packages beyond git.** Today the package manager resolves git and path dependencies pinned
