@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdint>
 #include <cctype>
 #include <cstring>
@@ -153,6 +154,116 @@ void fmtCountBrackets(FmtLayout& st, const std::string& t, size_t from) {
     }
 }
 
+// The keywords, which never name a generic type or function (`return a < b > c`).
+const char* const kFmtKeywords =
+    " let int float double bool char string void struct packed union interface enum fn operator asm"
+    " volatile static escaping must_use async await const sizeof free_closure thread_create thread_join"
+    " for in while do if else switch match case default break return import extern intrinsic alloc_with"
+    " null true false try catch finally throw defer errdefer continue uint ";
+
+bool fmtKeyword(const std::string& w) {
+    return std::strstr(kFmtKeywords, (" " + w + " ").c_str()) != nullptr;
+}
+
+// A type argument list `<...>` starting at t[p] == '<': the index of its closing `>`, or
+// npos when t[p..] is not one. Its tokens may only be identifiers, `*`, `?`, `,`, an
+// array suffix `[N]` (identifiers and digits inside), `fn(...)` parameter lists with a
+// `->` after the `)`, and nested lists after an identifier; it closes on the same line.
+// A `*` between two operands (`b * c`) is a product, not a type. The positions of the
+// `<` and `>` of this list and of the nested ones are added to `marks`.
+size_t fmtTypeArgEnd(const std::string& t, size_t p, std::vector<size_t>& marks) {
+    size_t n = t.size(), i = p + 1;
+    if (i < n && (t[i] == '<' || t[i] == '=')) return std::string::npos;
+    int paren = 0;
+    bool brack = false, any = false;
+    char prev = '<';               // the previous token: 'w' a word, 'a' `->`, else itself
+    std::string word;
+    while (i < n) {
+        char c = t[i];
+        if (c == ' ' || c == '\t') { i++; continue; }
+        if (std::isalpha((unsigned char)c) || c == '_' || (brack && std::isdigit((unsigned char)c))) {
+            size_t j = i;
+            while (j < n && fmtIdentChar(t[j])) j++;
+            word = t.substr(i, j - i);
+            prev = 'w';
+            any = true;
+            i = j;
+            continue;
+        }
+        if (c == '<') {
+            if (prev != 'w' || brack) return std::string::npos;
+            size_t e = fmtTypeArgEnd(t, i, marks);
+            if (e == std::string::npos) return e;
+            prev = '>';
+            i = e + 1;
+            continue;
+        }
+        if (c == '>') {
+            if (paren > 0 || brack || !any || !(prev == 'w' || prev == '*' || prev == ']' || prev == ')' || prev == '>'))
+                return std::string::npos;
+            marks.push_back(p);
+            marks.push_back(i);
+            return i;
+        }
+        if (c == '-') {
+            if (prev != ')' || i + 1 >= n || t[i + 1] != '>') return std::string::npos;
+            prev = 'a';
+            i += 2;
+            continue;
+        }
+        if (c == '(') {
+            if (brack || !(prev == 'w' && word == "fn")) return std::string::npos;
+            paren++;
+        } else if (c == ')') {
+            if (brack || paren == 0) return std::string::npos;
+            paren--;
+        } else if (c == '[') {
+            if (brack || !(prev == 'w' || prev == ']' || prev == '>' || prev == '*')) return std::string::npos;
+            brack = true;
+        } else if (c == ']') {
+            if (!brack) return std::string::npos;
+            brack = false;
+        } else if (c == '*') {
+            size_t j = i + 1;
+            while (j < n && (t[j] == ' ' || t[j] == '\t')) j++;
+            bool operandAfter = j < n && (fmtIdentChar(t[j]) || t[j] == '(');
+            if (brack || ((prev == 'w' || prev == ']' || prev == '>' || prev == ')') && operandAfter))
+                return std::string::npos;
+        } else if (c == '?' || c == ',') {
+            if (brack) return std::string::npos;
+        } else {
+            return std::string::npos;
+        }
+        prev = c;
+        i++;
+    }
+    return std::string::npos;
+}
+
+// The `<` at t[i] opens a type argument list beyond doubt: it follows an identifier
+// that is not a keyword, directly or, for a capitalized name (`List < int >`), after
+// blanks (`a < b > c` and `f(a < b, c > (d))` are comparisons); its tokens are type
+// tokens (fmtTypeArgEnd); and the token after its `>` follows a type or a generic call:
+// an identifier (a declaration), `(` (a call), `{` (a struct literal or body), `)` `,`
+// `;` `[` or `*`. The `<` and `>` positions of it and of its nested lists go into `marks`.
+bool fmtTypeArgs(const std::string& t, size_t i, const std::string& head, std::vector<size_t>& marks) {
+    if (head.empty() || std::isdigit((unsigned char)head[0]) || fmtKeyword(head)) return false;
+    size_t k = i;
+    while (k > 0 && (t[k - 1] == ' ' || t[k - 1] == '\t')) k--;
+    if (k == 0 || !fmtIdentChar(t[k - 1])) return false;
+    if (k < i && !(head[0] >= 'A' && head[0] <= 'Z')) return false;
+    std::vector<size_t> found;
+    size_t e = fmtTypeArgEnd(t, i, found);
+    if (e == std::string::npos) return false;
+    size_t j = e + 1;
+    while (j < t.size() && (t[j] == ' ' || t[j] == '\t')) j++;
+    if (j >= t.size()) return false;
+    char f = t[j];
+    if (!(std::isalpha((unsigned char)f) || f == '_' || std::strchr("({),;[*", f))) return false;
+    marks.insert(marks.end(), found.begin(), found.end());
+    return true;
+}
+
 // Operators that get one space on each side, longest first.
 const char* const kFmtSpacedOps[] = {"<<=", ">>=", "==", "!=", "<=", ">=", "&&", "||", "+=", "-=",
                                      "*=", "/=", "%=", "&=", "|=", "^=", "="};
@@ -172,6 +283,7 @@ std::vector<std::string> fmtLayoutLine(FmtLayout& st, const std::string& t, char
     std::string cur, comment;
     bool needSpace = false;
     std::string lastWord;
+    std::vector<size_t> typeMarks;   // the `<` and `>` of the type argument lists found so far
     size_t n = t.size(), i = 0;
     bool ok = n == 0 || t[n - 1] != '\\';
     auto rtrimCur = [&] { while (!cur.empty() && cur.back() == ' ') cur.pop_back(); };
@@ -252,6 +364,23 @@ std::vector<std::string> fmtLayoutLine(FmtLayout& st, const std::string& t, char
                 cur += ' ';
             lastWord = w;
             continue;
+        }
+        // A type argument list: no blank around its `<` or before its `>` (`List<int>`),
+        // except between two `>` written apart, which would otherwise become `>>`.
+        if (c == '<' || c == '>') {
+            bool marked = std::find(typeMarks.begin(), typeMarks.end(), i) != typeMarks.end();
+            if (!marked && c == '<' && lastWord != "operator") marked = fmtTypeArgs(t, i, lastWord, typeMarks);
+            if (marked) {
+                bool apart = !cur.empty() && cur.back() == ' ';
+                rtrimCur();
+                if (c == '>' && apart && !cur.empty() && cur.back() == '>') cur += ' ';
+                cur += c;
+                last = c;
+                needSpace = false;
+                lastWord.clear();
+                i = c == '<' ? skipBlanks(i + 1) : i + 1;
+                continue;
+            }
         }
         if (lastWord == "operator" && std::strchr("+-*/%=!<>&|^~[]", c)) {   // `operator ==` as written
             size_t j = i;
@@ -403,6 +532,10 @@ std::vector<std::string> fmtLayoutLine(FmtLayout& st, const std::string& t, char
 //     initializer braces (`{1, 2}`, `P{x: 1}`, an enum body) stay on their line
 //   * spacing: one blank between tokens, around assignment, comparison and logical
 //     operators, after `,` and `;`, before a block `{`; none before `,` `;` `)` `]`
+//   * type argument lists: no blank around `<` or before `>` (`List < int >` becomes
+//     `List<int>`), only for a `<...>` that cannot be a comparison (fmtTypeArgs); two
+//     `>` written apart keep their blank, so they never become `>>`
+//   * long lines are not broken
 //   * indentation = 4 spaces per `{`-nesting level; a line that continues a statement
 //     (inside open parentheses, or after a line that does not end one) keeps its
 //     indentation relative to the statement's first line, at least 4 more
