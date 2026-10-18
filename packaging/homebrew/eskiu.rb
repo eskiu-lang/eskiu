@@ -11,18 +11,18 @@ class Eskiu < Formula
   on_macos do
     on_arm do
       url "https://github.com/eskiu-lang/eskiu/releases/download/v0.12.0/eskiuc-macos-arm64.tar.gz"
-      sha256 "6af781952af05e20d65efff0a381886d6967bc0a01b26f06f50e663aaf62bbca"
+      sha256 "1d38a1cb6ea89514491ff4a361d3c723a205ef96b80acb5c29f7a5e37394add7"
     end
   end
 
   on_linux do
     on_intel do
       url "https://github.com/eskiu-lang/eskiu/releases/download/v0.12.0/eskiuc-linux-x86_64.tar.gz"
-      sha256 "079fbaa795c793dab61877af47549c982a84873ecd8e8476a00727e3a710d2d3"
+      sha256 "2df2a99dc0322bdac0b93daa8945b8df1a96b0f8328a2e3a4f66cc97cd3408fc"
     end
     on_arm do
       url "https://github.com/eskiu-lang/eskiu/releases/download/v0.12.0/eskiuc-linux-arm64.tar.gz"
-      sha256 "919b7e9083caa7831a1aaf1b1400281e46d123005d07fe0e612b50606169d496"
+      sha256 "1b9f604c0437e7341ce1d7018b3546b54040c51a8d0e689e77c093bfd7e3fece"
     end
   end
 
