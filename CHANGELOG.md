@@ -51,7 +51,10 @@ The first public release. Code that compiles with 0.12.0 keeps compiling in ever
 - Threads (`thread_create`/`thread_join`) and atomics (`<atomic>`: 32-bit, 64-bit and
   pointer cells, fetch operations, relaxed forms, fences).
 - `try`/`catch`/`finally`/`throw`; an uncaught exception prints its type and value.
-- `Result`, `Option` and `Either` with the `?` operator.
+- `Result`, `Option` and `Either` with the `?` operator. `Result` with `?` is the way to
+  report an expected failure, and `?` passes an error up through functions whose
+  `Result` types differ only in the success type; `throw` is for unrecoverable errors
+  (spec §6.10).
 
 ### C interop and targets
 - `extern` functions and variables, with structs and unions passed and returned by value
@@ -72,6 +75,10 @@ The first public release. Code that compiles with 0.12.0 keeps compiling in ever
   and TLS servers, blocking and async.
 - Command-line helpers: argument parsing (`<args>`), terminal colors (`<term>`), logging
   (`<log>`) and console input.
+- `_result` forms of the calls that report a status code or `null`, so `?` works with the
+  standard library: `fetch_result`, `fetch_with_result`, `fs_read_text_result`,
+  `fs_write_text_result`, `fs_append_text_result`, `json_parse_result`,
+  `process_run_result`, `sh_result`.
 - `<libc>` declares the common C library for code that wants it directly.
 
 ### Tools

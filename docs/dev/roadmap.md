@@ -42,8 +42,6 @@ first-class in the language without giving up general systems use.
 
 ## Next: 0.13
 
-- **Errors.** `Result`-returning forms of the stdlib calls that report a status code or
-  `null` today, so `?` works with the stdlib; the current functions stay.
 - **Safety by category.** `--safe=bounds,null,overflow` to enable each run-time check on
   its own.
 - **Lints.** An unused `Result`, and an `await` while a mutex is held.

@@ -1331,23 +1331,29 @@ says whether it can fail, and `?` keeps the propagation visible at each call.
 
 The standard library modules that wrap C report failures the way C does, with a status
 code or `null` (`fetch` returns 0 or a negative `FETCH_ERR_*`, `json_parse` returns
-`null`). Check that value at the call, and turn it into a `Result` when the failure has to
-travel further:
+`null`), and the most used of them also have a `_result` form that returns a `Result<T,
+string>` instead: `fetch_result`, `fetch_with_result`, `fs_read_text_result`,
+`fs_write_text_result`, `fs_append_text_result`, `json_parse_result`,
+`process_run_result` and `sh_result`. The error string describes the failure; the
+module's own error function (`fetch_last_error`, `fs_last_error`, `process_last_error`)
+gives the detail. With them, `?` works across the standard library:
 
 ```eskiu
-import <fetch>;
-import <result>;
+import <fs>;
+import <json>;
 
-Result<int, string> status_of(string url) {
-    let r: Response;
-    if (fetch(url, &r) != 0) {
-        return Err<int, string>("request failed");
-    }
-    int code = r.status;
-    Response_free(&r);
-    return Ok<int, string>(code);
+Result<int, string> port_of(string path) {
+    String text = fs_read_text_result(path)?;
+    *JsonValue config = json_parse_result(text.data)?;
+    int port = (int)JsonValue_as_int(json_get(config, "port"));
+    JsonValue_free(config);
+    String_free(&text);
+    return Ok<int, string>(port);
 }
 ```
+
+A status code from any other call is turned into a `Result` the same way, at the call:
+`if (rc != 0) { return Err<int, string>("..."); }`.
 
 ## 7. Control Flow
 
@@ -2094,12 +2100,13 @@ int main() {
 The postfix `?` operator removes the boilerplate of checking a `Result` after
 every fallible call. Applied to a `Result<T, E>` value, `expr?`:
 
-- if the result is `Err`, **returns it unchanged** from the enclosing function;
+- if the result is `Err`, **returns the error** from the enclosing function;
 - otherwise evaluates to the unwrapped success value of type `T`.
 
-It may only appear inside a function whose return type is the *same* `Result<T, E>`
-type. The compiler rejects `?` anywhere else, since there would be nothing to
-propagate into.
+It may only appear inside a function that returns a `Result` with the same error type
+`E`. The success type may differ: `?` on a `Result<String, E>` inside a function returning
+`Result<int, E>` returns an `Err` of the function's own type holding the same error. The
+compiler rejects `?` anywhere else, since there would be nothing to propagate into.
 
 ```eskiu
 import <result>;

@@ -1499,21 +1499,26 @@ or a failure that has to unwind through many frames at once. A function's signat
 says whether it can fail, and <code>?</code> keeps the propagation visible at each call.</p>
 <p>The standard library modules that wrap C report failures the way C does, with a status
 code or <code>null</code> (<code>fetch</code> returns 0 or a negative <code>FETCH_ERR_*</code>, <code>json_parse</code> returns
-<code>null</code>). Check that value at the call, and turn it into a <code>Result</code> when the failure has to
-travel further:</p>
-<pre><code class="language-eskiu">import &lt;fetch&gt;;
-import &lt;result&gt;;
+<code>null</code>), and the most used of them also have a <code>_result</code> form that returns a <code>Result&lt;T,
+string&gt;</code> instead: <code>fetch_result</code>, <code>fetch_with_result</code>, <code>fs_read_text_result</code>,
+<code>fs_write_text_result</code>, <code>fs_append_text_result</code>, <code>json_parse_result</code>,
+<code>process_run_result</code> and <code>sh_result</code>. The error string describes the failure; the
+module's own error function (<code>fetch_last_error</code>, <code>fs_last_error</code>, <code>process_last_error</code>)
+gives the detail. With them, <code>?</code> works across the standard library:</p>
+<pre><code class="language-eskiu">import &lt;fs&gt;;
+import &lt;json&gt;;
 
-Result&lt;int, string&gt; status_of(string url) {
-    let r: Response;
-    if (fetch(url, &amp;r) != 0) {
-        return Err&lt;int, string&gt;(&quot;request failed&quot;);
-    }
-    int code = r.status;
-    Response_free(&amp;r);
-    return Ok&lt;int, string&gt;(code);
+Result&lt;int, string&gt; port_of(string path) {
+    String text = fs_read_text_result(path)?;
+    *JsonValue config = json_parse_result(text.data)?;
+    int port = (int)JsonValue_as_int(json_get(config, &quot;port&quot;));
+    JsonValue_free(config);
+    String_free(&amp;text);
+    return Ok&lt;int, string&gt;(port);
 }
 </code></pre>
+<p>A status code from any other call is turned into a <code>Result</code> the same way, at the call:
+<code>if (rc != 0) { return Err&lt;int, string&gt;("..."); }</code>.</p>
 <h2 id="7-control-flow">7. Control Flow</h2>
 <h3 id="71-if-else-if-else">7.1 if / else if / else</h3>
 <pre><code class="language-eskiu">if (x &gt; 0) {
@@ -2059,12 +2064,13 @@ int main() {
 <p>The postfix <code>?</code> operator removes the boilerplate of checking a <code>Result</code> after
 every fallible call. Applied to a <code>Result&lt;T, E&gt;</code> value, <code>expr?</code>:</p>
 <ul>
-<li>if the result is <code>Err</code>, <strong>returns it unchanged</strong> from the enclosing function;</li>
+<li>if the result is <code>Err</code>, <strong>returns the error</strong> from the enclosing function;</li>
 <li>otherwise evaluates to the unwrapped success value of type <code>T</code>.</li>
 </ul>
-<p>It may only appear inside a function whose return type is the <em>same</em> <code>Result&lt;T, E&gt;</code>
-type. The compiler rejects <code>?</code> anywhere else, since there would be nothing to
-propagate into.</p>
+<p>It may only appear inside a function that returns a <code>Result</code> with the same error type
+<code>E</code>. The success type may differ: <code>?</code> on a <code>Result&lt;String, E&gt;</code> inside a function returning
+<code>Result&lt;int, E&gt;</code> returns an <code>Err</code> of the function's own type holding the same error. The
+compiler rejects <code>?</code> anywhere else, since there would be nothing to propagate into.</p>
 <pre><code class="language-eskiu">import &lt;result&gt;;
 
 Result&lt;int, string&gt; divide(int a, int b) {
