@@ -1,0 +1,36 @@
+// The Result forms of fs, json, process and fetch, composed with `?`.
+import <fs>;
+import <json>;
+import <process>;
+import <fetch>;
+extern int printf(string fmt, ...);
+
+Result<int, string> run(string path) {
+    fs_write_text_result(path, "{\"n\": 41}")?;
+    String text = fs_read_text_result(path)?;
+    *JsonValue v = json_parse_result(text.data)?;
+    int n = (int)JsonValue_as_int(json_get(v, "n"));
+    JsonValue_free(v);
+    String_free(&text);
+    ProcessResult p = sh_result("echo hi")?;
+    printf("%s", p.stdout.data);
+    ProcessResult_free(&p);
+    return Ok<int, string>(n + 1);
+}
+
+int main() {
+    let tmp: String;
+    String_init(&tmp, 64);
+    fs_temp_dir("eskiu_res", &tmp);
+    tmp.append("/stdlib_result.json");
+    Result<int, string> r = run(tmp.data);
+    printf("%d %d\n", r.ok, r.value);
+    fs_remove(tmp.data);
+    Result<String, string> missing = fs_read_text_result("/no/such/file");
+    printf("%d %s\n", missing.ok, missing.error);
+    Result<JsonValue*, string> j = json_parse_result("{oops");
+    printf("%d %s\n", j.ok, j.error);
+    Result<Response, string> f = fetch_result("ftp://example.com/");
+    printf("%d %d\n", f.ok, f.error != null ? 1 : 0);
+    return 0;
+}

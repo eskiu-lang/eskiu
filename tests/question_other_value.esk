@@ -1,0 +1,24 @@
+// `?` propagates the error into a Result of another success type with the same error type.
+import <result>;
+extern int printf(string f, ...);
+struct Big { int a; int b; int c; int d; int e; }
+Result<int, string> half(int x) {
+    if (x % 2 != 0) { return Err<int, string>("odd"); }
+    return Ok<int, string>(x / 2);
+}
+Result<Big, string> big(int x) {
+    int h = half(x)?;
+    let b: Big;
+    b.a = h; b.e = h * 10;
+    return Ok<Big, string>(b);
+}
+Result<double, string> dbl(int x) {
+    Big b = big(x)?;
+    return Ok<double, string>((double)b.e / 4.0);
+}
+int main() {
+    Result<double, string> r1 = dbl(8);
+    Result<double, string> r2 = dbl(7);
+    printf("%d %.1f | %d %s\n", r1.ok, r1.value, r2.ok, r2.error);
+    return 0;
+}

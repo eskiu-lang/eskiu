@@ -1,4 +1,4 @@
-// EXPECT-ERROR: can only be used in a function returning the same Result type
+// EXPECT-ERROR: can only be used in a function returning a Result with the same error type
 import <result>;
 Result<int, string> d(int b) { if (b == 0) { return Err<int, string>("z"); } return Ok<int, string>(b); }
 int main() { fn()->int g = int() { int x = d(3)?; return x; }; return g(); }

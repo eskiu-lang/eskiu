@@ -588,7 +588,7 @@ when you add a test.
 | `errors/interface_by_value` | rejected with "by value; pass a pointer" |
 | `errors/lambda_break_label` | rejected with "has no enclosing loop labeled 'outer'" |
 | `errors/lambda_break_outer` | rejected with "'break' outside of a loop or switch" |
-| `errors/question_type_args` | rejected with "`?` can only be used in a function returning the same Result type" |
+| `errors/question_type_args` | rejected with "`?` can only be used in a function returning a Result with the same error type" |
 | `errors/assign_struct_to_int` | rejected with "cannot convert" |
 | `errors/call_global_nonfn` | rejected with "undefined function 'g'" |
 | `errors/const_ptr_method_call` | rejected with "cannot call method 'set' on a read-only value" |
