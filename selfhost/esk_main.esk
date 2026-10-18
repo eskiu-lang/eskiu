@@ -186,6 +186,44 @@ int str_starts(string s, string pre) {
     return 1;
 }
 
+// The run-time checks --safe[=LIST] names, as the C++ CodeGen::Safe* bits: 1 bounds,
+// 2 overflow, 4 null. No list (a bare --safe) is all three; an unknown name is an
+// error (-1).
+int safe_checks(string list) {
+    if (list == null || list[0] == 0) {
+        return 7;
+    }
+    int mask = 0;
+    int start = 0;
+    while (1 == 1) {
+        int end = start;
+        while (list[end] != 0 && (int)list[end] != 44) {
+            end = end + 1;
+        }
+        string name = str_prefix((string)((*uint8)list + start), end - start);
+        if (cg_streq(name, "bounds") == 1) {
+            mask = mask | 1;
+        }
+        else if (cg_streq(name, "overflow") == 1) {
+            mask = mask | 2;
+        }
+        else if (cg_streq(name, "null") == 1) {
+            mask = mask | 4;
+        }
+        else {
+            eprint("error: unknown --safe check '");
+            eprint(name);
+            eprint("' (valid: bounds, overflow, null)\n");
+            return -1;
+        }
+        if (list[end] == 0) {
+            return mask;
+        }
+        start = end + 1;
+    }
+    return mask;
+}
+
 int str_contains(string s, string sub) {
     int i = 0;
     while (s[i] != 0) {
@@ -1020,7 +1058,7 @@ int esk_main(int argc, string* argv) {
     string tool_at = "";     // its LINE:COL
     let wno: List<string>;   // -Wno-<name> of the other default-on warnings
     List_init<string>(&wno, 4);
-    int safe = 0;          // --safe: opt-in runtime slice/array bounds checks
+    int safe = 0;            // --safe[=LIST]: run-time checks, bits of safe_checks
     int compile_only = 0;    // -c: emit an object file, do not link
     int freestanding = 0;    // --freestanding: no libc; object only (link it yourself)
     string triple = "";      // --target TRIPLE (passed to clang; picks the OS macro)
@@ -1174,8 +1212,11 @@ int esk_main(int argc, string* argv) {
         else if (cg_streq(a, "--ubsan") == 1) {
             san = 2;
         }
-        else if (cg_streq(a, "--safe") == 1) {
-            safe = 1;
+        else if (cg_streq(opt, "--safe") == 1 || cg_streq(opt, "-safe") == 1) {
+            safe = safe_checks(val);
+            if (safe < 0) {
+                return 1;
+            }
         }
         else if (cg_streq(a, "-Wno-deprecated") == 1 || cg_streq(a, "--Wno-deprecated") == 1) {
             no_depr = 1;
@@ -1232,7 +1273,7 @@ int esk_main(int argc, string* argv) {
         return 0;
     }
     if (List_len<string>(&infiles) == 0) {
-        eprint("usage: esk_main [-o <out>] [-c] [-O<n>] [--target T] [--asan|--ubsan] [--safe] [--freestanding] [-l<lib>] [-L<dir>] [--link-arg A] [--no-default-libs] [--test-*] <file.esk> [more.esk ...]\n");
+        eprint("usage: esk_main [-o <out>] [-c] [-O<n>] [--target T] [--asan|--ubsan] [--safe[=LIST]] [--freestanding] [-l<lib>] [-L<dir>] [--link-arg A] [--no-default-libs] [--test-*] <file.esk> [more.esk ...]\n");
         return 1;
     }
     string infile = List_get<string>(&infiles, 0);   // primary file: test modes + diagnostics
@@ -1395,7 +1436,7 @@ int esk_main(int argc, string* argv) {
     let g: Codegen;
     cg_init(&g);
     cg_set_target(&g, triple);         // the C ABI (and pointer size) follow --target
-    g.safe = safe;                     // --safe → emit runtime bounds checks
+    g.safe = safe;                     // --safe[=LIST]: the run-time checks to emit
     g.freestanding = freestanding;     // closure envs on esk_alloc/esk_free
     cg_program(&g, prog);
     // No -o writes the object <input>.o, like the C++ driver (it links only with -o).

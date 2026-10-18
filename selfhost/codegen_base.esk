@@ -223,7 +223,7 @@ struct Codegen {
     int uses_throw;          // program throws → install the uncaught-exception reporter
     int uses_threads;        // program calls thread_create → the driver links pthread
     int uses_heap_env;       // a closure heap-allocated its env → ensure malloc is declared
-    int safe;                // --safe: emit runtime slice/array index bounds checks (opt-in)
+    int safe;                // --safe[=LIST]: run-time checks, 1 bounds | 2 overflow | 4 null
     int freestanding;        // --freestanding: closure envs use esk_alloc/esk_free, not malloc/free
     int no_split;            // folding a byte image: arrays keep their `[N x T]` constant form
     int uses_trap;           // a bounds check was emitted → declare @llvm.trap once

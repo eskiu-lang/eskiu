@@ -65,7 +65,7 @@ void cg_safe_trap(Codegen* g, string cond) {
 // Under --safe, trap when the pointer about to be dereferenced is null (as the C++
 // safeNonNull; a local's or global's own address is never null).
 string cg_safe_nonnull(Codegen* g, string p) {
-    if (g.safe == 0 || p[0] != 37) {
+    if ((g.safe & 4) == 0 || p[0] != 37) {
         return p;
     }
     string z = cg_tmp(g);

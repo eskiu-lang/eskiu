@@ -58,7 +58,7 @@ CgVal cg_lval_k(Codegen* g, *ExprNode e) {
             cg_emit(g, " = extractvalue { ptr, i64 } ");
             cg_emit(g, fat.op);
             cg_emit(g, ", 0\n");
-            if (g.safe == 1) {
+            if ((g.safe & 1) != 0) {
                 cg_bounds_check(g, idx.op, ity, cg_slice_len(g, fat.op));
             }
             string elem = cg_array_elem(bet);
@@ -79,7 +79,7 @@ CgVal cg_lval_k(Codegen* g, *ExprNode e) {
         }
         if (cg_is_array(bet) == 1) {                    // array: GEP [N x T], ptr, 0, idx
             string slot = cg_addr(g, e.a).op;
-            if (g.safe == 1) {
+            if ((g.safe & 1) != 0) {
                 string alen = cg_array_len_const(g, bet);
                 if (cg_streq(alen, "") == 0) {
                     cg_bounds_check(g, idx.op, ity, alen);
@@ -368,7 +368,7 @@ string cg_slice_elem_addr(Codegen* g, *ExprNode base, string idx_op, string hi_o
         cg_emit(g, fat.op);
         cg_emit(g, ", 0\n");
         // 0 <= lo <= hi <= len (lo == len is a valid empty end-slice), not the element check.
-        if (g.safe == 1) {
+        if ((g.safe & 1) != 0) {
             cg_slice_bounds_check(g, idx_op, hi_op, cg_slice_len(g, fat.op));
         }
         cg_emit(g, "  ");
@@ -386,7 +386,7 @@ string cg_slice_elem_addr(Codegen* g, *ExprNode base, string idx_op, string hi_o
     }
     if (cg_is_array(bet) == 1) {
         string slot = cg_lval(g, base).op;
-        if (g.safe == 1) {
+        if ((g.safe & 1) != 0) {
             cg_slice_bounds_check(g, idx_op, hi_op, cg_array_len_const(g, bet));
         }
         cg_emit(g, "  ");
@@ -407,7 +407,7 @@ string cg_slice_elem_addr(Codegen* g, *ExprNode base, string idx_op, string hi_o
         elem = cg_lltype(g, cg_deref_ty(bet));
     }
     string pval = cg_expr(g, base).op;
-    if (g.safe == 1) {   // raw pointer/string: len unknown, only lo<=hi
+    if ((g.safe & 1) != 0) {   // raw pointer/string: len unknown, only lo<=hi
         cg_slice_bounds_check(g, idx_op, hi_op, "");
     }
     cg_emit(g, "  ");
@@ -1261,7 +1261,7 @@ CgVal cg_binary_builtin(Codegen* g, *ExprNode e, CgVal left) {
             }
             return v;
         }
-        if (g.safe == 1 && op_uns == 0 && cg_int_w(icty) >= 32
+        if ((g.safe & 2) != 0 && op_uns == 0 && cg_int_w(icty) >= 32
             && (cg_streq(op, "add") == 1 || cg_streq(op, "sub") == 1 || cg_streq(op, "mul") == 1)) {
             v.op = cg_safe_arith(g, op, icty, ilop, irop);
             v.ty = icty;
