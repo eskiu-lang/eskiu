@@ -1,0 +1,12 @@
+// A fn type with several parameters as a type argument: its commas are not type-argument separators.
+import <list>;
+extern int printf(string f, ...);
+bool lt(int a, int b) { return a < b; }
+int main() {
+    let l: List<fn(int, int)->bool>;
+    List_init<fn(int, int)->bool>(&l, 2);
+    l.push(lt);
+    fn(int, int)->bool f = List_get<fn(int, int)->bool>(&l, 0);
+    printf("%d\n", f(1, 2) ? 1 : 0);
+    return 0;
+}
