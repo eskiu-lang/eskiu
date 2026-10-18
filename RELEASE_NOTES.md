@@ -36,9 +36,13 @@ cd eskiu && cmake -S . -B build && cmake --build build
 
 - **The language.** C syntax and C integer rules, with structs and methods, generics,
   structural interfaces, sum types with exhaustive `match`, closures, operator
-  overloading, `async`/`await`, exceptions, default parameter values and `dbg(e)`.
+  overloading, `async`/`await`, default parameter values and `dbg(e)`.
+- **One way to report errors.** `Result<T, E>` with `?` for expected failures (the
+  standard library has `Result` forms of its fallible calls), and exceptions for errors a
+  program cannot continue from.
 - **Memory with guard rails.** No garbage collector: `alloc`/`free` and explicit
-  allocators, `defer`, slices, checked nullable pointers, and an opt-in `--safe` build.
+  allocators, `defer`, slices, checked nullable pointers, and opt-in run-time checks
+  (`--safe`, or `--safe=bounds,overflow,null` one by one).
 - **C interop.** `extern` functions and variables, structs passed by value in each
   target's C ABI, inline assembly, and cross-compilation to ARM and x86 targets and bare
   metal.
