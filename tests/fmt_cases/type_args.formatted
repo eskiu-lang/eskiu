@@ -1,0 +1,56 @@
+// Type argument lists lose the blanks around `<` and before `>`; comparisons keep theirs.
+import <list>;
+import <map>;
+struct Box<T> {
+    T v;
+}
+
+struct Pair<A, B> {
+    A a;
+    B b;
+}
+
+T id<T>(T x) {
+    return x;
+}
+
+// A lowercase name with a blank before `<` may be a comparison: kept as written.
+T first < T >(List<T>* l) {
+    return List_get<T>(l, 0);
+}
+
+int f2(bool x, bool y) {
+    return (int)x * 10 + (int)y;
+}
+
+int main() {
+    List<int> xs;
+    List_init<int>(&xs, 4);
+    HashMap<string, int>* m = null;
+    Pair<int, Box<string> > p = Pair<int, Box<string>>{1, Box<string>{"a"}};
+    List<List<int> > ys;
+    List<fn(int)->int> fs;
+    List<fn(int) -> bool>* gs = null;
+    List<*int[3]> ptrs;
+    List<*int> qs;
+    Box<int>[2] boxes;
+    int a = 1;
+    int b = 2;
+    int c = 3;
+    bool k = a < b && b > c;
+    bool l = a<b;
+    bool q = (a < b) == (b > c);
+    int r = a < b ? a : b;
+    for (int i = 0; i < 3; i++) {
+        a += i;
+    }
+    if (a < b * c || b > c) {
+        a = 0;
+    }
+    int s = a <<b;
+    int t2 = f2(a < b, c > (s)) + f2(a<b, c>(s));
+    bool[2] bs = {a < b, c > (a)};
+    bool w = a < b >> (c);
+    bool u = a < b >= true;
+    return first<int>(&xs) + id<int>(a) + (u ? 1 : 0) + s + r - c;
+}
