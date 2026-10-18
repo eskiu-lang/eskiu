@@ -7,6 +7,15 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
+## [Unreleased]
+
+### Tools
+- `--safe=LIST` turns on a subset of the run-time checks: `bounds`, `overflow`, `null`
+  (a bare `--safe` is still all three). An unknown name is an error.
+- Two default-on warnings: `-Wunused-result` (a call statement whose `Result` value is
+  dropped) and `-Wawait-holding-lock` (an `await` while a `Mutex` locked in the same
+  block is held). Each has its `-Wno-` flag.
+
 ## [0.12.0] - 2026-10-17
 
 The first public release. Code that compiles with 0.12.0 keeps compiling in every 0.12.x
