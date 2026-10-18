@@ -376,13 +376,29 @@ void TypeChecker::visit(QuestionExpr* node) {
         return;
     }
 
-    // The enclosing function must return the same Result type to propagate into.
+    // The enclosing function returns a Result to propagate into: the same type, or one
+    // with the same error type (`Result<String, E>?` in a `Result<int, E>` function).
     std::string ret = normalizeType(currentFunctionReturnType);
     if (ret.rfind("struct:", 0) == 0) ret = ret.substr(7);
     if (ret != s) {
-        errorAt(node, "`?` can only be used in a function returning the same "
-                      "Result type; this function returns '" +
-                      currentFunctionReturnType + "'");
+        auto errType = [&](const std::string& name, std::string& ok) {
+            auto st = structs.find(name);
+            std::string e;
+            if (st == structs.end()) return e;
+            for (const auto& f : st->second.fields) {
+                if (f.name == "ok") ok = normalizeType(f.type);
+                if (f.name == "error") e = normalizeType(f.type);
+            }
+            return e;
+        };
+        std::string opOk, retOk;
+        std::string opErr = errType(s, opOk), retErr = errType(ret, retOk);
+        bool hasValue = false;
+        if (auto st = structs.find(ret); st != structs.end())
+            for (const auto& f : st->second.fields) if (f.name == "value") hasValue = true;
+        if (opErr.empty() || opErr != retErr || opOk != retOk || !hasValue)
+            errorAt(node, "`?` can only be used in a function returning a Result with the same "
+                          "error type; this function returns '" + currentFunctionReturnType + "'");
     }
     expressionTypes[node] = valueType;
 }

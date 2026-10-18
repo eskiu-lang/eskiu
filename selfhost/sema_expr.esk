@@ -1373,6 +1373,31 @@ void sema_fill_defaults(Sema* s, *ExprNode e) {
     }
 }
 
+// The canonical type of field `fname` of the struct spelled `t` (a generic instance's
+// type arguments substituted), or "" when there is no such field.
+string sema_q_field(Sema* s, string t, string fname) {
+    *DeclNode d = sema_find_struct(s, sema_struct_of_type(t));
+    if (d == null || sema_pointee(t)[0] != 0) {
+        return "";
+    }
+    int i = 0;
+    while (i < List_len<Param>(&d.params)) {
+        Param f = List_get<Param>(&d.params, i);
+        if (sema_streq(f.name, fname) == 1) {
+            string ft = f.ty;
+            if (List_len<TypeParam>(&d.type_params) > 0) {
+                List<string> targs;
+                List_init<string>(&targs, 2);
+                sema_parse_targs(t, &targs);
+                ft = sema_subst_params(ft, &d.type_params, &targs);
+            }
+            return sema_canon(s, ft);
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
 void sema_expr_k(Sema* s, *ExprNode e) {
     if (e != null && (e.kind == EK_CALL || e.kind == EK_TEMPLATECALL)) {
         sema_fill_defaults(s, e);
@@ -1819,7 +1844,7 @@ void sema_expr_k(Sema* s, *ExprNode e) {
             int okf = 0;
             int valf = 0;
             string okty = "";
-            if (qd != null && sema_has_star(qt) == 0) {
+            if (qd != null && sema_pointee(qt)[0] == 0) {   // a Result, not a pointer to one
                 int qi = 0;
                 int qn = List_len<Param>(&qd.params);
                 while (qi < qn) {
@@ -1864,8 +1889,19 @@ void sema_expr_k(Sema* s, *ExprNode e) {
             && sema_streq(opt, rett) == 0) {
             mismatch = 1;
         }
+        // A Result with the same error (and `ok`) type takes the error too: `Result<String, E>?`
+        // in a `Result<int, E>` function (mirrors the C++).
         if (mismatch == 1) {
-            sema_error(s, "`?` can only be used in a function returning the same Result type");
+            string oe = sema_q_field(s, sema_infer_type(s, e.a), "error");
+            string re = sema_q_field(s, s.cur_ret, "error");
+            if (oe[0] != 0 && sema_streq(oe, re) == 1
+                && sema_streq(sema_q_field(s, sema_infer_type(s, e.a), "ok"), sema_q_field(s, s.cur_ret, "ok")) == 1
+                && sema_q_field(s, s.cur_ret, "value")[0] != 0) {
+                mismatch = 0;
+            }
+        }
+        if (mismatch == 1) {
+            sema_error(s, "`?` can only be used in a function returning a Result with the same error type");
         }
         return;
     }
