@@ -7,15 +7,6 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
-## [Unreleased]
-
-### Tools
-- `--safe=LIST` turns on a subset of the run-time checks: `bounds`, `overflow`, `null`
-  (a bare `--safe` is still all three). An unknown name is an error.
-- Two default-on warnings: `-Wunused-result` (a call statement whose `Result` value is
-  dropped) and `-Wawait-holding-lock` (an `await` while a `Mutex` locked in the same
-  block is held). Each has its `-Wno-` flag.
-
 ## [0.12.0] - 2026-10-17
 
 The first public release. Code that compiles with 0.12.0 keeps compiling in every 0.12.x
@@ -48,11 +39,13 @@ The first public release. Code that compiles with 0.12.0 keeps compiling in ever
   `<alloc>` (bump, arena, pool, first fit) and `<sysheap>`.
 - `defer` and `errdefer`, slices (`T[]`), checked nullable pointers (`?*T`) with
   flow-sensitive narrowing, `must_use`, `const` receivers, and an opt-in `--safe` build
-  that traps on out-of-bounds indexes, signed overflow and null dereferences.
+  that traps on out-of-bounds indexes, signed overflow and null dereferences, each
+  category on its own with `--safe=bounds,overflow,null`.
 - Locals, `alloc_with` blocks and sum-type values start at zero.
-- Warnings on by default for common C mistakes (string comparison by address, printf
-  formats, the address of a packed member, dangling local addresses, huge locals), with
-  `-Wall`, `-Wextra`, `-Werror` and `-w`.
+- Warnings on by default for common mistakes (string comparison by address, printf
+  formats, the address of a packed member, dangling local addresses, huge locals, an
+  ignored `Result`, an `await` while a mutex is locked), with `-Wall`, `-Wextra`,
+  `-Werror` and `-w`.
 
 ### Concurrency and errors
 - `async`/`await` on any expression and in every control-flow construct, with
@@ -95,7 +88,8 @@ The first public release. Code that compiles with 0.12.0 keeps compiling in ever
 - `eskiuc repl`, an interactive session over the LLVM JIT (macOS and Linux).
 - A package manager: `eskiuc new`, `add`, `build`, `run`, `test` and `fetch`, with git and
   path dependencies pinned in `eskiu.lock`.
-- `eskiuc fmt`: one statement per line, consistent spacing and indentation, without
+- `eskiuc fmt`: one statement per line, consistent spacing and indentation (type
+  arguments as `List<int>`), without
   changing a program's tokens.
 - Editor support for VS Code-based editors and JetBrains IDEs: errors as you type,
   completion, hover, signature help, go to definition, find references, rename, outline,

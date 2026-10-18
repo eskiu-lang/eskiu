@@ -197,11 +197,13 @@ project follows the compatibility rules in <a href="docs/lang/stability.md">docs
   <code>&lt;alloc&gt;</code> (bump, arena, pool, first fit) and <code>&lt;sysheap&gt;</code>.</li>
 <li><code>defer</code> and <code>errdefer</code>, slices (<code>T[]</code>), checked nullable pointers (<code>?*T</code>) with
   flow-sensitive narrowing, <code>must_use</code>, <code>const</code> receivers, and an opt-in <code>--safe</code> build
-  that traps on out-of-bounds indexes, signed overflow and null dereferences.</li>
+  that traps on out-of-bounds indexes, signed overflow and null dereferences, each
+  category on its own with <code>--safe=bounds,overflow,null</code>.</li>
 <li>Locals, <code>alloc_with</code> blocks and sum-type values start at zero.</li>
-<li>Warnings on by default for common C mistakes (string comparison by address, printf
-  formats, the address of a packed member, dangling local addresses, huge locals), with
-  <code>-Wall</code>, <code>-Wextra</code>, <code>-Werror</code> and <code>-w</code>.</li>
+<li>Warnings on by default for common mistakes (string comparison by address, printf
+  formats, the address of a packed member, dangling local addresses, huge locals, an
+  ignored <code>Result</code>, an <code>await</code> while a mutex is locked), with <code>-Wall</code>, <code>-Wextra</code>,
+  <code>-Werror</code> and <code>-w</code>.</li>
 </ul>
 <h3 id="concurrency-and-errors">Concurrency and errors</h3>
 <ul>
@@ -248,7 +250,8 @@ project follows the compatibility rules in <a href="docs/lang/stability.md">docs
 <li><code>eskiuc repl</code>, an interactive session over the LLVM JIT (macOS and Linux).</li>
 <li>A package manager: <code>eskiuc new</code>, <code>add</code>, <code>build</code>, <code>run</code>, <code>test</code> and <code>fetch</code>, with git and
   path dependencies pinned in <code>eskiu.lock</code>.</li>
-<li><code>eskiuc fmt</code>: one statement per line, consistent spacing and indentation, without
+<li><code>eskiuc fmt</code>: one statement per line, consistent spacing and indentation (type
+  arguments as <code>List&lt;int&gt;</code>), without
   changing a program's tokens.</li>
 <li>Editor support for VS Code-based editors and JetBrains IDEs: errors as you type,
   completion, hover, signature help, go to definition, find references, rename, outline,

@@ -297,7 +297,7 @@ Parsing strategy in which each grammar rule is implemented as a mutually recursi
 An expression whose value can be read but that does not itself designate a storage location. Literals, arithmetic results, and function-call results are rvalues in Eskiu. The code generator evaluates rvalues with <code>load</code> instructions (when reading a variable) or directly as IR values (for computed results). See also: lvalue.</p>
 <h2 id="s">S</h2>
 <p><strong>safe mode (<code>--safe</code>)</strong>
-An opt-in build mode that inserts a runtime bounds check on every array and slice index; an out-of-range access traps (<code>@llvm.trap</code>) instead of reading or writing past the end. Off by default, so release builds pay nothing. See also: slice, sanitizer.</p>
+An opt-in build mode that inserts run-time checks: a bounds check on every array and slice index, an overflow check on signed <code>+ - *</code> over <code>int</code>/<code>int64</code>, and a null check before a pointer dereference; a violation traps (<code>@llvm.trap</code>) instead of continuing. <code>--safe=LIST</code> picks a subset (<code>bounds</code>, <code>overflow</code>, <code>null</code>). Off by default, so release builds pay nothing. See also: slice, sanitizer.</p>
 <p><strong>scope</strong>
 The region of source code in which a declared name is visible. Eskiu uses lexical (block) scoping: each <code>BlockStmt</code> introduces a new scope. The symbol table supports nested scopes via a scope stack; inner scopes can shadow outer ones. Names go out of scope when their enclosing block ends. See also: symbol table, BlockStmt.</p>
 <p><strong>self-hosting</strong>

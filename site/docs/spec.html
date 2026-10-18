@@ -551,8 +551,8 @@ sum(a[0..6]);            // the whole array as a slice
 </code></pre>
 <p><code>int[]</code> lowers to <code>{ ptr, i64 }</code> in LLVM IR. By default an out-of-range slice or array
 index is undefined, as in C; compile with <code>--safe</code> to bounds-check every index at runtime
-(an out-of-range access aborts instead of corrupting memory). <code>--safe</code> is opt-in, so
-release builds carry no overhead.</p>
+(an out-of-range access aborts instead of corrupting memory), or with <code>--safe=bounds</code> for
+this check alone. <code>--safe</code> is opt-in, so release builds carry no overhead.</p>
 <h3 id="34-struct-types">3.4 Struct Types</h3>
 <p>A struct type is named by its declaration (see §8). Variables of struct type are declared using the struct name as the type annotation:</p>
 <pre><code class="language-eskiu">let p: Point;
@@ -3587,6 +3587,10 @@ asm(&quot;addq $1, $0&quot; : &quot;+r&quot;(acc) : &quot;r&quot;(b));          
 <td>Run-time safety checks that trap instead of continuing: every array and slice index is bounds-checked, a signed <code>+</code>, <code>-</code> or <code>*</code> on <code>int</code>/<code>int64</code> that overflows traps (instead of wrapping), and dereferencing a null pointer (<code>*p</code>, <code>p.f</code>, <code>p[i]</code>) traps; off by default</td>
 </tr>
 <tr>
+<td><code>eskiuc file.esk --safe=bounds,null -o prog</code></td>
+<td>Only the named checks, a comma-separated subset of <code>bounds</code> (array and slice indexes, slice ranges), <code>overflow</code> (signed <code>+ - *</code> on <code>int</code>/<code>int64</code>) and <code>null</code> (dereferencing a null pointer). An unknown name is an error that lists the valid ones. A bare <code>--safe</code> is all three</td>
+</tr>
+<tr>
 <td><code>eskiuc file.esk -Wall -o prog</code></td>
 <td>Enable lint warnings in the program's own files (not in imported modules): unused vars/params/functions, assignment-in-condition, a local that may be used uninitialized</td>
 </tr>
@@ -3596,7 +3600,7 @@ asm(&quot;addq $1, $0&quot; : &quot;+r&quot;(acc) : &quot;r&quot;(b));          
 </tr>
 <tr>
 <td><code>eskiuc file.esk -Wno-format -o prog</code></td>
-<td>Turn off one of the default-on warnings (see Diagnostics): <code>-Wno-string-compare</code>, <code>-Wno-format</code>, <code>-Wno-address-of-packed-member</code>, <code>-Wno-dangling-pointer</code>, <code>-Wno-frame-larger-than</code>, <code>-Wno-deprecated</code></td>
+<td>Turn off one of the default-on warnings (see Diagnostics): <code>-Wno-string-compare</code>, <code>-Wno-format</code>, <code>-Wno-address-of-packed-member</code>, <code>-Wno-dangling-pointer</code>, <code>-Wno-frame-larger-than</code>, <code>-Wno-unused-result</code>, <code>-Wno-await-holding-lock</code>, <code>-Wno-deprecated</code></td>
 </tr>
 <tr>
 <td><code>eskiuc file.esk -Werror -o prog</code></td>
@@ -3702,10 +3706,12 @@ invocation in <code>kernel/Makefile</code>).</p>
 <p><strong>Formatting.</strong> <code>eskiuc fmt file.esk …</code> reformats files in place. It changes only the blanks between tokens and the line breaks, so it never alters a program's tokens or behavior (only <code>__LINE__</code> and diagnostics positions move), and it is idempotent:</p>
 <ul>
 <li>One statement per line: a line is split after each statement's <code>;</code> and around block braces, so <code>if (a) { return 1; }</code> takes three lines and <code>x = 1; y = 2;</code> two. <code>} else {</code>, <code>} while (c);</code> and <code>});</code> stay together; an empty block stays <code>{}</code>; initializer braces (<code>{1, 2}</code>, <code>P{x: 1}</code>) and enum bodies stay on their line. A trailing <code>//</code> comment stays with the statement's first line.</li>
-<li>Spacing: one blank between tokens, one around assignment, comparison and logical operators (<code>=</code>, <code>+=</code>, <code>==</code>, <code>&lt;=</code>, <code>&amp;&amp;</code>, ...), after <code>,</code> and <code>;</code>, after <code>if</code>/<code>while</code>/<code>for</code>/<code>switch</code>/<code>catch</code>/<code>match</code> and before a block <code>{</code>; none before <code>,</code> <code>;</code> <code>)</code> <code>]</code> or after <code>(</code> <code>[</code>. Arithmetic operators and <code>&lt;</code> <code>&gt;</code> keep the spacing they were written with (<code>List&lt;int&gt;</code> and <code>a&lt;b</code> look alike).</li>
+<li>Spacing: one blank between tokens, one around assignment, comparison and logical operators (<code>=</code>, <code>+=</code>, <code>==</code>, <code>&lt;=</code>, <code>&amp;&amp;</code>, ...), after <code>,</code> and <code>;</code>, after <code>if</code>/<code>while</code>/<code>for</code>/<code>switch</code>/<code>catch</code>/<code>match</code> and before a block <code>{</code>; none before <code>,</code> <code>;</code> <code>)</code> <code>]</code> or after <code>(</code> <code>[</code>. Arithmetic operators keep the spacing they were written with.</li>
+<li>Type argument lists: no blank around <code>&lt;</code> or before <code>&gt;</code>, one after each comma (<code>List &lt; int &gt;</code> and <code>HashMap&lt;string,int&gt;</code> become <code>List&lt;int&gt;</code> and <code>HashMap&lt;string, int&gt;</code>). The formatter cannot tell a type from a comparison, so it rewrites a <code>&lt;...&gt;</code> only when it can only be a type argument list: the <code>&lt;</code> follows a name that is not a keyword, with no blank between unless the name is capitalized (<code>a &lt; b &gt; c</code> and <code>f(a &lt; b, c &gt; (d))</code> are comparisons); everything up to the matching <code>&gt;</code> on the same line is type syntax (names, <code>*</code>, <code>?</code>, commas, <code>[N]</code> array suffixes, <code>fn(...) -&gt; R</code> types, nested lists); and the token after the <code>&gt;</code> is a name, <code>(</code>, <code>{</code>, <code>)</code>, <code>,</code>, <code>;</code>, <code>[</code> or <code>*</code>. Any other <code>&lt;</code> and <code>&gt;</code> keep the spacing they were written with. Two <code>&gt;</code> written apart (<code>List&lt;List&lt;int&gt; &gt;</code>) keep their blank, so they never become <code>&gt;&gt;</code>.</li>
 <li>Indentation: four spaces per brace level. A line that continues a statement (inside open parentheses, or after a line that does not end one) keeps its indentation relative to the statement's first line, at least four more.</li>
 <li>A blank line after each top-level definition; other blank lines are kept, those at the end of the file dropped, and the file ends with one newline. Trailing whitespace is trimmed, except after a trailing <code>\</code>.</li>
 <li>Comments, every byte of a string or character literal (every line of a string that spans lines too), lines continued with <code>\</code> and preprocessor lines (at column 0) keep their bytes.</li>
+<li>Long lines are not broken: a line only gets shorter when it holds several statements.</li>
 </ul>
 <p><code>--check</code> makes it report (and exit non-zero on) files that would change, without writing. Useful in CI.</p>
 <p><strong>Sanitizers.</strong> <code>--asan</code> instruments the program with AddressSanitizer (detecting heap, stack and global memory errors) and links the matching LLVM runtime; <code>--ubsan</code> inserts trapping bounds checks (an out-of-bounds access aborts via a trap; no runtime is required). Both are real LLVM instrumentation passes and compose with <code>eskiuc run</code>.</p>
@@ -3791,8 +3797,17 @@ error: file.esk:14:5: initializing 'p': cannot convert 'float' to 'int*'
 <td><code>-Wframe-larger-than</code></td>
 <td>A local larger than 1 MiB: a thread's stack is 512 KiB (secondary threads on macOS) to 8 MiB, so allocate it with <code>alloc&lt;T&gt;</code> or make it <code>static</code></td>
 </tr>
+<tr>
+<td><code>-Wunused-result</code></td>
+<td>A call used as a statement (<code>f(x);</code>, <code>x.m();</code>, <code>f&lt;T&gt;(x);</code>) whose value is a <code>Result&lt;...&gt;</code> (the <code>&lt;result&gt;</code> type, also through a type alias): the error it may carry is dropped. Use the value, propagate it with <code>?</code>, or discard it on purpose with <code>(void)f(x);</code></td>
+</tr>
+<tr>
+<td><code>-Wawait-holding-lock</code></td>
+<td>In an <code>async</code> function, an <code>await</code> while a <code>&lt;threading&gt;</code> <code>Mutex</code> is locked: the task parks holding the lock, and another task on the same thread that locks it deadlocks. The rule is per block: a statement that is a lock call (<code>Mutex_lock(&amp;m)</code>, <code>Mutex_lock(p)</code>, or <code>m.lock()</code> on a <code>Mutex</code> / <code>*Mutex</code>) on a place spelled with identifiers and fields (<code>m</code>, <code>self.m</code>; <code>&amp;</code> is dropped), followed in the same block by a statement that contains an <code>await</code> before a statement that is the unlock call on the same place. A <code>defer</code> statement does not unlock (its body runs at the end of the block) and its body is not searched. The warning is at the earliest <code>await</code> of that statement, once per lock. An unlock inside a nested statement does not end the region, and other lock shapes are not tracked</td>
+</tr>
 </tbody>
 </table></div>
+<p>Every mode, including the <code>--test-*</code> modes, exits with a non-zero status when it reports an error.</p>
 <p>Reading a scalar local (a number, <code>bool</code>, <code>char</code>, pointer, <code>string</code> or fn value) declared without an initializer before any assignment to it is an error ("use of uninitialized variable"), although such a local holds zero (11.1): a read nothing assigns is usually a mistake. It applies when the read is in the function's straight-line prefix, where no path assigns it. Elsewhere a read that some path reaches without an assignment is not an error, since the program's logic may guarantee it (as in C), but <code>-Wall</code> reports it as <code>variable 'x' may be used uninitialized</code>. The check follows every path through <code>if</code>/<code>else</code>, loops (a loop body may run zero times; the loop exits when its condition fails or at a <code>break</code>), <code>switch</code> fall-through, <code>match</code> arms, <code>try</code>/<code>catch</code>/<code>finally</code> (a handler or the <code>finally</code> may run before the body assigned anything), <code>defer</code> bodies (at each exit that runs them), early <code>return</code>/<code>break</code>/<code>continue</code>, and a lambda, which reads the variables it captures when it is created. Taking the address (<code>&amp;x</code>) counts as an assignment, and <code>sizeof(x)</code> is not a read. Only whole-variable reads of scalar locals are tracked: a struct, union, array, slice or interface local set field by field or element by element never warns. <code>static</code> locals start at zero and are never reported, and the body of an <code>async</code> function is not checked.</p>
 <hr>
 <h2 id="18-preprocessor">18. Preprocessor</h2>

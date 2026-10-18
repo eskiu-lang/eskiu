@@ -435,8 +435,8 @@ postfix     f() a[i] a.b ++ -- ?
 <td>AddressSanitizer / trapping bounds checks</td>
 </tr>
 <tr>
-<td><code>--safe</code></td>
-<td>Runtime index and slice bounds checks (trap on violation)</td>
+<td><code>--safe[=LIST]</code></td>
+<td>Run-time checks that trap: <code>bounds</code>, <code>overflow</code>, <code>null</code> (all without a list)</td>
 </tr>
 <tr>
 <td><code>--target TRIPLE</code></td>

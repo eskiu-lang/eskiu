@@ -42,11 +42,7 @@ first-class in the language without giving up general systems use.
 
 ## Next: 0.13
 
-- **Safety by category.** `--safe=bounds,null,overflow` to enable each run-time check on
-  its own.
-- **Lints.** An unused `Result`, and an `await` while a mutex is held.
-- **Formatter.** Spacing inside type arguments (`List < int >` to `List<int>`) and
-  breaking lines that are too long.
+- **Formatter.** Breaking lines that are too long.
 - **Build times.** Measure a package with several dependencies, then decide whether
   modules need a cache.
 
