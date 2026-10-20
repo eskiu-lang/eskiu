@@ -453,8 +453,9 @@ llvm::Value* CodeGen::emitBuiltinBinary(BinaryExpr* node, llvm::Value* left) {
 
     if (node->op == "+") {
         if (left->getType()->isPointerTy()) {
-            llvm::Value* idx = builder->CreateSExtOrTrunc(
-                right, llvm::Type::getInt64Ty(*context), "ptr.idx");
+            llvm::Value* idx = rUns
+                ? builder->CreateZExtOrTrunc(right, llvm::Type::getInt64Ty(*context), "ptr.idx")
+                : builder->CreateSExtOrTrunc(right, llvm::Type::getInt64Ty(*context), "ptr.idx");
             result = builder->CreateGEP(ptrElemType(), left, idx, "ptr.add");
         } else {
             promoteToFloat();
@@ -468,8 +469,9 @@ llvm::Value* CodeGen::emitBuiltinBinary(BinaryExpr* node, llvm::Value* left) {
             // ptr - ptr: the distance in elements (C), as an i64, not in bytes.
             result = builder->CreatePtrDiff(ptrElemType(), left, right, "ptrdiff");
         } else if (left->getType()->isPointerTy()) {
-            llvm::Value* neg = builder->CreateNeg(
-                builder->CreateSExtOrTrunc(right, llvm::Type::getInt64Ty(*context)), "neg");
+            llvm::Value* neg = builder->CreateNeg(rUns
+                ? builder->CreateZExtOrTrunc(right, llvm::Type::getInt64Ty(*context))
+                : builder->CreateSExtOrTrunc(right, llvm::Type::getInt64Ty(*context)), "neg");
             result = builder->CreateGEP(ptrElemType(), left, neg, "ptr.sub");
         } else {
             promoteToFloat(); widenForArith();
@@ -868,6 +870,15 @@ void CodeGen::emitSliceBoundsCheck(llvm::Value* lo, llvm::Value* hi, llvm::Value
     builder->SetInsertPoint(contBB);
 }
 
+// An index or pointer offset as an i64, extended by its own signedness: GEP reads its
+// indices as signed, so a uint8 255 left as an i8 would index element -1.
+llvm::Value* CodeGen::indexAsI64(const ExprPtr& e) {
+    llvm::Value* v = evaluateExpr(e);
+    llvm::Type* i64 = llvm::Type::getInt64Ty(*context);
+    if (!v->getType()->isIntegerTy() || v->getType()->isIntegerTy(64)) return v;
+    return eskiuUnsigned(getExprEskiuType(e)) ? builder->CreateZExt(v, i64) : builder->CreateSExt(v, i64);
+}
+
 llvm::Value* CodeGen::indexElemAddr(const ExprPtr& base, llvm::Value* idx, bool doCheck) {
     std::string baseType = getExprEskiuType(base);
     ty::Type bt = ty::Type::parse(baseType);
@@ -913,8 +924,8 @@ void CodeGen::visit(IndexExpr* node) {
 
     // Slice construction: base[lo..hi] → a fat pointer { &base[lo], hi - lo }.
     if (node->highIndex) {
-        llvm::Value* lo = toI64(evaluateExpr(node->index));
-        llvm::Value* hi = toI64(evaluateExpr(node->highIndex));
+        llvm::Value* lo = toI64(indexAsI64(node->index));
+        llvm::Value* hi = toI64(indexAsI64(node->highIndex));
         // Element type of the base: string→char, array/slice→elem, pointer→pointee.
         // Slicing a raw pointer (`*T`) yields `T[]`, so heap buffers can become slices.
         std::string elemStr;
@@ -955,7 +966,7 @@ void CodeGen::visit(IndexExpr* node) {
         return;
     }
 
-    llvm::Value* idx = evaluateExpr(node->index);
+    llvm::Value* idx = indexAsI64(node->index);
     // A read: an array-valued rvalue base (`mk().a[1]`) is materialized, not rejected.
     struct AllowTemp { CodeGen* c; bool p; ~AllowTemp() { c->lvalueAllowTemp = p; } } allowTemp{this, lvalueAllowTemp};
     lvalueAllowTemp = true;
@@ -1423,7 +1434,7 @@ llvm::Value* CodeGen::evaluateLValue(const ExprPtr& expr) {
     // An overloaded `w[i]` is a call: its result is an rvalue (materialized below).
     if (auto index = dynamic_cast<IndexExpr*>(expr.get()); index && index->opFunc.empty()) {
         // `a[i] = x` — element address for array / slice / pointer / string bases.
-        llvm::Value* idx = evaluateExpr(index->index);
+        llvm::Value* idx = indexAsI64(index->index);
         return indexElemAddr(index->base, idx);
     }
 

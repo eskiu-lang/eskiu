@@ -426,6 +426,7 @@ private:
     // Address of element `idx` of an indexable base (fixed array / slice / pointer /
     // string). Shared by index-read, index-write (lvalue), and slice construction.
     llvm::Value* indexElemAddr(const ExprPtr& base, llvm::Value* idx, bool doCheck = true);
+    llvm::Value* indexAsI64(const ExprPtr& e);
 
     // Exception handling: set when inside a try body
     llvm::BasicBlock* unwindTarget = nullptr;
