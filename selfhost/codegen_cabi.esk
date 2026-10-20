@@ -1405,8 +1405,8 @@ CgVal cg_cabi_call(Codegen* g, CgCabi* c, CgFn* f, List<CgVal>* args) {
     return v;
 }
 
-// Does the Eskiu function `f` take or return an aggregate by value (so C must reach it
-// through a C-ABI thunk)? Externs lowered at declaration and variadics are left alone.
+// Does the Eskiu function `f` take or return an aggregate by value, or take a va_list
+// (so C must reach it through a C-ABI thunk)? Externs lowered at declaration and variadics are left alone.
 int cg_cabi_needs_thunk(Codegen* g, CgFn* f) {
     if (g.abi == 0 || f.variadic == 1) {
         return 0;
@@ -1419,7 +1419,8 @@ int cg_cabi_needs_thunk(Codegen* g, CgFn* f) {
     }
     int i = 0;
     while (i < List_len<string>(&f.ptys)) {
-        if (cg_abi_is_agg(List_get<string>(&f.ptys, i)) == 1) {
+        string pt = List_get<string>(&f.ptys, i);
+        if (cg_abi_is_agg(pt) == 1 || cg_streq(pt, "%__va_list") == 1) {
             return 1;
         }
         i = i + 1;
@@ -1440,6 +1441,27 @@ string cg_cabi_callback(Codegen* g, string name) {
         List_push<string>(&g.fnthunks, key);
     }
     return cg_cat("@__cabi_", name);
+}
+
+// The Eskiu va_list value of the va_list C passed in `c` (C++ CodeGen::cVaListToEskiu):
+// on x86-64 System V and AArch64 outside Darwin and Windows the C va_list (24 or 32
+// bytes) at that address, copied into the front of the storage; elsewhere the `char*`
+// itself, at offset 0.
+string cg_va_from_c(Codegen* g, string c) {
+    string r = cg_tmp(g);
+    if (g.abi == 3 || (g.abi == 2 && g.wintgt == 0)) {
+        string slot = cg_entry_alloca(g, "%__va_list");
+        string n = "32";
+        if (g.abi == 3) {
+            n = "24";
+        }
+        cg_emit(g, cg_cat("  store %__va_list zeroinitializer, ptr ", cg_cat(slot, "\n")));
+        cg_emit(g, cg_cat("  call void @llvm.memcpy.p0.p0.i64(ptr align 8 ", cg_cat(slot, cg_cat(", ptr align 8 ", cg_cat(c, cg_cat(", i64 ", cg_cat(n, ", i1 false)\n")))))));
+        cg_emit(g, cg_cat("  ", cg_cat(r, cg_cat(" = load %__va_list, ptr ", cg_cat(slot, "\n")))));
+        return r;
+    }
+    cg_emit(g, cg_cat("  ", cg_cat(r, cg_cat(" = insertvalue %__va_list zeroinitializer, ptr ", cg_cat(c, ", 0\n")))));
+    return r;
 }
 
 // Emit `__cabi_<name>`: the lowered C signature (like an extern's), rebuilding the Eskiu
@@ -1472,10 +1494,16 @@ void cg_emit_cabi_thunk(Codegen* g, string name) {
     List_init<CgAbi>(&ks, np);
     int i = 0;
     while (i < np) {
-        CgAbi k = cg_abi_classify(g, List_get<string>(&f.petys, i), 0, &fint, &fsse);
+        string lty = List_get<string>(&f.ptys, i);
+        // A va_list comes from C the way C passes its va_list (cg_va_from_c).
+        string ety = List_get<string>(&f.petys, i);
+        if (cg_streq(lty, "%__va_list") == 1) {
+            lty = "ptr";
+            ety = "*void";
+        }
+        CgAbi k = cg_abi_classify(g, ety, 0, &fint, &fsse);
         List_push<CgAbi>(&ks, k);
         string an = cg_cat("%a", cg_itoa(i));
-        string lty = List_get<string>(&f.ptys, i);
         if (String_len(&hdr) > 0) {
             String_append(&hdr, ", ");
         }
@@ -1513,7 +1541,10 @@ void cg_emit_cabi_thunk(Codegen* g, string name) {
         string an = cg_cat("%a", cg_itoa(i));
         string lty = List_get<string>(&f.ptys, i);
         string op = an;
-        if (k.kind == 1) {
+        if (cg_streq(lty, "%__va_list") == 1) {
+            op = cg_va_from_c(g, an);
+        }
+        else if (k.kind == 1) {
             op = cg_abi_from_coerced(g, an, k, lty);
         }
         else if (k.kind == 2) {
