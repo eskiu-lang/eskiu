@@ -1629,6 +1629,8 @@ void sema_check_field_defaults(Sema* s, *DeclNode d) {
             sema_expr(s, e);
             if (sema_is_const_init(s, e) == 0) {
                 sema_error(s, sema_cat(sema_cat("default value of field '", f.name), "' is not a compile-time constant"));
+            } else if (e.kind == EK_ARRAYLIT) {     // checked like an array initializer
+                sema_check_arr_init(s, f.ty, e);
             } else {
                 string err = sema_assign_err(s, f.ty, e);
                 if (err[0] != 0) {
