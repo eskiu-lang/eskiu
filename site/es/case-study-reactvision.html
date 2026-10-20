@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Caso de estudio: ReactVision · Eskiu</title>
-  <meta name="description" content="Cómo ReactVision usa Eskiu para reemplazar C++ sensible a memoria en su motor de renderizado AR/VR (≈85% menos memoria en los módulos migrados) preservando la interoperabilidad con el ABI de C." />
+  <meta name="description" content="Cómo ReactVision usa Eskiu: C++ sensible a memoria en su motor de renderizado AR/VR (≈85% menos memoria en los módulos migrados), su tracker de AR web tinyvio portado bit por bit y un solo núcleo de detección de objetos para iOS y Android." />
   <link rel="canonical" href="https://eskiu-lang.org/es/case-study-reactvision.html" />
   <link rel="alternate" hreflang="en" href="https://eskiu-lang.org/case-study-reactvision.html" />
   <link rel="alternate" hreflang="es" href="https://eskiu-lang.org/es/case-study-reactvision.html" />
@@ -30,7 +30,7 @@
   </header>
   <main class="bar article">
     <div class="eyebrow">Caso de estudio</div>
-    <h1>ReactVision: recortando memoria en un motor de renderizado AR/VR</h1>
+    <h1>ReactVision: Eskiu a lo largo de un stack de AR</h1>
 
     <div class="pull">
       «Eskiu es el lenguaje de sistemas de ReactVision. Reemplaza componentes de C++
@@ -95,10 +95,66 @@
       <strong>≈85% menos memoria.</strong>
     </p>
 
+    <h2>Tracking de AR en la web: tinyvio, portado completo</h2>
+    <p>
+      <strong>tinyvio</strong> es el tracker visual-inercial monocular de ReactVision:
+      esquinas FAST, flujo óptico Lucas-Kanade piramidal, inicialización con dos vistas,
+      cálculo de pose, bundle adjustment de ventana deslizante, detección de planos,
+      relocalización y anclas. Es el motor que <code>@reactvision/viro-web-renderer</code>
+      carga para AR en el navegador, compilado a WebAssembly. Todo el motor, unas 9,000
+      líneas de C++, ahora son unas 7,400 líneas de Eskiu que implementan la misma API de
+      C de SLAM, así que la capa de embind que ya existía construye con ellas el motor web
+      sin cambios.
+    </p>
+    <p>
+      El port calcula <strong>los mismos bits</strong> que el C++. Una grabación se
+      reproduce por la API de C en los dos motores, y cada pose, punto de mapa, feature
+      rastreado y plano se compara después de cada cuadro, sin tolerancia. Reproducciones
+      perturbadas (cuadros oscuros, desplazados o perdidos, picos de giroscopio, otras
+      configuraciones) llevan al tracker a relocalizar y volver, y cada módulo se revisa
+      también por separado: unos 440,000 casos sin una sola diferencia.
+    </p>
+    <div class="tablewrap"><table>
+      <tr><th>Dónde</th><th>C++ contra Eskiu</th></tr>
+      <tr><td>macOS (arm64)</td><td>idéntico</td></tr>
+      <tr><td>WebAssembly (Node)</td><td>idéntico, e idéntico al nativo</td></tr>
+      <tr><td>Simulador de iOS</td><td>idéntico</td></tr>
+      <tr><td>Emulador de Android (NDK)</td><td>idéntico</td></tr>
+      <tr><td>El smoke test del propio motor web</td><td>pasa con la misma salida</td></tr>
+    </table></div>
+    <p>
+      La velocidad es la misma: 1.36 s contra 1.35 s en nativo para una captura de 275
+      cuadros, 1.89 s cada uno en Node. El módulo de WebAssembly pesa 311 KB contra 266 KB.
+      Igualar cada bit pidió cuidado en dos lugares que un build de C++ nunca muestra: el
+      sort de libc++ deja los empates en un orden que el estándar no fija, así que el
+      <code>&lt;sort&gt;</code> de Eskiu ahora usa los mismos algoritmos; y clang junta
+      <code>sin</code> y <code>cos</code> de un mismo ángulo en una sola llamada que en
+      plataformas de Apple redondea distinto, y el port la reproduce.
+    </p>
+
+    <h2>Detección de objetos: un núcleo para iOS y Android</h2>
+    <p>
+      <code>@reactvision/react-viro-onnx</code> hace la detección de objetos YOLOE de
+      <code>ViroObjectDetector</code>. El caché de sesiones, la decodificación de las 300
+      propuestas del modelo, la supresión de no máximos y los nombres de clase estaban
+      escritos dos veces, en Objective-C++ y en Java. Ahora son un solo núcleo en Eskiu
+      sobre el paquete <a href="packages.html#onnx"><code>onnx</code></a>: iOS lo llama
+      por un header de C como xcframework estático, y Android por funciones JNI escritas
+      en el propio Eskiu, sin pegamento en C. El núcleo coincide byte por byte con una
+      referencia en Python del post-procesamiento anterior, y en el simulador de iOS y un
+      emulador de Android coincide dentro del redondeo de sus versiones de ONNX Runtime.
+    </p>
+    <p>
+      Los dos ports están construidos y verificados, y esperan su integración en los
+      paquetes de ViroReact.
+    </p>
+
     <p>
       Así que el mismo lenguaje que arranca un kernel ARM64 bare-metal también mete
-      un módulo ajustado en memoria dentro de un motor de renderizado C++. Un solo
-      lenguaje a lo largo del stack, usado donde de verdad rinde.
+      un módulo ajustado en memoria dentro de un motor de renderizado C++, corre tracking
+      de AR en el navegador bit por bit y reemplaza código nativo escrito dos veces por
+      código escrito una vez. Un solo lenguaje a lo largo del stack, usado donde de
+      verdad rinde.
     </p>
   </main>
   <footer class="foot">

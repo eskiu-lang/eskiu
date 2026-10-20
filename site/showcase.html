@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script>try{if(localStorage.getItem("eskiu-lang")==="es")location.replace("es/showcase.html"+location.hash);}catch(e){}</script>
   <title>Showcase · Eskiu</title>
-  <meta name="description" content="What has been built with Eskiu: Llama 2 inference on Metal at 45 tokens per second, a glTF viewer with physically based shading, an AR demo on the Nintendo 3DS, ReactVision's rendering engine and the compiler itself." />
+  <meta name="description" content="What has been built with Eskiu: Llama 2 inference on Metal at 45 tokens per second, a glTF viewer with physically based shading, an AR demo on the Nintendo 3DS, ReactVision's rendering engine and web AR tracker, and the compiler itself." />
   <link rel="canonical" href="https://eskiu-lang.org/showcase.html" />
   <link rel="alternate" hreflang="en" href="https://eskiu-lang.org/showcase.html" />
   <link rel="alternate" hreflang="es" href="https://eskiu-lang.org/es/showcase.html" />
@@ -106,6 +106,13 @@
       replaces memory-sensitive C++ components with Eskiu modules that link in over the C ABI,
       one module at a time, while the rest of the engine stays as it is. The rendering modules
       moved so far use about 85% less memory.
+    </p>
+    <p>
+      tinyvio, the visual-inertial tracker behind ViroReact's AR in the browser, is ported to
+      Eskiu whole and computes the same bits as its C++ on macOS, WebAssembly, iOS and Android,
+      at the same speed. The object detection core of <code>react-viro-onnx</code>, written
+      twice in Objective-C++ and Java, is now one Eskiu module for both platforms, with its
+      Android JNI layer written in Eskiu too.
     </p>
     <p><a class="more" href="case-study-reactvision.html">Read the ReactVision case study →</a></p>
 

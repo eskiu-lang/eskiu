@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Proyectos · Eskiu</title>
-  <meta name="description" content="Lo que ya está hecho con Eskiu: inferencia de Llama 2 sobre Metal a 45 tokens por segundo, un visor de glTF con sombreado físico, un demo de realidad aumentada en la Nintendo 3DS, el motor de renderizado de ReactVision y el propio compilador." />
+  <meta name="description" content="Lo que ya está hecho con Eskiu: inferencia de Llama 2 sobre Metal a 45 tokens por segundo, un visor de glTF con sombreado físico, un demo de realidad aumentada en la Nintendo 3DS, el motor de renderizado y el tracker de AR web de ReactVision y el propio compilador." />
   <link rel="canonical" href="https://eskiu-lang.org/es/showcase.html" />
   <link rel="alternate" hreflang="en" href="https://eskiu-lang.org/showcase.html" />
   <link rel="alternate" hreflang="es" href="https://eskiu-lang.org/es/showcase.html" />
@@ -109,6 +109,14 @@
       reemplaza componentes de C++ sensibles a la memoria con módulos en Eskiu que se enlazan por
       la ABI de C, un módulo a la vez, sin tocar el resto del motor. Los módulos de renderizado
       que ya se migraron usan alrededor de 85% menos memoria.
+    </p>
+    <p>
+      tinyvio, el tracker visual-inercial detrás del AR de ViroReact en el navegador, está
+      portado completo a Eskiu y calcula los mismos bits que su C++ en macOS, WebAssembly, iOS y
+      Android, a la misma velocidad. El núcleo de detección de objetos de
+      <code>react-viro-onnx</code>, que estaba escrito dos veces en Objective-C++ y Java, ahora
+      es un solo módulo de Eskiu para las dos plataformas, con su capa JNI de Android también
+      escrita en Eskiu.
     </p>
     <p><a class="more" href="case-study-reactvision.html">Lee el caso de estudio de ReactVision →</a></p>
 
