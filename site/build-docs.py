@@ -286,7 +286,9 @@ SIDEBAR = [
 TOP_LINKS = [
     ("quickstart.html", "Learn", "learn"),
     ("docs/index.html", "Docs", "docs"),
-    ("index.html#playground", "Playground", "pg"),
+    ("packages.html", "Packages", "packages"),
+    ("platforms.html", "Platforms", "platforms"),
+    ("showcase.html", "Showcase", "showcase"),
     ("the-book-of-eskiu.html", "Book", "book"),
     ("changelog.html", "Changelog", "changelog"),
     (GH, "GitHub", "gh"),
