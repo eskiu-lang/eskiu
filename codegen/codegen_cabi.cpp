@@ -591,8 +591,24 @@ llvm::Function* CodeGen::cabiCallbackThunk(llvm::Function* target) {
     llvm::FunctionType* fty = target->getFunctionType();
     std::vector<llvm::Type*> lps(fty->param_begin() + (eskSret ? 1 : 0), fty->param_end());
     llvm::Type* lret = eskSret ? sretIt->second : fty->getReturnType();
+    // A `va_list` parameter comes from C the way C passes its `va_list` (see evalCVaList).
+    std::vector<llvm::Type*> cps = lps;
+    bool anyVa = false;
+    for (llvm::Type*& p : cps) {
+        auto* st = llvm::dyn_cast<llvm::StructType>(p);
+        if (st && !st->isLiteral() && st->getName() == "__va_list") {
+            p = llvm::PointerType::get(*context, 0);
+            anyVa = true;
+        }
+    }
+    llvm::FunctionType* cfty = llvm::FunctionType::get(lret, cps, false);
     CAbiSig sig;
-    if (!buildCAbiSig(llvm::FunctionType::get(lret, lps, false), sig)) return target;
+    if (!buildCAbiSig(cfty, sig)) {
+        if (!anyVa || cabiTarget() == CAbiTarget::None) return target;
+        sig.logical = cfty;
+        sig.lowered = cfty;
+        sig.params.assign(cps.size(), CAbiArg{});
+    }
     std::string tname = "__cabi_" + name;
     if (llvm::Function* have = module->getFunction(tname)) return have;
     llvm::Function* thunk = llvm::Function::Create(sig.lowered, llvm::Function::InternalLinkage,
@@ -612,7 +628,9 @@ llvm::Function* CodeGen::cabiCallbackThunk(llvm::Function* target) {
     for (size_t i = 0; i < sig.params.size(); ++i) {
         const CAbiArg& a = sig.params[i];
         switch (a.kind) {
-        case CAbiArg::Direct: args.push_back(&*ai++); break;
+        case CAbiArg::Direct:
+            args.push_back(cps[i] != lps[i] ? cVaListToEskiu(&*ai++, lps[i]) : &*ai++);
+            break;
         case CAbiArg::Coerce: args.push_back(cabiFromCoerced(&*ai++, a, lps[i])); break;
         case CAbiArg::Expand: {
             auto* st = llvm::cast<llvm::StructType>(a.ty);
@@ -665,6 +683,20 @@ llvm::Value* CodeGen::evalCVaList(const ExprPtr& arg) {
         if (lookupSymbol(id->name))
             return builder->CreateLoad(llvm::PointerType::get(*context, 0), evaluateLValue(arg));
     return builder->CreateExtractValue(evaluateExpr(arg), {0});
+}
+
+// The Eskiu `va_list` value of a `va_list` C passed in: on x86-64 System V and AArch64
+// outside Darwin and Windows the C `va_list` (24 or 32 bytes) at that address, copied
+// into the front of the Eskiu storage; elsewhere the `char*` itself, at offset 0.
+llvm::Value* CodeGen::cVaListToEskiu(llvm::Value* c, llvm::Type* vaTy) {
+    llvm::Triple t(module->getTargetTriple());
+    bool x86 = t.getArch() == llvm::Triple::x86_64;
+    bool byAddr = !t.isOSWindows() && (x86 || (t.isAArch64() && !t.isOSDarwin()));
+    if (!byAddr) return builder->CreateInsertValue(llvm::Constant::getNullValue(vaTy), c, {0});
+    llvm::AllocaInst* slot = entryAlloca(vaTy, nullptr, "va.in");
+    builder->CreateStore(llvm::Constant::getNullValue(vaTy), slot);
+    builder->CreateMemCpy(slot, llvm::MaybeAlign(8), c, llvm::MaybeAlign(8), x86 ? 24 : 32);
+    return builder->CreateLoad(vaTy, slot);
 }
 
 // `va_arg<T>(ap)`: the next variadic argument, read from the `va_list` storage at `ap`.

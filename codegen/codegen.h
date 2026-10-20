@@ -500,6 +500,7 @@ private:
     std::map<std::string, std::vector<bool>> externFnPtrParams;
     std::map<std::string, std::vector<bool>> externVaListParams;
     llvm::Value* evalCVaList(const ExprPtr& arg);
+    llvm::Value* cVaListToEskiu(llvm::Value* c, llvm::Type* vaTy);
     llvm::Value* emitVaArg(llvm::Value* ap, llvm::Type* ty);
     std::set<std::string> definedFunctionNames;
     // The C function pointer passed for `arg` (a named top-level function or null).
