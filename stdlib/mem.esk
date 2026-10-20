@@ -8,6 +8,7 @@
 // Under --freestanding these target the user-provided esk_alloc/esk_free (no libc),
 // whose contract is likewise "return zeroed memory"; otherwise they use libc calloc/free.
 import <ctypes>;
+import <c/string>;   // memcpy, memset, strlen, strcmp, ...
 #ifdef __ESKIU_FREESTANDING__
 extern *void esk_alloc(int64 nbytes);
 extern void esk_free(*void p);
@@ -26,13 +27,3 @@ must_use *T alloc<T>(int64 n) {
 }
 #endif
 
-extern *void memcpy(*void dst, *void src, size_t n);
-extern *void memset(*void dst, int c, size_t n);
-extern *void memmove(*void dst, *void src, size_t n);
-extern int memcmp(*void a, *void b, size_t n);
-extern size_t strlen(string s);
-extern int strcmp(string a, string b);
-extern int strncmp(string a, string b, size_t n);
-extern *char strchr(string s, int c);
-extern *char strstr(string haystack, string needle);
-extern *void memchr(*void s, int c, size_t n);

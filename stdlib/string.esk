@@ -356,8 +356,8 @@ void String_split_free(List<String>* parts) {
 // ASCII letters change case, and a multi-byte UTF-8 character counts as its
 // byte length.
 
-extern int vsnprintf(*char buf, size_t n, string fmt, va_list ap);
-extern double strtod(string s, *string end);
+import <c/stdio>;    // vsnprintf
+import <c/stdlib>;   // strtod
 
 // Make room for at least `need` bytes (the trailing NUL included). Contents are
 // kept. Works on a freed String too (it gets a fresh buffer).
