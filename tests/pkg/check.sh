@@ -255,6 +255,62 @@ else
     echo "skip selfhost packages: $ESK not found"
 fi
 
+# ---- a native library from a prebuilt archive ([native.NAME]) ---------------
+# A C library in a .tgz reached through file://, declared for this host's platform:
+# build fetches and checks it, the program links and runs with no -L, a second build
+# reuses the cache, a direct compile in the package links it too, an unfetched library
+# is a warning, and a wrong sha256 or an unknown platform is refused.
+os="$(uname -s)"; arch="$(uname -m)"
+case "$os" in Darwin) plat=macos ;; Linux) plat=linux ;; MINGW*|MSYS*) plat=windows ;; *) plat="" ;; esac
+case "$arch" in arm64|aarch64) plat="$plat-arm64" ;; x86_64|amd64) plat="$plat-x86_64" ;; *) plat="" ;; esac
+cc_prog="${CC:-cc}"; cc_prog="${cc_prog%% *}"
+if [[ -n "$plat" && "$plat" != -* ]] && command -v "$cc_prog" > /dev/null 2>&1 && command -v curl > /dev/null 2>&1; then
+    mkdir -p "$work/natsrc/natlib/lib" "$work/nat/src"
+    printf 'int nat_value(void) { return 41; }\n' > "$work/natsrc/nat.c"
+    case "$plat" in
+        macos-*)   "$cc_prog" -shared -o "$work/natsrc/natlib/lib/libnat.dylib" -install_name @rpath/libnat.dylib "$work/natsrc/nat.c" ;;
+        windows-*) "$cc_prog" -shared -o "$work/natsrc/natlib/lib/nat.dll" "$work/natsrc/nat.c" ;;
+        *)         "$cc_prog" -shared -fPIC -o "$work/natsrc/natlib/lib/libnat.so" "$work/natsrc/nat.c" ;;
+    esac
+    (cd "$work/natsrc" && tar -czf natlib.tgz natlib)
+    if command -v sha256sum > /dev/null 2>&1; then sum="$(sha256sum "$work/natsrc/natlib.tgz" | cut -d' ' -f1)"
+    else sum="$(shasum -a 256 "$work/natsrc/natlib.tgz" | cut -d' ' -f1)"; fi
+    natfile="$work/natsrc/natlib.tgz"
+    if command -v cygpath > /dev/null 2>&1; then natfile="/$(cygpath -m "$natfile")"; fi
+    printf '[package]\nname = "nat"\n\n[native.nat]\n%s = { url = "file://%s", sha256 = "%s", lib = "natlib/lib" }\n' \
+        "$plat" "$natfile" "$sum" > "$work/nat/eskiu.toml"
+    printf 'import <io>;\n#pragma link("nat")\nextern int nat_value();\nint main() { printf("%%d\\n", nat_value()); return 0; }\n' \
+        > "$work/nat/src/main.esk"
+    out="$(cd "$work/nat" && "$ESKIUC" run 2>&1)"
+    if [[ "$out" == *"fetching nat for nat from file://"* && "$out" == *"41" ]]; then ok "native/fetch-link-run"; else bad "native/fetch-link-run" "$out"; fi
+    mv "$work/natsrc/natlib.tgz" "$work/natsrc/natlib.tgz.away"
+    out="$(cd "$work/nat" && "$ESKIUC" run 2>&1)"
+    if [[ "$out" == "41" ]]; then ok "native/cache"; else bad "native/cache" "$out"; fi
+    out="$(cd "$work/nat" && "$ESKIUC" src/main.esk -o "$work/nat_direct" 2>&1 && "$work/nat_direct")"
+    if [[ "$out" == "41" ]]; then ok "native/direct-compile"; else bad "native/direct-compile" "$out"; fi
+    mv "$work/natsrc/natlib.tgz.away" "$work/natsrc/natlib.tgz"
+    rm -rf "$ESKIU_HOME/native"
+    out="$(cd "$work/nat" && "$ESKIUC" src/main.esk -o "$work/nat_direct" 2>&1)"
+    if [[ "$out" == *"warning: native library nat (package nat) is not fetched; run eskiuc fetch"* ]]; then
+        ok "native/not-fetched"
+    else
+        bad "native/not-fetched" "$out"
+    fi
+    zeros="0000000000000000000000000000000000000000000000000000000000000000"
+    sed "s/$sum/$zeros/" "$work/nat/eskiu.toml" > "$work/nat/toml.new" && mv "$work/nat/toml.new" "$work/nat/eskiu.toml"
+    out="$(cd "$work/nat" && "$ESKIUC" build 2>&1)"; code=$?
+    if [[ $code -ne 0 && "$out" == *"has sha256 $sum, not $zeros"* ]]; then ok "native/bad-sha256"; else bad "native/bad-sha256" "$out"; fi
+    printf '[package]\nname = "nat"\n\n[native.nat]\nmacos = { url = "x", sha256 = "y" }\n' > "$work/nat/eskiu.toml"
+    out="$(cd "$work/nat" && "$ESKIUC" build 2>&1)"; code=$?
+    if [[ $code -ne 0 && "$out" == "error: eskiu.toml:5: unknown platform 'macos' in [native.nat] (macos-arm64, macos-x86_64, linux-x86_64, linux-arm64, windows-x86_64, windows-arm64)" ]]; then
+        ok "native/bad-platform"
+    else
+        bad "native/bad-platform" "$out"
+    fi
+else
+    echo "skip native libraries (no platform key, C compiler or curl)"
+fi
+
 # ---- a path dependency is relative in the lock: the tree can move -----------
 mkdir -p "$work/moved" && cp -R "$work/util" "$work/moved/util" && mkdir -p "$work/moved/app/src"
 printf 'import <io>;\nimport <util/math>;\nint main() { printf("%%d\\n", util_twice(21)); return 0; }\n' > "$work/moved/app/src/main.esk"
