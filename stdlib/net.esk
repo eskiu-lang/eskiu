@@ -300,7 +300,15 @@ int _net_errno() {
 
 const int _NET_EAGAIN = 35;     // EAGAIN == EWOULDBLOCK on macOS
 #else
+// errno's location: __errno() in Android's bionic, __errno_location() in glibc and musl.
+#ifdef __ANDROID__
+extern *int __errno();
+#ifndef __errno_location
+#define __errno_location __errno
+#endif
+#else
 extern *int __errno_location();
+#endif
 int _net_errno() {
     return *__errno_location();
 }

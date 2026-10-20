@@ -270,7 +270,15 @@ int _fs_fchmod(int fd, int mode) {
 extern int mkdir(string path, uint32 mode);
 extern int chmod(string path, uint32 mode);
 extern int fchmod(int fd, uint32 mode);
+// errno's location: __errno() in Android's bionic, __errno_location() in glibc and musl.
+#ifdef __ANDROID__
+extern *int __errno();
+#ifndef __errno_location
+#define __errno_location __errno
+#endif
+#else
 extern *int __errno_location();
+#endif
 int _fs_errno_now() {
     return *__errno_location();
 }
