@@ -1985,7 +1985,7 @@ void cg_ux_entry(Codegen* g, String* phi, int k, string name, int kind, int bits
     }
     cg_emit(g, "  %n");
     cg_emit(g, ks);
-    cg_emit(g, " = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %buf, i64 512, ptr ");
+    cg_emit(g, cg_cat(" = call i32 (ptr, ", cg_cat(cg_size_ty(g), cg_cat(", ptr, ...) @snprintf(ptr %buf, ", cg_cat(cg_size_ty(g), " 512, ptr ")))));
     cg_emit(g, fmt);
     cg_emit(g, ", ptr %tn, ");
     cg_emit(g, aty);
@@ -2010,9 +2010,10 @@ void cg_emit_uncaught(Codegen* g, *Program prog) {
         || cg_prog_defines(prog, "write") == 1 || cg_prog_defines(prog, "abort") == 1) {
         return;
     }
-    cg_ensure_extern(g, "snprintf", "declare i32 @snprintf(ptr, i64, ptr, ...)\n");
+    string sz = cg_size_ty(g);   // size_t
+    cg_ensure_extern(g, "snprintf", cg_cat("declare i32 @snprintf(ptr, ", cg_cat(sz, ", ptr, ...)\n")));
     cg_ensure_extern(g, "fflush", "declare i32 @fflush(ptr)\n");
-    cg_ensure_extern(g, "write", "declare i64 @write(i32, ptr, i64)\n");
+    cg_ensure_extern(g, "write", cg_cat("declare ", cg_cat(sz, cg_cat(" @write(i32, ptr, ", cg_cat(sz, ")\n")))));
     cg_ensure_extern(g, "abort", "declare void @abort()\n");
     cg_ensure_extern(g, "_ZSt13set_terminatePFvvE", "declare ptr @_ZSt13set_terminatePFvvE(ptr)\n");
     String_append(&g.globals, "@llvm.global_ctors = appending global [1 x { i32, ptr, ptr }] [{ i32, ptr, ptr } { i32 65535, ptr @__eskiu_install_terminate, ptr null }]\n");
@@ -2043,15 +2044,21 @@ void cg_emit_uncaught(Codegen* g, *Program prog) {
     cg_ux_entry(g, &phi, 12, "string", 115, 0);
     string fo0 = "error: uncaught exception: %s\n";
     string fo = cg_string_global_n(g, fo0, cg_strlen(fo0));
-    cg_emit(g, "  %nz = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %buf, i64 512, ptr ");
+    cg_emit(g, cg_cat("  %nz = call i32 (ptr, ", cg_cat(cg_size_ty(g), cg_cat(", ptr, ...) @snprintf(ptr %buf, ", cg_cat(cg_size_ty(g), " 512, ptr ")))));
     cg_emit(g, fo);
     cg_emit(g, ", ptr %tn)\n");
     cg_emit(g, "  br label %out\n");
     cg_emit(g, "out:\n  %n = phi i32 ");
     cg_emit(g, (string)String_cstr(&phi));
     cg_emit(g, "[ %nz, %not12 ]\n");
-    cg_emit(g, "  %big = icmp sgt i32 %n, 511\n  %len = select i1 %big, i32 511, i32 %n\n  %len64 = sext i32 %len to i64\n");
-    cg_emit(g, "  %fl = call i32 @fflush(ptr null)\n  %wr = call i64 @write(i32 2, ptr %buf, i64 %len64)\n  call void @abort()\n  unreachable\n}\n");
+    cg_emit(g, "  %big = icmp sgt i32 %n, 511\n  %len = select i1 %big, i32 511, i32 %n\n");
+    if (cg_streq(sz, "i64") == 1) {
+        cg_emit(g, "  %len64 = sext i32 %len to i64\n");
+    }
+    else {
+        cg_emit(g, "  %len64 = add i32 %len, 0\n");
+    }
+    cg_emit(g, cg_cat("  %fl = call i32 @fflush(ptr null)\n  %wr = call ", cg_cat(sz, cg_cat(" @write(i32 2, ptr %buf, ", cg_cat(sz, " %len64)\n  call void @abort()\n  unreachable\n}\n")))));
     cg_emit(g, "define internal void @__eskiu_install_terminate() {\nentry:\n  %old = call ptr @_ZSt13set_terminatePFvvE(ptr @__eskiu_terminate)\n  ret void\n}\n");
 }
 
@@ -2478,7 +2485,7 @@ void cg_program(Codegen* g, *Program prog) {
                     }
                     // size_t, ssize_t and c_long are the target's C types here.
                     if (d.kind == DK_EXTERN && cg_prog_defines(prog, d.name) == 0) {
-                        string ck = cg_cint_kinds(prog, d.name, pi);
+                        string ck = cg_cint_kinds(g, prog, d.name, pi);
                         if (ck[0] != 0) {
                             plt = cg_cint_ll(g, ck);
                         }
@@ -2501,7 +2508,7 @@ void cg_program(Codegen* g, *Program prog) {
             f.fixedtypes = fixed;
             f.cret = "";
             if (d.kind == DK_EXTERN && cg_prog_defines(prog, d.name) == 0) {
-                string rk = cg_cint_kinds(prog, d.name, -1);
+                string rk = cg_cint_kinds(g, prog, d.name, -1);
                 if (rk[0] != 0) {
                     f.retty = cg_cint_ll(g, rk);
                     if (cg_streq(f.retty, "i64") == 0) {
@@ -2627,7 +2634,7 @@ void cg_program(Codegen* g, *Program prog) {
     if (g.uses_heap_env == 1) {                                         // closures' env allocator
         string ha = cg_heap_alloc(g);
         if (cg_seen_inst(g, cg_cat("fn:", ha)) == 0 && cg_is_fn(g, ha) == 0) {
-            String_append(&g.globals, cg_cat(cg_cat("declare ptr @", ha), "(i64)\n"));
+            String_append(&g.globals, cg_cat(cg_cat("declare ptr @", ha), cg_cat("(", cg_cat(cg_heap_size_ty(g), ")\n"))));
             cg_push_inst(g, cg_cat("fn:", ha));
         }
     }

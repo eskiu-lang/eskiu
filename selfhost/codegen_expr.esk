@@ -1701,7 +1701,7 @@ CgVal cg_expr_i(Codegen* g, *ExprNode e) {
             string pack = cg_tmp(g);
             cg_emit(g, "  ");
             cg_emit(g, pack);
-            cg_emit(g, " = call ptr @malloc(i64 ");
+            cg_emit(g, cg_cat(" = call ptr @malloc(", cg_cat(cg_size_ty(g), " ")));
             cg_emit(g, cg_itoa(2 * g.ptrsz));
             cg_emit(g, ")\n");
             cg_emit(g, "  store ptr ");
@@ -1881,13 +1881,13 @@ CgVal cg_expr_i(Codegen* g, *ExprNode e) {
                 cg_emit(g, szi);
                 cg_emit(g, " = ptrtoint ptr ");
                 cg_emit(g, szg);
-                cg_emit(g, " to i64\n");
+                cg_emit(g, cg_cat(" to ", cg_cat(cg_heap_size_ty(g), "\n")));
                 env = cg_tmp(g);
                 cg_emit(g, "  ");
                 cg_emit(g, env);
                 cg_emit(g, " = call ptr @");
                 cg_emit(g, cg_heap_alloc(g));
-                cg_emit(g, "(i64 ");
+                cg_emit(g, cg_cat("(", cg_cat(cg_heap_size_ty(g), " ")));
                 cg_emit(g, szi);
                 cg_emit(g, ")\n");
             }

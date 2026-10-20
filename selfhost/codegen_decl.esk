@@ -1008,9 +1008,30 @@ string cg_cint_kind(string t0) {
     return "";
 }
 
+// The C library functions whose size_t / ssize_t positions an `int64` spelling also
+// stands for (C++ knownCSizes): each parameter's kind, then '.' and the result's.
+string cg_known_csize(string name) {
+    string[33] names = {"memcpy", "memmove", "memset", "memcmp", "memchr", "memmem", "strlen", "strnlen",
+        "strncmp", "strncpy", "strncat", "strncasecmp", "strspn", "strcspn", "strxfrm", "malloc", "calloc",
+        "realloc", "aligned_alloc", "qsort", "bsearch", "snprintf", "vsnprintf", "strftime", "fread", "fwrite",
+        "getcwd", "read", "write", "send", "recv", "mmap", "munmap"};
+    string[33] pats = {"--z.-", "--z.-", "--z.-", "--z.-", "--z.-", "-z-z.-", "-.z", "-z.z",
+        "--z.-", "--z.-", "--z.-", "--z.-", "--.z", "--.z", "--z.z", "z.-", "zz.-",
+        "-z.-", "zz.-", "-zz-.-", "--zz-.-", "-z-.-", "-z--.-", "-z--.z", "-zz-.z", "-zz-.z",
+        "-z.-", "--z.s", "--z.s", "--z-.s", "--z-.s", "-z----.-", "-z.-"};
+    int i = 0;
+    while (i < 33) {
+        if (cg_streq(names[i], name) == 1) {
+            return pats[i];
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
 // The kind of parameter `idx` (or of the result when idx < 0) of the extern `name`,
 // over all its declarations (C++ externCInts).
-string cg_cint_kinds(*Program prog, string name, int idx) {
+string cg_cint_kinds(Codegen* g, *Program prog, string name, int idx) {
     int i = 0;
     int n = List_len<*DeclNode>(&prog.decls);
     while (i < n) {
@@ -1024,6 +1045,41 @@ string cg_cint_kinds(*Program prog, string name, int idx) {
             }
             if (k[0] != 0) {
                 return k;
+            }
+        }
+        i = i + 1;
+    }
+    // A known C function spelled with int64 where C has size_t or ssize_t.
+    string pat = cg_known_csize(name);
+    if (pat[0] == 0) {
+        return "";
+    }
+    int dot = 0;
+    while (pat[dot] != '.') {
+        dot = dot + 1;
+    }
+    i = 0;
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        if (d.kind == DK_EXTERN && cg_streq(d.name, name) == 1) {
+            int np = 0;
+            while (np < List_len<Param>(&d.params) && cg_streq(List_get<Param>(&d.params, np).ty, "...") == 0) {
+                np = np + 1;
+            }
+            if (np == dot) {
+                string t = d.ret_type;
+                char c = pat[dot + 1];
+                if (idx >= 0) {
+                    t = List_get<Param>(&d.params, idx).ty;
+                    c = pat[idx];
+                }
+                t = cg_dealias(g, t);
+                if (c != '-' && (cg_streq(t, "int64") == 1 || cg_streq(t, "uint64") == 1)) {
+                    if (c == 'z') {
+                        return "z";
+                    }
+                    return "s";
+                }
             }
         }
         i = i + 1;

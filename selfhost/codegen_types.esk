@@ -778,6 +778,22 @@ void cg_drain_thunks(Codegen* g) {
 // (pthread_create/join, free). Skips it if the symbol is already a declared extern.
 // The heap a closure environment lives on: libc's, or under --freestanding the program's
 // esk_alloc/esk_free (the same pair <mem> uses there).
+// The target's size_t, and the size type of the closures' env allocator (malloc's
+// size_t, or esk_alloc's int64 under --freestanding).
+string cg_size_ty(Codegen* g) {
+    if (g.ptrsz == 4) {
+        return "i32";
+    }
+    return "i64";
+}
+
+string cg_heap_size_ty(Codegen* g) {
+    if (g.freestanding == 1) {
+        return "i64";
+    }
+    return cg_size_ty(g);
+}
+
 string cg_heap_alloc(Codegen* g) {
     if (g.freestanding == 1) {
         return "esk_alloc";
