@@ -690,9 +690,12 @@ std::string TypeChecker::getTypeAtPosition(int line, int col) const {
     for (const auto& [pos, name] : useLocations)
         if (pos.first == line && col >= pos.second && col < pos.second + (int)name.size() && isFn(name))
             return signatureText(name);
+    // A function's name at its declaration in this file is no expression of this file, so
+    // an expression found at that line and column is one of an imported file (the
+    // expression map is not per file): the declaration wins.
     for (const auto& [name, loc] : definitionLocations)
         if (loc.file == sourceFile && loc.line == line && col >= loc.col &&
-            col < loc.col + (int)name.size() && isFn(name) && bestType.empty())
+            col < loc.col + (int)name.size() && isFn(name))
             return signatureText(name);
     return displayType(bestType);
 }
