@@ -1,0 +1,43 @@
+// A struct of more than 1000 scalars passed by value: directly, to a generic Ok<T>,
+// through a function value and a closure, and inside a try. On WebAssembly such a
+// parameter is passed as a pointer to the caller's copy (an engine accepts at most 1000
+// parameters, and wasm gives each scalar its own); the callee still gets its own copy.
+import <io>;
+import <result>;
+
+struct Big {
+    int[1200] v;
+    int tag;
+}
+
+int sum(Big b) {
+    int s = b.tag;
+    for (i in 0..1200) s += b.v[i];
+    b.v[0] = 999;          // the callee's copy
+    return s;
+}
+
+Result<Big, string> wrap(Big b) {
+    return Ok<Big, string>(b);
+}
+
+int main() {
+    Big b;
+    for (i in 0..1200) b.v[i] = i % 7;
+    b.tag = 5;
+    printf("direct %d\n", sum(b));
+    printf("after %d\n", b.v[0]);
+    Result<Big, string> r = wrap(b);
+    printf("ok %d %d\n", r.ok ? 1 : 0, r.value.v[1199] + r.value.tag);
+    fn(Big)->int f = sum;
+    printf("fn value %d\n", f(b));
+    int extra = 100;
+    fn(Big)->int g = int(Big x) { return x.tag + extra; };
+    printf("closure %d\n", g(b));
+    try {
+        printf("in try %d\n", sum(b));
+    } catch (int e) {
+        printf("caught %d\n", e);
+    }
+    return 0;
+}
