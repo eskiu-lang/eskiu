@@ -50,6 +50,13 @@ CgVal cg_lval_k(Codegen* g, *ExprNode e) {
         if (cg_int_w(ity) == 0) {         // non-int (shouldn't happen) → i32
             ity = "i32";
         }
+        // GEP reads its indices as signed: widen to i64 by the index's own signedness, so a
+        // uint8 255 indexes element 255, not -1.
+        string iop = idx.op;
+        if (cg_int_w(ity) > 0 && cg_int_w(ity) < 64) {
+            iop = cg_coerce(g, idx, "i64");
+            ity = "i64";
+        }
         if (cg_is_slice(bet) == 1) {                    // slice: load .data, then GEP elem
             CgVal fat = cg_expr(g, e.a);
             string data = cg_tmp(g);
@@ -59,7 +66,7 @@ CgVal cg_lval_k(Codegen* g, *ExprNode e) {
             cg_emit(g, fat.op);
             cg_emit(g, ", 0\n");
             if ((g.safe & 1) != 0) {
-                cg_bounds_check(g, idx.op, ity, cg_slice_len(g, fat.op));
+                cg_bounds_check(g, iop, ity, cg_slice_len(g, fat.op));
             }
             string elem = cg_array_elem(bet);
             cg_emit(g, "  ");
@@ -71,7 +78,7 @@ CgVal cg_lval_k(Codegen* g, *ExprNode e) {
             cg_emit(g, ", ");
             cg_emit(g, ity);
             cg_emit(g, " ");
-            cg_emit(g, idx.op);
+            cg_emit(g, iop);
             cg_emit(g, "\n");
             v.op = t;
             v.ety = elem;
@@ -82,7 +89,7 @@ CgVal cg_lval_k(Codegen* g, *ExprNode e) {
             if ((g.safe & 1) != 0) {
                 string alen = cg_array_len_const(g, bet);
                 if (cg_streq(alen, "") == 0) {
-                    cg_bounds_check(g, idx.op, ity, alen);
+                    cg_bounds_check(g, iop, ity, alen);
                 }
             }
             cg_emit(g, "  ");
@@ -94,7 +101,7 @@ CgVal cg_lval_k(Codegen* g, *ExprNode e) {
             cg_emit(g, ", i32 0, ");
             cg_emit(g, ity);
             cg_emit(g, " ");
-            cg_emit(g, idx.op);
+            cg_emit(g, iop);
             cg_emit(g, "\n");
             v.op = t;
             v.ety = cg_array_elem(bet);
@@ -111,7 +118,7 @@ CgVal cg_lval_k(Codegen* g, *ExprNode e) {
         cg_emit(g, ", ");
         cg_emit(g, ity);
         cg_emit(g, " ");
-        cg_emit(g, idx.op);
+        cg_emit(g, iop);
         cg_emit(g, "\n");
         v.op = t;
         v.ety = elem;
