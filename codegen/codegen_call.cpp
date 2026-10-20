@@ -675,7 +675,7 @@ void CodeGen::visit(CallExpr* node) {
             }
             cargs.push_back(v);
         }
-        exprValueStack.push(emitCAbiCall(func, abiIt->second, cargs));
+        exprValueStack.push(widenCResult(func->getName().str(), emitCAbiCall(func, abiIt->second, cargs)));
         return;
     }
 
@@ -747,8 +747,8 @@ void CodeGen::visit(CallExpr* node) {
         createMaybeInvoke(func->getFunctionType(), func, args);
         exprValueStack.push(builder->CreateLoad(sretIt->second, sretAlloca));
     } else {
-        exprValueStack.push(
-            createMaybeInvoke(func->getFunctionType(), func, args));
+        exprValueStack.push(widenCResult(func->getName().str(),
+            createMaybeInvoke(func->getFunctionType(), func, args)));
     }
 }
 

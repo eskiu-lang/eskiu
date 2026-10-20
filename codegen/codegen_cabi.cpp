@@ -24,6 +24,7 @@ CodeGen::CAbiTarget CodeGen::cabiTarget() const {
         return t.isOSWindows() ? CAbiTarget::Win64 : CAbiTarget::SysV;
     if (t.isARM() || t.isThumb()) return CAbiTarget::ARM32;
     if (t.getArch() == llvm::Triple::x86) return CAbiTarget::X86;
+    if (t.getArch() == llvm::Triple::wasm32) return CAbiTarget::Wasm32;
     return CAbiTarget::None;
 }
 
@@ -441,6 +442,16 @@ CodeGen::CAbiArg CodeGen::classifyCAbi(llvm::Type* ty, bool isReturn, CAbiTarget
         }
         return indirect(CAbiArg::ByVal, 4);
     }
+    case CAbiTarget::Wasm32: {
+        // clang's WebAssembly C ABI: a struct made of one scalar (through one-field
+        // structs and one-element arrays) is that scalar; any other aggregate goes
+        // byval at its alignment, and comes back through sret.
+        if (llvm::Type* e = x86SingleElement(ty)) {
+            r.kind = CAbiArg::Coerce; r.ty = e;
+            return r;
+        }
+        return indirect(CAbiArg::ByVal, align);
+    }
     case CAbiTarget::None:
         break;
     }
@@ -683,6 +694,34 @@ llvm::Value* CodeGen::evalCVaList(const ExprPtr& arg) {
         if (lookupSymbol(id->name))
             return builder->CreateLoad(llvm::PointerType::get(*context, 0), evaluateLValue(arg));
     return builder->CreateExtractValue(evaluateExpr(arg), {0});
+}
+
+// The C integer types an extern spells by name (<ctypes>): size_t, ssize_t and c_long
+// are int64 in Eskiu, and in the extern's declaration the target's C types, 32 bits
+// wide on 32-bit targets (and c_long on Windows). 'z', 's', 'l', or 0 for anything else.
+char CodeGen::cIntKind(const std::string& spelling) {
+    std::string t = spelling;
+    if (t.rfind("const ", 0) == 0) t = t.substr(6);
+    if (t == "size_t") return 'z';
+    if (t == "ssize_t") return 's';
+    if (t == "c_long") return 'l';
+    return 0;
+}
+
+llvm::Type* CodeGen::cIntType(char kind) {
+    llvm::Triple t(module->getTargetTriple());
+    unsigned ptrBits = module->getDataLayout().getPointerSizeInBits();
+    unsigned bits = kind == 'l' && t.isOSWindows() ? 32 : ptrBits;
+    return llvm::Type::getIntNTy(*context, bits);
+}
+
+// The int64 Eskiu sees for the result of an extern whose C result is narrower.
+llvm::Value* CodeGen::widenCResult(const std::string& name, llvm::Value* v) {
+    auto it = externRetExt.find(name);
+    if (it == externRetExt.end() || !v->getType()->isIntegerTy() || v->getType()->isIntegerTy(64))
+        return v;
+    llvm::Type* i64 = llvm::Type::getInt64Ty(*context);
+    return it->second == 'z' ? builder->CreateZExt(v, i64) : builder->CreateSExt(v, i64);
 }
 
 // The Eskiu `va_list` value of a `va_list` C passed in: on x86-64 System V and AArch64

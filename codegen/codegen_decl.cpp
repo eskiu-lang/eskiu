@@ -100,6 +100,17 @@ void CodeGen::visit(Program* node) {
     for (auto& decl : node->declarations)
         if (auto* f = dynamic_cast<FunctionDecl*>(decl.get()))
             if (f->body) definedFunctionNames.insert(f->name);
+    for (auto& decl : node->declarations) {
+        auto* e = dynamic_cast<ExternDecl*>(decl.get());
+        if (!e) continue;
+        std::vector<char>& k = externCInts[e->name];
+        size_t n = 0;
+        while (n < e->params.size() && e->params[n].first != "...") ++n;
+        if (k.size() < n + 1) k.resize(n + 1, 0);
+        for (size_t i = 0; i < n; ++i)
+            if (char c = cIntKind(e->params[i].first)) k[i] = c;
+        if (char c = cIntKind(e->returnType)) k[n] = c;
+    }
     for (auto& decl : node->declarations)
         if (dynamic_cast<ExternDecl*>(decl.get())) decl->accept(this);
     for (auto& decl : node->declarations) {
@@ -336,9 +347,11 @@ void CodeGen::visit(VarDecl* node) {
             return;
         }
         // A script's global starts at zero; the implicit main assigns its initializer.
+        splitUnionTop = declType;
         llvm::Constant* init = node->initializer && !node->scriptInit
             ? constInitializer(node->initializer, declType)
             : nullptr;
+        splitUnionTop = nullptr;
         if (!init && node->initializer && !node->scriptInit)
             throw std::runtime_error("initializer of global '" + node->name +
                                      "' is not a compile-time constant");
@@ -357,6 +370,9 @@ void CodeGen::visit(VarDecl* node) {
             gv = new llvm::GlobalVariable(
                 *module, init->getType(), /*isConstant=*/false,
                 llvm::GlobalValue::ExternalLinkage, init, node->name);
+            // A literal of another type keeps the declared type's alignment.
+            if (init->getType() != declType)
+                gv->setAlignment(module->getDataLayout().getABITypeAlign(declType));
             if (prior && prior->isDeclaration()) {
                 gv->takeName(prior);
                 prior->replaceAllUsesWith(gv);
@@ -839,8 +855,21 @@ void CodeGen::visit(ExternDecl* node) {
     if (std::find(fnPtr.begin(), fnPtr.end(), true) != fnPtr.end()) externFnPtrParams[node->name] = fnPtr;
     if (std::find(vaList.begin(), vaList.end(), true) != vaList.end()) externVaListParams[node->name] = vaList;
 
-    // Create function type
+    // size_t, ssize_t and c_long are int64 in Eskiu and the target's C types here.
     llvm::Type* returnType = getTypeFromString(node->returnType);
+    auto ck = externCInts.find(node->name);
+    if (ck != externCInts.end()) {
+        const std::vector<char>& k = ck->second;
+        for (size_t i = 0; i < paramTypes.size() && i < k.size(); ++i)
+            if (k[i]) paramTypes[i] = cIntType(k[i]);
+        char rk = k.size() > paramTypes.size() ? k[paramTypes.size()] : 0;
+        if (rk) {
+            returnType = cIntType(rk);
+            if (!returnType->isIntegerTy(64)) externRetExt[node->name] = rk == 'z' ? 'z' : 's';
+        }
+    }
+
+    // Create function type
     llvm::FunctionType* funcType = llvm::FunctionType::get(returnType, paramTypes, hasVarargs);
 
     // By-value aggregates: declare the C-ABI-lowered signature (see codegen_cabi.cpp).

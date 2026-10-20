@@ -300,7 +300,16 @@ llvm::Constant* CodeGen::constAggregateImage(StructInitExpr* si, const std::stri
             else img.bytes[p / 8] &= (uint8_t)~(1u << (p % 8));
         }
     }
-    return constFromImage(DL, st, img, 0);
+    llvm::Constant* c = constFromImage(DL, st, img, 0);
+    if (c || !isUnion || st != splitUnionTop) return c;
+    auto d = img.direct.find(0);
+    if (d == img.direct.end() || !d->second->getType()->isPointerTy()) return nullptr;
+    uint64_t ps = DL.getTypeAllocSize(d->second->getType()).getFixedValue();
+    if (ps >= size) return nullptr;
+    for (uint64_t i = ps; i < size; ++i)
+        if (img.bytes[i] || img.opaque[i]) return nullptr;
+    llvm::Type* pad = llvm::ArrayType::get(llvm::Type::getInt8Ty(*context), size - ps);
+    return llvm::ConstantStruct::getAnon(*context, {d->second, llvm::Constant::getNullValue(pad)});
 }
 
 llvm::Value* CodeGen::lookupSymbol(const std::string& name) {

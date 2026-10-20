@@ -448,7 +448,7 @@ private:
     // (unchanged), Coerce (one value of `ty`), Expand (the elements of the literal
     // struct `ty` as separate args), Indirect (pointer to a caller copy), ByVal
     // (pointer + byval), Sret (hidden result pointer).
-    enum class CAbiTarget { None, AArch64, SysV, Win64, ARM32, X86 };
+    enum class CAbiTarget { None, AArch64, SysV, Win64, ARM32, X86, Wasm32 };
     struct CAbiArg {
         enum Kind { Direct, Coerce, Expand, Indirect, ByVal, Sret } kind = Direct;
         llvm::Type* ty = nullptr;
@@ -499,6 +499,17 @@ private:
     // extern: which parameters are. Functions the program defines are never lowered.
     std::map<std::string, std::vector<bool>> externFnPtrParams;
     std::map<std::string, std::vector<bool>> externVaListParams;
+    // The C integer types of each extern's parameters (then its result) spelled
+    // size_t, ssize_t or c_long, over all its declarations: 'z', 's', 'l' or 0.
+    std::map<std::string, std::vector<char>> externCInts;
+    std::map<std::string, char> externRetExt;   // a C result narrower than int64: 'z' or 's'
+    static char cIntKind(const std::string& spelling);
+    llvm::Type* cIntType(char kind);
+    llvm::Value* widenCResult(const std::string& name, llvm::Value* v);
+    // The declared type of the global whose initializer is being folded: a union literal
+    // of that type holding an address narrower than its layout member (a pointer in an
+    // int64-laid-out union on a 32-bit target) folds to a `{ ptr, [N x i8] }` literal.
+    llvm::Type* splitUnionTop = nullptr;
     llvm::Value* evalCVaList(const ExprPtr& arg);
     llvm::Value* cVaListToEskiu(llvm::Value* c, llvm::Type* vaTy);
     llvm::Value* emitVaArg(llvm::Value* ap, llvm::Type* ty);
