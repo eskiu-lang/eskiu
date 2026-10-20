@@ -107,7 +107,7 @@ a:hover { color: var(--ink); }
          font-size: 24px; color: var(--ink); }
 .brand img { width: 34px; height: 34px; }
 .brand .v { font-family: var(--mono); font-weight: 400; font-size: 12px; color: var(--faint); margin-left: 2px; }
-.nav { display: none; gap: 30px; font-weight: 500; font-size: 16px; }
+.nav { display: none; gap: 26px; font-weight: 500; font-size: 16px; }
 .nav a { color: var(--ink); }
 .nav a:hover, .nav a[aria-current] { color: var(--purple); }
 .nav a[aria-current] { text-decoration: underline; text-underline-offset: 6px; text-decoration-thickness: 1.5px; }
@@ -121,8 +121,9 @@ a:hover { color: var(--ink); }
 .drawer a { display: block; padding-block: 14px; font-size: 18px; font-weight: 500; color: var(--ink);
             border-bottom: 1px solid var(--rule); }
 .top.open .drawer { display: block; }
-@media (min-width: 900px) {
-  .nav, .btn-install { display: flex; }
+@media (min-width: 900px) { .btn-install { display: flex; } }
+@media (min-width: 1280px) {
+  .nav { display: flex; }
   .menu-btn, .drawer, .top.open .drawer { display: none; }
 }
 
