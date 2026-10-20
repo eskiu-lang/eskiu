@@ -615,7 +615,13 @@ void TypeChecker::visit(ThreadJoinStmt* node) {
         errorAt(node, "thread_join expects a thread handle ('*void' from thread_create), got '" + t + "'");
 }
 
+// WebAssembly has no C++-style unwinding in the toolchains Eskiu links with yet.
+static bool wasmTarget(const std::string& triple) {
+    return triple.rfind("wasm32", 0) == 0 || triple.rfind("wasm64", 0) == 0;
+}
+
 void TypeChecker::visit(ThrowStmt* node) {
+    if (wasmTarget(targetTriple)) errorAt(node, "exceptions are not supported on WebAssembly targets");
     if (node->value) {
         node->value->accept(this);
         if (isVoidValueType(getExpressionType(node->value.get())))
@@ -625,6 +631,7 @@ void TypeChecker::visit(ThrowStmt* node) {
 }
 
 void TypeChecker::visit(TryStmt* node) {
+    if (wasmTarget(targetTriple)) errorAt(node, "exceptions are not supported on WebAssembly targets");
     if (node->body) node->body->accept(this);
     for (auto& c : node->catches) {
         pushScope();
