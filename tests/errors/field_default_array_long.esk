@@ -1,0 +1,5 @@
+// EXPECT-ERROR: array literal has 3 elements but 'int[2]' holds 2
+struct S {
+    int[2] a = {1, 2, 3};
+}
+int main() { return 0; }

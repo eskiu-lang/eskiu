@@ -1,0 +1,9 @@
+// A field default may be an array literal, checked like an array initializer.
+import <io>;
+struct Norm {
+    float[3] mean = {0.5, 0.25, 0.125};
+    int n = 3;
+}
+Norm a;
+Norm b = Norm{n: 4};
+printf("%.3f %.3f %d %.3f %d\n", (double)a.mean[0], (double)a.mean[2], a.n, (double)b.mean[1], b.n);
