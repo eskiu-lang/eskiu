@@ -1064,6 +1064,7 @@ Available modules:
 | `<math>`     | `sqrt`, `fabs`, `pow`, `floor`, `ceil`, `abs`         |
 | `<io>`       | `printf`, `fprintf`, `sprintf`, `scanf`, `puts`; `print`, `println`, `print_err`, `println_err`, `read_line`, `input`, `read_all_stdin` |
 | `<mem>`      | `alloc<T>(n)`, `free(p)`, `memcpy`, `memset`, `memmove`, `memcmp`, `strlen` |
+| `<ctypes>`   | `size_t`, `ssize_t`, `c_long`: C integer types for `extern` declarations, as wide as the target's C types (32 bits on wasm32 and 32-bit ARM and x86) |
 | `<libc>`     | the common C library for ported code (opt-in): string.h, stdlib.h (`malloc`, `strtoll`, `qsort`, ...), stdio.h (`snprintf`, `sscanf`, `fopen`, ...), ctype.h, the rest of libm (`sin`, `log`, `round`, ...), POSIX unistd, `libc_errno()` |
 | `<atomic>`   | `atomic_load`/`store`/`swap`/`cas`/`fetch_add`... on `int`, `int64` (`...64`) and pointer (`..._ptr`) cells, `..._relaxed` forms, `atomic_fence()` |
 | `<alloc>`    | `Bump`, `Arena`, `Pool`, `FirstFit`: explicit allocators over a buffer you own (the Zig model; not a `malloc` replacement) |

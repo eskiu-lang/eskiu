@@ -185,9 +185,10 @@ converts to and from it, so it links against C compiled by clang/gcc:
 | Windows x64 | size 1/2/4/8 → `iN`; otherwise pointer to a caller-made copy | size 1/2/4/8 → `iN`; otherwise `sret` |
 | 32-bit ARM (AAPCS) | hard-float HFA → `{ fp, ... }`; ≤ 64 bytes → `[N x i32]` (`[N x i64]` if 8-aligned); larger → `byval` | hard-float HFA → `{ fp, ... }`; ≤ 4 bytes → `i32`; otherwise `sret` |
 | 32-bit x86 (cdecl: i386 SysV, Darwin, Windows) | ≤ 16 bytes made only of 32/64-bit scalars (`int`, `int64`, `float`, `double`, pointers) with no padding → those scalars as separate arguments (`{ int, double }` → `i32, double`; not on Windows, where `double` is 8-aligned and leaves padding); anything else → `byval` in a 4-byte-aligned stack slot | Linux (and other SysV i386 systems): always `sret`. Darwin, Windows and the BSDs: 1, 2, 4 or 8 bytes whose fields are each register-sized → `iN` in EAX:EDX, except a single-element struct of a `float`/`double` (in ST0; not under MSVC's rules, mingw keeps it) or a pointer, returned as that scalar; otherwise `sret` |
+| wasm32 (emscripten, WASI) | a single-element struct (one scalar through one-field structs, one-element arrays and one-member unions) → that scalar; anything else → `byval` at its alignment | single-element struct → that scalar; otherwise `sret` |
 
 The coerced types match what clang emits for the same C signature
-(`tests/selfhost/cabi_parity.sh` checks the 32-bit x86 ones against clang's IR
+(`tests/selfhost/cabi_parity.sh` checks the 32-bit x86 and wasm32 ones against clang's IR
 for the tests' C companions). Other targets keep the first-class lowering. Fat values (closures, slices) and
 `va_list` are not C aggregates and keep their own layout.
 
@@ -195,6 +196,17 @@ Where gcc and clang disagree, Eskiu follows clang. The one known case: since GCC
 x86-64 classifies a struct holding a zero-width bitfield (`uint32 : 0;`) differently when it
 is passed or returned by value, so such a struct crossing an `extern` matches C compiled by
 clang, not by GCC 12 or later.
+
+**Target-width C integers.** `size_t`, `ssize_t` and `c_long` (`<ctypes>`) are `int64`
+aliases in Eskiu. In an `extern`'s parameters and result the compiler declares the target's
+C type instead (`cIntKind`/`cIntType` / self-host `cg_cint_kind`/`cg_cint_ll`): pointer
+width for `size_t` and `ssize_t`, and for `c_long` 32 bits on Windows and pointer width
+elsewhere. Every declaration of the extern counts, so one spelled `size_t` in one module and
+`int64` in another is lowered as `size_t`. An argument is truncated to the C width and a
+narrower result is zero-extended (`size_t`) or sign-extended (the others) back to `int64`
+(`widenCResult` / `cg_widen_cret`). On a 64-bit target nothing changes. The compiler's own
+calls (`malloc` for a heap closure env, `snprintf`/`write` in the uncaught-exception
+reporter) use the same `size_t`.
 
 **Narrow integers.** Like clang, an `extern`'s `int8`/`int16`/`uint8`/`uint16`/
 `bool`/`char` parameters and results are declared `signext` or `zeroext` (by the

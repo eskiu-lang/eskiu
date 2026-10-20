@@ -384,6 +384,7 @@ pre.code-block {
 <a href="#chapter-17" class="toc-ch">Chapter 17</a>
 <a href="#sec-17-1" class="toc-sec">17.1 --target</a>
 <a href="#sec-17-2" class="toc-sec">17.2 --freestanding</a>
+<a href="#sec-17-3" class="toc-sec">17.3 The web and phones</a>
 <a href="#chapter-18" class="toc-ch">Chapter 18</a>
 <a href="#sec-18-1" class="toc-sec">18.1 Why bare-metal matters</a>
 <a href="#sec-18-2" class="toc-sec">18.2 What changes in freestanding mode</a>
@@ -508,7 +509,7 @@ pre.code-block {
   <div class="toc-entry"><a href="#chapter-14"><strong>Chapter 14: C Interop</strong> <span class="toc-entry-desc">(Calling any C library from Eskiu)</span></a></div>
   <div class="toc-entry"><a href="#chapter-15"><strong>Chapter 15: The Standard Library</strong> <span class="toc-entry-desc">(result, list, string, math, io, mem, fs, net)</span></a></div>
   <div class="toc-entry"><a href="#chapter-16"><strong>Chapter 16: Inline Assembly</strong> <span class="toc-entry-desc">(Talking directly to hardware)</span></a></div>
-  <div class="toc-entry"><a href="#chapter-17"><strong>Chapter 17: Cross-compilation</strong> <span class="toc-entry-desc">(Building for ARM, x86-64, Windows, and bare-metal)</span></a></div>
+  <div class="toc-entry"><a href="#chapter-17"><strong>Chapter 17: Cross-compilation</strong> <span class="toc-entry-desc">(Building for ARM, x86-64, Windows, WebAssembly, Android, iOS and bare metal)</span></a></div>
   <div class="toc-entry"><a href="#chapter-18"><strong>Chapter 18: Bare-metal Programming</strong> <span class="toc-entry-desc">(A kernel in Eskiu: no libc, no OS)</span></a></div>
   <div class="toc-entry"><a href="#chapter-19"><strong>Chapter 19: Ownership and Resources</strong> <span class="toc-entry-desc">(Designing safe code with alloc and free)</span></a></div>
   <div class="toc-entry"><a href="#chapter-20"><strong>Chapter 20: Debugging</strong> <span class="toc-entry-desc">(Segfaults, leaks, and diagnostic strategies)</span></a></div>
@@ -2365,6 +2366,9 @@ pre.code-block {
 <pre class="code-block"> x86_64-pc-windows-gnu                      Windows on Intel/AMD 64-bit (COFF object)</pre>
 <pre class="code-block"> armv6k-none-eabihf                         32-bit ARM (Nintendo 3DS), hard-float</pre>
 <pre class="code-block"> i686-pc-linux-gnu                          Linux on 32-bit x86</pre>
+<pre class="code-block"> wasm32-unknown-emscripten                  WebAssembly for browsers and node (emscripten)</pre>
+<pre class="code-block"> aarch64-linux-android24                    Android phones, API level 24 and later</pre>
+<pre class="code-block"> arm64-apple-ios15.0                        iOS devices (add -simulator for the simulator)</pre>
 <p>A 32-bit ARM triple reaches smaller and older hardware. Three flags tune the machine: <code>--mcpu</code> (for example <code>mpcore</code> for the 3DS's ARM11), <code>--mattr</code> (an LLVM feature string like <code>+vfp2</code>), and <code>--reloc</code> (<code>static</code> for a loader that applies fixed relocations). A triple ending in <code>hf</code> (like <code>armv6k-none-eabihf</code>) selects the hard-float ABI, so the object carries the <code>Tag_ABI_VFP_args</code> attribute and links against hard-float libraries. An object built this way links into a Nintendo 3DS <code>.3dsx</code> homebrew through the devkitARM toolchain, with its logic in Eskiu running on the ARM11.</p>
 <p>Without <code>--mcpu</code> every build targets the baseline CPU of its target, a native build included, as clang does: <code>apple-m1</code> on arm64 Apple targets (every Apple arm64 chip has its features, LSE atomics included) and <code>generic</code> elsewhere. The binary then runs on any machine of that architecture, including a VM or a host that hides some CPU features. To use the instructions of a particular processor, name it: <code>--mcpu apple-m1</code>, or <code>--mcpu x86-64-v3</code> for recent x86-64.</p>
 <p>Windows is a hosted target, not a bare-metal one. The compiler emits a COFF object with the Microsoft x64 calling convention, and the preprocessor predefines <code>_WIN32</code> and <code>_WIN64</code> so the standard library takes its Windows branches. Link the object with a mingw <code>g++</code> and the whole stdlib runs there: exceptions unwind through the SEH personality, <code>&lt;sysheap&gt;</code> maps pages with <code>VirtualAlloc</code>, <code>&lt;net&gt;</code> talks to Winsock, and the async reactor in <code>&lt;eventloop&gt;</code> runs on <code>WSAPoll</code>. So both a blocking and an async server build and run on Windows the same as on Linux or macOS.</p>
@@ -2384,6 +2388,17 @@ pre.code-block {
        return p;
  }</pre>
 <pre class="code-block"> void esk_free(*uint8 ptr) { /* bump: free is a no-op */ }</pre>
+<h2 class="section" id="sec-17-3">17.3 The web and phones</h2>
+<p>An Eskiu module can run inside a web page or a phone app. For the web the target is <code>wasm32-unknown-emscripten</code>: without <code>$CC</code>, <code>eskiuc</code> links through emscripten's <code>emcc</code>, and the output's extension says what you get.</p>
+<pre class="code-block"> $ eskiuc app.esk --target wasm32-unknown-emscripten -o app.js
+ $ node app.js</pre>
+<p>On Android the triple names the API level, and the driver links with the NDK's clang, which it finds through <code>$ANDROID_NDK_HOME</code> or the Android SDK. On iOS it links through <code>xcrun</code>, for a device or for the simulator.</p>
+<p>An app usually links its native code from its own build (Xcode, Gradle, an emscripten project), so the most useful output there is a library. An output ending in <code>.a</code> is a static library and one ending in <code>.so</code> or <code>.dylib</code> a shared one:</p>
+<pre class="code-block"> $ eskiuc tracker.esk --target aarch64-linux-android24 -o libtracker.so
+ $ eskiuc tracker.esk --target arm64-apple-ios15.0 -o libtracker.a
+ $ eskiuc tracker.esk --target wasm32-unknown-emscripten -o libtracker.a</pre>
+<p>Eskiu functions are C symbols, so the app's C, C++, Objective-C or Kotlin (through JNI) side declares them and calls them. A C function whose parameters are <code>size_t</code> or <code>long</code> changes width on these targets, which are 32-bit on wasm32 and armv7. <code>import &lt;ctypes&gt;</code> gives <code>size_t</code>, <code>ssize_t</code> and <code>c_long</code>: each is an <code>int64</code> in your code and the target's C type in an <code>extern</code>, so one declaration works everywhere. The standard library declares its C functions this way.</p>
+<p>A Windows program that opens its own window, such as one using the <code>gpu</code> package, links with <code>--subsystem=windows</code>, so Windows does not open a console next to it.</p>
 <div class="chapter-start" id="chapter-18"><span class="chapter-label">Chapter 18</span>
 <h1 class="chapter-title">Bare-metal Programming</h1><hr class="chapter-rule"></div>
 <p>Bare-metal means the program runs directly on the hardware, with no operating system, libc, or runtime beneath it. The CPU starts at a known address and executes whatever is there. You set up the stack. You initialise the serial port. You write every byte of output yourself. This chapter walks through the Eskiu kernel that ships in the repository: a real ARM64 kernel that boots in QEMU, prints to the serial console, allocates heap memory, handles exceptions and timer interrupts, switches between tasks, and ends in a small shell, without a single line of C.</p>

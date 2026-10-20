@@ -44,7 +44,7 @@ compiling in every 0.12.x, and later changes are announced by warnings first
 | **volatile** | `volatile let reg: *uint8 = (uint8*) 0x3F8;`: MMIO-safe loads/stores |
 | **Inline asm** | `asm("cli");` simple form; `asm("outb ${0:b}, $1" :: "{ax}"(v), "N{dx}"(p) : "memory");` extended form (LLVM operand references `$0`/`$1` and LLVM constraint codes) |
 | **Freestanding** | `--freestanding` flag: `<mem>` `alloc<T>`/`free` call `esk_alloc`/`esk_free`; user-supplied in kernel |
-| **Cross-compile** | `--target TRIPLE` (AArch64, x86-64, 32-bit ARM, 32-bit x86), plus `--mcpu` / `--mattr` / `--reloc`; hard-float ARM for the 3DS, COFF for Windows. See [cross-compile.md](../dev/cross-compile.md) |
+| **Cross-compile** | `--target TRIPLE` (AArch64, x86-64, 32-bit ARM, 32-bit x86, WebAssembly), plus `--mcpu` / `--mattr` / `--reloc`; hard-float ARM for the 3DS, COFF for Windows, emscripten and WASI, Android through the NDK, iOS through Xcode; `.a` and `.so` library outputs and `--subsystem=windows`. See [cross-compile.md](../dev/cross-compile.md) |
 | **Multi-file** | `import <result>` stdlib modules · `import "file.esk"` relative local files |
 | **Preprocessor** | `#define` (object- and function-like), `#undef`, `#ifdef`/`#ifndef`, `#if`/`#elif` with `defined(X)`, `#else`/`#endif`, `#error`, `#pragma pack`, `#pragma link`; predefined OS and architecture macros |
 | **Errors** | `error: file.esk:8:22: message` for lexer, preprocessor, parser and type errors, naming the file the error is in |

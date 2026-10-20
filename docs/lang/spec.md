@@ -2372,12 +2372,20 @@ An `extern` declaration makes a C function available to Eskiu code. The declarat
 The standard library already declares the common C functions: `<io>` has `printf`, `puts` and the rest of C stdio, `<mem>` the memory and string functions (`memcpy`, `memset`, `strlen`, `strcmp`, `strncmp`, `strchr`, `strstr`), `<math>` the libm ones (`sqrt`, `pow`, ...), and `<process>` has `process_exit`. A program imports those modules and declares an `extern` itself only for other functions; an `extern` that repeats one of them with different types is a conflicting declaration.
 
 ```eskiu
+import <ctypes>;
 extern int printf(string fmt, ...);
-extern int64 strlen(string s);
-extern *void memcpy(*void dst, *void src, int64 n);
+extern size_t strlen(string s);
+extern *void memcpy(*void dst, *void src, size_t n);
 extern int open(string path, int flags);
 extern void exit(int code);
 ```
+
+C's `size_t`, `ssize_t` and `long` change width between targets (32 bits on wasm32,
+32-bit ARM and i686; `long` also on Windows). `import <ctypes>` gives `size_t`, `ssize_t`
+and `c_long`: each is an `int64` in Eskiu, and in an `extern`'s parameters and result the
+compiler passes the target's C type, converting an argument to it and widening the result
+back (zero-extending a `size_t`). Declare such parameters with these names; an `int64` in
+their place is only right on 64-bit targets.
 
 ### 13.2 Extern Variables
 
@@ -2424,14 +2432,14 @@ apply to Eskiu code, not inside the C function, so a C function that does not ac
 For functions that accept or return `void*`, use `*void` on the Eskiu side:
 
 ```eskiu
-extern *void malloc(int64 size);
-extern *void memcpy(*void dst, *void src, int64 n);
-extern *void memset(*void ptr, int value, int64 n);
+extern *void malloc(size_t size);
+extern *void memcpy(*void dst, *void src, size_t n);
+extern *void memset(*void ptr, int value, size_t n);
 ```
 
 (For heap allocation, prefer `import <mem>` and `alloc<T>`/`free` over declaring `malloc`/`free` as `extern` yourself; see §11.2.)
 
-A struct or union may be passed to or returned from an `extern` function **by value**. The compiler lowers such a call to the target's C calling convention (register classes, homogeneous float aggregates, hidden return pointer), matching what clang emits for the same C signature, on AArch64, x86-64 System V, Windows x64, 32-bit ARM (AAPCS, soft and hard float) and 32-bit x86 (cdecl), following `--target`. See [abi.md](../dev/abi.md) for the per-target rules.
+A struct or union may be passed to or returned from an `extern` function **by value**. The compiler lowers such a call to the target's C calling convention (register classes, homogeneous float aggregates, hidden return pointer), matching what clang emits for the same C signature, on AArch64, x86-64 System V, Windows x64, 32-bit ARM (AAPCS, soft and hard float), 32-bit x86 (cdecl) and wasm32, following `--target`. See [abi.md](../dev/abi.md) for the per-target rules.
 
 ```eskiu
 struct Vec2 { double x; double y; }
@@ -2446,7 +2454,7 @@ function-pointer address, the raw symbol, not the `{fn, env}` closure fat
 pointer a function name otherwise decays to:
 
 ```eskiu
-extern void qsort(*void base, int64 n, int64 size, *void compar);
+extern void qsort(*void base, size_t n, size_t size, *void compar);
 
 int cmp(*void a, *void b) { return *(*int)a - *(*int)b; }
 
@@ -2468,7 +2476,7 @@ spell the callback's signature and the call passes a top-level function by name
 (or `null`), with no cast:
 
 ```eskiu
-extern void qsort(*void base, int64 n, int64 size, fn(*void, *void)->int cmp);
+extern void qsort(*void base, size_t n, size_t size, fn(*void, *void)->int cmp);
 
 qsort((*void)&arr[0], (int64)5, (int64)4, cmp);
 ```
@@ -3441,6 +3449,9 @@ Sections are separated by `:`. Trailing sections may be omitted if empty.
 | `eskiuc file.esk -o prog --link-arg=ARG` | Pass an extra argument to the linker (repeatable) |
 | `eskiuc file.esk -o prog --no-default-libs` | Link only what `-l` names: skip `#pragma link` and the implied runtimes |
 | `eskiuc file.esk -o file.o` | Compile to an object file only (no link) |
+| `eskiuc file.esk -o libfile.a` | Compile to a static library (`.a`, or `.lib`) |
+| `eskiuc file.esk -o libfile.so` | Link a shared library (`.so`, `.dylib`, `.dll`) |
+| `eskiuc file.esk -o prog --subsystem=windows` | Link a Windows program for the GUI subsystem (no console) |
 | `eskiuc file.esk -c -o name` | Compile to an object file only, any name |
 | `eskiuc file.esk` | Compile to `file.esk.o` (object only) |
 | `eskiuc file.esk --target TRIPLE` | Cross-compile for the given target triple |
@@ -3458,7 +3469,12 @@ Sections are separated by `:`. Trailing sections may be omitted if empty.
 **Linking.** When the `-o` output is not an object file (no `.o` suffix) and `-c`
 is absent, `eskiuc` links the program into an executable by invoking the system
 C toolchain (`$CC`, then `cc`/`clang`/`gcc` on the `PATH`) exactly as `rustc`
-and `clang` do internally. `$CC` may include arguments (`CC="clang --target=..."`). `-l<lib>` and `-L<path>` flags, and any `--link-arg=<arg>`,
+and `clang` do internally. Without `$CC`, a WebAssembly (emscripten), Android or iOS
+`--target` links with that platform's driver instead: `emcc`, the Android NDK's clang, or
+`xcrun -sdk iphoneos clang`. An output ending in `.a` or `.lib` is a static library (the
+object in an archive), and one ending in `.so`, `.dylib` or `.dll` a shared library
+(linked with `-shared`). `--subsystem=windows` links a Windows program for the GUI
+subsystem, still entered at `main`. `$CC` may include arguments (`CC="clang --target=..."`). `-l<lib>` and `-L<path>` flags, and any `--link-arg=<arg>`,
 are forwarded to the linker. A C toolchain must therefore be installed (it is the
 only build-time dependency besides LLVM).
 
@@ -3496,7 +3512,7 @@ invocation in `kernel/Makefile`).
 
 ### Cross-compilation
 
-`--target TRIPLE` sets the LLVM target triple for the output object file. The AArch64, X86 and 32-bit ARM LLVM backends are included in the Eskiu build. `--mcpu`, `--mattr` and `--reloc` select the CPU, the feature string and the relocation model. See [cross-compile.md](../dev/cross-compile.md) for worked examples.
+`--target TRIPLE` sets the LLVM target triple for the output object file. The AArch64, X86, 32-bit ARM and WebAssembly LLVM backends are included in the Eskiu build. On a WebAssembly target `try` and `throw` are errors (no exception support there yet). `--mcpu`, `--mattr` and `--reloc` select the CPU, the feature string and the relocation model. See [cross-compile.md](../dev/cross-compile.md) for worked examples.
 
 ```bash
 eskiuc kernel.esk --target x86_64-pc-linux-gnu --freestanding -o kernel.o
@@ -3514,6 +3530,10 @@ Common triples:
 | `x86_64-pc-windows-gnu` | COFF x86-64 (Windows, MinGW) |
 | `i686-pc-linux-gnu` | ELF 32-bit x86 (Linux) |
 | `armv6k-none-eabihf` | Bare-metal 32-bit ARM, hard float (e.g. the Nintendo 3DS with `--mcpu=mpcore`) |
+| `wasm32-unknown-emscripten` | WebAssembly through emscripten (browsers and node) |
+| `wasm32-wasip1` | WebAssembly with WASI |
+| `aarch64-linux-android24` | Android, 64-bit ARM, API level 24 (also `armv7a-linux-androideabi24`, `x86_64-linux-android24`) |
+| `arm64-apple-ios15.0` | iOS devices (`arm64-apple-ios15.0-simulator` for the simulator) |
 
 When `--target` is omitted the compiler defaults to the host machine's triple.
 

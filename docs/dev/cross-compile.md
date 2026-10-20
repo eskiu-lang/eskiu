@@ -10,11 +10,19 @@
 | `--mattr`   | LLVM feature string, `-mattr` syntax (e.g. `+vfp2`).                              |
 | `--reloc`   | Relocation model: `pic` (default), `static`, or `dynamic-no-pic`.                |
 
-The registered backends are AArch64, x86 (x86-64 and 32-bit i686), and 32-bit ARM. For a
-cross target, emit an object file (`-c`, or an output ending in `.o`) and link it with a
-cross toolchain for the same platform. An executable output makes `eskiuc` link through
-`$CC` (else `cc`, `clang` or `gcc`), which only works for another target when `CC` points
-at a C driver for it.
+The registered backends are AArch64, x86 (x86-64 and 32-bit i686), 32-bit ARM and
+WebAssembly (wasm32). For a cross target, emit an object file (`-c`, or an output ending in
+`.o`) and link it with a cross toolchain for the same platform. An executable output makes
+`eskiuc` link through `$CC`. When `$CC` is not set, a WebAssembly, Android or iOS triple
+picks that platform's driver (see the sections below); any other target uses `cc`, `clang`
+or `gcc`, which only works for another target when one of them is a C driver for it.
+
+The output's extension decides what is built: an executable, an object (`.o`, `.obj`), a
+static library (`.a`, `.lib`: the object in an archive, written by `eskiuc` itself) or a
+shared library (`.so`, `.dylib`, `.dll`: linked with `-shared`; objects are
+position-independent by default). A library is how an Eskiu module goes into an app that
+another build system links, such as an Xcode project, a Gradle module or an emscripten
+build.
 
 ## Platform macros
 
@@ -30,6 +38,12 @@ The preprocessor predefines a platform macro so `import`ed stdlib code can branc
 An architecture macro follows the same rule (the `--target` triple, else the build host):
 `__aarch64__` for AArch64, `__x86_64__` for x86-64, `__arm__` for 32-bit ARM. At most one
 is defined.
+
+Three more families get the macros clang predefines for them: a `wasm32` triple defines
+`__wasm__` and `__wasm32__` (plus `__EMSCRIPTEN__` for emscripten and `__wasi__` for WASI),
+an Android triple defines `__ANDROID__` next to `__linux__`, and an iOS triple defines
+`TARGET_OS_IPHONE` and `TARGET_OS_IOS` next to `__APPLE__` (plus `TARGET_IPHONE_SIMULATOR`
+for a simulator).
 
 `--freestanding` additionally predefines `__ESKIU_FREESTANDING__` and routes `alloc`/`free`
 to caller-supplied `esk_alloc`/`esk_free` instead of libc.
@@ -131,3 +145,82 @@ The **async** stack runs on Windows too. `<eventloop>` swaps its epoll/kqueue re
 sequential fd (handles like 236 are normal), so the loop's fd-indexed slot table grows to fit
 the largest handle rather than assuming a dense `[0, max_fds)` range. A non-blocking socket
 round-trip over the reactor is checked end to end on the native Windows runner.
+
+## C types whose width depends on the target
+
+C's `size_t`, `ssize_t` and `long` change width between targets: 32 bits on wasm32,
+32-bit ARM and i686, and `long` also on Windows. Eskiu sees each of them as an `int64`;
+spelled `size_t`, `ssize_t` or `c_long` (from `import <ctypes>;`) in an `extern`'s
+parameters or result, the declaration uses the target's C type, an argument is converted to
+it and the result widened back. The standard library declares the C functions it uses this
+way, so `strlen`, `memcpy`, `malloc`, `read` or `snprintf` are right on every target. A
+program that declares such a function itself should do the same; an `int64` there is wrong
+on a 32-bit target (on WebAssembly the call traps on the signature mismatch).
+
+## WebAssembly
+
+`--target wasm32-unknown-emscripten` builds for [emscripten](https://emscripten.org), the
+toolchain most web projects use. With no `$CC`, `eskiuc` links through `emcc`, so the
+output's extension chooses what emcc writes (`.js` with its `.wasm`, `.html`, or `.wasm`),
+and `--link-arg` passes emcc's settings:
+
+```bash
+eskiuc app.esk --target wasm32-unknown-emscripten -o app.js --link-arg=-sEXIT_RUNTIME=1
+node app.js
+```
+
+To use Eskiu inside an existing emscripten project, build a static library and link it like
+any other: `eskiuc tracker.esk --target wasm32-unknown-emscripten -o libtracker.a`, then
+`emcc main.cpp libtracker.a ...`. Eskiu functions are C symbols, so C++ (an embind
+binding, for instance) declares them `extern "C"` and calls them; JavaScript reaches one
+exported with `-sEXPORTED_FUNCTIONS=_name`.
+
+Other wasm32 triples (`wasm32-wasip1`, `wasm32-unknown-unknown`) link with the LLVM
+toolchain's own `clang --target=...`; WASI needs a sysroot (`--link-arg=--sysroot=...`),
+and `wasm32-unknown-unknown` is normally built `--freestanding`.
+
+The standard library works there as on other POSIX systems, with an event loop over
+`poll()`, so futures, timers and channels run under node. Exceptions (`try`, `throw`) are
+rejected for WebAssembly targets with a located error, and threads need emscripten's
+`-pthread` build. `tests/wasm/check.sh` runs the test corpus this way (emcc and node on
+`PATH`), skipping the tests listed in `tests/wasm/skip.txt` with the reason for each.
+
+## Android
+
+An Android triple carries the API level: `aarch64-linux-android24`,
+`armv7a-linux-androideabi24`, `x86_64-linux-android24`. With no `$CC`, `eskiuc` links with
+the NDK's clang, from `$ANDROID_NDK_HOME`, `$ANDROID_NDK_ROOT`, or the newest NDK under
+the SDK (`$ANDROID_HOME/ndk`, or the SDK manager's default directory). A shared library is
+what an app loads (`System.loadLibrary`, or a React Native module's native part):
+
+```bash
+eskiuc tracker.esk --target aarch64-linux-android24 -o libtracker.so
+```
+
+pthread is part of Android's libc, so a program with threads links no `-lpthread`, and one
+that throws links the NDK's `libc++_static` and `libc++abi`. `PLATFORM=android
+tests/mobile/check.sh` runs the test corpus on an emulator or device through `adb`.
+
+## iOS
+
+`arm64-apple-ios15.0` builds for devices and `arm64-apple-ios15.0-simulator` (or
+`x86_64-apple-ios15.0-simulator`) for the simulator. With no `$CC`, `eskiuc` links through
+`xcrun -sdk iphoneos clang` (`iphonesimulator` for a simulator triple). An app embeds a
+static library, one per slice, which `xcodebuild -create-xcframework` can combine:
+
+```bash
+eskiuc tracker.esk --target arm64-apple-ios15.0 -o ios/libtracker.a
+eskiuc tracker.esk --target arm64-apple-ios15.0-simulator -o sim/libtracker.a
+xcodebuild -create-xcframework -library ios/libtracker.a -library sim/libtracker.a \
+    -output Tracker.xcframework
+```
+
+The C ABI is the Darwin AArch64 one, as on macOS. `tests/mobile/check.sh` runs the test
+corpus on a booted simulator (`xcrun simctl spawn`).
+
+## Windows GUI programs
+
+A program that opens its own window, such as one using the `gpu` package, links for the GUI
+subsystem with `--subsystem=windows`, so Windows does not open a console for it. The entry
+point stays `main`: the driver passes `-mwindows` to a mingw link, and `/subsystem:windows`
+with `/entry:mainCRTStartup` to an MSVC one. On other targets the option has no effect.

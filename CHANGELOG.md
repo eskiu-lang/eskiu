@@ -60,12 +60,23 @@ The first public release. Code that compiles with 0.12.0 keeps compiling in ever
 
 ### C interop and targets
 - `extern` functions and variables, with structs and unions passed and returned by value
-  in the target's C ABI (AArch64, x86-64 SysV and Windows, 32-bit ARM, 32-bit x86),
-  callbacks (also ones taking a C `va_list`), `va_list` and variadic functions.
+  in the target's C ABI (AArch64, x86-64 SysV and Windows, 32-bit ARM, 32-bit x86,
+  wasm32), callbacks (also ones taking a C `va_list`), `va_list` and variadic functions.
+- `<ctypes>`: `size_t`, `ssize_t` and `c_long` for `extern` declarations, passed at the
+  target's C width (32 bits on 32-bit targets), so one declaration is right everywhere.
 - Inline assembly with outputs, inputs and clobbers; `volatile` accesses; `intrinsic`.
 - `#pragma link` and implied libraries, so no `-lm`, `-lc++` or `-lpthread` flags.
 - macOS, Linux and Windows hosts; cross-compilation with `--target` (including bare-metal
   `none` triples and `--freestanding`); `-O0` to `-O3`.
+- WebAssembly: `wasm32-unknown-emscripten` (linked by `emcc`) and WASI. The standard
+  library and async runtime run there (an event loop over `poll()`); exceptions are not
+  supported on WebAssembly yet.
+- Android (`aarch64-linux-android24`, armv7, x86_64; linked with the NDK's clang) and iOS
+  (devices and the simulator; linked through `xcrun`).
+- Static (`.a`, `.lib`) and shared (`.so`, `.dylib`, `.dll`) library outputs, for apps
+  that link Eskiu code from Xcode, Gradle or emscripten builds.
+- `--subsystem=windows` links a Windows program that opens its own window without a
+  console.
 
 ### Standard library
 - Collections (`List`, `Map`, `HashMap`, `Set`), strings and bytes, math, sorting, random

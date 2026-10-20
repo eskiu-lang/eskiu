@@ -28,9 +28,11 @@ first-class in the language without giving up general systems use.
 - **Standard library.** Collections, strings, JSON, regex, time, random, allocators,
   threads and atomics, an async runtime, and HTTP/1.1, HTTP/2 and TLS servers.
 - **Targets.** Native on macOS arm64, Linux x86-64 and arm64, and Windows x86-64, with
-  prebuilt binaries for all four. Cross-compilation to 32-bit ARM (verified on a Nintendo
-  3DS) and 32-bit x86, and freestanding builds for bare metal (an ARM64 kernel boots in
-  QEMU). The C ABI is followed on every target. See [`cross-compile.md`](cross-compile.md).
+  prebuilt binaries for all four. Cross-compilation to WebAssembly (emscripten and WASI),
+  Android and iOS, with static and shared library outputs for app builds, to 32-bit ARM
+  (verified on a Nintendo 3DS) and 32-bit x86, and freestanding builds for bare metal (an
+  ARM64 kernel boots in QEMU). The C ABI is followed on every target. See
+  [`cross-compile.md`](cross-compile.md).
 - **Self-hosting.** The compiler is also written in Eskiu (`selfhost/`). It reaches a
   three-stage bootstrap fixpoint, behaves like the C++ compiler over the whole test corpus,
   and is built and checked by CI as `eskiuc-esk`. The C++ `eskiuc` remains the released
@@ -45,9 +47,8 @@ first-class in the language without giving up general systems use.
 - **Formatter.** Breaking lines that are too long.
 - **Build times.** Measure a package with several dependencies, then decide whether
   modules need a cache.
-- **Windows GUI programs.** An option to link a Windows program for the GUI subsystem
-  (`-mwindows`), so a program that opens its own window, such as one using the `gpu`
-  package, does not also open a console.
+- **Exceptions on WebAssembly.** `try`/`throw` are rejected for wasm32 today; emscripten's
+  wasm exception handling would make them work there.
 - **Native libraries in packages.** A package that links a native library (such as `gpu`
   with wgpu-native and SDL3, or an ONNX Runtime binding) needs it installed by hand today
   (`brew install`, a release archive) and its directory given as `eskiuc build -L...`;

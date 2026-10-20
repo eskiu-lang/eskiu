@@ -9,7 +9,7 @@
 | C++ compiler | C++17 (clang++ recommended, g++ works) | clang++ 17+ |
 | git          | any                                    | n/a         |
 
-LLVM is the only non-trivial dependency. The compiler links the `support`, `core`, `irreader` and native code generation components, plus the AArch64, X86 and ARM backends used for cross-compilation.
+LLVM is the only non-trivial dependency. The compiler links the `support`, `core`, `irreader` and native code generation components, plus the AArch64, X86, ARM and WebAssembly backends used for cross-compilation.
 
 To use a prebuilt compiler instead, see the install instructions in the [README](../../README.md#install). A built `eskiuc` calls the system C compiler (`cc`, `clang` or `gcc`) to link executables, so one must be installed.
 
