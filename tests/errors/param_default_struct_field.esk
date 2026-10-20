@@ -1,0 +1,5 @@
+// EXPECT-ERROR: 4:21: field 'x': cannot convert 'string' to 'int'
+// A struct literal default is checked where it is declared, called or not.
+struct P { int x; }
+void use(P p = P{x: "no"}) { }
+int main() { return 0; }

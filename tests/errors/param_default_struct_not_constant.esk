@@ -1,0 +1,7 @@
+// EXPECT-ERROR: 7:22: default value of parameter 'p' is not a constant
+// A struct literal default must hold constants only.
+struct P { int x; int y; }
+int g() { return 2; }
+int main() { return 0; }
+
+int use(int a, P p = P{1, g()}) { return a + p.x; }

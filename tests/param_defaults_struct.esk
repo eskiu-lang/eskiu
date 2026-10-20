@@ -1,0 +1,44 @@
+// A parameter default may be a struct literal whose values are constants (literals,
+// integer constant expressions, nested struct literals); each call gets its own copy,
+// and the struct's field defaults fill what the literal leaves out.
+extern int printf(string fmt, ...);
+
+struct V3 {
+    double x;
+    double y;
+    double z;
+}
+
+struct Seg {
+    V3 a;
+    V3 b = V3{1.0, 1.0, 1.0};
+    int n;
+}
+
+const int N = 4;
+
+double lift(double s, V3 up = V3{0.0, 1.0, 0.0}, V3 down = V3{x: -1.5, z: 2.0}) {
+    return s * up.y + down.x + down.z;
+}
+
+int count(Seg s = Seg{V3{1.0, 2.0, 3.0}, V3{}, N * 2}) { return s.n + (int)s.a.z + (int)s.b.x; }
+
+// A default copy is the callee's own: changing it does not change the next call's.
+int bump(V3 v = V3{1.0, 0.0, 0.0}) {
+    v.x = v.x + 1.0;
+    return (int)v.x;
+}
+
+struct Box {
+    int w;
+    int area(V3 scale = V3{2.0, 3.0, 0.0}) { return self.w * (int)scale.x * (int)scale.y; }
+}
+
+int main() {
+    printf("%g %g %g\n", lift(2.0), lift(2.0, V3{0.0, 3.0, 0.0}), lift(1.0, V3{}, V3{}));
+    printf("%d %d\n", count(), count(Seg{n: 1}));
+    printf("%d %d\n", bump(), bump());
+    Box b = Box{5};
+    printf("%d %d\n", b.area(), b.area(V3{1.0, 1.0, 0.0}));
+    return 0;
+}
