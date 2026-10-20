@@ -45,6 +45,9 @@ first-class in the language without giving up general systems use.
 - **Formatter.** Breaking lines that are too long.
 - **Build times.** Measure a package with several dependencies, then decide whether
   modules need a cache.
+- **Windows GUI programs.** An option to link a Windows program for the GUI subsystem
+  (`-mwindows`), so a program that opens its own window, such as one using the `gpu`
+  package, does not also open a console.
 
 ## Next: 1.0
 
