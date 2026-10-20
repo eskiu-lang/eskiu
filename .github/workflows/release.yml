@@ -196,6 +196,7 @@ jobs:
             mingw-w64-x86_64-llvm
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-ninja
+            unzip
 
       - name: Configure
         run: |
@@ -221,8 +222,10 @@ jobs:
           ldd dist/bin/eskiuc.exe | grep -i '/mingw64/bin/' | awk '{print $3}' \
             | while read -r dll; do cp "$dll" dist/bin/; done
           cp -r stdlib dist/lib/eskiu/stdlib
-          # Zip via PowerShell so the archive is a native Windows .zip.
-          powershell -Command "Compress-Archive -Path dist/bin,dist/lib -DestinationPath eskiuc-windows-x86_64.zip -Force"
+          # Zip with Windows' own bsdtar: Compress-Archive (Windows PowerShell 5) stores
+          # paths with backslashes, which unzip warns about and exits with 1.
+          /c/Windows/System32/tar.exe -a -c -f eskiuc-windows-x86_64.zip -C dist bin lib
+          unzip -q -t eskiuc-windows-x86_64.zip
 
       - name: Smoke test the packaged .exe
         shell: pwsh
