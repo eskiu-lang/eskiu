@@ -30,9 +30,9 @@ extern int WSAStartup(int version, *void data);
 #endif
 #define DNS_AF_INET 2
 
-// struct addrinfo: Linux puts ai_addr before ai_canonname; macOS/BSD and
-// Windows the other way round, and Windows' ai_addrlen is a size_t.
-#ifdef __linux__
+// struct addrinfo: glibc and musl put ai_addr before ai_canonname; macOS/BSD,
+// Android's bionic and Windows the other way round, and Windows' ai_addrlen is a size_t.
+#if defined(__linux__) && !defined(__ANDROID__)
 struct _dns_addrinfo {
     int ai_flags;
     int ai_family;
