@@ -1,0 +1,33 @@
+// The waker of an await in a generic async function, a lambda created in the instance,
+// reaches that instance's frame: with T = Big the frame's fields sit at other offsets
+// than with T = int, so a waker typed by the generic frame (`*__f_frame<T>` left
+// unsubstituted) set the resume state in the wrong place and the body ran twice.
+import <future>;
+extern int printf(string f, ...);
+
+struct Big { int64 a; int64 b; int64 c; int64 d; }
+
+int runs = 0;
+
+int step(int k) { runs++; return k; }
+
+async T waits<T>(T v, Future<int>* g) {
+    int x = step(1) + await g;
+    printf("x=%d runs=%d\n", x, runs);
+    return v;
+}
+
+int main() {
+    Future<int>* g = future_new<int>();
+    Future<Big>* f = waits<Big>(Big{1, 2, 3, 4}, g);
+    printf("parked runs=%d\n", runs);
+    Future_complete<int>(g, 40);
+    printf("= %lld %lld runs=%d\n", f.value.a, f.value.d, runs);
+    Future_free<Big>(f);
+    Future<int>* g2 = future_new<int>();
+    Future<int>* h = waits<int>(7, g2);
+    Future_complete<int>(g2, 1);
+    printf("= %d runs=%d\n", h.value, runs);
+    Future_free<int>(h);
+    return 0;
+}

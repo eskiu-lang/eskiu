@@ -64,7 +64,10 @@ llvm::Function* CodeGen::emitLambdaFunction(LambdaExpr* node,
             auto* val = builder->CreateLoad(capLLVMTy, gep, capName + ".val");
             builder->CreateStore(val, capAlloca);
             defineSymbol(capName, capAlloca);
-            defineVarType(capName, capType);
+            // A capture of a generic instance's local has the source-form type
+            // (`*__f_frame<T>`): its uses must see this instance's (`*__f_frame<P>`).
+            defineVarType(capName, typeParamOverride.empty() ? capType
+                                                             : substType(capType, typeParamOverride));
         }
     }
 
