@@ -13,6 +13,16 @@
 // commit is checked out from it into its own directory. A lock entry whose URL and rev
 // still match the manifest is reused without running git. The compilers read only the
 // lock (pkgLoadRoots here, pkg_load_roots in selfhost/parser.esk).
+//
+// A package may declare prebuilt native libraries, one archive per platform:
+//
+//   [native.onnxruntime]
+//   macos-arm64 = { url = "https://...tgz", sha256 = "...", lib = "onnxruntime-osx-arm64-1.31.0/lib" }
+//
+// build, run, test, add and fetch download the archive of this host's platform, check its
+// SHA-256 and unpack it into $ESKIU_HOME/native/SHA256 (named by its contents, so it is
+// never fetched twice); pkgLoadRoots then gives the linker its `lib` directory (-L and an
+// rpath, see pkgNativeLibs). A platform with no entry links the library from the system.
 
 #include "pkg.h"
 #include "main_support.h"
@@ -29,8 +39,10 @@
 #include <sstream>
 #include <stdexcept>
 #include <vector>
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Program.h"
+#include "llvm/Support/SHA256.h"
 
 namespace fs = std::filesystem;
 
@@ -197,11 +209,45 @@ struct Dep {
     std::string git, rev, path;
 };
 
+// One prebuilt archive of a native library, for one platform.
+struct NativeSource {
+    std::string url, sha256, lib = "lib";
+};
+
+struct NativeLib {
+    std::string name;
+    std::map<std::string, NativeSource> platforms;   // "macos-arm64" -> its archive
+};
+
 struct Manifest {
     std::string dir;     // absolute directory holding eskiu.toml
     std::string name, version, main;
     std::vector<Dep> deps;
+    std::vector<NativeLib> natives;
 };
+
+const char* const kNativePlatforms[] = {"macos-arm64",   "macos-x86_64", "linux-x86_64",
+                                        "linux-arm64",   "windows-x86_64", "windows-arm64"};
+
+// The platform key of the machine eskiuc runs on ("" when no key names it).
+std::string hostPlatform() {
+#if defined(__APPLE__)
+    std::string os = "macos";
+#elif defined(_WIN32)
+    std::string os = "windows";
+#elif defined(__linux__)
+    std::string os = "linux";
+#else
+    return "";
+#endif
+#if defined(__aarch64__) || defined(_M_ARM64)
+    return os + "-arm64";
+#elif defined(__x86_64__) || defined(_M_X64)
+    return os + "-x86_64";
+#else
+    return "";
+#endif
+}
 
 bool validName(const std::string& n) {
     if (n.empty() || !(std::isalpha((unsigned char)n[0]) || n[0] == '_')) return false;
@@ -290,8 +336,49 @@ Manifest readManifest(const std::string& dir) {
         d.isGit = hasGit;
         m.deps.push_back(d);
     }
+    for (const auto& t : doc) {
+        if (t.first.rfind("native.", 0) != 0) continue;
+        NativeLib lib;
+        lib.name = t.first.substr(7);
+        if (!validName(lib.name))
+            throw PkgError(shown + ": invalid native library name '" + lib.name + "' in [" + t.first + "]");
+        for (const auto& kv : t.second) {
+            const TomlValue& v = kv.second;
+            bool known = false;
+            for (const char* p : kNativePlatforms) known = known || kv.first == p;
+            if (!known)
+                throw fail(v.line, "unknown platform '" + kv.first + "' in [" + t.first +
+                                       "] (macos-arm64, macos-x86_64, linux-x86_64, linux-arm64, "
+                                       "windows-x86_64, windows-arm64)");
+            if (!v.isTable)
+                throw fail(v.line, "'" + kv.first + "' in [" + t.first +
+                                       "] must be an inline table: { url = \"URL\", sha256 = \"HEX\" }");
+            NativeSource src;
+            for (const auto& e : v.table) {
+                if (e.first == "url") src.url = e.second;
+                else if (e.first == "sha256") src.sha256 = e.second;
+                else if (e.first == "lib") src.lib = e.second;
+                else throw fail(v.line, "unknown key '" + e.first + "' in [" + t.first + "] " + kv.first);
+            }
+            if (src.url.empty()) throw fail(v.line, "[" + t.first + "] " + kv.first + " needs a url");
+            bool hex = src.sha256.size() == 64;
+            for (char& c : src.sha256) {
+                c = (char)std::tolower((unsigned char)c);
+                hex = hex && std::isxdigit((unsigned char)c);
+            }
+            if (!hex)
+                throw fail(v.line, "[" + t.first + "] " + kv.first + " needs a sha256 of 64 hex digits");
+            if (src.lib.empty() || fs::path(src.lib).is_absolute() ||
+                src.lib.find("..") != std::string::npos)
+                throw fail(v.line, "[" + t.first + "] " + kv.first +
+                                       ": lib must be a directory inside the archive");
+            lib.platforms[kv.first] = src;
+        }
+        m.natives.push_back(lib);
+    }
     for (const auto& t : doc)
-        if (!t.first.empty() && t.first != "package" && t.first != "deps")
+        if (!t.first.empty() && t.first != "package" && t.first != "deps" &&
+            t.first.rfind("native.", 0) != 0)
             throw PkgError(shown + ": unknown table [" + t.first + "]");
     return m;
 }
@@ -529,6 +616,116 @@ private:
     }
 };
 
+// ── Native libraries ────────────────────────────────────────────────────────
+
+// Run `program` with `args`; stderr goes to `errOut` (trimmed). -1 when it is not found.
+int runTool(const std::string& name, const std::vector<std::string>& args, std::string* errOut) {
+    auto found = llvm::sys::findProgramByName(name);
+    if (!found) return -1;
+    llvm::SmallString<128> errFile;
+    llvm::sys::fs::createTemporaryFile("eskiu-tool", "err", errFile);
+    std::vector<std::string> argv = {*found};
+    argv.insert(argv.end(), args.begin(), args.end());
+    std::vector<llvm::StringRef> refs(argv.begin(), argv.end());
+    std::optional<llvm::StringRef> redirects[] = {llvm::StringRef(""), llvm::StringRef(""),
+                                                  llvm::StringRef(errFile)};
+    int rc = llvm::sys::ExecuteAndWait(*found, refs, std::nullopt, redirects);
+    if (errOut) *errOut = trim(readText(std::string(errFile)));
+    llvm::sys::fs::remove(errFile);
+    return rc;
+}
+
+std::string nativeDir(const NativeSource& src) { return pkgHome() + "/native/" + src.sha256; }
+
+std::string sha256Hex(const std::string& data) {
+    llvm::SHA256 h;
+    h.update(llvm::StringRef(data));
+    auto d = h.final();
+    return llvm::toHex(llvm::ArrayRef<uint8_t>(d.data(), d.size()), /*LowerCase=*/true);
+}
+
+// Download, check and unpack `src` into nativeDir(src) unless it is already there.
+void fetchNative(const std::string& pkg, const std::string& lib, const NativeSource& src) {
+    std::string dir = nativeDir(src);
+    std::error_code ec;
+    if (fs::is_directory(dir, ec)) return;
+    std::string what = "native library '" + lib + "' of package '" + pkg + "'";
+    fs::create_directories(pkgHome() + "/native", ec);
+    std::string file = dir + ".download", tmp = dir + ".tmp";
+    fs::remove(file, ec);
+    fs::remove_all(tmp, ec);
+    std::cerr << "fetching " << lib << " for " << pkg << " from " << src.url << std::endl;
+    std::string err;
+    int rc = runTool("curl", {"-fsSL", "--retry", "2", "-o", file, src.url}, &err);
+    if (rc == -1) throw PkgError("curl not found on PATH (needed to fetch the " + what + ")");
+    if (rc != 0) {
+        fs::remove(file, ec);
+        throw PkgError(withGitError("could not download the " + what + " from " + src.url, err));
+    }
+    std::string got = sha256Hex(readText(file));
+    if (got != src.sha256) {
+        fs::remove(file, ec);
+        throw PkgError("the " + what + " from " + src.url + " has sha256 " + got + ", not " + src.sha256);
+    }
+    fs::create_directories(tmp, ec);
+    std::string url = src.url;
+    bool zip = url.size() > 4 && url.compare(url.size() - 4, 4, ".zip") == 0;
+#if defined(__linux__)
+    // GNU tar does not read zip archives; macOS and Windows tar (libarchive) do.
+    rc = zip ? runTool("unzip", {"-q", file, "-d", tmp}, &err) : runTool("tar", {"-xf", file, "-C", tmp}, &err);
+    std::string tool = zip ? "unzip" : "tar";
+#else
+    (void)zip;
+    rc = runTool("tar", {"-xf", file, "-C", tmp}, &err);
+    std::string tool = "tar";
+#endif
+    fs::remove(file, ec);
+    if (rc != 0) {
+        fs::remove_all(tmp, ec);
+        if (rc == -1) throw PkgError(tool + " not found on PATH (needed to unpack the " + what + ")");
+        throw PkgError(withGitError("could not unpack the " + what, err));
+    }
+    if (!fs::is_directory(tmp + "/" + src.lib, ec)) {
+        fs::remove_all(tmp, ec);
+        throw PkgError("the " + what + " has no directory '" + src.lib + "' (lib in its eskiu.toml)");
+    }
+    fs::rename(tmp, dir, ec);
+    if (ec) {
+        fs::remove_all(tmp, ec);
+        throw PkgError("could not create " + dir);
+    }
+}
+
+struct HostNative {
+    std::string pkg, lib;
+    NativeSource src;
+};
+
+// The native libraries this host's platform gets from the package at `lockDir` and the
+// dependencies its lock names.
+std::vector<HostNative> hostNatives(const std::string& lockDir,
+                                    const std::map<std::string, LockEntry>& lock) {
+    std::vector<HostNative> out;
+    std::string platform = hostPlatform();
+    if (platform.empty()) return out;
+    std::set<std::string> seen;
+    for (const auto& kv : lock) {
+        std::string root = kv.second.root(lockDir);
+        std::error_code ec;
+        if (!fs::is_regular_file(root + "/eskiu.toml", ec)) continue;
+        for (const auto& lib : readManifest(root).natives) {
+            auto it = lib.platforms.find(platform);
+            if (it == lib.platforms.end() || !seen.insert(it->second.sha256).second) continue;
+            out.push_back({kv.first, lib.name, it->second});
+        }
+    }
+    return out;
+}
+
+void fetchNatives(const std::string& lockDir) {
+    for (const auto& n : hostNatives(lockDir, readLock(lockDir))) fetchNative(n.pkg, n.lib, n.src);
+}
+
 std::string describe(const LockEntry& e) {
     if (e.kind == "git") return "commit " + e.commit;
     return "path " + e.path;
@@ -603,6 +800,7 @@ std::vector<LockEntry> resolveAndLock(const Manifest& root, bool update) {
     std::sort(entries.begin(), entries.end(),
               [](const LockEntry& a, const LockEntry& b) { return a.name < b.name; });
     writeLock(root.dir, entries);
+    fetchNatives(root.dir);
     return entries;
 }
 
@@ -853,17 +1051,46 @@ bool pkgCommand(int argc, char** argv, int& rc) {
     return true;
 }
 
+PkgNativeLibs pkgNativeLibs;
+
 void pkgLoadRoots(const std::string& input) {
     packageRoots = PackageRoots();
+    pkgNativeLibs = PkgNativeLibs();
     std::error_code ec;
     fs::path in = fs::absolute(input, ec);
     std::string root = findPackageRoot(in.parent_path().generic_string());
     if (root.empty()) return;
     packageRoots.active = true;
+    std::map<std::string, LockEntry> lock;
     try {
-        for (const auto& kv : readLock(root)) packageRoots.roots[kv.first] = kv.second.root(root);
+        lock = readLock(root);
+        for (const auto& kv : lock) packageRoots.roots[kv.first] = kv.second.root(root);
     } catch (const std::exception& e) {
         std::cerr << "error: " << e.what() << std::endl;
         exit(1);
     }
+    // The native libraries already in the cache; the package commands fetch them, a
+    // compile (or the editor) never does. A manifest error leaves them out here and is
+    // reported by those commands.
+    try {
+        for (const auto& n : hostNatives(root, lock)) {
+            std::string dir = nativeDir(n.src) + "/" + n.src.lib;
+            if (fs::is_directory(dir, ec)) pkgNativeLibs.dirs.push_back(dir);
+            else pkgNativeLibs.missing.push_back(n.lib + " (package " + n.pkg + ")");
+        }
+    } catch (const std::exception&) {
+    }
+}
+
+void copyNativeDlls(const std::vector<std::string>& dirs, const std::string& exe) {
+    std::error_code ec;
+    fs::path to = fs::absolute(exe, ec).parent_path();
+    for (const auto& d : dirs)
+        for (const auto& ent : fs::directory_iterator(d, ec)) {
+            std::string ext = ent.path().extension().string();
+            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+            if (ext == ".dll")
+                fs::copy_file(ent.path(), to / ent.path().filename(),
+                              fs::copy_options::update_existing, ec);
+        }
 }
