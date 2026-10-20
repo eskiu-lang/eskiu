@@ -1,0 +1,9 @@
+// c/time.esk: time.h's time and the POSIX sleeps (internal, see <c/string>).
+// sleep and usleep (unistd.h in C) are apart from <c/unistd> so that <net> and the
+// modules above it do not declare them: programs spell usleep's parameter both as
+// `int` and as `uint32` (useconds_t).
+#ifndef _WIN32
+extern uint32 sleep(uint32 seconds);
+extern int usleep(uint32 microseconds);
+#endif
+extern int64 time(*int64 t);

@@ -1,0 +1,4 @@
+// c/signal.esk: signal.h (internal, see <c/string>). A handler is a C function
+// pointer, passed as `*void` (SIG_DFL is `null`, SIG_IGN `(*void)(int64)1`).
+extern *void signal(int sig, *void handler);
+extern int raise(int sig);

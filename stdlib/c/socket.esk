@@ -1,0 +1,33 @@
+// c/socket.esk: BSD sockets and Winsock (internal, see <c/string>). A socket is
+// an `int`; socklen_t is 32 bits. The modules that call into Winsock link ws2_32
+// themselves (`#pragma link("ws2_32")` in <net>, <dns> and <eventloop>).
+import <ctypes>;
+
+extern int socket(int domain, int type, int protocol);
+extern int bind(int fd, *void addr, int len);
+extern int listen(int fd, int backlog);
+extern int accept(int fd, *void addr, *int len);
+extern int connect(int fd, *void addr, int len);
+extern int setsockopt(int fd, int level, int opt, *void val, int len);
+extern int getsockopt(int fd, int level, int opt, *void val, *int len);
+extern int getsockname(int fd, *void addr, *int len);
+extern uint16 htons(uint16 x);
+extern uint32 htonl(uint32 x);
+extern uint32 inet_addr(string dotted);
+#ifdef _WIN32
+// Winsock's send/recv take and return an int: read as int64, SOCKET_ERROR (-1)
+// would be 4294967295. inet_ntop's size is a size_t there.
+extern int send(int fd, *void buf, int n, int flags);
+extern int recv(int fd, *void buf, int n, int flags);
+extern string inet_ntop(int af, *void src, *char dst, size_t size);
+// Sockets are closed with closesocket, not the CRT close, and the library must be
+// started once before any socket call.
+extern int closesocket(int fd);
+extern int WSAStartup(int version, *void data);
+extern int WSAGetLastError();
+extern int ioctlsocket(int fd, int cmd, *int argp);
+#else
+extern ssize_t send(int fd, *void buf, size_t n, int flags);
+extern ssize_t recv(int fd, *void buf, size_t n, int flags);
+extern string inet_ntop(int af, *void src, *char dst, uint32 size);
+#endif

@@ -1,0 +1,33 @@
+// c/errno.esk: the calling thread's errno (internal, see <c/string>). Each C
+// library exposes the per-thread cell through its own function: _errno() in the
+// Windows CRT, __error() on Apple, __errno() in Android's bionic and
+// __errno_location() in glibc, musl and the WebAssembly libcs.
+#ifdef _WIN32
+extern *int _errno();
+*int _c_errno_ptr() {
+    return _errno();
+}
+#elif defined(__APPLE__)
+extern *int __error();
+*int _c_errno_ptr() {
+    return __error();
+}
+#elif defined(__ANDROID__)
+extern *int __errno();
+*int _c_errno_ptr() {
+    return __errno();
+}
+#else
+extern *int __errno_location();
+*int _c_errno_ptr() {
+    return __errno_location();
+}
+#endif
+
+int _c_errno() {
+    return *_c_errno_ptr();
+}
+
+void _c_set_errno(int e) {
+    *_c_errno_ptr() = e;
+}

@@ -1,0 +1,22 @@
+// c/string.esk: the string.h functions the stdlib calls.
+//
+// The modules in stdlib/c/ declare each C library function the stdlib uses once,
+// grouped by C header; a stdlib module imports them (`import <c/string>;`) instead
+// of declaring the functions itself. They are internal: a program gets these
+// functions through the public modules (<mem> here) or <libc>, which also declares
+// the rest of the C library. A program that declares one of them itself must spell
+// the same types (sema compares them with aliases expanded: `size_t` is `int64`).
+// The width-dependent C types come from <ctypes>.
+import <ctypes>;
+
+extern *void memcpy(*void dst, *void src, size_t n);
+extern *void memset(*void dst, int c, size_t n);
+extern *void memmove(*void dst, *void src, size_t n);
+extern int memcmp(*void a, *void b, size_t n);
+extern *void memchr(*void s, int c, size_t n);
+extern size_t strlen(string s);
+extern int strcmp(string a, string b);
+extern int strncmp(string a, string b, size_t n);
+extern *char strchr(string s, int c);
+extern *char strstr(string haystack, string needle);
+extern string strerror(int e);

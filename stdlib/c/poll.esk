@@ -1,0 +1,26 @@
+// c/poll.esk: poll() and Winsock's WSAPoll (internal, see <c/string>).
+//
+// nfds_t is an unsigned int on Apple and in Android's bionic and an unsigned long
+// in glibc and musl (c_long: 64 bits on 64-bit Linux, 32 on wasm32 and 32-bit
+// Linux); WSAPoll takes a ULONG. struct pollfd is { int fd; short events; short
+// revents; } on POSIX; each module defines the records it hands over.
+// `_c_poll(fds, n, ms)` waits on `n` records with the right nfds type
+// (WSAPoll on Windows, which only takes sockets).
+import <ctypes>;
+
+#ifdef _WIN32
+extern int WSAPoll(*void fdarray, uint32 nfds, int timeout);
+int _c_poll(*void fds, int n, int ms) {
+    return WSAPoll(fds, (uint32)n, ms);
+}
+#elif defined(__APPLE__) || defined(__ANDROID__)
+extern int poll(*void fds, uint32 nfds, int timeout);
+int _c_poll(*void fds, int n, int ms) {
+    return poll(fds, (uint32)n, ms);
+}
+#else
+extern int poll(*void fds, c_long nfds, int timeout);
+int _c_poll(*void fds, int n, int ms) {
+    return poll(fds, (c_long)n, ms);
+}
+#endif

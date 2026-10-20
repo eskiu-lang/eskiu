@@ -1,0 +1,7 @@
+// c/stdlib.esk: the stdlib.h functions the stdlib calls (internal, see <c/string>).
+// The heap (calloc, free) is <mem>'s, which defines free itself under --freestanding.
+extern int atoi(string s);
+extern double atof(string s);
+extern double strtod(string s, *string end);
+extern string getenv(string name);
+extern void exit(int code);

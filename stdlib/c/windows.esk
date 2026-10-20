@@ -1,0 +1,9 @@
+// c/windows.esk: the Win32 (kernel32) functions several stdlib modules call
+// (internal, see <c/string>). A HANDLE is `*void`, a DWORD `uint32`. Nothing on
+// the other targets.
+#ifdef _WIN32
+extern uint32 GetLastError();
+extern *void GetStdHandle(uint32 which);
+extern *void CreateFileW(*uint16 path, uint32 access, uint32 share, *void sa, uint32 disp, uint32 flags, *void tmpl);
+extern int CloseHandle(*void h);
+#endif
