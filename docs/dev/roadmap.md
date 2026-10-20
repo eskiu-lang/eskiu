@@ -48,11 +48,13 @@ first-class in the language without giving up general systems use.
 - **Windows GUI programs.** An option to link a Windows program for the GUI subsystem
   (`-mwindows`), so a program that opens its own window, such as one using the `gpu`
   package, does not also open a console.
-- **Library directories in `eskiu.toml`.** A package that links a native library (such as
-  `gpu` with `wgpu_native`) needs its directory today as `eskiuc build -L...`, and
+- **Native libraries in packages.** A package that links a native library (such as `gpu`
+  with wgpu-native and SDL3, or an ONNX Runtime binding) needs it installed by hand today
+  (`brew install`, a release archive) and its directory given as `eskiuc build -L...`;
   `eskiuc run` inside a package passes its arguments to the program, so it cannot take one.
-  A manifest setting for link directories (per platform) would let `eskiuc build` and
-  `eskiuc run` work with no flags.
+  The manifest should declare the prebuilt library per platform (URL and sha256), so that
+  `eskiuc fetch` downloads and verifies it into the package cache, and the link directory
+  and run-time path are set by `eskiuc build` and `eskiuc run` with no flags.
 
 ## Next: 1.0
 
