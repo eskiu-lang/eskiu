@@ -14,146 +14,126 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&amp;family=DM+Sans:wght@400;500;700&amp;family=DM+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="page.css?v=90e7999853" />
+  <link rel="stylesheet" href="page.css?v=5a45e75337" />
 </head>
 <body>
   <header class="top">
     <div class="bar top-in">
       <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.12.0</span></a>
-      <nav class="nav" aria-label="Main"><a href="quickstart.html" aria-current="page">Learn</a><a href="docs/index.html">Docs</a><a href="packages.html">Packages</a><a href="platforms.html">Platforms</a><a href="showcase.html">Showcase</a><a href="the-book-of-eskiu.html">Book</a><a href="changelog.html">Changelog</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+      <nav class="nav" aria-label="Main"><a href="quickstart.html" aria-current="page">Get started</a><a href="index.html#playground">Playground</a><a href="the-book-of-eskiu.html">Book</a><a href="docs/index.html">Docs</a><a href="packages.html">Packages</a><a href="platforms.html">Platforms</a><a href="showcase.html">Showcase</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
       <div class="top-right">
         <span class="lang"><span aria-current="page">EN</span> / <a href="es/quickstart.html" onclick="try{localStorage.setItem('eskiu-lang','es')}catch(e){}">ES</a></span>
         <a class="btn-install" href="index.html#install">Install 0.12.0</a>
         <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="drawer"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg></button>
       </div>
     </div>
-    <nav class="drawer" id="drawer" aria-label="Main"><a href="quickstart.html" aria-current="page">Learn</a><a href="docs/index.html">Docs</a><a href="packages.html">Packages</a><a href="platforms.html">Platforms</a><a href="showcase.html">Showcase</a><a href="the-book-of-eskiu.html">Book</a><a href="changelog.html">Changelog</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+    <nav class="drawer" id="drawer" aria-label="Main"><a href="quickstart.html" aria-current="page">Get started</a><a href="index.html#playground">Playground</a><a href="the-book-of-eskiu.html">Book</a><a href="docs/index.html">Docs</a><a href="packages.html">Packages</a><a href="platforms.html">Platforms</a><a href="showcase.html">Showcase</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
   </header>
   <main class="bar article">
     <div class="eyebrow">Quickstart</div>
     <h1>Get Eskiu running</h1>
     <p class="lede">
-      Download a prebuilt binary, write your first program, and run it. A few
-      minutes start to finish, with no toolchain to assemble.
+      Install the compiler, write your first program and run it. A few minutes start to
+      finish, with no toolchain to assemble.
     </p>
 
     <h2>Install</h2>
-    <p>
-      Grab the build for your platform. The standard library ships inside the
-      tarball, so imports work the moment it's unpacked.
-    </p>
-    <div class="btns">
-      <a class="btn-w" href="https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-linux-x86_64.tar.gz">↓ Linux (x86-64)</a>
-      <a class="btn-w" href="https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-linux-arm64.tar.gz">↓ Linux (arm64)</a>
-      <a class="btn-w" href="https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-macos-arm64.tar.gz">↓ macOS (Apple Silicon)</a>
-      <a class="btn-w" href="https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-windows-x86_64.zip">↓ Windows (x86-64) (experimental)</a>
-    </div>
-    <p class="note">Windows is validated on a native CI runner: the compiler builds and links, and exceptions plus the blocking and async networking stacks pass end to end. It is not yet gated on releases, so the download is still marked experimental.</p>
-    <p>Unpack it into <code>/usr/local</code> and check the version:</p>
-    <pre><code><span class="c"># macOS (Apple Silicon)</span>
-tar -xzf eskiuc-macos-arm64.tar.gz -C /usr/local
-
-<span class="c"># Linux (x86-64)</span>
-tar -xzf eskiuc-linux-x86_64.tar.gz -C /usr/local
-
-<span class="c"># Windows (x86-64): unzip, then add the bin\ folder to PATH</span>
-Expand-Archive eskiuc-windows-x86_64.zip -DestinationPath C:\eskiu
-
+    <p>On macOS or Linux, the install script picks the build for your machine and puts it on your <code>PATH</code>:</p>
+    <pre><code>curl -fsSL https://eskiu-lang.org/install.sh | sh
 eskiuc --version
 <span class="o">Eskiu 0.12.0 (LLVM ...)</span></code></pre>
-    <p>The tarball installs:</p>
-    <ul>
-      <li><code>bin/eskiuc</code>: the compiler</li>
-      <li><code>lib/eskiu/stdlib/</code>: the standard library</li>
-    </ul>
+    <p>With Homebrew:</p>
+    <pre><code>brew install eskiu-lang/eskiu/eskiu</code></pre>
+    <p>
+      Or download a release archive and unpack it anywhere: it holds <code>bin/eskiuc</code>
+      and the standard library in <code>lib/eskiu/stdlib/</code>. On Windows, unzip it and add
+      its <code>bin</code> folder to <code>PATH</code>.
+    </p>
+    <div class="btns">
+      <a class="btn-w" href="https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-macos-arm64.tar.gz">↓ macOS (Apple Silicon)</a>
+      <a class="btn-w" href="https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-linux-x86_64.tar.gz">↓ Linux (x86-64)</a>
+      <a class="btn-w" href="https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-linux-arm64.tar.gz">↓ Linux (arm64)</a>
+      <a class="btn-w" href="https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-windows-x86_64.zip">↓ Windows (x86-64)</a>
+    </div>
     <p class="note">
-      Linking needs a C toolchain on your machine (<code>clang</code> or
-      <code>gcc</code>), the same one Rust and Clang call to produce a binary.
-      macOS has it via the Xcode command-line tools; on Linux, install
-      <code>build-essential</code> (or <code>gcc</code>).
+      Linking needs a C toolchain on your machine (<code>clang</code> or <code>gcc</code>), the
+      same one Rust and Clang call to produce a binary. macOS has it with the Xcode
+      command-line tools; on Linux, install <code>build-essential</code> (or <code>gcc</code>);
+      on Windows, MinGW from MSYS2. Windows is validated end to end on a native CI runner but is
+      not yet part of the release gate.
     </p>
 
     <h2>Hello, Eskiu</h2>
-    <p>Create <code>hello.esk</code>:</p>
-    <pre><code>extern int printf(string fmt, ...);
+    <p>A file of statements runs as a script. Create <code>hello.esk</code>:</p>
+    <pre><code>import &lt;io&gt;;
+
+println("Hello, Eskiu!");</code></pre>
+    <pre><code>eskiuc run hello.esk
+<span class="o">Hello, Eskiu!</span></code></pre>
+    <p>
+      <code>eskiuc run</code> builds a native binary, runs it and cleans up. Larger programs
+      have a <code>main</code>:
+    </p>
+    <pre><code>import &lt;io&gt;;
 
 int add(int a, int b) {
     return a + b;
 }
 
 int main() {
-    int result = add(5, 3);
-    printf("Hello from Eskiu!\n");
-    printf("Result: %d\n", result);
+    println("Hello from Eskiu!");
+    printf("5 + 3 = %d\n", add(5, 3));
     return 0;
 }</code></pre>
-    <p>
-      Compile and run it in one step. <code>eskiuc run</code> builds a temporary
-      native binary, runs it, and cleans up:
-    </p>
-    <pre><code>eskiuc run hello.esk
-<span class="o">Hello from Eskiu!
-Result: 8</span></code></pre>
-    <p>
-      Or keep the binary. When the <code>-o</code> name has no <code>.o</code>
-      extension, <code>eskiuc</code> links it into an executable for you:
-    </p>
-    <pre><code>eskiuc hello.esk -o hello && ./hello</code></pre>
-    <p>Want just the object file? Use a <code>.o</code> name, then link it yourself:</p>
-    <pre><code>eskiuc hello.esk -o hello.o && clang hello.o -o hello && ./hello</code></pre>
+    <p>To keep the binary, give it a name; a <code>.o</code> name stops at the object file:</p>
+    <pre><code>eskiuc hello.esk -o hello && ./hello
+eskiuc hello.esk -o hello.o</code></pre>
 
     <h2>A struct with a method</h2>
     <p>
-      Structs hold data. Methods are plain functions that take a pointer to the
-      struct as their first argument.
+      A method is written inside the struct, or as a function <code>Point_sum(Point* self)</code>;
+      <code>p.sum()</code> calls either. A struct literal names its fields, and the ones left out
+      start at zero.
     </p>
-    <pre><code>extern int printf(string fmt, ...);
+    <pre><code>import &lt;io&gt;;
 
 struct Point {
     int x;
     int y;
-}
 
-int Point_sum(Point* self) {
-    return self.x + self.y;
+    int sum() {
+        return self.x + self.y;
+    }
 }
 
 int main() {
-    let p: Point;
-    p.x = 3;
-    p.y = 7;
-    int s = Point_sum(&p);
-    printf("sum = %d\n", s);   <span class="c">// sum = 10</span>
+    let p: Point = Point{x: 3, y: 7};
+    printf("sum = %d\n", p.sum());   <span class="c">// sum = 10</span>
     return 0;
 }</code></pre>
 
-    <h2>alloc / free with pointer arithmetic</h2>
+    <h2>Memory you manage</h2>
     <p>
-      <code>alloc&lt;T&gt;(n)</code> (from the <code>&lt;mem&gt;</code> stdlib)
-      allocates <code>n</code> elements of type <code>T</code> and returns a typed
-      pointer. Index with <code>[]</code>. Call <code>free</code> when you're done. The memory is yours to account for.
+      <code>alloc&lt;T&gt;(n)</code> from <code>&lt;mem&gt;</code> gives <code>n</code> zeroed
+      elements of type <code>T</code>, and <code>defer</code> frees them however the function
+      ends:
     </p>
-    <pre><code>import &lt;mem&gt;;
-extern int printf(string fmt, ...);
+    <pre><code>import &lt;io&gt;;
+import &lt;mem&gt;;
 
 int main() {
     *int buf = alloc&lt;int&gt;(4);
-    buf[0] = 10;
-    buf[1] = 20;
-    buf[2] = 30;
-    buf[3] = 40;
-    int sum = buf[0] + buf[1] + buf[2] + buf[3];
-    printf("sum = %d\n", sum);   <span class="c">// sum = 100</span>
-    free(buf);
+    defer free(buf);
+    for (i in 0..4) {
+        buf[i] = (i + 1) * 10;
+    }
+    printf("sum = %d\n", buf[0] + buf[1] + buf[2] + buf[3]);   <span class="c">// sum = 100</span>
     return 0;
 }</code></pre>
 
     <h2>Lambdas</h2>
-    <p>
-      Functions are first-class values. Write a lambda with the same syntax as a
-      regular function, minus the name:
-    </p>
-    <pre><code>extern int printf(string fmt, ...);
+    <p>Functions are values. A lambda has the syntax of a function without the name:</p>
+    <pre><code>import &lt;io&gt;;
 
 int apply(fn(int)->int f, int x) {
     return f(x);
@@ -165,16 +145,23 @@ int main() {
     printf("%d\n", apply(double_it, 4));   <span class="c">// 8</span>
     return 0;
 }</code></pre>
+
+    <h2>A project with packages</h2>
     <p>
-      <code>fn(int)-&gt;int</code> is the function-pointer type. The lambda
-      <code>int(int x) { ... }</code> produces a value of that type.
+      <code>eskiuc new</code> makes a package, and <code>eskiuc add</code> brings in another
+      one from git. A package that binds a C library downloads it on the first build:
     </p>
+    <pre><code>eskiuc new myapp && cd myapp
+eskiuc add onnx --git https://github.com/eskiu-lang/onnx --rev v0.1.0
+eskiuc run</code></pre>
+    <p>The <a href="packages.html">packages page</a> lists the official ones.</p>
 
     <h2>What's next</h2>
     <ul>
-      <li><a href="index.html#playground">Try Eskiu in your browser</a>: no install needed.</li>
-      <li><a href="the-book-of-eskiu.html">The Book of Eskiu</a>: the full language guide.</li>
-      <li><a href="index.html#language">More examples</a>: async, sum types, generics, servers.</li>
+      <li><a href="index.html#playground">Try Eskiu in your browser</a>, with nothing to install.</li>
+      <li><a href="the-book-of-eskiu.html">The Book of Eskiu</a>: the whole language, chapter by chapter.</li>
+      <li><a href="platforms.html">Platforms</a>: building for the web, iOS, Android and bare metal.</li>
+      <li><a href="showcase.html">Showcase</a>: what has been built with it.</li>
     </ul>
   </main>
   <footer class="foot">

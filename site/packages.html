@@ -15,26 +15,26 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&amp;family=DM+Sans:wght@400;500;700&amp;family=DM+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="page.css?v=90e7999853" />
+  <link rel="stylesheet" href="page.css?v=5a45e75337" />
 </head>
 <body>
   <header class="top">
     <div class="bar top-in">
       <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.12.0</span></a>
-      <nav class="nav" aria-label="Main"><a href="quickstart.html">Learn</a><a href="docs/index.html">Docs</a><a href="packages.html" aria-current="page">Packages</a><a href="platforms.html">Platforms</a><a href="showcase.html">Showcase</a><a href="the-book-of-eskiu.html">Book</a><a href="changelog.html">Changelog</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+      <nav class="nav" aria-label="Main"><a href="quickstart.html">Get started</a><a href="index.html#playground">Playground</a><a href="the-book-of-eskiu.html">Book</a><a href="docs/index.html">Docs</a><a href="packages.html" aria-current="page">Packages</a><a href="platforms.html">Platforms</a><a href="showcase.html">Showcase</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
       <div class="top-right">
         <span class="lang"><span aria-current="page">EN</span> / <a href="es/packages.html" onclick="try{localStorage.setItem('eskiu-lang','es')}catch(e){}">ES</a></span>
         <a class="btn-install" href="index.html#install">Install 0.12.0</a>
         <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="drawer"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg></button>
       </div>
     </div>
-    <nav class="drawer" id="drawer" aria-label="Main"><a href="quickstart.html">Learn</a><a href="docs/index.html">Docs</a><a href="packages.html" aria-current="page">Packages</a><a href="platforms.html">Platforms</a><a href="showcase.html">Showcase</a><a href="the-book-of-eskiu.html">Book</a><a href="changelog.html">Changelog</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+    <nav class="drawer" id="drawer" aria-label="Main"><a href="quickstart.html">Get started</a><a href="index.html#playground">Playground</a><a href="the-book-of-eskiu.html">Book</a><a href="docs/index.html">Docs</a><a href="packages.html" aria-current="page">Packages</a><a href="platforms.html">Platforms</a><a href="showcase.html">Showcase</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
   </header>
   <main class="bar article">
     <div class="eyebrow">Packages</div>
     <h1>Official packages</h1>
     <p class="lede">Libraries from the <a href="https://github.com/eskiu-lang">eskiu-lang</a> organization on GitHub. Each one is a git repository with an <code>eskiu.toml</code>, added to a project with one command.</p>
-    <nav class="chips" aria-label="Packages"><a href="#gpu">gpu</a><a href="#onnx">onnx</a><a href="#tflite">tflite</a><a href="#compress">compress</a><a href="#audio">audio</a><a href="#font">font</a><a href="#jni">jni</a><a href="#nds">nds</a></nav>
+    <nav class="chips" aria-label="Packages"><a href="#gpu">gpu</a><a href="#onnx">onnx</a><a href="#tflite">tflite</a><a href="#compress">compress</a><a href="#audio">audio</a><a href="#font">font</a><a href="#jni">jni</a><a href="#nds">nds</a><a href="#vision">vision</a></nav>
     <h2 id="using">Using a package</h2>
     <p><code>eskiuc add</code> writes the dependency into <code>eskiu.toml</code>, fetches it with git and records its commit in <code>eskiu.lock</code>, so later builds reuse it without touching the network. There is no registry: a dependency is a git URL with a rev (a tag, branch or commit) or a local path.</p>
     <pre><code>eskiuc new myapp
@@ -251,6 +251,18 @@ Bytes ov = rom.overlay(12)?;              <span class="c">// decompressed when c
     </section>
     <p>Every package needs Eskiu 0.12 or newer. Its README has the full module list, more examples and the details for each operating system.</p>
   </main>
+  <section class="cta-band" aria-label="Get started">
+    <div class="bar cta-in">
+      <div class="cta-txt">
+        <h2>Start in a minute.</h2>
+        <p>Install the compiler with one command, or run a program in the browser first.</p>
+      </div>
+      <div class="cta-btns">
+        <a class="cta-dark" href="quickstart.html">Get started</a>
+        <a class="cta-line" href="index.html#playground">Try it in the browser</a>
+      </div>
+    </div>
+  </section>
   <footer class="foot">
     <div class="bar foot-in">
       <span class="brand">eskiu</span>

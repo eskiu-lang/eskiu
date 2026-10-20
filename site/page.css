@@ -153,3 +153,20 @@ figure.fig-sm { max-width: 420px; }
 .labs h2 { margin-top: 32px; }
 .chips a.chip-labs { border-style: dashed; color: var(--muted); }
 .chips a.chip-labs:hover { color: var(--paper); }
+
+/* Closing call to action of the article pages */
+.cta-band { margin-top: 72px; background: var(--purple); color: var(--paper); }
+.cta-in { padding-block: 48px; display: flex; flex-direction: column; gap: 24px; }
+.cta-txt { display: flex; flex-direction: column; gap: 10px; }
+.cta-band h2 { margin: 0; font-family: var(--serif); font-weight: 800; font-size: clamp(32px, 4vw, 44px); letter-spacing: -0.025em; line-height: 1.05; color: #fff; }
+.cta-band p { margin: 0; font-size: 17px; line-height: 1.6; color: var(--lilac-3); }
+.cta-btns { display: flex; flex-direction: column; gap: 12px; }
+.cta-btns a { display: inline-flex; align-items: center; justify-content: center; height: 52px; padding: 0 24px; border-radius: 14px; font-weight: 700; font-size: 16px; border: 1.5px solid #fff; }
+.cta-dark { background: #fff; color: var(--ink); }
+.cta-dark:hover { background: var(--ink); border-color: var(--ink); color: #fff; }
+.cta-line { color: #fff; }
+.cta-line:hover { background: #fff; color: var(--ink); }
+@media (min-width: 900px) {
+  .cta-in { flex-direction: row; align-items: center; justify-content: space-between; gap: 48px; padding-block: 56px; }
+  .cta-btns { flex-direction: row; flex-shrink: 0; }
+}

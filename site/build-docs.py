@@ -285,13 +285,13 @@ SIDEBAR = [
 
 # Header nav: (href relative to site/, label, key used to mark the current section)
 TOP_LINKS = [
-    ("quickstart.html", "Learn", "learn"),
+    ("quickstart.html", "Get started", "learn"),
+    ("index.html#playground", "Playground", "playground"),
+    ("the-book-of-eskiu.html", "Book", "book"),
     ("docs/index.html", "Docs", "docs"),
     ("packages.html", "Packages", "packages"),
     ("platforms.html", "Platforms", "platforms"),
     ("showcase.html", "Showcase", "showcase"),
-    ("the-book-of-eskiu.html", "Book", "book"),
-    ("changelog.html", "Changelog", "changelog"),
     (GH, "GitHub", "gh"),
 ]
 
@@ -698,14 +698,14 @@ PKG_TEXT = {
 # Header nav of the hand-written and generated top-level pages, per language:
 # (href relative to the page's directory, label, key)
 SITE_NAV = {
-    "en": [("quickstart.html", "Learn", "learn"), ("docs/index.html", "Docs", "docs"),
+    "en": [("quickstart.html", "Get started", "learn"), ("index.html#playground", "Playground", "playground"),
+           ("the-book-of-eskiu.html", "Book", "book"), ("docs/index.html", "Docs", "docs"),
            ("packages.html", "Packages", "packages"), ("platforms.html", "Platforms", "platforms"),
-           ("showcase.html", "Showcase", "showcase"), ("the-book-of-eskiu.html", "Book", "book"),
-           ("changelog.html", "Changelog", "changelog"), (GH, "GitHub", "gh")],
-    "es": [("quickstart.html", "Aprende", "learn"), ("../docs/index.html", "Docs", "docs"),
+           ("showcase.html", "Showcase", "showcase"), (GH, "GitHub", "gh")],
+    "es": [("quickstart.html", "Empieza", "learn"), ("index.html#playground", "Playground", "playground"),
+           ("../the-book-of-eskiu.html", "Libro", "book"), ("../docs/index.html", "Docs", "docs"),
            ("packages.html", "Paquetes", "packages"), ("platforms.html", "Plataformas", "platforms"),
-           ("showcase.html", "Proyectos", "showcase"), ("../the-book-of-eskiu.html", "Libro", "book"),
-           ("../changelog.html", "Cambios", "changelog"), (GH, "GitHub", "gh")],
+           ("showcase.html", "Proyectos", "showcase"), (GH, "GitHub", "gh")],
 }
 
 PAGE_SHELL = """<!doctype html>
@@ -800,7 +800,8 @@ def build_packages():
              f'    <h1>{T["h1"]}</h1>',
              f'    <p class="lede">{T["lede"]}</p>',
              f'    <nav class="chips" aria-label="{T["chips"]}">' +
-             "".join(f'<a href="#{pkg["name"]}">{pkg["name"]}</a>' for pkg, _, _ in data) + "</nav>",
+             "".join(f'<a href="#{pkg["name"]}">{pkg["name"]}</a>' for pkg, _, _ in data) +
+             '<a href="#vision">vision</a></nav>',
              f'    <h2 id="using">{T["how_h"]}</h2>',
              f'    <p>{T["how_p"]}</p>',
              "    <pre><code>" + "\n".join(html.escape(c) for c in T["how_cmd"]) + "</code></pre>",
@@ -843,7 +844,55 @@ def build_packages():
 ASSETS = ("page.css", "home.css", "home.js")
 
 
+# The closing call to action of the article pages, between the article and the footer.
+CTA_PAGES = ("showcase.html", "platforms.html", "packages.html", "vision.html",
+             "case-study-reactvision.html", "case-study-3ds.html")
+CTA_BAND = {
+    "en": """  <section class="cta-band" aria-label="Get started">
+    <div class="bar cta-in">
+      <div class="cta-txt">
+        <h2>Start in a minute.</h2>
+        <p>Install the compiler with one command, or run a program in the browser first.</p>
+      </div>
+      <div class="cta-btns">
+        <a class="cta-dark" href="quickstart.html">Get started</a>
+        <a class="cta-line" href="index.html#playground">Try it in the browser</a>
+      </div>
+    </div>
+  </section>
+""",
+    "es": """  <section class="cta-band" aria-label="Empieza">
+    <div class="bar cta-in">
+      <div class="cta-txt">
+        <h2>Empieza en un minuto.</h2>
+        <p>Instala el compilador con un comando, o corre un programa en el navegador primero.</p>
+      </div>
+      <div class="cta-btns">
+        <a class="cta-dark" href="quickstart.html">Empieza</a>
+        <a class="cta-line" href="index.html#playground">Pruébalo en el navegador</a>
+      </div>
+    </div>
+  </section>
+""",
+}
+
+
+def add_cta_bands():
+    site = os.path.join(ROOT, "site")
+    for lang, sub in (("en", ""), ("es", "es")):
+        for name in CTA_PAGES:
+            path = os.path.join(site, sub, name)
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            if 'class="cta-band"' in text or '<footer class="foot">' not in text:
+                continue
+            text = text.replace('<footer class="foot">', CTA_BAND[lang].lstrip() + '  <footer class="foot">', 1)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+
+
 def stamp_assets():
+    add_cta_bands()
     site = os.path.join(ROOT, "site")
     stamps = {}
     for name in ASSETS:

@@ -14,26 +14,26 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&amp;family=DM+Sans:wght@400;500;700&amp;family=DM+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../page.css?v=90e7999853" />
+  <link rel="stylesheet" href="../page.css?v=5a45e75337" />
 </head>
 <body>
   <header class="top">
     <div class="bar top-in">
       <a class="brand" href="index.html"><img src="../../assets/logo.png" alt="" />eskiu<span class="v">v0.12.0</span></a>
-      <nav class="nav" aria-label="Principal"><a href="quickstart.html">Aprende</a><a href="../docs/index.html">Docs</a><a href="packages.html" aria-current="page">Paquetes</a><a href="platforms.html">Plataformas</a><a href="showcase.html">Proyectos</a><a href="../the-book-of-eskiu.html">Libro</a><a href="../changelog.html">Cambios</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+      <nav class="nav" aria-label="Principal"><a href="quickstart.html">Empieza</a><a href="index.html#playground">Playground</a><a href="../the-book-of-eskiu.html">Libro</a><a href="../docs/index.html">Docs</a><a href="packages.html" aria-current="page">Paquetes</a><a href="platforms.html">Plataformas</a><a href="showcase.html">Proyectos</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
       <div class="top-right">
         <span class="lang"><a href="../packages.html" onclick="try{localStorage.setItem('eskiu-lang','en')}catch(e){}">EN</a> / <span aria-current="page">ES</span></span>
         <a class="btn-install" href="index.html#install">Instalar 0.12.0</a>
         <button class="menu-btn" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="drawer"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg></button>
       </div>
     </div>
-    <nav class="drawer" id="drawer" aria-label="Principal"><a href="quickstart.html">Aprende</a><a href="../docs/index.html">Docs</a><a href="packages.html" aria-current="page">Paquetes</a><a href="platforms.html">Plataformas</a><a href="showcase.html">Proyectos</a><a href="../the-book-of-eskiu.html">Libro</a><a href="../changelog.html">Cambios</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+    <nav class="drawer" id="drawer" aria-label="Principal"><a href="quickstart.html">Empieza</a><a href="index.html#playground">Playground</a><a href="../the-book-of-eskiu.html">Libro</a><a href="../docs/index.html">Docs</a><a href="packages.html" aria-current="page">Paquetes</a><a href="platforms.html">Plataformas</a><a href="showcase.html">Proyectos</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
   </header>
   <main class="bar article">
     <div class="eyebrow">Paquetes</div>
     <h1>Paquetes oficiales</h1>
     <p class="lede">Bibliotecas de la organización <a href="https://github.com/eskiu-lang">eskiu-lang</a> en GitHub. Cada una es un repositorio de git con un <code>eskiu.toml</code>, y se agrega a un proyecto con un solo comando.</p>
-    <nav class="chips" aria-label="Paquetes"><a href="#gpu">gpu</a><a href="#onnx">onnx</a><a href="#tflite">tflite</a><a href="#compress">compress</a><a href="#audio">audio</a><a href="#font">font</a><a href="#jni">jni</a><a href="#nds">nds</a></nav>
+    <nav class="chips" aria-label="Paquetes"><a href="#gpu">gpu</a><a href="#onnx">onnx</a><a href="#tflite">tflite</a><a href="#compress">compress</a><a href="#audio">audio</a><a href="#font">font</a><a href="#jni">jni</a><a href="#nds">nds</a><a href="#vision">vision</a></nav>
     <h2 id="using">Cómo usar un paquete</h2>
     <p><code>eskiuc add</code> escribe la dependencia en <code>eskiu.toml</code>, la descarga con git y guarda su commit en <code>eskiu.lock</code>, así que los builds siguientes la reutilizan sin tocar la red. No hay un registro central: una dependencia es una URL de git con un rev (un tag, una rama o un commit) o una ruta local.</p>
     <pre><code>eskiuc new myapp
@@ -250,6 +250,18 @@ Bytes ov = rom.overlay(12)?;              <span class="c">// decompressed when c
     </section>
     <p>Todos los paquetes necesitan Eskiu 0.12 o más nuevo. En el README de cada uno están la lista completa de módulos, más ejemplos y los detalles para cada sistema operativo (en inglés).</p>
   </main>
+  <section class="cta-band" aria-label="Empieza">
+    <div class="bar cta-in">
+      <div class="cta-txt">
+        <h2>Empieza en un minuto.</h2>
+        <p>Instala el compilador con un comando, o corre un programa en el navegador primero.</p>
+      </div>
+      <div class="cta-btns">
+        <a class="cta-dark" href="quickstart.html">Empieza</a>
+        <a class="cta-line" href="index.html#playground">Pruébalo en el navegador</a>
+      </div>
+    </div>
+  </section>
   <footer class="foot">
     <div class="bar foot-in">
       <span class="brand">eskiu</span>
