@@ -207,3 +207,12 @@ pre.card { margin: 10px 8px 0 0; background: #fff; border: 1.5px solid var(--ink
   .foot-links { display: flex; gap: 26px; margin-left: auto; }
   .foot small { flex-basis: 100%; }
 }
+
+/* Platforms strip (lilac) and packages teaser */
+.strip.alt { background: var(--lilac); color: var(--ink); }
+.strip.alt .eyebrow { color: var(--purple); }
+.strip.alt .strip-links a { border-color: var(--ink); color: var(--ink); }
+.strip.alt .strip-links a:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.pkg-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.pkg-list a { font-family: var(--mono); font-size: 14px; color: var(--ink); background: #fff; border: 1.5px solid var(--ink); border-radius: 10px; padding: 8px 12px; line-height: 1.2; }
+.pkg-list a:hover { background: var(--ink); color: var(--paper); }

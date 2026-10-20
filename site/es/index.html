@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Eskiu: un lenguaje de sistemas auto-hospedado</title>
-    <meta name="description" content="Eskiu es un lenguaje de sistemas compilado con async/await, tipos suma, genéricos, HTTP/2 y atómicos. Backend LLVM, memoria manual, compila a un binario independiente. Auto-hospedado." />
+    <meta name="description" content="Eskiu es un lenguaje de sistemas que se compila a sí mismo, con backend LLVM, memoria explícita e interoperabilidad directa con C. Un solo compilador genera programas para macOS, Linux, Windows, WebAssembly, Android e iOS, y hay paquetes para cómputo en GPU, machine learning y más." />
     <meta name="theme-color" content="#fbf8f3" />
     <link rel="icon" type="image/png" href="../../assets/logo.png" />
     <link rel="canonical" href="https://eskiu-lang.org/es/index.html" />
@@ -23,7 +23,9 @@
         <nav class="nav" aria-label="Principal">
           <a href="quickstart.html">Aprende</a>
           <a href="../docs/index.html">Docs</a>
-          <a href="#playground">Playground</a>
+          <a href="packages.html">Paquetes</a>
+          <a href="platforms.html">Plataformas</a>
+          <a href="showcase.html">Proyectos</a>
           <a href="../the-book-of-eskiu.html">Libro</a>
           <a href="../changelog.html">Cambios</a>
           <a href="https://github.com/eskiu-lang/eskiu">GitHub</a>
@@ -39,7 +41,9 @@
       <nav class="drawer" id="drawer" aria-label="Principal">
         <a href="quickstart.html">Aprende</a>
         <a href="../docs/index.html">Docs</a>
-        <a href="#playground">Playground</a>
+        <a href="packages.html">Paquetes</a>
+        <a href="platforms.html">Plataformas</a>
+        <a href="showcase.html">Proyectos</a>
         <a href="../the-book-of-eskiu.html">Libro</a>
         <a href="../changelog.html">Cambios</a>
         <a href="https://github.com/eskiu-lang/eskiu">GitHub</a>
@@ -51,7 +55,7 @@
         <div class="hero-txt">
           <span class="eyebrow">v0.12.0 · un lenguaje de sistemas</span>
           <h1>Escríbelo como un script. <em>Compílalo como C.</em></h1>
-          <p class="lede">Eskiu es un lenguaje de sistemas que se compila a sí mismo. LLVM, memoria explícita, interoperabilidad directa con C y sin recolector de basura, con un <code>eskiuc run</code> que se siente como Python.</p>
+          <p class="lede">Eskiu es un lenguaje de sistemas que se compila a sí mismo. LLVM, memoria explícita, interoperabilidad directa con C y sin recolector de basura, con un <code>eskiuc run</code> que se siente como Python. El mismo compilador genera programas para escritorio, la web y celulares, y los paquetes agregan cómputo en GPU, machine learning y más.</p>
           <div class="cta">
             <a class="btn btn-dark" href="#playground"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 1.5v11l9-5.5z"/></svg>Pruébalo en el navegador</a>
             <a class="btn btn-line" href="../the-book-of-eskiu.html">Lee el libro</a>
@@ -79,6 +83,16 @@
           <div class="strip-links">
             <a href="case-study-reactvision.html">Caso de estudio ViroReact <span aria-hidden="true">→</span></a>
             <a href="case-study-3ds.html">Caso de estudio 3DS <span aria-hidden="true">→</span></a>
+          </div>
+        </div>
+      </section>
+
+      <section class="strip alt" id="platforms">
+        <div class="wrap strip-in">
+          <span class="eyebrow">Corre en todos lados</span>
+          <p>macOS, Linux y Windows, el navegador con WebAssembly, apps de Android e iOS, y bare metal, con un solo compilador.</p>
+          <div class="strip-links">
+            <a href="platforms.html">Plataformas y comandos <span aria-hidden="true">→</span></a>
           </div>
         </div>
       </section>
@@ -167,9 +181,10 @@ println(JsonValue_as_cstr(json_get(repo, <span class="st">"owner.login"</span>))
           <div class="feat-txt">
             <span class="n">06</span>
             <h3>GPU, machine learning y más, como paquetes</h3>
-            <p>El paquete <code>gpu</code> corre kernels de cómputo y dibuja modelos glTF y OBJ con sombreado físico, sobre Metal, Vulkan y DirectX 12. También corre modelos Llama desde archivos GGUF o safetensors (Llama 2 7B a 45 tokens por segundo en un M4 Pro) y entrena redes pequeñas.</p>
-            <p>Otros paquetes agregan inferencia con <a href="https://github.com/eskiu-lang/onnx">onnx</a> y <a href="https://github.com/eskiu-lang/tflite">tflite</a>, <a href="https://github.com/eskiu-lang/compress">compress</a> (deflate, gzip, zip), <a href="https://github.com/eskiu-lang/audio">audio</a>, <a href="https://github.com/eskiu-lang/font">font</a> y <a href="https://github.com/eskiu-lang/nds">nds</a>. Cada uno se agrega con un <code>eskiuc add</code>.</p>
-            <a class="more" href="https://github.com/eskiu-lang">github.com/eskiu-lang →</a>
+            <p>El paquete <code>gpu</code> corre kernels de cómputo y dibuja modelos glTF y OBJ con sombreado físico sobre Metal, Vulkan y DirectX 12. También corre Llama 2 7B a 45 tokens por segundo en un M4 Pro. Cada paquete se agrega con un <code>eskiuc add</code>.</p>
+            <nav class="pkg-list" aria-label="Paquetes"><a href="packages.html#gpu">gpu</a><a href="packages.html#onnx">onnx</a><a href="packages.html#tflite">tflite</a><a href="packages.html#compress">compress</a><a href="packages.html#audio">audio</a><a href="packages.html#font">font</a><a href="packages.html#nds">nds</a></nav>
+            <a class="more" href="packages.html">Ver los paquetes →</a>
+            <a class="more" href="showcase.html">Ver lo que ya está hecho →</a>
           </div>
           <figure class="card-img">
             <img src="../../assets/gpu-helmet.png" alt="El modelo glTF DamagedHelmet dibujado por el paquete gpu" width="512" height="512" loading="lazy" />

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>try{if(localStorage.getItem("eskiu-lang")==="es")location.replace("es/index.html"+location.hash);}catch(e){}</script>
     <title>Eskiu: a self-hosting systems language</title>
-    <meta name="description" content="Eskiu is a compiled systems language with async/await, sum types, generics, HTTP/2, and atomics. LLVM backend, manual memory, compiles to a standalone binary. Self-hosting." />
+    <meta name="description" content="Eskiu is a self-hosting systems language with an LLVM backend, explicit memory and direct C interop. One compiler builds for macOS, Linux, Windows, WebAssembly, Android and iOS, and packages add GPU compute, machine learning and more." />
     <meta name="theme-color" content="#fbf8f3" />
     <link rel="icon" type="image/png" href="../assets/logo.png" />
     <link rel="alternate" hreflang="en" href="https://eskiu-lang.org/index.html" />
@@ -23,7 +23,9 @@
         <nav class="nav" aria-label="Main">
           <a href="quickstart.html">Learn</a>
           <a href="docs/index.html">Docs</a>
-          <a href="#playground">Playground</a>
+          <a href="packages.html">Packages</a>
+          <a href="platforms.html">Platforms</a>
+          <a href="showcase.html">Showcase</a>
           <a href="the-book-of-eskiu.html">Book</a>
           <a href="changelog.html">Changelog</a>
           <a href="https://github.com/eskiu-lang/eskiu">GitHub</a>
@@ -39,7 +41,9 @@
       <nav class="drawer" id="drawer" aria-label="Main">
         <a href="quickstart.html">Learn</a>
         <a href="docs/index.html">Docs</a>
-        <a href="#playground">Playground</a>
+        <a href="packages.html">Packages</a>
+        <a href="platforms.html">Platforms</a>
+        <a href="showcase.html">Showcase</a>
         <a href="the-book-of-eskiu.html">Book</a>
         <a href="changelog.html">Changelog</a>
         <a href="https://github.com/eskiu-lang/eskiu">GitHub</a>
@@ -51,7 +55,7 @@
         <div class="hero-txt">
           <span class="eyebrow">v0.12.0 · a systems language</span>
           <h1>Write it like a script. <em>Ship it like C.</em></h1>
-          <p class="lede">Eskiu is a self-hosting systems language. LLVM, explicit memory, direct C interop and no garbage collector, with an <code>eskiuc run</code> that feels like Python.</p>
+          <p class="lede">Eskiu is a self-hosting systems language. LLVM, explicit memory, direct C interop and no garbage collector, with an <code>eskiuc run</code> that feels like Python. The same compiler builds for desktops, the web and phones, and packages add GPU compute, machine learning and more.</p>
           <div class="cta">
             <a class="btn btn-dark" href="#playground"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 1.5v11l9-5.5z"/></svg>Try it in the browser</a>
             <a class="btn btn-line" href="the-book-of-eskiu.html">Read the Book</a>
@@ -79,6 +83,16 @@
           <div class="strip-links">
             <a href="case-study-reactvision.html">ViroReact case study <span aria-hidden="true">→</span></a>
             <a href="case-study-3ds.html">3DS case study <span aria-hidden="true">→</span></a>
+          </div>
+        </div>
+      </section>
+
+      <section class="strip alt" id="platforms">
+        <div class="wrap strip-in">
+          <span class="eyebrow">Runs everywhere</span>
+          <p>macOS, Linux and Windows, the browser through WebAssembly, Android and iOS apps, and bare metal, from one compiler.</p>
+          <div class="strip-links">
+            <a href="platforms.html">Platforms and commands <span aria-hidden="true">→</span></a>
           </div>
         </div>
       </section>
@@ -167,9 +181,10 @@ println(JsonValue_as_cstr(json_get(repo, <span class="st">"owner.login"</span>))
           <div class="feat-txt">
             <span class="n">06</span>
             <h3>GPU, machine learning and more, as packages</h3>
-            <p>The <code>gpu</code> package runs compute kernels and draws glTF and OBJ models with physically based shading, over Metal, Vulkan and DirectX 12. It also runs Llama models from GGUF or safetensors files (Llama 2 7B at 45 tokens per second on an M4 Pro) and trains small networks.</p>
-            <p>Other packages add <a href="https://github.com/eskiu-lang/onnx">onnx</a> and <a href="https://github.com/eskiu-lang/tflite">tflite</a> inference, <a href="https://github.com/eskiu-lang/compress">compress</a> (deflate, gzip, zip), <a href="https://github.com/eskiu-lang/audio">audio</a>, <a href="https://github.com/eskiu-lang/font">font</a> and <a href="https://github.com/eskiu-lang/nds">nds</a>. Each one is a single <code>eskiuc add</code>.</p>
-            <a class="more" href="https://github.com/eskiu-lang">github.com/eskiu-lang →</a>
+            <p>The <code>gpu</code> package runs compute kernels and draws glTF and OBJ models with physically based shading over Metal, Vulkan and DirectX 12. It also runs Llama 2 7B at 45 tokens per second on an M4 Pro. Each package is one <code>eskiuc add</code> away.</p>
+            <nav class="pkg-list" aria-label="Packages"><a href="packages.html#gpu">gpu</a><a href="packages.html#onnx">onnx</a><a href="packages.html#tflite">tflite</a><a href="packages.html#compress">compress</a><a href="packages.html#audio">audio</a><a href="packages.html#font">font</a><a href="packages.html#nds">nds</a></nav>
+            <a class="more" href="packages.html">Browse the packages →</a>
+            <a class="more" href="showcase.html">See what has been built →</a>
           </div>
           <figure class="card-img">
             <img src="../assets/gpu-helmet.png" alt="The DamagedHelmet glTF model drawn by the gpu package" width="512" height="512" loading="lazy" />
