@@ -9,6 +9,7 @@
 import <ctypes>;
 
 #ifdef _WIN32
+#pragma link("ws2_32")
 extern int WSAPoll(*void fdarray, uint32 nfds, int timeout);
 int _c_poll(*void fds, int n, int ms) {
     return WSAPoll(fds, (uint32)n, ms);
