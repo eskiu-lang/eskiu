@@ -140,6 +140,12 @@ completion, signatures and quick fixes through the
 [VS Code extension](editor/vscode) (also Cursor, Antigravity and VSCodium) and the
 [IntelliJ plugin](editor/intellij).
 
+The [eskiu-lang](https://github.com/eskiu-lang) organization publishes packages:
+[gpu](https://github.com/eskiu-lang/gpu) (WebGPU compute, 3D and machine learning),
+[onnx](https://github.com/eskiu-lang/onnx), [tflite](https://github.com/eskiu-lang/tflite),
+[compress](https://github.com/eskiu-lang/compress), [audio](https://github.com/eskiu-lang/audio),
+[font](https://github.com/eskiu-lang/font) and [nds](https://github.com/eskiu-lang/nds).
+
 ## Stability
 
 Eskiu is stable since 0.12. Code that compiles with 0.12.0 keeps compiling in every 0.12.x

@@ -1329,6 +1329,12 @@ A stdlib module keeps its name: `import <io>;` is always the stdlib one. An impo
 names neither a stdlib module nor a package in the lock is an error:
 `unknown package 'x' (not in eskiu.toml)`.
 
+The [eskiu-lang](https://github.com/eskiu-lang) organization publishes packages that are
+added this way: [gpu](https://github.com/eskiu-lang/gpu) (WebGPU compute, 3D and machine learning),
+[onnx](https://github.com/eskiu-lang/onnx), [tflite](https://github.com/eskiu-lang/tflite),
+[compress](https://github.com/eskiu-lang/compress), [audio](https://github.com/eskiu-lang/audio),
+[font](https://github.com/eskiu-lang/font) and [nds](https://github.com/eskiu-lang/nds).
+
 The package commands:
 
 ```bash
