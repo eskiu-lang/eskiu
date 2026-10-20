@@ -1,19 +1,19 @@
 /* eskiu-lang.org homepage script. Shared by index.html and es/index.html. */
 const PLAYGROUND_API = "https://eskiu-playground-4cb1.orvex.cloud";
       const EXAMPLES = {
-        hello: `extern int printf(string fmt, ...);
+        hello: `import <io>;
 
 int add(int a, int b) {
     return a + b;
 }
 
 int main() {
-    printf("Hello from Eskiu!\\n");
+    println("Hello from Eskiu!");
     printf("2 + 3 = %d\\n", add(2, 3));
     return 0;
 }
 `,
-        basics: `extern int printf(string fmt, ...);
+        basics: `import <io>;
 
 // A counter that remembers its state across calls (static local).
 int next_id() {
@@ -42,8 +42,8 @@ int main() {
     return 0;
 }
 `,
-        match: `extern int printf(string fmt, ...);
-extern int atoi(string s);
+        match: `import <io>;
+import <libc>;   // atoi
 
 enum ParseResult {
     Port(int),
@@ -67,7 +67,7 @@ int main() {
     return 0;
 }
 `,
-        generics: `extern int printf(string fmt, ...);
+        generics: `import <io>;
 
 interface Ord { int cmp(Ord* o); }
 
@@ -82,31 +82,23 @@ T max<T: Ord>(T* a, T* b) {
 }
 
 int main() {
-    let x: Coin;  x.value = 7;
-    let y: Coin;  y.value = 3;
+    let x: Coin = Coin{value: 7};
+    let y: Coin = Coin{value: 3};
     let hi: Coin = max<Coin>(&x, &y);
     printf("max = %d\\n", hi.value);   // max = 7
     return 0;
 }
 `,
-        operators: `extern int printf(string fmt, ...);
+        operators: `import <io>;
 
 struct V3 { float x; float y; float z; }
 
 V3 operator +(V3 a, V3 b) {
-    let r: V3;
-    r.x = a.x + b.x;
-    r.y = a.y + b.y;
-    r.z = a.z + b.z;
-    return r;
+    return V3{a.x + b.x, a.y + b.y, a.z + b.z};
 }
 
 V3 operator *(V3 v, float s) {
-    let r: V3;
-    r.x = v.x * s;
-    r.y = v.y * s;
-    r.z = v.z * s;
-    return r;
+    return V3{v.x * s, v.y * s, v.z * s};
 }
 
 bool operator ==(V3 a, V3 b) {
@@ -114,8 +106,8 @@ bool operator ==(V3 a, V3 b) {
 }
 
 int main() {
-    let a: V3; a.x = 1.0; a.y = 2.0; a.z = 3.0;
-    let b: V3; b.x = 3.0; b.y = 4.0; b.z = 5.0;
+    let a: V3 = V3{1.0, 2.0, 3.0};
+    let b: V3 = V3{3.0, 4.0, 5.0};
 
     let mid: V3 = (a + b) * 0.5;                 // + and * resolve to the overloads
     printf("mid = %.0f %.0f %.0f\\n", (double)mid.x, (double)mid.y, (double)mid.z);
@@ -124,7 +116,7 @@ int main() {
     return 0;
 }
 `,
-        async: `extern int printf(string fmt, ...);
+        async: `import <io>;
 import <future>;
 import <channel>;
 

@@ -14,7 +14,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,800;1,9..144,400&amp;family=DM+Sans:wght@400;500;700&amp;family=DM+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="../home.css?v=2475549632" />
+    <link rel="stylesheet" href="../home.css?v=6d11c9459e" />
   </head>
   <body>
     <header class="top">
@@ -53,132 +53,177 @@
     <main>
       <section class="wrap hero">
         <div class="hero-txt">
-          <span class="eyebrow">v0.12.0 · un lenguaje de sistemas</span>
-          <h1>Escríbelo como un script. <em>Compílalo como C.</em></h1>
+          <span class="eyebrow">v0.12.0 · código abierto · MIT</span>
+          <h1>Escríbelo como un script. <em>Compílalo como&nbsp;C.</em></h1>
           <p class="lede">Un lenguaje de sistemas sobre LLVM que se compila a sí mismo, con memoria explícita e interoperabilidad directa con C. Un solo compilador para escritorio, la web y celulares.</p>
           <div class="cta">
-            <a class="btn btn-dark" href="#playground"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 1.5v11l9-5.5z"/></svg>Pruébalo en el navegador</a>
-            <a class="btn btn-line" href="../the-book-of-eskiu.html">Lee el libro</a>
+            <a class="btn btn-dark" href="#start">Empieza</a>
+            <a class="btn btn-line" href="#playground"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 1.5v11l9-5.5z"/></svg>Pruébalo en el navegador</a>
           </div>
           <div class="install-box" id="install">
             <span class="lbl">Instálalo en macOS o Linux</span>
             <span class="cmd">curl -fsSL https://eskiu-lang.org/install.sh | sh</span>
             <button class="btn btn-purple" type="button" data-copy="curl -fsSL https://eskiu-lang.org/install.sh | sh">Copiar</button>
           </div>
-          <div class="downloads">
-            <span class="lbl">O descarga:</span>
-            <a href="https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-linux-x86_64.tar.gz">Linux x86-64</a>
-            <a href="https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-linux-arm64.tar.gz">Linux arm64</a>
-            <a href="https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-macos-arm64.tar.gz">macOS arm64</a>
-            <a href="https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-windows-x86_64.zip">Windows x86-64</a>
-          </div>
+          <p class="downloads">Homebrew: <code>brew install eskiu-lang/eskiu/eskiu</code> · <a href="https://github.com/eskiu-lang/eskiu/releases/latest">Windows y archivos de cada release</a></p>
         </div>
         <div class="hero-fig"><div class="disc"><img src="../../assets/eskiu_round.jpg" alt="La mascota de Eskiu, un gatito atigrado gris con una bola de estambre" /></div></div>
       </section>
 
-      <section class="facts" aria-label="Eskiu de un vistazo">
-        <div class="wrap facts-in">
-          <div class="fact" id="production">
-            <span class="eyebrow">En producción</span>
-            <p>En ReactVision: <strong>≈85%</strong> menos memoria en ViroReact, y el motor de su AR web y su detección de objetos.</p>
-            <a href="case-study-reactvision.html">Caso de estudio de ReactVision <span aria-hidden="true">→</span></a>
+      <section class="why" aria-labelledby="why-h">
+        <div class="wrap why-in">
+          <h2 id="why-h" class="sr-only">Por qué Eskiu</h2>
+          <div class="pillar">
+            <span class="eyebrow">Rápido</span>
+            <p>Código nativo con LLVM, con memoria que tú manejas y sin recolector de basura. Las estructuras y funciones de una biblioteca de C se llaman tal como son, en cualquier plataforma.</p>
+            <a href="../docs/abi.html">Interoperabilidad con C y ABIs <span aria-hidden="true">→</span></a>
           </div>
-          <div class="fact" id="platforms">
-            <span class="eyebrow">Corre en todos lados</span>
-            <p>Escritorio, el navegador, Android, iOS y bare metal, con un solo compilador.</p>
-            <a href="platforms.html">Plataformas y comandos <span aria-hidden="true">→</span></a>
+          <div class="pillar">
+            <span class="eyebrow">Confiable</span>
+            <p>Sum types revisados hasta el último caso, apuntadores nullable revisados antes de usarse, <code>defer</code> para liberar recursos, y revisión de límites, overflow y nulos con <code class="nw">--safe</code>.</p>
+            <a href="../the-book-of-eskiu.html#chapter-19">Propiedad y recursos <span aria-hidden="true">→</span></a>
           </div>
-          <div class="fact" id="stability">
-            <span class="eyebrow">Estable desde 0.12</span>
-            <p>El código que compila con 0.12.0 sigue compilando en cualquier 0.12.x.</p>
-            <a href="../docs/stability.html">Política de estabilidad <span aria-hidden="true">→</span></a>
+          <div class="pillar">
+            <span class="eyebrow">Productivo</span>
+            <p>Corre un archivo como script, con HTTP, JSON, archivos y procesos en la biblioteca estándar, paquetes con un comando y un editor que entiende tu código.</p>
+            <a href="quickstart.html">Inicio rápido <span aria-hidden="true">→</span></a>
           </div>
         </div>
       </section>
 
-      <section class="wrap lang-sec" id="language">
-        <h2>Familiar en la superficie.</h2>
-
-        <div class="feat">
-          <div class="feat-txt">
-            <span class="n">01</span>
-            <h3>Tipos suma, verificados hasta el último caso</h3>
-            <p>Un enum lleva datos por variante. Si dejas un caso fuera de un <code>match</code>, no compila.</p>
-          </div>
-<pre class="card"><span class="kw">match</span> parse_port(<span class="st">"8080"</span>) {
-    Port(p)         -&gt; <span class="wide">printf(<span class="st">"listening on :%d\n"</span>, p);</span><span class="narrow">serve(p);</span>
-    InvalidRange(n) -&gt; <span class="wide">printf(<span class="st">"%d out of range\n"</span>, n);</span><span class="narrow">warn(n);</span>
-    NotANumber      -&gt; <span class="wide">printf(<span class="st">"not a number\n"</span>);</span><span class="narrow">fail();</span>
-}</pre>
+      <section class="wrap sec" id="built">
+        <div class="sec-head">
+          <span class="eyebrow">En producción</span>
+          <h2>Corre dentro de ViroReact.</h2>
+          <p>ReactVision usa Eskiu en ViroReact: <strong>≈85%</strong> menos memoria en su motor, el tracker detrás de su AR en la web y su detección de objetos en iOS y Android.</p>
         </div>
+        <div class="prod-grid">
+          <a class="pcard pcard-lead" href="vision.html">
+            <span class="tag">tinyvio · vision</span>
+            <h3>Tracking de AR en el navegador</h3>
+            <p>El tracker visual-inercial de ViroReact corre sobre un motor escrito en Eskiu y compilado a WebAssembly. Su núcleo de visión por computadora calcula los mismos bits que el C++ al que reemplazó.</p>
+            <div class="pstat"><span><strong>217,582</strong> casos comparados bit por bit</span><span><strong>0</strong> diferencias</span></div>
+            <span class="more">El paquete vision →</span>
+          </a>
+          <a class="pcard" href="case-study-reactvision.html#onnx">
+            <span class="tag">onnx · jni</span>
+            <h3>Un núcleo de detección para iOS y Android</h3>
+            <p>La detección de objetos de ViroReact es un solo núcleo en Eskiu sobre ONNX Runtime en las dos plataformas. En Android, sus puntos de entrada JNI también son Eskiu.</p>
+            <span class="more">Caso de estudio de ReactVision →</span>
+          </a>
+          <a class="pcard" href="showcase.html#llama">
+            <span class="tag">gpu</span>
+            <h3>Llama 2 sobre Metal</h3>
+            <p>Llama 2 7B a 45 tokens por segundo en un M4 Pro, en WGSL sobre wgpu-native. llama.cpp da 58 en la misma máquina.</p>
+            <span class="more">Showcase →</span>
+          </a>
+        </div>
+        <div class="users">
+          <span class="lbl">Lo usan</span>
+          <a href="https://reactvision.xyz" class="user"><img src="../../assets/reactvision.png" alt="" width="541" height="319" />ReactVision</a>
+          <a href="https://themorrow.digital" class="user user-morrow"><img src="../../assets/morrow.png" alt="The Morrow Digital" width="622" height="88" /></a>
+        </div>
+      </section>
 
-        <div class="feat flip">
-          <div class="feat-txt">
-            <span class="n">02</span>
-            <h3>Matemática de vectores que se lee como matemática</h3>
-            <p>Los genéricos con restricciones se monomorfizan; las sobrecargas de operadores se resuelven por el tipo de los operandos y no cuestan nada en runtime.</p>
+      <section class="wrap sec" id="build">
+        <div class="sec-head">
+          <span class="eyebrow">Qué puedes construir</span>
+          <h2>Un lenguaje, de scripts al silicio.</h2>
+        </div>
+        <div class="uses">
+          <a class="use use-lead" href="platforms.html#wasm">
+            <span class="tag">WebAssembly</span>
+            <h3>Compila para el navegador</h3>
+            <p>Una opción genera una página, un módulo o una biblioteca para un proyecto de emscripten que ya tengas. Las excepciones, el código async y la interoperabilidad con C funcionan ahí igual que en nativo, y el tracking de AR de ViroReact llega así a la web.</p>
+<pre><span class="cm">$</span> eskiuc app.esk --target wasm32-unknown-emscripten -o app.js</pre>
+          </a>
+          <a class="use" href="platforms.html#ios">
+            <h3>Celulares</h3>
+            <p>Bibliotecas estáticas para iOS y compartidas para Android, que se llaman desde Swift, Kotlin u Objective-C.</p>
+          </a>
+          <a class="use" href="packages.html">
+            <h3>GPU y machine learning</h3>
+            <p>Cómputo y 3D con WebGPU, ONNX Runtime y TensorFlow Lite, cada uno a un paquete de distancia.</p>
+          </a>
+          <a class="use" href="../the-book-of-eskiu.html#chapter-25">
+            <h3>Scripts y herramientas de línea de comandos</h3>
+            <p><code>eskiuc run</code> o un shebang, con argumentos, HTTP, JSON y procesos incluidos.</p>
+          </a>
+          <a class="use" href="../the-book-of-eskiu.html#chapter-23">
+            <h3>Servicios de red</h3>
+            <p>Servidores async de HTTP/1.1 y HTTP/2 sobre un solo event loop en Linux, macOS y Windows.</p>
+          </a>
+          <a class="use" href="../the-book-of-eskiu.html#chapter-18">
+            <h3>Bare metal</h3>
+            <p>Builds freestanding con ensamblador inline y accesos volatile. Un kernel ARM64 arranca en QEMU.</p>
+          </a>
+          <a class="use" href="case-study-reactvision.html">
+            <h3>Dentro de un código en C o C++</h3>
+            <p>Un módulo con un header de C entra en un motor existente, un archivo a la vez. Así entró a ViroReact.</p>
+          </a>
+        </div>
+      </section>
+
+      <section class="wrap sec" id="language">
+        <div class="sec-head">
+          <span class="eyebrow">El lenguaje</span>
+          <h2>Familiar en la superficie.</h2>
+          <p>El modelo de memoria y de datos de C, con las revisiones y comodidades de un lenguaje moderno, sin costo en tiempo de ejecución.</p>
+        </div>
+        <div class="lang-grid">
+          <div class="lcard">
+            <h3>Sum types, revisados hasta el último caso</h3>
+            <p>Un enum lleva datos en cada variante. Si un <code>match</code> deja fuera un caso, no compila.</p>
+<pre><span class="kw">match</span> parse_port(<span class="st">"8080"</span>) {
+    Port(p)         -&gt; serve(p);
+    InvalidRange(n) -&gt; warn(n);
+    NotANumber      -&gt; fail();
+}</pre>
           </div>
-<pre class="card"><span class="ty">V3</span> <span class="kw">operator</span> +(<span class="ty">V3</span> a, <span class="ty">V3</span> b) { ... }
+          <div class="lcard">
+            <h3>Matemáticas que se leen como matemáticas</h3>
+            <p>Los genéricos con restricciones se monomorfizan; la sobrecarga de operadores se resuelve por el tipo de los operandos y compila a llamadas directas.</p>
+<pre><span class="ty">V3</span> <span class="kw">operator</span> +(<span class="ty">V3</span> a, <span class="ty">V3</span> b) { ... }
 <span class="ty">V3</span> <span class="kw">operator</span> *(<span class="ty">V3</span> v, <span class="ty">float</span> s) { ... }
 
-<span class="kw">let</span> mid: <span class="ty">V3</span> = (a + b) * 0.5;<span class="wide">  <span class="cm">// llamadas directas</span></span></pre>
-        </div>
-
-        <div class="feat">
-          <div class="feat-txt">
-            <span class="n">03</span>
-            <h3>async, await y canales tipados</h3>
-            <p>Un solo reactor sobre kqueue, epoll o WSAPoll, así que el mismo código de red corre en Linux, macOS y Windows.</p>
+<span class="kw">let</span> mid: <span class="ty">V3</span> = (a + b) * 0.5;</pre>
           </div>
-<pre class="card"><span class="kw">async</span> <span class="ty">int</span> sum_squares(<span class="ty">Chan</span>&lt;<span class="ty">int</span>&gt;* ch) {
+          <div class="lcard">
+            <h3>async, await y canales tipados</h3>
+            <p>Un solo reactor sobre kqueue, epoll o WSAPoll: el mismo código de red corre en Linux, macOS y Windows.</p>
+<pre><span class="kw">async</span> <span class="ty">int</span> sum_squares(<span class="ty">Chan</span>&lt;<span class="ty">int</span>&gt;* ch) {
     <span class="kw">let</span> a: <span class="ty">int</span> = <span class="kw">await</span> Chan_recv(ch);
     <span class="kw">let</span> b: <span class="ty">int</span> = <span class="kw">await</span> Chan_recv(ch);
     <span class="kw">return</span> a + b;
 }</pre>
-        </div>
-
-        <div class="feat flip">
-          <div class="feat-txt">
-            <span class="n">04</span>
-            <h3>El compilador está escrito en Eskiu</h3>
-            <p>Se compila a sí mismo. Todo el pipeline reproduce su propia salida mediante un punto fijo de bootstrap en 3 etapas.</p>
-            <a class="more" href="../docs/self-hosting.html">Cómo funciona el bootstrap →</a>
           </div>
-<pre class="card"><span class="cm">selfhost/</span>
-  <span class="kw">lexer</span> → <span class="kw">preprocessor</span> → <span class="kw">parser</span>
-  → <span class="kw">sema</span> → <span class="kw">codegen</span> → <span class="ty">LLVM</span>
-
-stage 1 → 2 → 3  <span class="st">✓ fixpoint</span></pre>
-        </div>
-
-        <div class="feat">
-          <div class="feat-txt">
-            <span class="n">05</span>
+          <div class="lcard">
             <h3>Una biblioteca estándar para scripts</h3>
-            <p>Descarga una URL por HTTPS, recorre un directorio, ejecuta un comando, lee argumentos o procesa JSON y CSV con módulos que vienen con el compilador.</p>
-            <a class="more" href="../the-book-of-eskiu.html#chapter-25">Scripting con Eskiu →</a>
-          </div>
-<pre class="card"><span class="kw">let</span> r: <span class="ty">Response</span>;
-fetch(<span class="st">"https://api.github.com/repos/llvm/llvm-project"</span>, &amp;r);
+            <p>Pide una URL por HTTPS, recorre un directorio, ejecuta un comando, lee JSON y CSV, con módulos que vienen con el compilador.</p>
+<pre><span class="kw">let</span> r: <span class="ty">Response</span>;
+fetch(<span class="st">"https://api.github.com/repos/x/y"</span>, &amp;r);
 <span class="kw">defer</span> Response_free(&amp;r);
-
-*<span class="ty">JsonValue</span> repo = Response_json(&amp;r);
-println(JsonValue_as_cstr(json_get(repo, <span class="st">"owner.login"</span>)));</pre>
-        </div>
-
-        <div class="feat flip">
-          <div class="feat-txt">
-            <span class="n">06</span>
-            <h3>GPU, machine learning y más, como paquetes</h3>
-            <p>El paquete <code>gpu</code> corre kernels de cómputo y dibuja modelos glTF y OBJ con sombreado físico sobre Metal, Vulkan y DirectX 12. También corre Llama 2 7B a 45 tokens por segundo en un M4 Pro. Cada paquete se agrega con un <code>eskiuc add</code>.</p>
-            <nav class="pkg-list" aria-label="Paquetes"><a href="packages.html#gpu">gpu</a><a href="packages.html#onnx">onnx</a><a href="packages.html#tflite">tflite</a><a href="packages.html#compress">compress</a><a href="packages.html#audio">audio</a><a href="packages.html#font">font</a><a href="packages.html#jni">jni</a><a href="packages.html#nds">nds</a></nav>
-            <a class="more" href="packages.html">Ver los paquetes →</a>
-            <a class="more" href="showcase.html">Ver lo que ya está hecho →</a>
+println(JsonValue_as_cstr(json_get(
+    Response_json(&amp;r), <span class="st">"owner.login"</span>)));</pre>
           </div>
-          <figure class="card-img">
-            <img src="../../assets/gpu-helmet.png" alt="El modelo glTF DamagedHelmet dibujado por el paquete gpu" width="512" height="512" loading="lazy" />
-            <figcaption>DamagedHelmet de theblueturtle_, CC BY 4.0</figcaption>
-          </figure>
+        </div>
+        <p class="aside">El compilador también está escrito en Eskiu: todo el pipeline se recompila a sí mismo hasta la misma salida en un bootstrap de tres etapas. <a href="../docs/self-hosting.html">Cómo hace bootstrap →</a></p>
+      </section>
+
+      <section class="pkgs" id="packages">
+        <div class="wrap pkgs-in">
+          <div class="pkgs-txt">
+            <span class="eyebrow">Paquetes</span>
+            <h2>A un <code>eskiuc add</code> de distancia.</h2>
+            <p>Cómputo y 3D en GPU, machine learning, compresión, audio, fuentes y JNI. Un paquete que usa una biblioteca de C la trae consigo: el primer build la descarga y revisa su SHA-256, así que no hay nada más que instalar.</p>
+            <nav class="pkg-list" aria-label="Paquetes"><a href="packages.html#gpu">gpu</a><a href="packages.html#onnx">onnx</a><a href="packages.html#tflite">tflite</a><a href="vision.html">vision</a><a href="packages.html#jni">jni</a><a href="packages.html#compress">compress</a><a href="packages.html#audio">audio</a><a href="packages.html#font">font</a><a href="packages.html#nds">nds</a></nav>
+            <a class="more" href="packages.html">Ver los paquetes →</a>
+          </div>
+<pre class="term"><span class="cm">$</span> eskiuc add onnx --git https://github.com/eskiu-lang/onnx --rev v0.1.0
+added onnx (commit COMMIT12)
+<span class="cm">$</span> eskiuc run            <span class="cm"># src/main.esk importa &lt;onnx&gt;</span>
+fetching onnxruntime for onnx from https://github.com/microsoft/...
+1.31.0</pre>
         </div>
       </section>
 
@@ -214,17 +259,64 @@ println(JsonValue_as_cstr(json_get(repo, <span class="st">"owner.login"</span>))
         </div>
       </section>
 
-      <section class="wrap book-sec">
-        <div class="book">
-          <div class="book-txt">
-            <span class="eyebrow">Gratis · en línea · en inglés</span>
-            <h2>The Book of Eskiu</h2>
-            <p>De <code>Hello, Eskiu</code> a programación bare-metal, async y el compilador auto-hospedado.</p>
-          </div>
-          <div class="book-cta">
-            <a class="btn btn-dark" href="../the-book-of-eskiu.html">Empieza a leer</a>
-            <a class="btn btn-line" href="quickstart.html">Inicio rápido</a>
-          </div>
+      <section class="wrap sec" id="start">
+        <div class="sec-head">
+          <span class="eyebrow">Empieza</span>
+          <h2>Tres pasos a un programa que corre.</h2>
+        </div>
+        <ol class="steps">
+          <li>
+            <span class="num">1</span>
+            <h3>Instala</h3>
+<pre>curl -fsSL https://eskiu-lang.org/install.sh | sh</pre>
+            <p>O <code>brew install eskiu-lang/eskiu/eskiu</code>, o un <a href="https://github.com/eskiu-lang/eskiu/releases/latest">archivo del release</a> para Windows.</p>
+          </li>
+          <li>
+            <span class="num">2</span>
+            <h3>Escribe <code>hello.esk</code></h3>
+<pre><span class="kw">import</span> &lt;io&gt;;
+
+println(<span class="st">"Hello, Eskiu!"</span>);</pre>
+            <p>Un archivo con instrucciones al nivel superior corre como script; los programas más grandes tienen un <code>main</code>.</p>
+          </li>
+          <li>
+            <span class="num">3</span>
+            <h3>Córrelo</h3>
+<pre><span class="cm">$</span> eskiuc run hello.esk
+Hello, Eskiu!</pre>
+            <p><code>eskiuc hello.esk -o hello</code> genera un ejecutable nativo.</p>
+          </li>
+        </ol>
+        <div class="start-next">
+          <a class="btn btn-dark" href="../the-book-of-eskiu.html">Lee el libro de Eskiu</a>
+          <a class="btn btn-line" href="quickstart.html">Inicio rápido</a>
+          <p>Gratis y en línea, de <code>Hello, Eskiu</code> a async y bare metal. El código que compila con 0.12.0 sigue compilando en cada 0.12.x (<a href="../docs/stability.html">política de estabilidad</a>).</p>
+        </div>
+      </section>
+
+      <section class="wrap sec labs-sec" id="labs">
+        <div class="sec-head">
+          <span class="eyebrow">Labs</span>
+          <h2>Hasta dónde llega.</h2>
+          <p>Experimentos que llevan el compilador a hardware poco común. No son productos, y no todos son serios.</p>
+        </div>
+        <div class="labs-grid">
+          <a class="lab" href="case-study-3ds.html">
+            <img src="../../assets/case-study-3ds.jpg" alt="Una New Nintendo 3DS mostrando un modelo 3D sobre la imagen de la cámara" width="1400" height="1050" loading="lazy" />
+            <div class="lab-txt">
+              <h3>AR en una Nintendo 3DS</h3>
+              <p>Un demo de AR con la cámara y el giroscopio en el ARM11 de 32 bits de la 3DS, con su lógica en Eskiu y su render a través de ViroCore. Hecho por diversión.</p>
+              <span class="more">Caso de estudio →</span>
+            </div>
+          </a>
+          <a class="lab" href="https://github.com/eskiu-lang/eskiu/tree/main/kernel">
+            <img src="../../assets/kernel.png" alt="La shell del kernel de Eskiu en QEMU, listando sus tareas" width="888" height="948" loading="lazy" />
+            <div class="lab-txt">
+              <h3>Un kernel ARM64 bare metal</h3>
+              <p>Interrupciones de timer, un scheduler, un heap y una shell, arrancando en QEMU. Unas líneas de ensamblador preparan el stack; el resto es Eskiu.</p>
+              <span class="more">Código →</span>
+            </div>
+          </a>
         </div>
       </section>
     </main>
@@ -241,11 +333,10 @@ println(JsonValue_as_cstr(json_get(repo, <span class="st">"owner.login"</span>))
           <a href="https://github.com/eskiu-lang/eskiu">GitHub</a>
           <a href="https://reactvision.xyz">ReactVision</a>
         </nav>
-        <small>Ya lo usan: <a href="https://reactvision.xyz">ReactVision</a>, <a href="https://themorrow.digital">The Morrow Digital</a>. Windows se valida de punta a punta en un runner nativo de CI, pero todavía no forma parte del release gate.</small>
       </div>
     </footer>
 
     <script>try { localStorage.setItem('eskiu-lang', 'es'); } catch (e) {}</script>
-    <script src="../home.js?v=3e2f525231"></script>
+    <script src="../home.js?v=da76ebdd05"></script>
   </body>
 </html>
