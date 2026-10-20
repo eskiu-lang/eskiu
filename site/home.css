@@ -285,7 +285,9 @@ pre.term .cm { color: #8f88a8; }
 .dev-note { padding-top: 96px; }
 .note-card { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; padding: 36px 28px; background: #fff; border: 1.5px solid var(--ink); border-radius: 24px; box-shadow: 10px 10px 0 var(--lilac); }
 .note-card p { margin: 0; font-size: 18px; line-height: 1.7; color: var(--ink2); text-wrap: pretty; }
-.note-card .sig { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; padding-top: 18px; border-top: 1px solid var(--rule); }
+.note-card .sig { display: flex; align-items: center; gap: 16px; margin-top: 8px; padding-top: 20px; border-top: 1px solid var(--rule); }
+.note-card .sig img { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 1.5px solid var(--ink); flex-shrink: 0; }
+.note-card .sig p { display: flex; flex-direction: column; gap: 2px; font-size: 16px; }
 .note-card .sig strong { font-family: var(--serif); font-weight: 800; font-size: 22px; color: var(--ink); }
 .note-card .sig a { color: var(--ink); text-decoration: underline; text-decoration-color: var(--lilac-3); text-underline-offset: 5px; }
 .note-card .sig a:hover { color: var(--purple); }
