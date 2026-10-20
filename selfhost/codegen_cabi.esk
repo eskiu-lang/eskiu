@@ -2023,7 +2023,12 @@ void cg_emit_uncaught(Codegen* g, *Program prog) {
     cg_emit(g, "entry:\n  %buf = alloca [512 x i8]\n  invoke void @__cxa_rethrow() to label %never unwind label %lp\n");
     cg_emit(g, "never:\n  unreachable\n");
     cg_emit(g, "lp:\n  %pad = landingpad { ptr, i32 } catch ptr null\n  %exc = extractvalue { ptr, i32 } %pad, 0\n");
-    cg_emit(g, "  %obj = call ptr @__cxa_begin_catch(ptr %exc)\n");
+    if (g.emscripten == 1) {             // the landingpad's is the object (see SK_TRY)
+        cg_emit(g, "  %obj0 = call ptr @__cxa_begin_catch(ptr %exc)\n  %obj = getelementptr i8, ptr %exc, i64 0\n");
+    }
+    else {
+        cg_emit(g, "  %obj = call ptr @__cxa_begin_catch(ptr %exc)\n");
+    }
     cg_emit(g, "  %tnp = getelementptr i8, ptr %obj, i64 8\n  %tn = load ptr, ptr %tnp\n  %pay = getelementptr i8, ptr %obj, i64 16\n");
     // One entry per primitive type an exception can carry (mirrors the C++ table): the
     // payload is read with that type only after its name matched.
@@ -2649,7 +2654,7 @@ void cg_program(Codegen* g, *Program prog) {
         String_append(&g.globals, cg_eh_pers(g));
         String_append(&g.globals, "(...)\n");
         String_append(&g.globals, "@_ZTIPv = external global ptr\n");
-        String_append(&g.globals, "declare ptr @__cxa_allocate_exception(i64)\n");
+        String_append(&g.globals, cg_cat("declare ptr @__cxa_allocate_exception(", cg_cat(cg_size_ty(g), ")\n")));
         String_append(&g.globals, "declare void @__cxa_throw(ptr, ptr, ptr)\n");
         String_append(&g.globals, "declare ptr @__cxa_begin_catch(ptr)\n");
         String_append(&g.globals, "declare void @__cxa_end_catch()\n");

@@ -269,6 +269,7 @@ struct Codegen {
     int msvc;                // 1: MSVC (not mingw): a `: 0` under pack(N) is aligned to at most N
     int wintgt;              // 1: a Windows target (mingw SEH exception personality)
     int darwin;              // 1: a Darwin target (stderr is `__stderrp`)
+    int emscripten;          // 1: emscripten (its runtime hands the thrown object to a landingpad)
     int bigend;              // 1: a big-endian AArch64 target (aarch64_be)
     int x86ri;               // 32-bit x86: a small aggregate result comes back in registers
     int x86ws;               // 32-bit x86: MSVC's struct rules (no float/double-in-ST0 result)
@@ -669,6 +670,7 @@ void cg_set_target(Codegen* g, string triple) {
     g.msbf = win;
     g.wintgt = win;
     g.darwin = apple;
+    g.emscripten = cg_has_sub(triple, "emscripten");
     ast_target_bf(triple, &g.bfal, &g.msvc);
     g.bigend = cg_has_prefix(triple, "aarch64_be");
     if (cg_has_prefix(triple, "aarch64") == 1 || cg_has_prefix(triple, "arm64") == 1) {

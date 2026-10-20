@@ -696,7 +696,7 @@ void cg_stmt(Codegen* g, *StmtNode st) {
         int psz = cg_ll_size_of(g, val.ty);
         cg_emit(g, "  ");
         cg_emit(g, ex);
-        cg_emit(g, " = call ptr @__cxa_allocate_exception(i64 ");
+        cg_emit(g, cg_cat(" = call ptr @__cxa_allocate_exception(", cg_cat(cg_size_ty(g), " ")));
         cg_emit(g, cg_itoa(16 + psz));
         cg_emit(g, ")\n");
         cg_emit(g, "  store i64 ");
@@ -809,6 +809,11 @@ void cg_stmt(Codegen* g, *StmtNode st) {
         cg_emit(g, " = call ptr @__cxa_begin_catch(ptr ");
         cg_emit(g, exptr);
         cg_emit(g, ")\n");
+        // emscripten hands the thrown object itself to the landingpad; its begin_catch
+        // returns it adjusted for the `void*` typeinfo (C++ visit(TryStmt)).
+        if (g.emscripten == 1) {
+            exdata = exptr;
+        }
         string ets = cg_tmp(g);
         cg_emit(g, "  ");
         cg_emit(g, ets);
@@ -838,11 +843,16 @@ void cg_stmt(Codegen* g, *StmtNode st) {
                 cg_emit(g, " = load i64, ptr ");
                 cg_emit(g, exdata);
                 cg_emit(g, "\n");
+                string ecsz = esz;
+                if (cg_streq(cg_size_ty(g), "i32") == 1) {   // size_t on a 32-bit target
+                    ecsz = cg_tmp(g);
+                    cg_emit(g, cg_cat("  ", cg_cat(ecsz, cg_cat(" = trunc i64 ", cg_cat(esz, " to i32\n")))));
+                }
                 string ecp = cg_tmp(g);
                 cg_emit(g, "  ");
                 cg_emit(g, ecp);
-                cg_emit(g, " = call ptr @__cxa_allocate_exception(i64 ");
-                cg_emit(g, esz);
+                cg_emit(g, cg_cat(" = call ptr @__cxa_allocate_exception(", cg_cat(cg_size_ty(g), " ")));
+                cg_emit(g, ecsz);
                 cg_emit(g, ")\n");
                 cg_emit(g, "  call void @llvm.memcpy.p0.p0.i64(ptr ");
                 cg_emit(g, ecp);

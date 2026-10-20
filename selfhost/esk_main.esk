@@ -1737,6 +1737,11 @@ int esk_main(int argc, string* argv) {
         List_push<string>(&cargs, "-target");
         List_push<string>(&cargs, triple);
     }
+    // emscripten's JavaScript-based exceptions (C++ enableEmscriptenEH).
+    if (str_contains(triple, "emscripten") == 1) {
+        List_push<string>(&cargs, "-mllvm");
+        List_push<string>(&cargs, "-enable-emscripten-cxx-exceptions");
+    }
     if (mcpu[0] != 0) {
         List_push<string>(&cargs, cg_cat("-mcpu=", mcpu));
     }
@@ -1840,6 +1845,10 @@ int esk_main(int argc, string* argv) {
             }
             if (g.uses_threads == 1 && gnu == 1) {
                 List_push<string>(&implied, "pthread");
+            }
+            // emscripten catches exceptions only when linked to.
+            if (g.uses_eh == 1 && str_contains(triple, "emscripten") == 1) {
+                List_push<string>(&tail, "-sDISABLE_EXCEPTION_CATCHING=0");
             }
             int ii2 = 0;
             while (ii2 < List_len<string>(&implied)) {
