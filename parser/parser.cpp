@@ -41,17 +41,22 @@ std::string Parser::resolveImport(const std::string& spec, bool isStdlib,
                                   std::string* err) {
     std::string path = spec;
     if (isStdlib) {
+        // A stdlib module, also one in a subdirectory (`<c/unistd>`), comes first; then
+        // a package (`<pkg>`, `<pkg/module>`).
         size_t slash = path.find('/');
-        // Allow bare name or name with path separator
-        if (slash == std::string::npos) path = "stdlib/" + path + ".esk";
+        path = "stdlib/" + spec + ".esk";
         if (!stdlibPath.empty()) path = stdlibPath + "/" + path;
         std::string head = slash == std::string::npos ? spec : spec.substr(0, slash);
         auto pkg = packageRoots.roots.find(head);
-        if (pkg != packageRoots.roots.end() && (slash != std::string::npos || !isFile(path)))
+        if (pkg != packageRoots.roots.end() && !isFile(path))
             return packageModulePath(pkg->second, head,
                                      slash == std::string::npos ? "" : spec.substr(slash + 1));
-        if (err && packageRoots.active && !head.empty() && !isFile(path))
-            *err = "unknown package '" + head + "' (not in eskiu.toml)";
+        if (err && !head.empty() && !isFile(path)) {
+            if (packageRoots.active)
+                *err = "unknown package '" + head + "' (not in eskiu.toml)";
+            else if (slash != std::string::npos)
+                *err = "unknown module <" + spec + "> (for a file of your own, import \"" + spec + ".esk\")";
+        }
         return path;
     }
     if (!basedir.empty() && (path.empty() || path[0] != '/')) return basedir + "/" + path;
