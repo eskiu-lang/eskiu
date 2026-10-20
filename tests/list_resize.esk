@@ -1,0 +1,35 @@
+// List_reserve, List_resize and List_copy_from: resizing zeroes the new elements (a
+// struct's field defaults included: generic code starts a T at zero), shrinking keeps
+// the buffer, and a copy owns its own elements.
+import <list>;
+extern int printf(string fmt, ...);
+
+struct Cell {
+    int w = 7;
+    double x;
+}
+
+int main() {
+    List<int> a;
+    List_reserve<int>(&a, 10);
+    printf("%d %d\n", a.size, a.cap >= 10 ? 1 : 0);
+    a.push(1);
+    a.push(2);
+    List_resize<int>(&a, 5);
+    printf("%d %d %d %d\n", a.size, a.data[1], a.data[2], a.data[4]);
+    a.data[3] = 9;
+    List_resize<int>(&a, 2);
+    List_resize<int>(&a, 4);
+    printf("%d %d\n", a.data[2], a.data[3]);
+    List<Cell> c;
+    List_resize<Cell>(&c, 3);
+    printf("%d %d %g\n", c.size, c.data[2].w, c.data[2].x);
+    List<int> b;
+    List_copy_from<int>(&b, &a);
+    b.data[0] = 42;
+    printf("%d %d %d\n", b.size, a.data[0], b.data[0]);
+    List_free(&a);
+    List_free(&b);
+    List_free(&c);
+    return 0;
+}

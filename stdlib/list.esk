@@ -39,6 +39,46 @@ void List_set<T>(List<T>* self, int i, T item) {
     self.data[i] = item;
 }
 
+// Make room for at least n elements without changing the size.
+void List_reserve<T>(List<T>* self, int n) {
+    if (n <= self.cap) {
+        return;
+    }
+    let new_data: *T = alloc<T>(n);
+    for (i in 0..self.size) {
+        new_data[i] = self.data[i];
+    }
+    free(self.data);
+    self.data = new_data;
+    self.cap = n;
+}
+
+// Set the size to n. Elements past the old size are zero: in generic code a declared T
+// starts at zero, field defaults included, so a struct with field defaults comes back
+// zeroed, not as T{}.
+void List_resize<T>(List<T>* self, int n) {
+    if (n < 0) {
+        n = 0;
+    }
+    if (n > self.cap) {
+        List_reserve<T>(self, n > self.cap * 2 ? n : self.cap * 2);
+    }
+    for (i in self.size..n) {
+        T fresh;
+        self.data[i] = fresh;
+    }
+    self.size = n;
+}
+
+// Make self a copy of src's elements (copied by value; self's old elements are dropped).
+void List_copy_from<T>(List<T>* self, List<T>* src) {
+    List_reserve<T>(self, src.size);
+    for (i in 0..src.size) {
+        self.data[i] = src.data[i];
+    }
+    self.size = src.size;
+}
+
 // Remove the element at index i, shifting the tail down one slot. Out-of-range
 // indices are ignored. O(n) in the number of trailing elements.
 void List_remove<T>(List<T>* self, int i) {
