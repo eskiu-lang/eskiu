@@ -75,9 +75,11 @@ first-class in the language without giving up general systems use.
 - **Leaner async frames.** Today every local of an async function is stored in its frame;
   storing only the locals that live across an `await` would make frames smaller. This is
   an optimization, not a correctness issue.
-- **Mobile.** Android (`.so` over JNI, built against the NDK) and iOS (a static library
-  called from Swift through the C ABI). The LLVM backends already cover both; the work is
-  linking, stdlib branches and packaging.
+- **32-bit Android.** `armeabi-v7a` and `x86` compile, but a C function reached through a
+  hand-built fn value (the way `onnx` calls ONNX Runtime's function table) gets
+  `size_t` and `c_long` as 64 bits, since the target-width rule applies only to `extern`
+  declarations. Bringing fn values under that rule would let packages such as `onnx` build
+  for those ABIs. Google Play no longer requires them and few devices still run them.
 - **HTTP/3.** By binding an existing QUIC library over `extern` rather than writing QUIC.
   A reverse proxy in front of an Eskiu HTTP/1.1 or HTTP/2 server covers most uses today.
 - **Compile-time `derive`.** Generating code such as serializers from a struct's fields at
