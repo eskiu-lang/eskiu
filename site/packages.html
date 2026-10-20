@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script>try{if(localStorage.getItem("eskiu-lang")==="es")location.replace("es/packages.html"+location.hash);}catch(e){}</script>
   <title>Packages · Eskiu</title>
-  <meta name="description" content="The official Eskiu packages: gpu (compute, rendering, glTF and OBJ models, Llama inference and training over WebGPU), onnx, tflite, compress, audio, font and nds, each added with one eskiuc add." />
+  <meta name="description" content="The official Eskiu packages: gpu (compute, rendering, glTF and OBJ models, Llama inference and training over WebGPU), onnx, tflite, compress, audio, font, jni and nds, each added with one eskiuc add." />
   <link rel="canonical" href="https://eskiu-lang.org/packages.html" />
   <link rel="alternate" hreflang="en" href="https://eskiu-lang.org/packages.html" />
   <link rel="alternate" hreflang="es" href="https://eskiu-lang.org/es/packages.html" />
@@ -34,7 +34,7 @@
     <div class="eyebrow">Packages</div>
     <h1>Official packages</h1>
     <p class="lede">Libraries from the <a href="https://github.com/eskiu-lang">eskiu-lang</a> organization on GitHub. Each one is a git repository with an <code>eskiu.toml</code>, added to a project with one command.</p>
-    <nav class="chips" aria-label="Packages"><a href="#gpu">gpu</a><a href="#onnx">onnx</a><a href="#tflite">tflite</a><a href="#compress">compress</a><a href="#audio">audio</a><a href="#font">font</a><a href="#nds">nds</a></nav>
+    <nav class="chips" aria-label="Packages"><a href="#gpu">gpu</a><a href="#onnx">onnx</a><a href="#tflite">tflite</a><a href="#compress">compress</a><a href="#audio">audio</a><a href="#font">font</a><a href="#jni">jni</a><a href="#nds">nds</a></nav>
     <h2 id="using">Using a package</h2>
     <p><code>eskiuc add</code> writes the dependency into <code>eskiu.toml</code>, fetches it with git and records its commit in <code>eskiu.lock</code>, so later builds reuse it without touching the network. There is no registry: a dependency is a git URL with a rev (a tag, branch or commit) or a local path.</p>
     <pre><code>eskiuc new myapp
@@ -51,7 +51,7 @@ eskiuc run</code></pre>
       <h3>Install</h3>
       <pre><code>eskiuc add gpu --git https://github.com/eskiu-lang/gpu --rev v0.1.0
 eskiuc build -L/opt/homebrew/lib</code></pre>
-      <h3>From the README</h3>
+      <details class="pkg-example"><summary>Example from the README</summary>
       <pre><code>Gltf data = model_load("helmet.glb")?;   <span class="c">// or a .gltf, or an .obj</span>
 defer data.free();
 GpuModel model = gpu.model(&amp;data, surface.format)?;
@@ -64,6 +64,7 @@ GpuCamera cam = model.camera(aspect);
 GpuPass pass = gpu.pass(frame.view, GpuColor{0.1, 0.1, 0.1, 1.0}, &amp;depth);
 model.draw(&amp;pass, &amp;cam);
 pass.end()?;</code></pre>
+      </details>
     </section>
     <section class="pkg" id="onnx">
       <h2>onnx</h2>
@@ -74,7 +75,7 @@ pass.end()?;</code></pre>
       <h3>Install</h3>
       <pre><code>eskiuc add onnx --git https://github.com/eskiu-lang/onnx --rev v0.1.0
 eskiuc build -L/opt/homebrew/lib</code></pre>
-      <h3>From the README</h3>
+      <details class="pkg-example"><summary>Example from the README</summary>
       <pre><code>import &lt;io&gt;;
 import &lt;onnx&gt;;
 
@@ -94,6 +95,7 @@ Result&lt;int, string&gt; run() {
 
 Result&lt;int, string&gt; r = run();
 if (!r.ok) printf("error: %s\n", r.error);</code></pre>
+      </details>
     </section>
     <section class="pkg" id="tflite">
       <h2>tflite</h2>
@@ -106,7 +108,7 @@ if (!r.ok) printf("error: %s\n", r.error);</code></pre>
 export TFL=~/tflite
 eskiuc add tflite --git https://github.com/eskiu-lang/tflite --rev v0.1.0
 eskiuc build -L$TFL/lib --link-arg=-Wl,-rpath,$TFL/lib</code></pre>
-      <h3>From the README</h3>
+      <details class="pkg-example"><summary>Example from the README</summary>
       <pre><code>import &lt;io&gt;;
 import &lt;tflite&gt;;
 
@@ -125,6 +127,7 @@ Result&lt;int, string&gt; run() {
 
 Result&lt;int, string&gt; r = run();
 if (!r.ok) printf("error: %s\n", r.error);</code></pre>
+      </details>
     </section>
     <section class="pkg" id="compress">
       <h2>compress</h2>
@@ -134,7 +137,7 @@ if (!r.ok) printf("error: %s\n", r.error);</code></pre>
       <p class="note">Nothing to install: no zlib and no C code.</p>
       <h3>Install</h3>
       <pre><code>eskiuc add compress --git https://github.com/eskiu-lang/compress --rev v0.1.0</code></pre>
-      <h3>From the README</h3>
+      <details class="pkg-example"><summary>Example from the README</summary>
       <pre><code>ZipReader z = ZipReader_open("pack.zip")?;
 defer z.close();
 for (i in 0..z.count()) {
@@ -144,6 +147,7 @@ for (i in 0..z.count()) {
 Bytes readme = z.read_name("docs/readme.txt")?;
 defer readme.free();
 z.extract_all("out")?;</code></pre>
+      </details>
     </section>
     <section class="pkg" id="audio">
       <h2>audio</h2>
@@ -154,7 +158,7 @@ z.extract_all("out")?;</code></pre>
       <h3>Install</h3>
       <pre><code>eskiuc add audio --git https://github.com/eskiu-lang/audio --rev v0.1.0
 eskiuc build -L/opt/homebrew/lib</code></pre>
-      <h3>From the README</h3>
+      <details class="pkg-example"><summary>Example from the README</summary>
       <pre><code>import &lt;time&gt;;
 import &lt;audio&gt;;
 
@@ -172,6 +176,7 @@ Result&lt;int, string&gt; run() {
     }
     return Ok&lt;int, string&gt;(0);
 }</code></pre>
+      </details>
     </section>
     <section class="pkg" id="font">
       <h2>font</h2>
@@ -181,7 +186,7 @@ Result&lt;int, string&gt; run() {
       <p class="note">Nothing to install.</p>
       <h3>Install</h3>
       <pre><code>eskiuc add font --git https://github.com/eskiu-lang/font --rev v0.1.0</code></pre>
-      <h3>From the README</h3>
+      <details class="pkg-example"><summary>Example from the README</summary>
       <pre><code>import &lt;font&gt;;
 
 Result&lt;int, string&gt; run(*uint8 rgba, int width, int height) {
@@ -195,6 +200,33 @@ Result&lt;int, string&gt; run(*uint8 rgba, int width, int height) {
     <span class="c">// g.left and g.top place it from the pen on the baseline.</span>
     return Ok&lt;int, string&gt;(0);
 }</code></pre>
+      </details>
+    </section>
+    <section class="pkg" id="jni">
+      <h2>jni</h2>
+      <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/jni/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/jni/actions/workflows/ci.yml/badge.svg" alt="CI status: jni" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/jni">github.com/eskiu-lang/jni</a></div>
+      <p><strong>Native methods for Android and the JVM, written in Eskiu.</strong></p>
+      <p>A native method of a Java or Kotlin class is an Eskiu function with the JNI name, with no C glue: strings cross as real UTF-8, lookups come back as a <code>Result</code>, and the whole JNIEnv table is there underneath. It runs on Android and on the desktop JVMs of macOS, Linux and Windows.</p>
+      <p class="note">Nothing to install: the VM hands the library its tables.</p>
+      <h3>Install</h3>
+      <pre><code>eskiuc add jni --git https://github.com/eskiu-lang/jni --rev v0.1.0
+eskiuc build --target aarch64-linux-android24 -o libhello.so</code></pre>
+      <details class="pkg-example"><summary>Example from the README</summary>
+      <pre><code>import &lt;string&gt;;
+import &lt;jni&gt;;
+
+<span class="c">// package com.example.hello; class Greeter { static native String greet(String name); }</span>
+*void Java_com_example_hello_Greeter_greet(*void env, *void cls, *void name) {
+    JniEnv e = jni_env(env);
+    String who;
+    defer String_free(&amp;who);
+    e.string(name, &amp;who);
+    String out;
+    defer String_free(&amp;out);
+    String_appendf(&amp;out, "Hello, %s, from Eskiu", who.data);
+    return e.new_string(out.data);
+}</code></pre>
+      </details>
     </section>
     <section class="pkg" id="nds">
       <h2>nds</h2>
@@ -204,7 +236,7 @@ Result&lt;int, string&gt; run(*uint8 rgba, int width, int height) {
       <p class="note">Nothing to install.</p>
       <h3>Install</h3>
       <pre><code>eskiuc add nds --git https://github.com/eskiu-lang/nds --rev v0.1.0</code></pre>
-      <h3>From the README</h3>
+      <details class="pkg-example"><summary>Example from the README</summary>
       <pre><code>NdsRom rom = NdsRom_open("game.nds")?;
 defer rom.close();
 printf("%s (%s), %d files\n", rom.title, rom.code, rom.count());
@@ -212,6 +244,12 @@ Narc n = rom.narc("a/0/0/4")?;            <span class="c">// views into the ROM<
 defer n.close();
 Bytes f = nds_unpack(n.file(12).data, n.file(12).len)?;   <span class="c">// LZ data decompressed</span>
 Bytes ov = rom.overlay(12)?;              <span class="c">// decompressed when compressed</span></code></pre>
+      </details>
+    </section>
+    <section class="pkg pkg-soon" id="vision">
+      <h2>vision</h2>
+      <div class="pkg-meta"><span class="tag">private for now</span></div>
+      <p>Corners, optical flow, multi-view geometry and planes, in pure Eskiu. It comes from tinyvio, the tracker behind ViroReact's web AR, and computes the same bits as its C++. The repository opens together with tinyvio.</p>
     </section>
     <p>Every package needs Eskiu 0.12 or newer. Its README has the full module list, more examples and the details for each operating system.</p>
   </main>

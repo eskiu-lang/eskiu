@@ -33,18 +33,52 @@
     <div class="eyebrow">Proyectos</div>
     <h1>Hecho con Eskiu</h1>
     <p class="lede">
-      Programas que ya corren: un modelo de lenguaje en la GPU, un visor de modelos 3D, un demo
-      de realidad aumentada en una consola portátil, módulos dentro de un motor de renderizado
-      en producción y el mismo compilador.
+      Programas que ya corren: los módulos de renderizado y el AR web de ReactVision en
+      producción, un modelo de lenguaje en la GPU, un visor de modelos 3D y el mismo compilador,
+      además de un demo de realidad aumentada en una consola portátil hecho por diversión.
     </p>
 
     <nav class="chips" aria-label="Proyectos">
+      <a href="#reactvision">ReactVision</a>
+      <a href="#tinyvio">tinyvio</a>
       <a href="#llama">Llama 2 sobre Metal</a>
       <a href="#viewer">Visor de modelos PBR</a>
-      <a href="#3ds">Demo de RA en la 3DS</a>
-      <a href="#reactvision">ReactVision</a>
       <a href="#selfhost">El compilador</a>
+      <a href="#3ds">Demo de RA en la 3DS</a>
     </nav>
+
+    <h2 id="reactvision">ReactVision</h2>
+    <p>
+      ReactVision desarrolla ViroCore, el motor nativo de renderizado de AR/VR detrás de
+      <code>@reactvision/react-viro</code> en iOS, Android, Meta Quest y visionOS. El equipo
+      reemplaza componentes de C++ sensibles a la memoria con módulos en Eskiu que se enlazan por
+      la ABI de C, un módulo a la vez, sin tocar el resto del motor. Los módulos de renderizado
+      que ya se migraron usan alrededor de 85% menos memoria.
+    </p>
+    <p>
+      El núcleo de detección de objetos de <code>react-viro-onnx</code>, que estaba escrito dos
+      veces en Objective-C++ y Java, ahora es un solo módulo de Eskiu para las dos plataformas en
+      producción, con su capa JNI de Android escrita en Eskiu con el paquete
+      <a href="packages.html#jni"><code>jni</code></a>.
+    </p>
+    <p><a class="more" href="case-study-reactvision.html">Lee el caso de estudio de ReactVision →</a></p>
+
+    <h2 id="tinyvio">tinyvio: tracking de AR en el navegador</h2>
+    <p>
+      tinyvio es el tracker visual-inercial detrás del AR web de ViroReact: esquinas, flujo
+      óptico, cálculo de pose, bundle adjustment, planos y anclas, compilado a WebAssembly. Todo
+      su motor, unas 9,000 líneas de C++, se portó a unas 7,400 líneas de Eskiu que implementan la
+      misma API de C, y el motor en Eskiu es el que está en producción. Calcula los mismos bits
+      que el C++, cuadro por cuadro, a la misma velocidad:
+    </p>
+    <div class="tablewrap"><table>
+      <tr><th>Dónde</th><th>Contra el C++</th></tr>
+      <tr><td>macOS</td><td>idéntico</td></tr>
+      <tr><td>WebAssembly</td><td>idéntico, e idéntico al nativo</td></tr>
+      <tr><td>Simulador de iOS</td><td>idéntico</td></tr>
+      <tr><td>Emulador de Android</td><td>idéntico</td></tr>
+    </table></div>
+    <p><a class="more" href="case-study-reactvision.html#tinyvio">Cómo se verificó →</a></p>
 
     <h2 id="llama">Llama 2 sobre Metal</h2>
     <p>
@@ -89,37 +123,6 @@
     </p>
     <p><a class="more" href="https://github.com/eskiu-lang/gpu">github.com/eskiu-lang/gpu →</a></p>
 
-    <h2 id="3ds">Un demo de realidad aumentada en la Nintendo 3DS</h2>
-    <figure>
-      <img src="../../assets/case-study-3ds.jpg" alt="Una New Nintendo 3DS con el demo: un modelo 3D low-poly sobre la imagen en vivo de la cámara en la pantalla de arriba, con controles y diagnósticos en la de abajo." width="1400" height="1050" loading="lazy" />
-      <figcaption>El demo en una New Nintendo 3DS.</figcaption>
-    </figure>
-    <p>
-      Un demo de realidad aumentada con cámara y giroscopio mantiene un modelo 3D fijo sobre la
-      imagen en vivo de la cámara. Su lógica está escrita en Eskiu y compilada para el ARM11 de
-      32 bits de la consola, y el renderizado pasa por ViroCore sobre citro3d. Se probó en una 3DS
-      real. Es un proyecto hecho por diversión, para ver hasta dónde llega Eskiu, no un producto.
-    </p>
-    <p><a class="more" href="case-study-3ds.html">Lee el caso de estudio de la 3DS →</a></p>
-
-    <h2 id="reactvision">ReactVision</h2>
-    <p>
-      ReactVision desarrolla ViroCore, el motor nativo de renderizado de AR/VR detrás de
-      <code>@reactvision/react-viro</code> en iOS, Android, Meta Quest y visionOS. El equipo
-      reemplaza componentes de C++ sensibles a la memoria con módulos en Eskiu que se enlazan por
-      la ABI de C, un módulo a la vez, sin tocar el resto del motor. Los módulos de renderizado
-      que ya se migraron usan alrededor de 85% menos memoria.
-    </p>
-    <p>
-      tinyvio, el tracker visual-inercial detrás del AR de ViroReact en el navegador, corre en
-      producción en Eskiu: portado completo, calcula los mismos bits que su C++ en macOS, WebAssembly, iOS y
-      Android, a la misma velocidad. El núcleo de detección de objetos de
-      <code>react-viro-onnx</code>, que estaba escrito dos veces en Objective-C++ y Java, ahora
-      es un solo módulo de Eskiu para las dos plataformas, en producción, con su capa JNI de Android también
-      escrita en Eskiu.
-    </p>
-    <p><a class="more" href="case-study-reactvision.html">Lee el caso de estudio de ReactVision →</a></p>
-
     <h2 id="selfhost">El compilador, escrito en Eskiu</h2>
     <p>
       Eskiu tiene dos implementaciones de su compilador. El <code>eskiuc</code> que se publica
@@ -137,6 +140,18 @@
       IR para el código fuente del compilador.
     </p>
     <p><a class="more" href="../docs/self-hosting.html">Cómo se verifica el self-hosting →</a></p>
+    <h2 id="3ds">Un demo de realidad aumentada en la Nintendo 3DS</h2>
+    <figure class="fig-sm">
+      <img src="../../assets/case-study-3ds.jpg" alt="Una New Nintendo 3DS con el demo: un modelo 3D low-poly sobre la imagen en vivo de la cámara en la pantalla de arriba, con controles y diagnósticos en la de abajo." width="1400" height="1050" loading="lazy" />
+      <figcaption>El demo en una New Nintendo 3DS.</figcaption>
+    </figure>
+    <p>
+      Un demo de realidad aumentada con cámara y giroscopio mantiene un modelo 3D fijo sobre la
+      imagen en vivo de la cámara. Su lógica está escrita en Eskiu y compilada para el ARM11 de
+      32 bits de la consola, y el renderizado pasa por ViroCore sobre citro3d. Se probó en una 3DS
+      real. Es un proyecto hecho por diversión, para ver hasta dónde llega Eskiu, no un producto.
+    </p>
+    <p><a class="more" href="case-study-3ds.html">Lee el caso de estudio de la 3DS →</a></p>
   </main>
   <footer class="foot">
     <div class="bar foot-in">

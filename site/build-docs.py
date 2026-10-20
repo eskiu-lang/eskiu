@@ -536,6 +536,23 @@ PACKAGES_CATALOG = [
         "build": [],
     },
     {
+        "name": "jni",
+        "section": None,
+        "tag_es": "Métodos nativos para Android y la JVM, escritos en Eskiu.",
+        "note_en": "A native method of a Java or Kotlin class is an Eskiu function with the JNI "
+                   "name, with no C glue: strings cross as real UTF-8, lookups come back as a "
+                   "<code>Result</code>, and the whole JNIEnv table is there underneath. It runs "
+                   "on Android and on the desktop JVMs of macOS, Linux and Windows.",
+        "note_es": "Un método nativo de una clase de Java o Kotlin es una función de Eskiu con el "
+                   "nombre de JNI, sin pegamento en C: los strings cruzan como UTF-8 de verdad, las "
+                   "búsquedas regresan como <code>Result</code> y toda la tabla de JNIEnv está "
+                   "debajo. Corre en Android y en las JVM de escritorio de macOS, Linux y Windows.",
+        "needs_en": "Nothing to install: the VM hands the library its tables.",
+        "needs_es": "No hay que instalar nada: la VM le pasa sus tablas a la biblioteca.",
+        "setup": [],
+        "build": ["eskiuc build --target aarch64-linux-android24 -o libhello.so"],
+    },
+    {
         "name": "nds",
         "section": "Archives and ROMs",
         "tag_es": "Formatos de archivo de la Nintendo DS para Eskiu: ROMs, archivos NARC, sonido, "
@@ -570,10 +587,14 @@ def readme_tagline(text, name):
 
 
 def readme_example(text, name, section):
-    m = re.search(r"(?m)^#{2,3} " + re.escape(section) + r"\s*$", text)
-    if not m:
-        raise SystemExit(f"packages: no '{section}' section in the {name} README")
-    b = re.search(r"(?ms)^```eskiu\n(.*?)^```", text[m.end():])
+    """The first eskiu code block under `section`, or in the whole README when None."""
+    start = 0
+    if section is not None:
+        m = re.search(r"(?m)^#{2,3} " + re.escape(section) + r"\s*$", text)
+        if not m:
+            raise SystemExit(f"packages: no '{section}' section in the {name} README")
+        start = m.end()
+    b = re.search(r"(?ms)^```eskiu\n(.*?)^```", text[start:])
     if not b:
         raise SystemExit(f"packages: no eskiu code under '{section}' in the {name} README")
     return b.group(1).rstrip("\n")
@@ -609,7 +630,7 @@ PKG_TEXT = {
     "en": {
         "lang": "en", "title": "Packages · Eskiu", "eyebrow": "Packages", "h1": "Official packages",
         "desc": "The official Eskiu packages: gpu (compute, rendering, glTF and OBJ models, Llama "
-                "inference and training over WebGPU), onnx, tflite, compress, audio, font and nds, "
+                "inference and training over WebGPU), onnx, tflite, compress, audio, font, jni and nds, "
                 "each added with one eskiuc add.",
         "lede": "Libraries from the <a href=\"https://github.com/eskiu-lang\">eskiu-lang</a> "
                 "organization on GitHub. Each one is a git repository with an "
@@ -626,7 +647,11 @@ PKG_TEXT = {
                   "<code>import &lt;gpu/model&gt;;</code>. Chapter 13 of the "
                   "<a href=\"{p}the-book-of-eskiu.html#sec-13-5\">Book</a> covers manifests, locks "
                   "and <code>eskiuc test</code>.",
-        "chips": "Packages", "install": "Install", "example": "From the README",
+        "chips": "Packages", "install": "Install", "example": "Example from the README",
+        "soon_tag": "private for now",
+        "soon_p": "Corners, optical flow, multi-view geometry and planes, in pure Eskiu. It comes from "
+                  "tinyvio, the tracker behind ViroReact's web AR, and computes the same bits as its "
+                  "C++. The repository opens together with tinyvio.",
         "repo": "Repository", "ci": "CI status",
         "outro": "Every package needs Eskiu 0.12 or newer. Its README has the full module list, "
                  "more examples and the details for each operating system.",
@@ -635,7 +660,7 @@ PKG_TEXT = {
         "lang": "es", "title": "Paquetes · Eskiu", "eyebrow": "Paquetes", "h1": "Paquetes oficiales",
         "desc": "Los paquetes oficiales de Eskiu: gpu (cómputo, renderizado, modelos glTF y OBJ, "
                 "inferencia y entrenamiento de Llama sobre WebGPU), onnx, tflite, compress, audio, "
-                "font y nds, cada uno se agrega con un eskiuc add.",
+                "font, jni y nds, cada uno se agrega con un eskiuc add.",
         "lede": "Bibliotecas de la organización <a href=\"https://github.com/eskiu-lang\">eskiu-lang</a> "
                 "en GitHub. Cada una es un repositorio de git con un <code>eskiu.toml</code>, y se "
                 "agrega a un proyecto con un solo comando.",
@@ -652,7 +677,11 @@ PKG_TEXT = {
                   "por ejemplo <code>import &lt;gpu/model&gt;;</code>. El capítulo 13 del "
                   "<a href=\"{p}the-book-of-eskiu.html#sec-13-5\">libro</a> explica los manifiestos, "
                   "el lock y <code>eskiuc test</code>.",
-        "chips": "Paquetes", "install": "Instalación", "example": "Del README",
+        "chips": "Paquetes", "install": "Instalación", "example": "Ejemplo del README",
+        "soon_tag": "privado por ahora",
+        "soon_p": "Esquinas, flujo óptico, geometría multivista y planos, en Eskiu puro. Sale de tinyvio, "
+                  "el tracker detrás del AR web de ViroReact, y calcula los mismos bits que su C++. El "
+                  "repositorio se abre junto con tinyvio.",
         "repo": "Repositorio", "ci": "Estado de CI",
         "outro": "Todos los paquetes necesitan Eskiu 0.12 o más nuevo. En el README de cada uno "
                  "están la lista completa de módulos, más ejemplos y los detalles para cada sistema "
@@ -786,9 +815,15 @@ def build_packages():
                   f'      <p class="note">{pkg["needs_" + lang]}</p>',
                   f'      <h3>{T["install"]}</h3>',
                   "      <pre><code>" + "\n".join(html.escape(c, quote=False) for c in install) + "</code></pre>",
-                  f'      <h3>{T["example"]}</h3>',
+                  f'      <details class="pkg-example"><summary>{T["example"]}</summary>',
                   "      <pre><code>" + highlight_comments(example) + "</code></pre>",
+                  "      </details>",
                   "    </section>"]
+        b += [f'    <section class="pkg pkg-soon" id="vision">',
+              '      <h2>vision</h2>',
+              f'      <div class="pkg-meta"><span class="tag">{T["soon_tag"]}</span></div>',
+              f'      <p>{T["soon_p"]}</p>',
+              "    </section>"]
         b.append(f'    <p>{T["outro"]}</p>')
         page = render_site_page(lang, "packages.html", "packages", T["title"], T["desc"], "\n".join(b))
         out = os.path.join(ROOT, "site", "packages.html" if lang == "en" else "es/packages.html")
