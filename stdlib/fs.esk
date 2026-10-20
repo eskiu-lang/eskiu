@@ -395,9 +395,47 @@ int _fs_lstatat_raw(int dfd, string name, *void b) {   // AT_SYMLINK_NOFOLLOW
 #define _FS_ST_SIZE 48
 #define _FS_ST_DEV_SIZE 8
 #define _FS_DIRENT_NAME 19
+#elif defined(__wasm__)   // emscripten and WASI (musl's wasm32 layout)
+extern int stat(string path, *void buf);
+extern int lstat(string path, *void buf);
+int _fs_stat_raw(string p, *void b) {
+    return stat(p, b);
+}
+
+int _fs_lstat_raw(string p, *void b) {
+    return lstat(p, b);
+}
+
+extern int fstat(int fd, *void buf);
+extern int fstatat(int dfd, string path, *void buf, int flags);
+int _fs_fstat_raw(int fd, *void b) {
+    return fstat(fd, b);
+}
+
+int _fs_lstatat_raw(int dfd, string name, *void b) {   // AT_SYMLINK_NOFOLLOW
+    return fstatat(dfd, name, b, 256);
+}
+#define _FS_HAVE_STAT 1
+#define _FS_O_DIRFD 722944   // O_RDONLY | O_NONBLOCK | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+#define _FS_AT_REMOVEDIR 512
+#define _FS_ST_MODE 4
+#define _FS_ST_MTIME 56
+#define _FS_ST_SIZE 24
+#define _FS_ST_DEV_SIZE 4
+#define _FS_ST_INO 88
+#define _FS_DIRENT_NAME 19
 #else
 #define _FS_DIRENT_NAME 11
 #endif
+#endif
+#ifndef _FS_ST_INO
+#define _FS_ST_INO 8
+#endif
+// ENOENT: WebAssembly numbers errno as WASI does.
+#ifdef __wasm__
+#define _FS_ENOENT 44
+#else
+#define _FS_ENOENT 2
 #endif
 
 // The failure state behind fs_last_error / fs_errno.
@@ -959,7 +997,7 @@ int _fs_fd_id(int fd, *int64 dev, *int64 ino) {
         return -1;
     }
     memcpy((*void)dev, (*void)&raw, _FS_ST_DEV_SIZE);
-    memcpy((*void)ino, (*void)((*uint8)&raw + 8), 8);
+    memcpy((*void)ino, (*void)((*uint8)&raw + _FS_ST_INO), 8);
     return 0;
 }
 
@@ -1070,7 +1108,7 @@ int _fs_remove_tree(string path) {
         string name = lv.names.data[lv.next].cstr();
         lv.next++;
         if (_fs_lstatat_raw(cur, name, (*void)&raw) != 0) {
-            if (_fs_errno_now() == 2) {   // gone already
+            if (_fs_errno_now() == _FS_ENOENT) {   // gone already
                 continue;
             }
             const int e = _fs_fail_os();
@@ -1090,7 +1128,7 @@ int _fs_remove_tree(string path) {
                 continue;
             }
             // No longer a directory (swapped for a link or a file): remove the entry.
-            if (_fs_errno_now() == 2) {
+            if (_fs_errno_now() == _FS_ENOENT) {
                 continue;
             }
         }
@@ -1529,7 +1567,7 @@ bool fs_errno_missing() {
         return _fs_err == 2 || _fs_err == 3;
     }
 #endif
-    return _fs_err == 2;   // ENOENT
+    return _fs_err == _FS_ENOENT;
 }
 
 // Rename or move a path, replacing an existing file at `to`. 0 or -1.
@@ -1556,7 +1594,7 @@ bool _fs_same_file(string a, string b) {
         return false;
     }
     return memcmp((*void)&ra, (*void)&rb, _FS_ST_DEV_SIZE) == 0
-        && memcmp((*void)((*uint8)&ra + 8), (*void)((*uint8)&rb + 8), 8) == 0;
+        && memcmp((*void)((*uint8)&ra + _FS_ST_INO), (*void)((*uint8)&rb + _FS_ST_INO), 8) == 0;
 #else
     return false;
 #endif

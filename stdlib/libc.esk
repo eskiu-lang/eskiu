@@ -165,6 +165,20 @@ void libc_set_errno(int e) {
 }
 #endif
 #endif
+#ifdef __wasm__
+// WebAssembly (emscripten, WASI) numbers errno as WASI does.
+const int LIBC_EPERM = 63;
+const int LIBC_ENOENT = 44;
+const int LIBC_EINTR = 27;
+const int LIBC_EIO = 29;
+const int LIBC_EBADF = 8;
+const int LIBC_ENOMEM = 48;
+const int LIBC_EACCES = 2;
+const int LIBC_EEXIST = 20;
+const int LIBC_EINVAL = 28;
+const int LIBC_EAGAIN = 6;
+const int LIBC_ERANGE = 68;
+#else
 const int LIBC_EPERM = 1;
 const int LIBC_ENOENT = 2;
 const int LIBC_EINTR = 4;
@@ -184,6 +198,7 @@ const int LIBC_EAGAIN = 35;
 const int LIBC_EAGAIN = 11;
 #endif
 const int LIBC_ERANGE = 34;
+#endif
 #endif
 
 // ── unistd.h (POSIX) ─────────────────────────────────────────────────────────

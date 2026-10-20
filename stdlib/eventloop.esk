@@ -215,6 +215,88 @@ int _el_wait(int backend, *EvNative evs, *int fds, int max, int64 timeout_ms) {
     return cnt;
 }
 
+#elif defined(__wasm__)  // WebAssembly (emscripten, WASI): POSIX poll
+
+// poll is stateless like WSAPoll: the interest set is a user-space table handed to it on
+// each wait. struct pollfd is { int fd; short events; short revents; } (8 bytes).
+// nfds_t is a C unsigned long, 32 bits on wasm32 (as <net> and <process> spell it).
+extern int poll(*void fds, int32 nfds, int timeout);
+
+struct EvNative {
+    int fd;
+    int16 events;
+    int16 revents;
+}
+
+const int _EL_POLLRD = 1;    // POLLIN
+const int _EL_POLLWR = 4;    // POLLOUT
+
+struct _ElPollSet {
+    EvNative[1024] pfds;
+    int n;
+}
+
+_ElPollSet _el_pset;
+
+int _el_backend_new() {   // state is the global set; the id is unused
+    _el_pset.n = 0;
+    return 0;
+}
+
+void _el_backend_free(int backend) {
+    _el_pset.n = 0;
+}
+
+int _el_pset_find(int fd) {
+    for (i in 0.._el_pset.n) {
+        if (_el_pset.pfds[i].fd == fd) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// Set fd's interest: mode 0 = none (drop), 1 = readable, 2 = writable.
+void _el_ctl(int backend, int fd, int mode, int wasActive) {
+    int idx = _el_pset_find(fd);
+    if (mode == 0) {                                   // remove: swap with the last entry
+        if (idx >= 0) {
+            _el_pset.pfds[idx] = _el_pset.pfds[_el_pset.n - 1];
+            _el_pset.n--;
+        }
+        return;
+    }
+    if (idx < 0) {                                     // first registration
+        idx = _el_pset.n;
+        _el_pset.n++;
+        _el_pset.pfds[idx].fd = fd;
+    }
+    _el_pset.pfds[idx].events = (int16)(mode == 2 ? _EL_POLLWR : _EL_POLLRD);
+    _el_pset.pfds[idx].revents = 0;
+}
+
+extern int usleep(uint32 us);
+
+int _el_wait(int backend, *EvNative evs, *int fds, int max, int64 timeout_ms) {
+    // emscripten's poll takes no timeout: check the descriptors without waiting, then
+    // sleep until the nearest timer when none is ready (a wait with no timer returns).
+    int r = poll(_el_pset.n == 0 ? null : (*void)&_el_pset.pfds[0], (int32)_el_pset.n, 0);
+    if (r <= 0) {
+        if (timeout_ms > 0) {
+            usleep((uint32)(timeout_ms * 1000));
+        }
+        return 0;
+    }
+    int cnt = 0;
+    for (int i = 0; i < _el_pset.n && cnt < max; i++) {
+        if (_el_pset.pfds[i].revents != 0) {
+            fds[cnt] = _el_pset.pfds[i].fd;
+            cnt++;
+        }
+    }
+    return cnt;
+}
+
 #else  // Linux: epoll
 
 extern int epoll_create1(int flags);
