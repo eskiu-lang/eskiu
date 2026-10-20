@@ -257,9 +257,10 @@ fi
 
 # ---- a native library from a prebuilt archive ([native.NAME]) ---------------
 # A C library in a .tgz reached through file://, declared for this host's platform:
-# build fetches and checks it, the program links and runs with no -L, a second build
-# reuses the cache, a direct compile in the package links it too, an unfetched library
-# is a warning, and a wrong sha256 or an unknown platform is refused.
+# the build that links it fetches and checks it, the program links and runs with no -L, a
+# second build reuses the cache, a direct compile in the package fetches it too, a program
+# that does not link it fetches nothing, and a wrong sha256 or an unknown platform is
+# refused.
 os="$(uname -s)"; arch="$(uname -m)"
 case "$os" in Darwin) plat=macos ;; Linux) plat=linux ;; MINGW*|MSYS*) plat=windows ;; *) plat="" ;; esac
 case "$arch" in arm64|aarch64) plat="$plat-arm64" ;; x86_64|amd64) plat="$plat-x86_64" ;; *) plat="" ;; esac
@@ -290,11 +291,14 @@ if [[ -n "$plat" && "$plat" != -* ]] && command -v "$cc_prog" > /dev/null 2>&1 &
     if [[ "$out" == "41" ]]; then ok "native/direct-compile"; else bad "native/direct-compile" "$out"; fi
     mv "$work/natsrc/natlib.tgz.away" "$work/natsrc/natlib.tgz"
     rm -rf "$ESKIU_HOME/native"
-    out="$(cd "$work/nat" && "$ESKIUC" src/main.esk -o "$work/nat_direct" 2>&1)"
-    if [[ "$out" == *"warning: native library nat (package nat) is not fetched; run eskiuc fetch"* ]]; then
-        ok "native/not-fetched"
+    printf 'int main() { return 3; }\n' > "$work/nat/src/other.esk"
+    (cd "$work/nat" && "$ESKIUC" src/other.esk -o "$work/nat_other" > /dev/null 2>&1)
+    if [[ ! -d "$ESKIU_HOME/native" ]]; then ok "native/unused-not-fetched"; else bad "native/unused-not-fetched" "fetched"; fi
+    out="$(cd "$work/nat" && "$ESKIUC" src/main.esk -o "$work/nat_direct" 2>&1 && "$work/nat_direct")"
+    if [[ "$out" == *"fetching nat for nat from file://"* && "$out" == *"41" ]]; then
+        ok "native/direct-fetch"
     else
-        bad "native/not-fetched" "$out"
+        bad "native/direct-fetch" "$out"
     fi
     zeros="0000000000000000000000000000000000000000000000000000000000000000"
     sed "s/$sum/$zeros/" "$work/nat/eskiu.toml" > "$work/nat/toml.new" && mv "$work/nat/toml.new" "$work/nat/eskiu.toml"
