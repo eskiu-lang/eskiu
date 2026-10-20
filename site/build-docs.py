@@ -18,6 +18,7 @@ Requires: markdown  (pip install --user markdown)
 Re-run whenever the Markdown sources change, then commit site/docs/.
 """
 
+import hashlib
 import html
 import os
 import re
@@ -837,9 +838,39 @@ def build_packages():
         print(f"  READMEs at {PKG_REV}  ->  site/{os.path.relpath(out, os.path.join(ROOT, 'site'))}")
 
 
+# Every page names its stylesheets and scripts with ?v=<hash of the file>, so a browser
+# that cached an old copy fetches the new one when the file changes, and only then.
+ASSETS = ("page.css", "home.css", "home.js")
+
+
+def stamp_assets():
+    site = os.path.join(ROOT, "site")
+    stamps = {}
+    for name in ASSETS:
+        with open(os.path.join(site, name), "rb") as f:
+            stamps[name] = hashlib.sha256(f.read()).hexdigest()[:10]
+    pattern = re.compile(r'((?:href|src)="(?:\.\./)*)(' + "|".join(re.escape(n) for n in ASSETS) +
+                         r')(?:\?v=[0-9a-f]*)?"')
+    for dirpath, _, files in os.walk(site):
+        for fn in files:
+            if not fn.endswith(".html"):
+                continue
+            path = os.path.join(dirpath, fn)
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            new = pattern.sub(lambda m: f'{m.group(1)}{m.group(2)}?v={stamps[m.group(2)]}"', text)
+            if new != text:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(new)
+
+
 def main():
+    if "--stamp" in sys.argv:
+        stamp_assets()
+        return
     if "--packages" in sys.argv:
         build_packages()
+        stamp_assets()
         return
     os.makedirs(OUT, exist_ok=True)
     md = markdown.Markdown(
@@ -895,6 +926,7 @@ def main():
 
     if "--no-packages" not in sys.argv:
         build_packages()
+    stamp_assets()
 
     print(f"Done. {len(PAGES)} docs pages + changelog.html")
 
