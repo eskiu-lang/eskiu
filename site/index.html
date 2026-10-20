@@ -162,6 +162,19 @@ fetch(<span class="st">"https://api.github.com/repos/llvm/llvm-project"</span>, 
 *<span class="ty">JsonValue</span> repo = Response_json(&amp;r);
 println(JsonValue_as_cstr(json_get(repo, <span class="st">"owner.login"</span>)));</pre>
         </div>
+
+        <div class="feat flip">
+          <div class="feat-txt">
+            <span class="n">06</span>
+            <h3>GPU compute and 3D, as a package</h3>
+            <p>The <code>gpu</code> package runs compute kernels and draws glTF and OBJ models with physically based shading, over Metal, Vulkan and DirectX 12. One <code>eskiuc add</code> brings it in.</p>
+            <a class="more" href="https://github.com/eskiu-lang/gpu">eskiu-lang/gpu →</a>
+          </div>
+          <figure class="card-img">
+            <img src="../assets/gpu-helmet.png" alt="The DamagedHelmet glTF model drawn by the gpu package" width="512" height="512" loading="lazy" />
+            <figcaption>DamagedHelmet by theblueturtle_, CC BY 4.0</figcaption>
+          </figure>
+        </div>
       </section>
 
       <section class="pg" id="playground">

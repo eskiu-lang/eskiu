@@ -121,6 +121,9 @@ section[id], span[id] { scroll-margin-top: 88px; }
 .feat h3 { margin: 0; font-family: var(--serif); font-weight: 600; font-size: clamp(30px, 3vw, 36px); letter-spacing: -0.02em; line-height: 1.15; }
 .feat p { margin: 0; font-size: 17px; line-height: 1.65; color: var(--ink2); }
 .feat .more { font-weight: 700; font-size: 16px; padding-block: 8px; }
+.card-img { margin: 10px 8px 0 0; background: #1e2028; border: 1.5px solid var(--ink); border-radius: 18px; overflow: hidden; box-shadow: 8px 8px 0 var(--lilac); }
+.card-img img { display: block; width: 100%; height: auto; }
+.card-img figcaption { padding: 10px 16px; background: #fff; border-top: 1.5px solid var(--ink); font-size: 12px; color: var(--faint); }
 pre.card { margin: 10px 8px 0 0; background: #fff; border: 1.5px solid var(--ink); border-radius: 18px; padding: 22px 18px; font-family: var(--mono); font-size: 12px; line-height: 1.8; overflow-x: auto; box-shadow: 8px 8px 0 var(--lilac); }
 .kw { color: var(--code-kw); font-weight: 500; }
 .ty { color: var(--code-ty); }
@@ -133,6 +136,7 @@ pre.card { margin: 10px 8px 0 0; background: #fff; border: 1.5px solid var(--ink
   .feat.flip .feat-txt { order: 2; }
   .feat p { font-size: 18px; }
   pre.card { margin: 0; padding: 28px 30px; font-size: 15px; line-height: 1.75; }
+  .card-img { margin: 0; }
   .wide { display: inline; }
   .narrow { display: none; }
 }
