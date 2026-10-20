@@ -1,0 +1,15 @@
+// ctypes.esk: C integer types whose width depends on the target.
+//
+//     import <ctypes>;
+//     extern int64 strlen(string s);                      // wrong on 32-bit targets
+//     extern size_t strlen(string s);                     // right everywhere
+//
+// In Eskiu each of these is an int64. In the parameters and result of an `extern`
+// the compiler passes the target's C type instead: `size_t` and `ssize_t` are as wide
+// as a pointer (32 bits on wasm32, 32-bit ARM and x86), `c_long` is 32 bits on
+// Windows and on 32-bit targets. An argument is converted to that width and a result
+// widened back (zero-extended for size_t, sign-extended for the others), so the same
+// declaration works on every target.
+type size_t = int64;
+type ssize_t = int64;
+type c_long = int64;

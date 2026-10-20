@@ -11,6 +11,7 @@
 //   ... leaf futures complete and call Executor_schedule(ex, resume) ...
 //   Executor_run(ex);     // blocks, dispatching I/O readiness and scheduled wakers
 
+import <ctypes>;
 import <mem>;
 import <eventloop>;
 import <threading>;
@@ -24,8 +25,8 @@ extern int ioctlsocket(int fd, int cmd, *int argp);
 extern int getsockname(int fd, *void addr, *int len);
 #else
 extern int pipe(*int fds);
-extern int64 read(int fd, *void buf, int64 n);
-extern int64 write(int fd, *void buf, int64 n);
+extern ssize_t read(int fd, *void buf, size_t n);
+extern ssize_t write(int fd, *void buf, size_t n);
 extern int close(int fd);
 extern int fcntl(int fd, int cmd, ...);        // variadic in C: arm64 Apple passes `...` on the stack
 #endif

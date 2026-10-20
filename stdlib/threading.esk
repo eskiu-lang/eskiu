@@ -10,8 +10,9 @@
 // Pass a *pointer* to a primitive into a thread closure (closures capture by
 // value, so capturing the pointer is what makes the lock shared).
 
-// Older glibc and mingw (winpthreads) keep pthread out of libc; macOS has it in libSystem.
-#ifdef __linux__
+// Older glibc and mingw (winpthreads) keep pthread out of libc; macOS has it in
+// libSystem and Android in its libc.
+#if defined(__linux__) && !defined(__ANDROID__)
 #pragma link("pthread")
 #endif
 #ifdef _WIN32

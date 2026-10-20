@@ -30,16 +30,17 @@
 extern *void fopen(string path, string mode);
 extern int fclose(*void fp);
 extern int fflush(*void fp);
-extern int64 fread(*void buf, int64 size, int64 count, *void fp);
-extern int64 fwrite(*void buf, int64 size, int64 count, *void fp);
+extern size_t fread(*void buf, size_t size, size_t count, *void fp);
+extern size_t fwrite(*void buf, size_t size, size_t count, *void fp);
 extern *uint8 fgets(*uint8 buf, int n, *void fp);
 extern int fputs(string s, *void fp);
-extern int fseek(*void fp, int64 offset, int whence);
-extern int64 ftell(*void fp);
+extern int fseek(*void fp, c_long offset, int whence);
+extern c_long ftell(*void fp);
 extern void rewind(*void fp);
 extern int feof(*void fp);
 extern int ferror(*void fp);
 
+import <ctypes>;
 import <mem>;   // heap allocation via the built-in alloc<T>, not raw malloc
 import <string>;
 import <list>;
@@ -240,7 +241,7 @@ extern int unlink(string path);
 extern int rmdir(string path);
 extern int rename(string from, string to);
 extern int chdir(string path);
-extern *char getcwd(*char buf, int64 size);
+extern *char getcwd(*char buf, size_t size);
 extern int mkstemp(*char tmpl);
 extern *char mkdtemp(*char tmpl);
 extern int close(int fd);

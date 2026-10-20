@@ -10,6 +10,7 @@
 //   net_send_str(c, "hello\n");
 //   net_close(c);
 
+import <ctypes>;
 import <time>;
 import <dns>;    // host names in net_tcp_connect
 
@@ -34,13 +35,13 @@ extern int setsockopt(int fd, int level, int opt, *void val, int len);
 extern int send(int fd, *void buf, int n, int flags);
 extern int recv(int fd, *void buf, int n, int flags);
 #else
-extern int64 send(int fd, *void buf, int64 n, int flags);
-extern int64 recv(int fd, *void buf, int64 n, int flags);
+extern ssize_t send(int fd, *void buf, size_t n, int flags);
+extern ssize_t recv(int fd, *void buf, size_t n, int flags);
 #endif
 extern uint16 htons(uint16 x);
 extern uint32 htonl(uint32 x);
 extern uint32 inet_addr(string dotted);
-extern int64 strlen(string s);
+extern size_t strlen(string s);
 
 // sockaddr_in — an exact 16-byte layout (hence `packed`). macOS leads with a
 // `sin_len` byte; Linux starts with a 2-byte `sin_family`. Selected at compile

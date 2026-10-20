@@ -19,19 +19,20 @@
 // is read. `long` differs between Windows (32 bits) and the rest (64 bits), so the
 // `long` functions (strtol, atol, labs, ftell's result) are left out in favor of the
 // `long long` ones (strtoll, atoll, llabs).
+import <ctypes>;
 import <mem>;
 import <io>;
 import <math>;
 
 // ── string.h ─────────────────────────────────────────────────────────────────
 extern *char strcpy(*char dst, string src);
-extern *char strncpy(*char dst, string src, int64 n);
+extern *char strncpy(*char dst, string src, size_t n);
 extern *char strcat(*char dst, string src);
-extern *char strncat(*char dst, string src, int64 n);
+extern *char strncat(*char dst, string src, size_t n);
 extern *char strrchr(string s, int c);
 extern *char strpbrk(string s, string accept);
-extern int64 strspn(string s, string accept);
-extern int64 strcspn(string s, string reject);
+extern size_t strspn(string s, string accept);
+extern size_t strcspn(string s, string reject);
 extern string strerror(int e);
 #ifdef _WIN32
 extern *char _strdup(string s);
@@ -41,12 +42,12 @@ extern *char _strdup(string s);
 #else
 extern *char strdup(string s);
 extern int strcasecmp(string a, string b);
-extern int strncasecmp(string a, string b, int64 n);
+extern int strncasecmp(string a, string b, size_t n);
 #endif
 
 // ── stdlib.h ─────────────────────────────────────────────────────────────────
-extern *void malloc(int64 n);
-extern *void realloc(*void p, int64 n);
+extern *void malloc(size_t n);
+extern *void realloc(*void p, size_t n);
 extern int atoi(string s);
 extern int64 atoll(string s);
 extern double atof(string s);
@@ -60,12 +61,12 @@ extern void exit(int code);
 extern void abort();
 extern int system(string command);
 extern int atexit(fn()->void f);
-extern void qsort(*void base, int64 n, int64 size, fn(*void, *void)->int cmp);
-extern *void bsearch(*void key, *void base, int64 n, int64 size, fn(*void, *void)->int cmp);
+extern void qsort(*void base, size_t n, size_t size, fn(*void, *void)->int cmp);
+extern *void bsearch(*void key, *void base, size_t n, size_t size, fn(*void, *void)->int cmp);
 
 // ── stdio.h ──────────────────────────────────────────────────────────────────
-extern int snprintf(*char buf, int64 n, string fmt, ...);
-extern int vsnprintf(*char buf, int64 n, string fmt, va_list ap);
+extern int snprintf(*char buf, size_t n, string fmt, ...);
+extern int vsnprintf(*char buf, size_t n, string fmt, va_list ap);
 extern int sscanf(string s, string fmt, ...);
 extern *void fopen(string path, string mode);
 extern int fclose(*void fp);
@@ -190,12 +191,12 @@ const int LIBC_ERANGE = 34;
 extern int getpid();
 extern int getppid();
 extern int close(int fd);
-extern int64 read(int fd, *void buf, int64 n);
-extern int64 write(int fd, *void buf, int64 n);
+extern ssize_t read(int fd, *void buf, size_t n);
+extern ssize_t write(int fd, *void buf, size_t n);
 extern int isatty(int fd);
 extern int dup2(int from, int to);
 extern int chdir(string path);
-extern *char getcwd(*char buf, int64 size);
+extern *char getcwd(*char buf, size_t size);
 extern int unlink(string path);
 extern int access(string path, int mode);
 extern uint32 sleep(uint32 seconds);

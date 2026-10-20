@@ -1,6 +1,7 @@
 // String — mutable string with owned buffer
 // Requires: stdlib/mem.esk for alloc/free/memcpy/strlen
 
+import <ctypes>;
 import <mem>;
 import <list>;   // String_split collects parts into a List<String>
 
@@ -355,7 +356,7 @@ void String_split_free(List<String>* parts) {
 // ASCII letters change case, and a multi-byte UTF-8 character counts as its
 // byte length.
 
-extern int vsnprintf(*char buf, int64 n, string fmt, va_list ap);
+extern int vsnprintf(*char buf, size_t n, string fmt, va_list ap);
 extern double strtod(string s, *string end);
 
 // Make room for at least `need` bytes (the trailing NUL included). Contents are
@@ -647,7 +648,7 @@ int String_parse_double(String* self, *double out) {
 // msvcrt's vsnprintf is not C99: "%g" of 1e6 is "1e+006" and infinity is
 // "1.#INF". mingw-w64's own implementation follows C99, so every platform
 // prints the same text.
-extern int __mingw_vsnprintf(*char buf, int64 n, string fmt, va_list ap);
+extern int __mingw_vsnprintf(*char buf, size_t n, string fmt, va_list ap);
 #endif
 
 // vsnprintf into the spare room after the current contents; returns the length

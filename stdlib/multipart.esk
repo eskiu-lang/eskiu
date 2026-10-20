@@ -11,11 +11,12 @@
 //       }
 //   }
 
+import <ctypes>;
 import <mem>;
 import <string>;
 
-extern *void memmem(*void hay, int64 hlen, *void needle, int64 nlen);
-extern int64 strlen(string s);
+extern *void memmem(*void hay, size_t hlen, *void needle, size_t nlen);
+extern size_t strlen(string s);
 
 // Offset of `needle` within hay[from..hlen), or -1.
 int64 _mp_find(*uint8 hay, int64 hlen, int64 from, *uint8 needle, int64 nlen) {

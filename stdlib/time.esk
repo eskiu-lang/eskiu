@@ -7,6 +7,7 @@
 
 // The calendar helpers at the bottom build ISO 8601 strings, so <time> pulls in
 // <string>; the clock functions above have no such dependency.
+import <ctypes>;
 import <string>;
 
 // POSIX timespec. On 64-bit macOS and Linux both fields are 64-bit.
@@ -223,7 +224,7 @@ const string[7] TIME_WDAY_NAMES = {"Sunday", "Monday", "Tuesday", "Wednesday", "
 const string[12] TIME_MONTH_NAMES = {"January", "February", "March", "April", "May", "June", "July",
     "August", "September", "October", "November", "December"};
 
-extern int64 strftime(*char buf, int64 max, string fmt, *void tm);
+extern size_t strftime(*char buf, size_t max, string fmt, *void tm);
 #ifdef _WIN32
 extern int _localtime64_s(*void tm, *int64 t);
 extern void _tzset();

@@ -26,13 +26,14 @@ extern int puts(string s);
 extern int getchar();
 extern int putchar(int c);
 
+import <ctypes>;
 import <string>;
 
 extern int fflush(*void fp);
 extern int fputs(string s, *void fp);
 extern int fgetc(*void fp);
-extern int64 fread(*void buf, int64 size, int64 count, *void fp);
-extern int64 fwrite(*void buf, int64 size, int64 count, *void fp);
+extern size_t fread(*void buf, size_t size, size_t count, *void fp);
+extern size_t fwrite(*void buf, size_t size, size_t count, *void fp);
 
 #ifdef _WIN32
 extern *void __acrt_iob_func(uint32 index);

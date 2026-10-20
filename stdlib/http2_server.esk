@@ -17,6 +17,7 @@
 //   EventLoop* lp = el_new(256);
 //   Future<uint8>* f = http2_serve_async(lp, fd, hello, 1000);
 
+import <ctypes>;
 import <mem>;
 import <future>;
 import <eventloop>;
@@ -29,8 +30,8 @@ import <http>;
 import <string>;
 import <time>;
 
-extern int memcmp(*void a, *void b, int64 n);
-extern int64 strlen(string s);
+extern int memcmp(*void a, *void b, size_t n);
+extern size_t strlen(string s);
 
 // True if a decoded header's name equals the cstring `name`.
 int _h2_name_eq(HpackHeader* h, string name) {
