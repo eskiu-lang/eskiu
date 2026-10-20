@@ -1,0 +1,15 @@
+# Tests that do not apply to the iOS simulator, one per line with the reason. Read by
+# tests/mobile/check.sh with PLATFORM=ios. iOS does not let an app start processes.
+args                  re-runs itself through <process>
+console_io            re-runs itself through <process>
+env_set               runs a shell through <process>
+fs_copy_mode          runs a shell through <process>
+fs_tree_fd            runs a shell through <process>
+int_runtime_semantics re-runs itself through <process> to observe traps
+process_grandchild    starts processes
+process_inherit_order starts processes
+process_run           starts processes
+process_self          starts processes
+process_sigpipe       starts processes
+stdlib_result         runs a shell through <process>
+uncaught_exception    re-runs itself through <process>

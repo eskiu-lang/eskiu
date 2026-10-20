@@ -2,8 +2,8 @@
 #
 # The run tests on a phone target: each tests/NAME.esk with a NAME.expected (and no C
 # companion) is compiled and linked for the target, run on a simulator or emulator,
-# and its output compared with the native one. A test listed in tests/mobile/skip.txt
-# is skipped (with its reason there).
+# and its output (stdout and stderr) compared with the native one, with 60 s at most per
+# test. A test listed in tests/mobile/skip-PLATFORM.txt is skipped (with its reason there).
 #
 #   PLATFORM=ios     an iOS simulator (xcrun simctl; DEVICE names a booted one, else
 #                    the first booted device is used); target arm64-apple-ios15.0-simulator
@@ -24,7 +24,7 @@ case "$PLATFORM" in
         TARGET="${TARGET:-arm64-apple-ios15.0-simulator}"
         DEVICE="${DEVICE:-$(xcrun simctl list devices booted | grep -m1 -oE '[0-9A-F-]{36}')}"
         if [[ -z "$DEVICE" ]]; then echo "mobile: skipped (no booted iOS simulator)"; exit 0; fi
-        run() { (cd "$here" && xcrun simctl spawn "$DEVICE" "$1"); } ;;
+        run() { (cd "$here" && perl -e 'alarm shift; exec @ARGV' 60 xcrun simctl spawn "$DEVICE" "$1" 2>&1); } ;;
     android)
         TARGET="${TARGET:-aarch64-linux-android24}"
         ADB="${ADB:-adb}"
@@ -32,12 +32,12 @@ case "$PLATFORM" in
         "$ADB" shell mkdir -p /data/local/tmp/eskiu >/dev/null
         run() {
             "$ADB" push -q "$1" /data/local/tmp/eskiu/t >/dev/null &&
-            "$ADB" shell "cd /data/local/tmp/eskiu && chmod 755 t && ./t > o 2>/dev/null; true" &&
+            "$ADB" shell "cd /data/local/tmp/eskiu && chmod 755 t && timeout 60 ./t > o 2>&1; true" &&
             "$ADB" exec-out cat /data/local/tmp/eskiu/o
         } ;;
     *) echo "error: PLATFORM must be ios or android" >&2; exit 2 ;;
 esac
-skip_list="$(dirname "$0")/skip.txt"
+skip_list="$(dirname "$0")/skip-$PLATFORM.txt"
 pass=0; fail=0; skipped=0
 names=("$@")
 if [[ ${#names[@]} -eq 0 ]]; then
@@ -50,7 +50,7 @@ for name in "${names[@]}"; do
         echo "  FAIL  $name: compile: $(grep -m1 -i error "$work/cerr")"
         fail=$((fail+1)); continue
     fi
-    run "$work/$name" >"$work/out" 2>/dev/null
+    run "$work/$name" >"$work/out"
     if ! diff -q "$work/out" "$here/$name.expected" >/dev/null; then
         echo "  FAIL  $name: output differs"
         diff "$here/$name.expected" "$work/out" | head -4 | sed 's/^/        /'
