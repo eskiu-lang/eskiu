@@ -181,6 +181,106 @@ TargetLayoutInfo targetLayoutInfo(const std::string& tripleIn) {
     return info;
 }
 
+// The scalars an aggregate holds, each array element counted.
+static uint64_t aggregateLeaves(llvm::Type* t) {
+    if (auto* st = llvm::dyn_cast<llvm::StructType>(t)) {
+        uint64_t n = 0;
+        for (llvm::Type* e : st->elements()) n += aggregateLeaves(e);
+        return n;
+    }
+    if (auto* at = llvm::dyn_cast<llvm::ArrayType>(t)) return at->getNumElements() * aggregateLeaves(at->getElementType());
+    return 1;
+}
+
+static bool largeAggregate(llvm::Type* t) {
+    return (t->isStructTy() || t->isArrayTy()) && aggregateLeaves(t) > 64;
+}
+
+// The function type with each large aggregate parameter as a pointer, or null when it has none.
+static llvm::FunctionType* byPointerType(llvm::FunctionType* ft) {
+    bool any = false;
+    std::vector<llvm::Type*> ps;
+    for (llvm::Type* p : ft->params()) {
+        if (largeAggregate(p)) { ps.push_back(llvm::PointerType::get(ft->getContext(), 0)); any = true; }
+        else ps.push_back(p);
+    }
+    return any ? llvm::FunctionType::get(ft->getReturnType(), ps, ft->isVarArg()) : nullptr;
+}
+
+// WebAssembly gives each scalar of an aggregate argument a parameter of its own, and an
+// engine accepts at most 1000 (V8), so a function taking a large struct by value (an
+// `Ok<T>(v)` of a big T) does not load. Such a parameter becomes a pointer to a copy the
+// caller makes, which the callee reads at entry: the same by-value semantics, for every
+// Eskiu function and every call, direct or through a function value.
+void CodeGen::passLargeAggregatesByPointer(llvm::Module& m) {
+    std::vector<llvm::Function*> fns;
+    for (llvm::Function& f : m)
+        if (byPointerType(f.getFunctionType())) fns.push_back(&f);
+    // Calls first: rebuild each one whose type has a large aggregate parameter.
+    std::vector<llvm::CallBase*> calls;
+    for (llvm::Function& f : m)
+        for (llvm::BasicBlock& bb : f)
+            for (llvm::Instruction& i : bb)
+                if (auto* cb = llvm::dyn_cast<llvm::CallBase>(&i))
+                    if (byPointerType(cb->getFunctionType())) calls.push_back(cb);
+    for (llvm::CallBase* cb : calls) {
+        llvm::FunctionType* oldTy = cb->getFunctionType();
+        llvm::FunctionType* newTy = byPointerType(oldTy);
+        llvm::Function* caller = cb->getFunction();
+        llvm::IRBuilder<> eb(&caller->getEntryBlock(), caller->getEntryBlock().getFirstInsertionPt());
+        llvm::IRBuilder<> b(cb);
+        std::vector<llvm::Value*> args;
+        for (unsigned i = 0; i < cb->arg_size(); ++i) {
+            llvm::Value* a = cb->getArgOperand(i);
+            if (i < oldTy->getNumParams() && largeAggregate(oldTy->getParamType(i))) {
+                llvm::AllocaInst* slot = eb.CreateAlloca(a->getType(), nullptr, "arg.copy");
+                b.CreateStore(a, slot);
+                a = slot;
+            }
+            args.push_back(a);
+        }
+        llvm::SmallVector<llvm::OperandBundleDef, 1> bundles;
+        cb->getOperandBundlesAsDefs(bundles);
+        llvm::CallBase* nc = nullptr;
+        if (auto* inv = llvm::dyn_cast<llvm::InvokeInst>(cb))
+            nc = b.CreateInvoke(newTy, cb->getCalledOperand(), inv->getNormalDest(), inv->getUnwindDest(), args, bundles);
+        else
+            nc = b.CreateCall(newTy, cb->getCalledOperand(), args, bundles);
+        nc->setCallingConv(cb->getCallingConv());
+        if (!cb->getType()->isVoidTy()) nc->takeName(cb);
+        cb->replaceAllUsesWith(nc);
+        cb->eraseFromParent();
+    }
+    // Then each function: a new one with the pointer parameters takes the old one's body.
+    for (llvm::Function* f : fns) {
+        llvm::FunctionType* newTy = byPointerType(f->getFunctionType());
+        llvm::Function* nf = llvm::Function::Create(newTy, f->getLinkage(), f->getAddressSpace(), "", &m);
+        nf->copyAttributesFrom(f);
+        // The function's and the result's attributes stay; a pointer parameter has none.
+        llvm::AttributeList al = f->getAttributes();
+        std::vector<llvm::AttributeSet> pa;
+        for (unsigned i = 0; i < newTy->getNumParams(); ++i)
+            pa.push_back(largeAggregate(f->getFunctionType()->getParamType(i)) ? llvm::AttributeSet()
+                                                                               : al.getParamAttrs(i));
+        nf->setAttributes(llvm::AttributeList::get(m.getContext(), al.getFnAttrs(), al.getRetAttrs(), pa));
+        nf->takeName(f);
+        if (!f->isDeclaration()) {
+            nf->splice(nf->begin(), f);
+            llvm::IRBuilder<> eb(&nf->getEntryBlock(), nf->getEntryBlock().getFirstInsertionPt());
+            auto na = nf->arg_begin();
+            for (llvm::Argument& oa : f->args()) {
+                llvm::Value* v = &*na;
+                if (largeAggregate(oa.getType())) v = eb.CreateLoad(oa.getType(), &*na, oa.getName() + ".val");
+                na->setName(oa.getName());
+                oa.replaceAllUsesWith(v);
+                ++na;
+            }
+        }
+        f->replaceAllUsesWith(nf);
+        f->eraseFromParent();
+    }
+}
+
 CodeGen::CodeGen()
     : context(std::make_unique<llvm::LLVMContext>()),
       module(std::make_unique<llvm::Module>("eskiu", *context)),
@@ -202,6 +302,7 @@ llvm::Module* CodeGen::generateCode(std::shared_ptr<Program> program) {
 
     program->accept(this);
     emitUncaughtReporter();
+    if (triple.isWasm()) passLargeAggregatesByPointer(*module);
 
     std::string errorStr;
     llvm::raw_string_ostream errorStream(errorStr);
