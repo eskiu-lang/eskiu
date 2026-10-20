@@ -356,6 +356,7 @@ pre.code-block {
 <a href="#sec-13-3" class="toc-sec">13.3 No include guards</a>
 <a href="#sec-13-4" class="toc-sec">13.4 Project layout</a>
 <a href="#sec-13-5" class="toc-sec">13.5 Packages</a>
+<a href="#sec-13-6" class="toc-sec">13.6 A real package: gpu</a>
 <a href="#chapter-14" class="toc-ch">Chapter 14</a>
 <a href="#sec-14-1" class="toc-sec">14.1 Declaring extern functions</a>
 <a href="#sec-14-2" class="toc-sec">14.2 Calling OpenSSL: a real example</a>
@@ -1839,7 +1840,7 @@ pre.code-block {
 <p>Once a project uses code from another repository, copying files around stops scaling. A package is a directory with an <code>eskiu.toml</code> manifest, and <code>eskiuc</code> fetches its dependencies with git and pins them in <code>eskiu.lock</code>. There is no registry: a dependency is a git URL with a rev (a tag, branch or commit) or a local path.</p>
 <pre class="code-block"> $ eskiuc new myapp            # myapp/eskiu.toml, myapp/src/main.esk, .gitignore
  $ cd myapp
- $ eskiuc add jsonx --git https://github.com/x/jsonx --rev v1.2.0
+ $ eskiuc add gpu --git https://github.com/eskiu-lang/gpu --rev v0.1.0
  $ eskiuc add util --path ../util
  $ eskiuc run
  Hello from myapp!</pre>
@@ -1850,14 +1851,46 @@ pre.code-block {
  main = &quot;src/main.esk&quot;      # optional, this is the default
 
  [deps]
- jsonx = { git = &quot;https://github.com/x/jsonx&quot;, rev = &quot;v1.2.0&quot; }
- util  = { path = &quot;../util&quot; }</pre>
+ gpu  = { git = &quot;https://github.com/eskiu-lang/gpu&quot;, rev = &quot;v0.1.0&quot; }
+ util = { path = &quot;../util&quot; }</pre>
 <p>A dependency's modules are its <code>.esk</code> files. Import one by the package name and the file name; the package's own modules work the same way:</p>
-<pre class="code-block"> import &lt;jsonx/parse&gt;;   // parse.esk or src/parse.esk in jsonx
+<pre class="code-block"> import &lt;gpu/model&gt;;     // model.esk or src/model.esk in gpu
  import &lt;util&gt;;          // util.esk, src/util.esk or lib.esk in util
  import &lt;myapp/helper&gt;;  // src/helper.esk of this package
  import &lt;io&gt;;            // a stdlib name stays the stdlib module</pre>
 <p>Git packages are checked out once per commit under <code>~/.eskiu/pkgs</code>. A dependency with its own <code>eskiu.toml</code> brings its dependencies along, and two packages that need one dependency at different commits stop the build with an error that names both. The lock records the commit of every package; builds reuse it without touching the network, and <code>eskiuc fetch</code> moves it forward. <code>eskiuc build</code> writes <code>build/myapp</code>, and <code>eskiuc test</code> compiles and runs every <code>tests/*.esk</code>, counting a test as passed when it exits with 0.</p>
+<h2 class="section" id="sec-13-6">13.6 A real package: gpu</h2>
+<p><a href="https://github.com/eskiu-lang/gpu">gpu</a> is a package for GPU compute and 3D rendering over WebGPU. It calls wgpu-native, a C library, through <code>extern</code> declarations, so the library has to be installed (<code>brew install wgpu-native</code> on macOS) and its directory given to the linker with <code>-L</code>:</p>
+<pre class="code-block"> $ eskiuc new viewer &amp;&amp; cd viewer
+ $ eskiuc add gpu --git https://github.com/eskiu-lang/gpu --rev v0.1.0
+ $ eskiuc build -L/opt/homebrew/lib
+ $ ./build/viewer helmet.glb</pre>
+<p>Loading a glTF or OBJ model and drawing it into a texture takes a few calls, each returning a <code>Result</code>, so <code>?</code> passes any failure up with the message from the loader or from the GPU:</p>
+<pre class="code-block"> import &lt;io&gt;;
+ import &lt;gpu&gt;;
+ import &lt;gpu/model&gt;;
+
+ Result&lt;int, string&gt; render(string path) {
+     Gltf data = model_load(path)?;      // .gltf, .glb or .obj
+     defer data.free();
+     Gpu gpu = gpu_open()?;
+     defer gpu.release();
+     GpuTexture target = gpu.target(512, 512)?;
+     defer target.release();
+     GpuTexture depth = gpu.depth(512, 512)?;
+     defer depth.release();
+     GpuModel model = gpu.model(&amp;data, target.format)?;
+     defer model.release();
+     GpuCamera cam = model.camera(1.0);  // frames the whole model
+     GpuPass pass = gpu.pass(target.view, GpuColor{0.1, 0.1, 0.1, 1.0}, &amp;depth);
+     model.draw(&amp;pass, &amp;cam);
+     pass.end()?;
+     return Ok&lt;int, string&gt;(0);
+ }
+
+ Result&lt;int, string&gt; r = render(argv[1]);
+ if (!r.ok) printf(&quot;error: %s\n&quot;, r.error);</pre>
+<p>The package&#39;s README lists its modules: compute kernels, textures, windows over SDL3, PNG and JPEG decoding, and vector and quaternion maths.</p>
 <div class="chapter-start" id="chapter-14"><span class="chapter-label">Chapter 14</span>
 <h1 class="chapter-title">C Interop</h1><hr class="chapter-rule"></div>
 <p>The entire C library ecosystem (OpenSSL, zlib, SQLite, libpng, the POSIX API) is available to Eskiu programs. Declare the function with <code>extern</code>, the compiler generates a standard C-ABI call, and the linker resolves it.</p>
