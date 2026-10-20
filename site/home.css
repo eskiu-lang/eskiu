@@ -86,16 +86,18 @@ section[id], span[id] { scroll-margin-top: 88px; }
 .downloads .lbl { color: var(--muted); font-weight: 400; }
 .note { font-size: 14px; line-height: 1.6; color: var(--muted); margin: 0; }
 @media (min-width: 900px) {
-  .hero { grid-template-columns: 1.25fr 1fr; gap: 40px; padding-block: 72px 96px; }
+  .hero { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 40px; padding-block: 72px 96px; }
   .hero-fig { order: 0; }
   .hero-fig .disc { width: min(480px, 36vw); height: min(480px, 36vw); }
   .lede { font-size: 21px; }
   .cta { flex-direction: row; }
   .install-box { flex-direction: row; align-items: center; padding: 8px 8px 8px 20px; border-radius: 14px; max-width: 660px; }
   .install-box .lbl { display: none; }
-  .install-box .cmd { flex-grow: 1; font-size: 15px; word-break: normal; white-space: nowrap; }
+  .install-box .cmd { flex-grow: 1; min-width: 0; font-size: 15px; word-break: normal; }
   .install-box .btn { height: 44px; padding: 0 18px; }
 }
+
+@media (min-width: 1200px) { .install-box .cmd { white-space: nowrap; } }
 
 /* In production strip */
 .strip { background: var(--purple); color: var(--paper); }
