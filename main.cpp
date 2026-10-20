@@ -882,15 +882,22 @@ static int compilerMain(int argc, char** argv) {
                     extra.push_back("-mwindows");
                 }
             }
-            // A host build inside a package links the native libraries its packages declare
-            // (pkg.cpp), and finds them at run time through an rpath (Windows: the DLLs are
-            // copied next to the program).
+            // A host build inside a package finds the native libraries it links in the
+            // archives its packages declare (pkg.cpp): -L, an rpath for run time (Windows:
+            // the DLLs are copied next to the program).
             bool hostBuild = std::string(TargetTriple).empty();
+            std::vector<std::string> nativeDirs;
             if (hostBuild) {
-                for (const auto& m : pkgNativeLibs.missing)
-                    std::cerr << "warning: native library " << m
-                              << " is not fetched; run eskiuc fetch" << std::endl;
-                for (const auto& d : pkgNativeLibs.dirs) {
+                std::vector<std::string> linked(LinkLibs.begin(), LinkLibs.end());
+                if (!NoDefaultLibs) linked.insert(linked.end(), pragmaLibs.begin(), pragmaLibs.end());
+                try {
+                    nativeDirs = pkgNativeLibDirs(linked);
+                } catch (const std::exception& e) {
+                    std::cerr << "error: " << e.what() << std::endl;
+                    llvm::sys::fs::remove(tmpObjPath);
+                    return 1;
+                }
+                for (const auto& d : nativeDirs) {
                     paths.push_back(d);
 #ifndef _WIN32
                     extra.push_back("-Wl,-rpath," + d);
@@ -900,7 +907,7 @@ static int compilerMain(int argc, char** argv) {
             bool ok = linkExecutable(tmpObjPath, outFile, libs, paths, extra, /*sanitized=*/Asan,
                                      std::string(TargetTriple));
 #ifdef _WIN32
-            if (ok && hostBuild) copyNativeDlls(pkgNativeLibs.dirs, outFile);
+            if (ok && hostBuild) copyNativeDlls(nativeDirs, outFile);
 #endif
             llvm::sys::fs::remove(tmpObjPath);
             if (!ok) { if (g_runMode) llvm::sys::fs::remove(runExePath); return 1; }

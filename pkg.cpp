@@ -19,10 +19,12 @@
 //   [native.onnxruntime]
 //   macos-arm64 = { url = "https://...tgz", sha256 = "...", lib = "onnxruntime-osx-arm64-1.31.0/lib" }
 //
-// build, run, test, add and fetch download the archive of this host's platform, check its
-// SHA-256 and unpack it into $ESKIU_HOME/native/SHA256 (named by its contents, so it is
-// never fetched twice); pkgLoadRoots then gives the linker its `lib` directory (-L and an
-// rpath, see pkgNativeLibs). A platform with no entry links the library from the system.
+// NAME is the library that `#pragma link("NAME")` or -lNAME links. When a host build links
+// it, the driver asks pkgNativeLibDirs for its directory: the archive of this host's
+// platform is downloaded, its SHA-256 checked and unpacked into $ESKIU_HOME/native/SHA256
+// (named by its contents, so it is fetched once), and the build gets its `lib` directory
+// as -L and an rpath. `eskiuc fetch` downloads every one ahead. A platform with no entry
+// links the library from the system.
 
 #include "pkg.h"
 #include "main_support.h"
@@ -800,7 +802,6 @@ std::vector<LockEntry> resolveAndLock(const Manifest& root, bool update) {
     std::sort(entries.begin(), entries.end(),
               [](const LockEntry& a, const LockEntry& b) { return a.name < b.name; });
     writeLock(root.dir, entries);
-    fetchNatives(root.dir);
     return entries;
 }
 
@@ -936,6 +937,7 @@ int cmdFetch(const std::vector<std::string>& args) {
         if (e.kind == "root") continue;
         std::cout << e.name << "\t" << (e.kind == "git" ? e.commit : e.path) << std::endl;
     }
+    fetchNatives(m.dir);
     return 0;
 }
 
@@ -1051,11 +1053,13 @@ bool pkgCommand(int argc, char** argv, int& rc) {
     return true;
 }
 
-PkgNativeLibs pkgNativeLibs;
+namespace {
+std::vector<HostNative> packageNatives;   // this host's [native.NAME] archives, by pkgLoadRoots
+}
 
 void pkgLoadRoots(const std::string& input) {
     packageRoots = PackageRoots();
-    pkgNativeLibs = PkgNativeLibs();
+    packageNatives.clear();
     std::error_code ec;
     fs::path in = fs::absolute(input, ec);
     std::string root = findPackageRoot(in.parent_path().generic_string());
@@ -1069,17 +1073,23 @@ void pkgLoadRoots(const std::string& input) {
         std::cerr << "error: " << e.what() << std::endl;
         exit(1);
     }
-    // The native libraries already in the cache; the package commands fetch them, a
-    // compile (or the editor) never does. A manifest error leaves them out here and is
-    // reported by those commands.
+    // The native libraries, fetched only when a build links one (pkgNativeLibDirs). A
+    // manifest error leaves them out here; the package commands report it.
     try {
-        for (const auto& n : hostNatives(root, lock)) {
-            std::string dir = nativeDir(n.src) + "/" + n.src.lib;
-            if (fs::is_directory(dir, ec)) pkgNativeLibs.dirs.push_back(dir);
-            else pkgNativeLibs.missing.push_back(n.lib + " (package " + n.pkg + ")");
-        }
+        packageNatives = hostNatives(root, lock);
     } catch (const std::exception&) {
     }
+}
+
+std::vector<std::string> pkgNativeLibDirs(const std::vector<std::string>& linked) {
+    std::vector<std::string> dirs;
+    std::set<std::string> want(linked.begin(), linked.end());
+    for (const auto& n : packageNatives) {
+        if (!want.count(n.lib)) continue;
+        fetchNative(n.pkg, n.lib, n.src);
+        dirs.push_back(nativeDir(n.src) + "/" + n.src.lib);
+    }
+    return dirs;
 }
 
 void copyNativeDlls(const std::vector<std::string>& dirs, const std::string& exe) {

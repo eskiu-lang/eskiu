@@ -17,15 +17,11 @@ bool pkgCommand(int argc, char** argv, int& rc);
 // eskiu.lock. Nothing is fetched here.
 void pkgLoadRoots(const std::string& input);
 
-// The lib directories of the prebuilt native libraries ([native.NAME] in eskiu.toml) that
-// the package and its dependencies declare for this host, as pkgLoadRoots found them in
-// $ESKIU_HOME/native; `missing` names the ones not fetched yet. The driver links a host
-// build against `dirs` (-L and an rpath).
-struct PkgNativeLibs {
-    std::vector<std::string> dirs;
-    std::vector<std::string> missing;
-};
-extern PkgNativeLibs pkgNativeLibs;
+// The directories of the prebuilt native libraries ([native.NAME] in eskiu.toml, NAME the
+// library -lNAME links) that the package of the compile's first input and its dependencies
+// declare for this host, one per name in `linked` that has one. An archive not in
+// $ESKIU_HOME/native yet is downloaded and checked first; a failure throws.
+std::vector<std::string> pkgNativeLibDirs(const std::vector<std::string>& linked);
 
 // Copy the DLLs of `dirs` next to `exe`, where Windows looks for them first.
 void copyNativeDlls(const std::vector<std::string>& dirs, const std::string& exe);
