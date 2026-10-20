@@ -70,6 +70,9 @@ static void initCodegenTargets(bool withAsm) {
     LLVMInitializeARMTarget();
     LLVMInitializeARMTargetInfo();
     LLVMInitializeARMTargetMC();
+    LLVMInitializeWebAssemblyTarget();
+    LLVMInitializeWebAssemblyTargetInfo();
+    LLVMInitializeWebAssemblyTargetMC();
 #ifdef ESKIU_HAS_X86
     LLVMInitializeX86Target();
     LLVMInitializeX86TargetInfo();
@@ -80,6 +83,8 @@ static void initCodegenTargets(bool withAsm) {
         LLVMInitializeAArch64AsmParser();
         LLVMInitializeARMAsmPrinter();
         LLVMInitializeARMAsmParser();
+        LLVMInitializeWebAssemblyAsmPrinter();
+        LLVMInitializeWebAssemblyAsmParser();
 #ifdef ESKIU_HAS_X86
         LLVMInitializeX86AsmPrinter();
         LLVMInitializeX86AsmParser();

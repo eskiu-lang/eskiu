@@ -62,13 +62,13 @@ if(ESKIU_STATIC)
     # Static LLVM — release binaries.
     # On Apple Silicon, X86 static libs are not available in Homebrew LLVM.
     if(APPLE)
-        set(STATIC_BACKENDS "aarch64codegen aarch64asmparser aarch64desc aarch64info armcodegen armasmparser armdesc arminfo")
+        set(STATIC_BACKENDS "aarch64codegen aarch64asmparser aarch64desc aarch64info armcodegen armasmparser armdesc arminfo webassemblycodegen webassemblyasmparser webassemblydesc webassemblyinfo")
     else()
-        set(STATIC_BACKENDS "aarch64codegen aarch64asmparser aarch64desc aarch64info x86codegen x86asmparser x86desc x86info armcodegen armasmparser armdesc arminfo")
+        set(STATIC_BACKENDS "aarch64codegen aarch64asmparser aarch64desc aarch64info x86codegen x86asmparser x86desc x86info armcodegen armasmparser armdesc arminfo webassemblycodegen webassemblyasmparser webassemblydesc webassemblyinfo")
     endif()
     execute_process(
         COMMAND ${LLVM_TOOLS_BINARY_DIR}/llvm-config --link-static --libs
-                support core irreader nativecodegen orcjit ${STATIC_BACKENDS}
+                support core irreader object nativecodegen orcjit ${STATIC_BACKENDS}
         OUTPUT_VARIABLE LLVM_STATIC_LIBS
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
@@ -83,11 +83,12 @@ if(ESKIU_STATIC)
 else()
     # Dynamic LLVM — default for development (X86 available as dylib on all platforms)
     llvm_map_components_to_libnames(llvm_libs
-        support core irreader
+        support core irreader object
         nativecodegen orcjit
         aarch64codegen aarch64asmparser aarch64desc aarch64info
         x86codegen x86asmparser x86desc x86info
-        armcodegen armasmparser armdesc arminfo)
+        armcodegen armasmparser armdesc arminfo
+        webassemblycodegen webassemblyasmparser webassemblydesc webassemblyinfo)
     target_link_libraries(eskiuc ${llvm_libs})
 endif()
 
