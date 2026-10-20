@@ -102,7 +102,8 @@
       corners, pyramidal Lucas-Kanade flow, two-view initialisation, pose solving,
       sliding-window bundle adjustment, plane detection, relocalisation and anchors. It
       is the engine <code>@reactvision/viro-web-renderer</code> loads for AR in the
-      browser, compiled to WebAssembly. Its whole engine, about 9,000 lines of C++, is now
+      browser, compiled to WebAssembly, and since 2026-10-20 the one in production is
+      written in Eskiu. Its whole engine, about 9,000 lines of C++, is now
       about 7,400 lines of Eskiu that implement the same SLAM C API, so the existing
       embind layer builds the drop-in web engine from it unchanged.
     </p>
@@ -145,8 +146,9 @@
       emulator within the rounding of their ONNX Runtime versions.
     </p>
     <p>
-      Both ports are built and verified, and wait to be integrated into the ViroReact
-      packages.
+      The Eskiu tinyvio is the engine ViroReact's web AR runs on in production. The
+      detection core is built and verified, and waits to be integrated into the
+      <code>react-viro-onnx</code> package.
     </p>
 
     <p>

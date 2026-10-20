@@ -101,7 +101,8 @@
       esquinas FAST, flujo óptico Lucas-Kanade piramidal, inicialización con dos vistas,
       cálculo de pose, bundle adjustment de ventana deslizante, detección de planos,
       relocalización y anclas. Es el motor que <code>@reactvision/viro-web-renderer</code>
-      carga para AR en el navegador, compilado a WebAssembly. Todo el motor, unas 9,000
+      carga para AR en el navegador, compilado a WebAssembly, y desde el 2026-10-20 el que
+      está en producción está escrito en Eskiu. Todo el motor, unas 9,000
       líneas de C++, ahora son unas 7,400 líneas de Eskiu que implementan la misma API de
       C de SLAM, así que la capa de embind que ya existía construye con ellas el motor web
       sin cambios.
@@ -145,8 +146,9 @@
       emulador de Android coincide dentro del redondeo de sus versiones de ONNX Runtime.
     </p>
     <p>
-      Los dos ports están construidos y verificados, y esperan su integración en los
-      paquetes de ViroReact.
+      El tinyvio en Eskiu es el motor sobre el que corre en producción el AR web de
+      ViroReact. El núcleo de detección está construido y verificado, y espera su
+      integración en el paquete <code>react-viro-onnx</code>.
     </p>
 
     <p>
