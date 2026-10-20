@@ -162,9 +162,9 @@ string resolve_import(string spec, int is_std, string basedir) {
             }
             i = i + 1;
         }
-        if (slash < 0) {
-            path = str_concat("stdlib/", str_concat(path, ".esk"));
-        }
+        // A stdlib module, also one in a subdirectory (`<c/unistd>`), comes first; then a
+        // package (C++ Parser::resolveImport).
+        path = str_concat("stdlib/", str_concat(path, ".esk"));
         if (g_stdlib_root != null) {
             if (g_stdlib_root[0] != 0) {
                 path = str_concat(g_stdlib_root, str_concat("/", path));
@@ -177,11 +177,16 @@ string resolve_import(string spec, int is_std, string basedir) {
             module = p_sub(spec, slash + 1, n);
         }
         string proot = pkg_root_of(head);
-        if (proot != null && (slash >= 0 || fs_is_file(path) == 0)) {
+        if (proot != null && fs_is_file(path) == 0) {
             return pkg_module_path(proot, head, module);
         }
-        if (g_pkg_active == 1 && head[0] != 0 && fs_is_file(path) == 0) {
-            g_import_err = str_concat("unknown package '", str_concat(head, "' (not in eskiu.toml)"));
+        if (head[0] != 0 && fs_is_file(path) == 0) {
+            if (g_pkg_active == 1) {
+                g_import_err = str_concat("unknown package '", str_concat(head, "' (not in eskiu.toml)"));
+            }
+            else if (slash >= 0) {
+                g_import_err = str_concat("unknown module <", str_concat(spec, str_concat("> (for a file of your own, import \"", str_concat(spec, ".esk\")"))));
+            }
         }
         return path;
     }
