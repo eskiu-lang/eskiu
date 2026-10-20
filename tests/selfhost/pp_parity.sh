@@ -44,7 +44,7 @@ strip_banner() {
 }
 
 if [ "$#" -eq 1 ] && [ "$1" = "--full" ]; then
-    files=(tests/*.esk stdlib/*.esk)
+    files=(tests/*.esk stdlib/*.esk stdlib/c/*.esk)
     echo "corpus: ${#files[@]} files (tests/ + stdlib/, no exclusions)"
     echo "----"
 elif [ "$#" -gt 0 ]; then

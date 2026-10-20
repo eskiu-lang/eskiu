@@ -12,7 +12,7 @@ if ! "$BIN" selfhost/esk_main.esk --asan -O1 -o "$WORK/esk_asan" > "$WORK/b.log"
     echo "asan selfhost: could not build the ASan compiler"; cat "$WORK/b.log"; exit 2
 fi
 n=0; bad=0
-for f in tests/*.esk tests/errors/*.esk tests/warnings/*.esk selfhost/*.esk examples/*.esk stdlib/*.esk; do
+for f in tests/*.esk tests/errors/*.esk tests/warnings/*.esk selfhost/*.esk examples/*.esk stdlib/*.esk stdlib/c/*.esk; do
     [ -f "$f" ] || continue
     n=$((n + 1))
     ESKIU_ROOT="$PWD" ASAN_OPTIONS=detect_leaks=0 "$WORK/esk_asan" "$f" --test-codegen > /dev/null 2> "$WORK/err"
