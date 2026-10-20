@@ -32,12 +32,15 @@ std::shared_ptr<Program> loadProgram(const std::vector<std::string>& inputs, con
                                      const std::string* primarySource = nullptr);
 bool endsWith(const std::string& s, const std::string& suffix);
 // `ccArgs` receives any extra words of $CC (e.g. "-m64" in CC="clang -m64").
-std::string findCDriver(bool sanitized = false, std::vector<std::string>* ccArgs = nullptr);
+std::string findCDriver(bool sanitized = false, std::vector<std::string>* ccArgs = nullptr,
+                        const std::string& triple = "");
 bool linkExecutable(const std::string& obj, const std::string& out,
                     const std::vector<std::string>& libs,
                     const std::vector<std::string>& paths,
                     const std::vector<std::string>& extra,
-                    bool sanitized = false);
+                    bool sanitized = false, const std::string& triple = "");
+// Write `obj` into the static library `out` (.a, or .lib for a Windows target).
+bool writeStaticLibrary(const std::string& obj, const std::string& out, const std::string& triple);
 // The runtime libraries a program needs that no stdlib module names, for the platform
 // the predefined macros select: the C++ exception runtime when it throws or catches
 // (-lc++ on Apple, -lstdc++ on Linux and mingw) and pthread when it spawns threads

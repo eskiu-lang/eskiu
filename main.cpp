@@ -93,6 +93,12 @@ static llvm::cl::opt<std::string> RelocModel("reloc",
     llvm::cl::value_desc("model"),
     llvm::cl::cat(EskiuCat));
 
+static llvm::cl::opt<std::string> Subsystem("subsystem",
+    llvm::cl::desc("Windows subsystem of the linked program: console (default) or windows, "
+                   "for a program that opens its own window and no console"),
+    llvm::cl::value_desc("console|windows"),
+    llvm::cl::cat(EskiuCat));
+
 static llvm::cl::opt<bool> Freestanding("freestanding",
     llvm::cl::desc("Compile without libc — alloc/free use esk_alloc/esk_free"),
     llvm::cl::cat(EskiuCat));
@@ -480,6 +486,10 @@ static int compilerMain(int argc, char** argv) {
     }
     unsigned safeChecks = 0;
     if (!safeChecksFromFlag(safeChecks)) return 1;
+    if (!Subsystem.empty() && Subsystem != "console" && Subsystem != "windows") {
+        std::cerr << "error: invalid --subsystem '" << Subsystem << "' (use console or windows)" << std::endl;
+        return 1;
+    }
     // Refuse an output path that names one of the inputs: `-o prog.esk` would
     // silently replace the source with an object file or executable.
     if (!OutputFilename.empty()) {
@@ -803,7 +813,23 @@ static int compilerMain(int argc, char** argv) {
         // or --freestanding (bare-metal needs a custom linker script: link yourself).
         bool linkExe = g_runMode || (!CompileOnly && !Freestanding &&
                        !OutputFilename.empty() && !endsWith(outFile, ".o") &&
-                       !endsWith(outFile, ".obj"));
+                       !endsWith(outFile, ".obj") && !endsWith(outFile, ".a") &&
+                       !endsWith(outFile, ".lib"));
+
+        // A static library (.a, .lib): the object in an archive, for a host build system
+        // (an iOS xcframework, an Android or emscripten build) to link.
+        if (!g_runMode && !CompileOnly && (endsWith(outFile, ".a") || endsWith(outFile, ".lib"))) {
+            llvm::SmallString<128> tmpObj;
+            if (llvm::sys::fs::createTemporaryFile("eskiu", "o", tmpObj)) {
+                std::cerr << "error: could not create a temporary object file" << std::endl;
+                return 1;
+            }
+            std::string tmpObjPath(tmpObj.str());
+            bool ok = codegen.emitObjectFile(tmpObjPath) &&
+                      writeStaticLibrary(tmpObjPath, outFile, std::string(TargetTriple));
+            llvm::sys::fs::remove(tmpObjPath);
+            return ok ? 0 : 1;
+        }
 
         if (linkExe) {
             llvm::SmallString<128> tmpObj;
@@ -844,7 +870,18 @@ static int compilerMain(int argc, char** argv) {
                 if (t.isMacOSX() && t.getMacOSXVersion(v) && v.getMajor() > 0)
                     extra.push_back("-mmacosx-version-min=" + v.getAsString());
             }
-            bool ok = linkExecutable(tmpObjPath, outFile, libs, paths, extra, /*sanitized=*/Asan);
+            // --subsystem=windows on a Windows target: the GUI subsystem, entered at main.
+            if (Subsystem == "windows" && macros.count("_WIN32")) {
+                std::string tt = std::string(TargetTriple);
+                if (tt.find("msvc") != std::string::npos) {
+                    extra.push_back("-Wl,/subsystem:windows");
+                    extra.push_back("-Wl,/entry:mainCRTStartup");
+                } else {
+                    extra.push_back("-mwindows");
+                }
+            }
+            bool ok = linkExecutable(tmpObjPath, outFile, libs, paths, extra, /*sanitized=*/Asan,
+                                     std::string(TargetTriple));
             llvm::sys::fs::remove(tmpObjPath);
             if (!ok) { if (g_runMode) llvm::sys::fs::remove(runExePath); return 1; }
 

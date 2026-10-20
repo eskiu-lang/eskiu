@@ -29,6 +29,11 @@
 #include "llvm/Support/raw_os_ostream.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Object/ArchiveWriter.h"
+#include "llvm/Support/Path.h"
+#include "llvm/TargetParser/Host.h"
+#include "llvm/Support/StringSaver.h"
+#include "llvm/TargetParser/Triple.h"
 #include "lexer/lexer.h"
 #include "parser/parser.h"
 #include "ast/ast_printer.h"
@@ -857,6 +862,20 @@ void seedPredefinedMacros(std::map<std::string, Macro>& macros, const std::strin
     }
     if (!arch.empty()) macros[arch] = os;
 
+    // WebAssembly, Android and iOS, spelled as clang predefines them.
+    if (tt.rfind("wasm32", 0) == 0) {
+        macros["__wasm__"] = os;
+        macros["__wasm32__"] = os;
+        if (tt.find("emscripten") != std::string::npos) macros["__EMSCRIPTEN__"] = os;
+        if (tt.find("wasi") != std::string::npos) macros["__wasi__"] = os;
+    }
+    if (tt.find("android") != std::string::npos) macros["__ANDROID__"] = os;
+    if (tt.find("-ios") != std::string::npos) {
+        macros["TARGET_OS_IPHONE"] = os;
+        macros["TARGET_OS_IOS"] = os;
+        if (tt.find("simulator") != std::string::npos) macros["TARGET_IPHONE_SIMULATOR"] = os;
+    }
+
     // Predefine __ESKIU_FREESTANDING__ under --freestanding so stdlib (e.g.
     // <mem>'s alloc/free) can target esk_alloc/esk_free instead of libc.
     if (freestanding) {
@@ -949,12 +968,89 @@ bool endsWith(const std::string& s, const std::string& suffix) {
            s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
+// The Android NDK: $ANDROID_NDK_HOME, $ANDROID_NDK_ROOT, else the newest version under
+// the SDK's ndk/ directory ($ANDROID_HOME, $ANDROID_SDK_ROOT, or the SDK manager's
+// default place in the home directory).
+std::string androidNdk() {
+    for (const char* v : {"ANDROID_NDK_HOME", "ANDROID_NDK_ROOT"})
+        if (const char* p = std::getenv(v); p && *p) return p;
+    std::vector<std::string> sdks;
+    for (const char* v : {"ANDROID_HOME", "ANDROID_SDK_ROOT"})
+        if (const char* p = std::getenv(v); p && *p) sdks.push_back(p);
+    if (const char* home = std::getenv("HOME"); home && *home) {
+        sdks.push_back(std::string(home) + "/Library/Android/sdk");
+        sdks.push_back(std::string(home) + "/Android/Sdk");
+    }
+    for (const auto& sdk : sdks) {
+        std::error_code ec;
+        std::string best;
+        for (auto it = std::filesystem::directory_iterator(sdk + "/ndk", ec);
+             !ec && it != std::filesystem::directory_iterator(); it.increment(ec)) {
+            std::string name = it->path().filename().string();
+            auto key = [](const std::string& s) {
+                std::vector<long> parts;
+                std::stringstream ss(s);
+                for (std::string p; std::getline(ss, p, '.');) parts.push_back(std::atol(p.c_str()));
+                return parts;
+            };
+            if (best.empty() || key(name) > key(best)) best = name;
+        }
+        if (!best.empty()) return sdk + "/ndk/" + best;
+    }
+    return "";
+}
+
+// The C driver a --target build for WebAssembly, Android or iOS uses when $CC is not
+// set, with the arguments that select the target: emcc for emscripten, clang with
+// --target for the other wasm32 triples (the LLVM toolchain's own, which has the
+// WebAssembly backend and wasm-ld), the NDK's clang for Android (from
+// $ANDROID_NDK_HOME or $ANDROID_NDK_ROOT) and `xcrun -sdk iphoneos clang` for iOS.
+static bool crossDriver(const std::string& triple, std::string& driver, std::vector<std::string>& args) {
+    auto has = [&](const char* s) { return triple.find(s) != std::string::npos; };
+    if (triple.rfind("wasm32", 0) == 0 && has("emscripten")) {
+        if (auto p = llvm::sys::findProgramByName("emcc")) { driver = *p; return true; }
+        return false;
+    }
+    if (triple.rfind("wasm32", 0) == 0) {
+#ifdef ESKIU_LLVM_BINDIR
+        std::string llvmClang = std::string(ESKIU_LLVM_BINDIR) + "/clang";
+        if (llvm::sys::fs::exists(llvmClang)) driver = llvmClang;
+#endif
+        if (driver.empty())
+            if (auto p = llvm::sys::findProgramByName("clang")) driver = *p;
+        if (driver.empty()) return false;
+        args = {"--target=" + triple};
+        return true;
+    }
+    if (has("android")) {
+        std::string ndk = androidNdk();
+        if (ndk.empty()) return false;
+        for (const char* host : {"darwin-x86_64", "linux-x86_64", "windows-x86_64"}) {
+            std::string c = ndk + "/toolchains/llvm/prebuilt/" + host + "/bin/clang";
+            if (llvm::sys::fs::exists(c) || llvm::sys::fs::exists(c + ".exe")) {
+                driver = llvm::sys::fs::exists(c) ? c : c + ".exe";
+                args = {"--target=" + triple};
+                return true;
+            }
+        }
+        return false;
+    }
+    if (has("-ios")) {
+        auto p = llvm::sys::findProgramByName("xcrun");
+        if (!p) return false;
+        driver = *p;
+        args = {"-sdk", has("simulator") ? "iphonesimulator" : "iphoneos", "clang", "-target", triple};
+        return true;
+    }
+    return false;
+}
+
 // Locate a C linker driver: $CC first, then cc / clang / gcc on PATH.
 // When `sanitized` is set, prefer the clang from the LLVM toolchain this
 // compiler was built against — its compiler-rt matches the ASan instrumentation
 // we emit, so the runtime versions agree (Apple's system clang ships a different
 // ASan ABI and would fail to link).
-std::string findCDriver(bool sanitized, std::vector<std::string>* ccArgs) {
+std::string findCDriver(bool sanitized, std::vector<std::string>* ccArgs, const std::string& triple) {
 #ifdef ESKIU_LLVM_BINDIR
     if (sanitized) {
         std::string llvmClang = std::string(ESKIU_LLVM_BINDIR) + "/clang";
@@ -975,6 +1071,14 @@ std::string findCDriver(bool sanitized, std::vector<std::string>* ccArgs) {
                          "falling back to cc/clang/gcc" << std::endl;
         }
     }
+    if (!triple.empty()) {
+        std::string driver;
+        std::vector<std::string> args;
+        if (crossDriver(triple, driver, args)) {
+            if (ccArgs) *ccArgs = args;
+            return driver;
+        }
+    }
     for (const char* name : {"cc", "clang", "gcc"}) {
         if (auto p = llvm::sys::findProgramByName(name)) return *p;
     }
@@ -987,9 +1091,9 @@ bool linkExecutable(const std::string& obj, const std::string& out,
                            const std::vector<std::string>& libs,
                            const std::vector<std::string>& paths,
                            const std::vector<std::string>& extra,
-                           bool sanitized) {
+                           bool sanitized, const std::string& triple) {
     std::vector<std::string> ccArgs;
-    std::string driver = findCDriver(sanitized, &ccArgs);
+    std::string driver = findCDriver(sanitized, &ccArgs, triple);
     if (driver.empty()) {
         std::cerr << "error: no C linker driver found (looked for $CC, cc, clang, gcc).\n"
                      "       Install a C toolchain, or use -c to emit an object file "
@@ -999,6 +1103,8 @@ bool linkExecutable(const std::string& obj, const std::string& out,
     std::vector<std::string> argv = {driver};
     argv.insert(argv.end(), ccArgs.begin(), ccArgs.end());
     argv.insert(argv.end(), {obj, "-o", out});
+    // A shared library (.so, .dylib, .dll): the object is position-independent already.
+    if (endsWith(out, ".so") || endsWith(out, ".dylib") || endsWith(out, ".dll")) argv.push_back("-shared");
     for (const auto& p : paths) argv.push_back("-L" + p);
     for (const auto& l : libs)  argv.push_back("-l" + l);
     for (const auto& a : extra) argv.push_back(a);
@@ -1018,13 +1124,41 @@ bool linkExecutable(const std::string& obj, const std::string& out,
     return true;
 }
 
+bool writeStaticLibrary(const std::string& obj, const std::string& out, const std::string& tripleStr) {
+    llvm::Triple t(tripleStr.empty() ? llvm::sys::getDefaultTargetTriple() : tripleStr);
+    auto member = llvm::NewArchiveMember::getFile(obj, /*Deterministic=*/true);
+    if (!member) {
+        std::cerr << "error: " << llvm::toString(member.takeError()) << std::endl;
+        return false;
+    }
+    // The member is named after the library, not the temporary object.
+    static llvm::BumpPtrAllocator alloc;
+    static llvm::StringSaver saver(alloc);
+    std::string base = llvm::sys::path::stem(out).str();
+    member->MemberName = saver.save(base + (t.isOSWindows() ? ".obj" : ".o"));
+    llvm::object::Archive::Kind kind = t.isOSDarwin() ? llvm::object::Archive::K_DARWIN
+                                     : t.isOSWindows() ? llvm::object::Archive::K_COFF
+                                     : llvm::object::Archive::K_GNU;
+    std::vector<llvm::NewArchiveMember> members;
+    members.push_back(std::move(*member));
+    if (llvm::Error e = llvm::writeArchive(out, members, llvm::SymtabWritingMode::NormalSymtab,
+                                           kind, /*Deterministic=*/true, /*Thin=*/false)) {
+        std::cerr << "error: cannot write " << out << ": " << llvm::toString(std::move(e)) << std::endl;
+        return false;
+    }
+    return true;
+}
+
 std::vector<std::string> implicitLinkLibs(const std::map<std::string, Macro>& macros,
                                           bool usesExceptions, bool usesThreads) {
     std::vector<std::string> libs;
     bool apple = macros.count("__APPLE__") > 0;
-    bool gnu = macros.count("__linux__") > 0 || macros.count("_WIN32") > 0;
+    bool android = macros.count("__ANDROID__") > 0;
+    bool gnu = !android && (macros.count("__linux__") > 0 || macros.count("_WIN32") > 0);
+    // Android: the NDK's static libc++ and its ABI library; pthread is in bionic's libc.
     if (usesExceptions) {
         if (apple) libs.push_back("c++");
+        else if (android) { libs.push_back("c++_static"); libs.push_back("c++abi"); }
         else if (gnu) libs.push_back("stdc++");
     }
     if (usesThreads && gnu) libs.push_back("pthread");
