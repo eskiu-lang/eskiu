@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script>try{if(localStorage.getItem("eskiu-lang")==="es")location.replace("es/packages.html"+location.hash);}catch(e){}</script>
+  <title>Packages · Eskiu</title>
+  <meta name="description" content="The official Eskiu packages: gpu (compute, rendering, glTF and OBJ models, Llama inference and training over WebGPU), onnx, tflite, compress, audio, font and nds, each added with one eskiuc add." />
+  <link rel="canonical" href="https://eskiu-lang.org/packages.html" />
+  <link rel="alternate" hreflang="en" href="https://eskiu-lang.org/packages.html" />
+  <link rel="alternate" hreflang="es" href="https://eskiu-lang.org/es/packages.html" />
+  <link rel="alternate" hreflang="x-default" href="https://eskiu-lang.org/packages.html" />
+  <link rel="icon" type="image/png" href="../assets/logo.png" />
+  <meta name="theme-color" content="#fbf8f3" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&amp;family=DM+Sans:wght@400;500;700&amp;family=DM+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="page.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="bar top-in">
+      <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.12.0</span></a>
+      <nav class="nav" aria-label="Main"><a href="quickstart.html">Learn</a><a href="docs/index.html">Docs</a><a href="packages.html" aria-current="page">Packages</a><a href="platforms.html">Platforms</a><a href="showcase.html">Showcase</a><a href="the-book-of-eskiu.html">Book</a><a href="changelog.html">Changelog</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+      <div class="top-right">
+        <span class="lang"><span aria-current="page">EN</span> / <a href="es/packages.html" onclick="try{localStorage.setItem('eskiu-lang','es')}catch(e){}">ES</a></span>
+        <a class="btn-install" href="index.html#install">Install 0.12.0</a>
+        <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="drawer"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg></button>
+      </div>
+    </div>
+    <nav class="drawer" id="drawer" aria-label="Main"><a href="quickstart.html">Learn</a><a href="docs/index.html">Docs</a><a href="packages.html" aria-current="page">Packages</a><a href="platforms.html">Platforms</a><a href="showcase.html">Showcase</a><a href="the-book-of-eskiu.html">Book</a><a href="changelog.html">Changelog</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+  </header>
+  <main class="bar article">
+    <div class="eyebrow">Packages</div>
+    <h1>Official packages</h1>
+    <p class="lede">Libraries from the <a href="https://github.com/eskiu-lang">eskiu-lang</a> organization on GitHub. Each one is a git repository with an <code>eskiu.toml</code>, added to a project with one command.</p>
+    <nav class="chips" aria-label="Packages"><a href="#gpu">gpu</a><a href="#onnx">onnx</a><a href="#tflite">tflite</a><a href="#compress">compress</a><a href="#audio">audio</a><a href="#font">font</a><a href="#nds">nds</a></nav>
+    <h2 id="using">Using a package</h2>
+    <p><code>eskiuc add</code> writes the dependency into <code>eskiu.toml</code>, fetches it with git and records its commit in <code>eskiu.lock</code>, so later builds reuse it without touching the network. There is no registry: a dependency is a git URL with a rev (a tag, branch or commit) or a local path.</p>
+    <pre><code>eskiuc new myapp
+cd myapp
+eskiuc add compress --git https://github.com/eskiu-lang/compress --rev v0.1.0
+eskiuc run</code></pre>
+    <p>A package's modules are imported by the package name and the file name, as in <code>import &lt;gpu/model&gt;;</code>. Chapter 13 of the <a href="the-book-of-eskiu.html#sec-13-5">Book</a> covers manifests, locks and <code>eskiuc test</code>.</p>
+    <section class="pkg" id="gpu">
+      <h2>gpu</h2>
+      <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/gpu/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/gpu/actions/workflows/ci.yml/badge.svg" alt="CI status: gpu" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/gpu">github.com/eskiu-lang/gpu</a></div>
+      <p><strong>GPU compute, rendering, 3D models and machine learning for Eskiu, over WebGPU.</strong></p>
+      <p>One API runs on Metal (macOS), Vulkan (Linux) and DirectX 12 (Windows) through wgpu-native, with shaders in WGSL. It draws glTF and OBJ models with physically based shading, runs Llama models from GGUF or safetensors files (Llama 2 7B Q4_0 at 45 tokens per second on an M4 Pro; llama.cpp does 58 on the same machine) and trains small networks (97% test accuracy on MNIST).</p>
+      <p class="note">Needs wgpu-native 29, and SDL3 for windows: <code>brew install wgpu-native sdl3</code> on macOS, the release archives on Linux and Windows.</p>
+      <h3>Install</h3>
+      <pre><code>eskiuc add gpu --git https://github.com/eskiu-lang/gpu --rev v0.1.0
+eskiuc build -L/opt/homebrew/lib</code></pre>
+      <h3>From the README</h3>
+      <pre><code>Gltf data = model_load("helmet.glb")?;   <span class="c">// or a .gltf, or an .obj</span>
+defer data.free();
+GpuModel model = gpu.model(&amp;data, surface.format)?;
+defer model.release();
+
+<span class="c">// every frame</span>
+data.animate(0, seconds);
+model.update(mat4_identity());
+GpuCamera cam = model.camera(aspect);
+GpuPass pass = gpu.pass(frame.view, GpuColor{0.1, 0.1, 0.1, 1.0}, &amp;depth);
+model.draw(&amp;pass, &amp;cam);
+pass.end()?;</code></pre>
+    </section>
+    <section class="pkg" id="onnx">
+      <h2>onnx</h2>
+      <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/onnx/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/onnx/actions/workflows/ci.yml/badge.svg" alt="CI status: onnx" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/onnx">github.com/eskiu-lang/onnx</a></div>
+      <p><strong>ONNX model inference for Eskiu, over ONNX Runtime.</strong></p>
+      <p>A model exported from PyTorch, TensorFlow or scikit-learn runs on the CPU everywhere, and on CoreML, CUDA, DirectML or WebGPU when the ONNX Runtime build has them. Wrong input names, types or shapes come back as error messages.</p>
+      <p class="note">Needs ONNX Runtime 1.31 or newer: <code>brew install onnxruntime</code> on macOS, the release archives on Linux and Windows.</p>
+      <h3>Install</h3>
+      <pre><code>eskiuc add onnx --git https://github.com/eskiu-lang/onnx --rev v0.1.0
+eskiuc build -L/opt/homebrew/lib</code></pre>
+      <h3>From the README</h3>
+      <pre><code>import &lt;io&gt;;
+import &lt;onnx&gt;;
+
+Result&lt;int, string&gt; run() {
+    OnnxSession s = onnx_session("model.onnx", null)?;
+    defer s.release();
+    float[4] x = {1.0, -2.0, 0.5, 3.0};
+    int64[2] shape = {1, 4};
+    OnnxTensor input = onnx_tensor_f32(&amp;x[0], &amp;shape[0], 2)?;
+    defer input.release();
+    OnnxTensor y = s.run1(&amp;input)?;
+    defer y.release();
+    *float out = y.f32();
+    for (i in 0..y.len()) printf("%f\n", (double)out[i]);
+    return Ok&lt;int, string&gt;(0);
+}
+
+Result&lt;int, string&gt; r = run();
+if (!r.ok) printf("error: %s\n", r.error);</code></pre>
+    </section>
+    <section class="pkg" id="tflite">
+      <h2>tflite</h2>
+      <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/tflite/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/tflite/actions/workflows/ci.yml/badge.svg" alt="CI status: tflite" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/tflite">github.com/eskiu-lang/tflite</a></div>
+      <p><strong>TensorFlow Lite model inference for Eskiu.</strong></p>
+      <p>A <code>.tflite</code> model converted from TensorFlow, Keras, JAX or PyTorch runs on the CPU with XNNPACK, and on the GPU through the Metal delegate (macOS) or the OpenCL/OpenGL delegate (Linux). Quantized inputs and outputs are converted for you.</p>
+      <p class="note">Needs <code>libtensorflowlite_c</code> 2.21, which Google does not publish for desktops; the package's <code>tools/get_tflite.sh</code> downloads a build for your platform.</p>
+      <h3>Install</h3>
+      <pre><code>curl -fsSL https://raw.githubusercontent.com/eskiu-lang/tflite/v0.1.0/tools/get_tflite.sh | sh -s -- ~/tflite
+export TFL=~/tflite
+eskiuc add tflite --git https://github.com/eskiu-lang/tflite --rev v0.1.0
+eskiuc build -L$TFL/lib --link-arg=-Wl,-rpath,$TFL/lib</code></pre>
+      <h3>From the README</h3>
+      <pre><code>import &lt;io&gt;;
+import &lt;tflite&gt;;
+
+Result&lt;int, string&gt; run() {
+    TfliteInterpreter it = tflite_load("model.tflite", null)?;
+    defer it.release();
+    float[4] x = {1.0, -2.0, 0.5, 3.0};
+    int[2] shape = {1, 4};
+    it.set_f32(0, &amp;x[0], &amp;shape[0], 2)?;
+    it.invoke()?;
+    *TfliteTensor y = it.output(0);
+    *float out = y.f32();
+    for (i in 0..y.len()) printf("%f\n", (double)out[i]);
+    return Ok&lt;int, string&gt;(0);
+}
+
+Result&lt;int, string&gt; r = run();
+if (!r.ok) printf("error: %s\n", r.error);</code></pre>
+    </section>
+    <section class="pkg" id="compress">
+      <h2>compress</h2>
+      <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/compress/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/compress/actions/workflows/ci.yml/badge.svg" alt="CI status: compress" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/compress">github.com/eskiu-lang/compress</a></div>
+      <p><strong>zlib, gzip, raw DEFLATE and ZIP archives for Eskiu, written in Eskiu.</strong></p>
+      <p>DEFLATE at levels 0 to 9, zlib and gzip in both directions, and ZIP archives with ZIP64. Every read is bounds checked and the output is capped by a size limit, so a small file cannot expand into all of memory.</p>
+      <p class="note">Nothing to install: no zlib and no C code.</p>
+      <h3>Install</h3>
+      <pre><code>eskiuc add compress --git https://github.com/eskiu-lang/compress --rev v0.1.0</code></pre>
+      <h3>From the README</h3>
+      <pre><code>ZipReader z = ZipReader_open("pack.zip")?;
+defer z.close();
+for (i in 0..z.count()) {
+    ZipEntry* e = z.entry(i);
+    printf("%10llu  %s\n", e.size, e.name.data);
+}
+Bytes readme = z.read_name("docs/readme.txt")?;
+defer readme.free();
+z.extract_all("out")?;</code></pre>
+    </section>
+    <section class="pkg" id="audio">
+      <h2>audio</h2>
+      <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/audio/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/audio/actions/workflows/ci.yml/badge.svg" alt="CI status: audio" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/audio">github.com/eskiu-lang/audio</a></div>
+      <p><strong>Sound for Eskiu: WAV files, a mixer and output through SDL3.</strong></p>
+      <p>Reads WAV files in every common encoding (PCM, float, IMA and Microsoft ADPCM) as ffmpeg decodes them, mixes any number of voices with volume, pan, pitch and loops, and sends the mix to the default output device.</p>
+      <p class="note"><code>&lt;audio/wav&gt;</code> and <code>&lt;audio/mixer&gt;</code> are pure Eskiu; <code>&lt;audio/device&gt;</code> needs SDL3 (<code>brew install sdl3</code> on macOS).</p>
+      <h3>Install</h3>
+      <pre><code>eskiuc add audio --git https://github.com/eskiu-lang/audio --rev v0.1.0
+eskiuc build -L/opt/homebrew/lib</code></pre>
+      <h3>From the README</h3>
+      <pre><code>import &lt;time&gt;;
+import &lt;audio&gt;;
+
+Result&lt;int, string&gt; run() {
+    Sound jump = wav_load("jump.wav")?;
+    defer jump.free();
+    AudioDevice out = audio_open(48000)?;
+    defer out.close();
+    Mixer mixer = mixer_new(out.rate);
+    defer mixer.free();
+    uint32 voice = mixer.play(&amp;jump, AudioPlay{volume: 0.8, pan: -0.25});
+    while (mixer.playing(voice)) {
+        out.pump(&amp;mixer, 50)?;      <span class="c">// keeps 50 ms of audio queued</span>
+        time_sleep_ms(10);
+    }
+    return Ok&lt;int, string&gt;(0);
+}</code></pre>
+    </section>
+    <section class="pkg" id="font">
+      <h2>font</h2>
+      <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/font/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/font/actions/workflows/ci.yml/badge.svg" alt="CI status: font" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/font">github.com/eskiu-lang/font</a></div>
+      <p><strong>TrueType fonts for Eskiu: glyph outlines, antialiased rendering, text layout and atlases.</strong></p>
+      <p>Reads <code>.ttf</code> files, renders glyphs into antialiased coverage bitmaps, lays out lines of UTF-8 text with kerning, and packs a character set into one texture for text on the GPU.</p>
+      <p class="note">Nothing to install.</p>
+      <h3>Install</h3>
+      <pre><code>eskiuc add font --git https://github.com/eskiu-lang/font --rev v0.1.0</code></pre>
+      <h3>From the README</h3>
+      <pre><code>import &lt;font&gt;;
+
+Result&lt;int, string&gt; run(*uint8 rgba, int width, int height) {
+    Font f = font_load("DejaVuSans.ttf")?;
+    defer f.free();
+    f.draw("Hola, Eskiu", 32.0, rgba, width, height, 10.0, 40.0, 0xFFFFFFFF);
+
+    GlyphBitmap g = f.render(f.glyph('g'), 64.0)?;   <span class="c">// one glyph</span>
+    defer g.free();
+    <span class="c">// g.pixels: g.width * g.height coverage values, 0 to 255, top row first;</span>
+    <span class="c">// g.left and g.top place it from the pen on the baseline.</span>
+    return Ok&lt;int, string&gt;(0);
+}</code></pre>
+    </section>
+    <section class="pkg" id="nds">
+      <h2>nds</h2>
+      <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/nds/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/nds/actions/workflows/ci.yml/badge.svg" alt="CI status: nds" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/nds">github.com/eskiu-lang/nds</a></div>
+      <p><strong>Nintendo DS file formats for Eskiu: ROMs, NARC archives, sound, 2D graphics and 3D textures.</strong></p>
+      <p>ROM file systems and overlays, NARC archives, LZ compression, SDAT sound with a synthesizer of the DS sound driver, 2D graphics and 3D textures, in pure Eskiu. It was ported from the tools and engine of Tallgrass and checked against them.</p>
+      <p class="note">Nothing to install.</p>
+      <h3>Install</h3>
+      <pre><code>eskiuc add nds --git https://github.com/eskiu-lang/nds --rev v0.1.0</code></pre>
+      <h3>From the README</h3>
+      <pre><code>NdsRom rom = NdsRom_open("game.nds")?;
+defer rom.close();
+printf("%s (%s), %d files\n", rom.title, rom.code, rom.count());
+Narc n = rom.narc("a/0/0/4")?;            <span class="c">// views into the ROM</span>
+defer n.close();
+Bytes f = nds_unpack(n.file(12).data, n.file(12).len)?;   <span class="c">// LZ data decompressed</span>
+Bytes ov = rom.overlay(12)?;              <span class="c">// decompressed when compressed</span></code></pre>
+    </section>
+    <p>Every package needs Eskiu 0.12 or newer. Its README has the full module list, more examples and the details for each operating system.</p>
+  </main>
+  <footer class="foot">
+    <div class="bar foot-in">
+      <span class="brand">eskiu</span>
+      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family · MIT</span>
+      <nav class="foot-links" aria-label="Footer"><a href="docs/index.html">Docs</a><a href="the-book-of-eskiu.html">Book</a><a href="docs/internals.html">Internals</a><a href="changelog.html">Changelog</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a><a href="https://reactvision.xyz">ReactVision</a></nav>
+    </div>
+  </footer>
+  <script>(function(){var t=document.querySelector(".top"),b=document.querySelector(".menu-btn");if(!t||!b)return;b.addEventListener("click",function(){var o=t.classList.toggle("open");b.setAttribute("aria-expanded",o?"true":"false");});})();</script>
+</body>
+</html>
