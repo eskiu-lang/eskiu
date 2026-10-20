@@ -1,0 +1,75 @@
+# Tests that do not apply to WebAssembly (emscripten under node), one per line with the
+# reason. Read by tests/wasm/check.sh.
+# 64-bit layouts printed by the test (sizes and offsets differ on wasm32):
+array_dim_sizeof      sizeof of 64-bit layouts
+array_of_pointers     sizeof of pointer arrays
+generic_alias_array_ptr  sizeof of pointer types
+sizeof_expr           sizeof of 64-bit layouts
+sizeof_var            sizeof of 64-bit layouts
+target_sizes          prints the host's type sizes
+type_order_fields     sizeof of 64-bit layouts
+# Host processes, environment, terminals and command lines (none in the sandbox):
+args                  reads a host command line
+console_io            re-runs itself through <process>
+env_set               host environment
+int_runtime_semantics re-runs itself through <process> to observe traps
+log                   reads and sets the host environment
+process_grandchild    spawns processes
+process_inherit_order spawns processes
+process_run           spawns processes
+process_self          spawns processes
+process_sigpipe       spawns processes and signals
+stdlib_result         spawns a shell
+term                  terminal detection
+time_format           host time zone
+uncaught_exception    re-runs itself through <process>
+os_macros             prints the host OS macros
+test_modes_macros     names a host OS macro branch
+# Sockets, DNS, pipes and file modes (emscripten's in-memory file system has none):
+async_loop            pipes
+dns_connect           DNS and sockets
+dns_scope             DNS
+eventloop_edges       pipes and sockets
+eventloop_resources   descriptor limits
+fetch_async           sockets
+fetch_basic           sockets
+fetch_edges           sockets
+fetch_no_tls          sockets
+fetch_raw             sockets
+fs_copy_mode          file permission bits
+fs_read_pipe          pipes
+http                  sockets
+http_async_accept_retry  sockets
+http_async_slow_reader   sockets
+http_conn_feed_incremental  sockets
+http_header_edges     sockets
+http_host_value       sockets
+http_no_content_length  sockets
+http_recv_trailers    sockets
+http_reply_null_body  sockets
+http_rfc9112          sockets
+http_serve_slow_reader  sockets
+http_serve_split      sockets
+http_strict           sockets
+http_timeouts         sockets
+http2_flow_control    sockets
+http2_frame_rules     sockets
+http2_handshake       sockets
+http2_multiplex       sockets
+http2_server          sockets
+http2_timeouts        sockets
+net_echo              sockets
+net_no_sigpipe        sockets
+net_write_async       sockets
+# Threads (emscripten builds them only with -pthread):
+atomic_relaxed        threads
+atomic_wide           threads
+executor_cross_thread threads
+thread_handle_ptr     threads
+thread_handles        threads
+thread_owned_env      threads
+threading             threads
+# Inline assembly for a native architecture:
+asm_async_locals      AArch64/x86 assembly
+inline_asm_ext        AArch64/x86 assembly
+inline_asm_out        AArch64/x86 assembly
