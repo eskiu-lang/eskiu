@@ -906,7 +906,12 @@ int _proc_decode(int status) {
     return 128 + sig;
 }
 
+// Only a child that started is signalled: kill(-1) would reach every process of the
+// user and kill(0) the caller's own process group.
 void _proc_kill(Process* p) {
+    if (p.pid <= 0) {
+        return;
+    }
     if (p.group) {
         kill(-p.pid, _PROC_SIGKILL);
     }
@@ -917,6 +922,11 @@ void _proc_kill(Process* p) {
 // deadline passes and set *timed_out.
 int _proc_reap(Process* p, int64 deadline, *bool timed_out) {
     int status = 0;
+    if (p.pid <= 0) {             // never started: waitpid(-1) would reap any child
+        p.exited = true;
+        p.exit_code = -1;
+        return -1;
+    }
     while (true) {
         const int flags = deadline > 0 ? 1 : 0;   // WNOHANG while a deadline runs
         const int r = waitpid(p.pid, &status, flags);
@@ -1178,6 +1188,9 @@ int Process_wait(Process* p) {
 int Process_kill(Process* p) {
     if (p.exited) {
         return 0;
+    }
+    if (p.pid <= 0) {             // never started (see _proc_kill)
+        return -1;
     }
     return kill(p.pid, _PROC_SIGKILL) == 0 ? 0 : _fs_fail_os();
 }
