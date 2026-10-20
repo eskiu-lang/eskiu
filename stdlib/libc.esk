@@ -1,25 +1,35 @@
-// libc.esk: the common C library functions, declared once for code ported from C.
+// libc.esk: the C library, declared once for code ported from C.
 //
 //   import <libc>;
 //   *char copy = strdup("text");
 //   int64 n = strtoll("-42", null, 10);
 //   if (libc_errno() == LIBC_ENOENT) { perror("open"); }
 //
-// Importing it also brings <mem> (memcpy, memset, strlen, strcmp, strchr, strstr,
-// calloc, free), <io> (printf, puts, fflush, fwrite, ...) and <math> (sqrt, pow,
-// floor, ...), and adds the rest of libm below. These live here rather than in
-// <math> so that a program importing <math> may still define its own `log` or `round`. Every declaration here
-// spells its types exactly as the other stdlib modules that declare the same function
-// (<fs>, <process>, <string>, <env>, <json>), so a program may import any of them
-// together with <libc>. A program that declares one of these functions itself must use
-// the same types (a different spelling is a conflicting declaration).
+// This module is the umbrella over the internal modules in stdlib/c/, which declare
+// the C functions the stdlib itself calls, one module per header (<c/string>,
+// <c/stdlib>, <c/stdio>, <c/unistd>, <c/time>, <c/signal>, <c/errno>). Importing it
+// also brings <mem> (calloc, free, alloc<T>), <io> (printf, puts, the standard
+// streams, ...) and <math> (sqrt, pow, floor, ...), and adds below the rest of the C
+// library that no other stdlib module declares. The rest of libm lives here rather
+// than in <math> so that a program importing <math> may still define its own `log`
+// or `round`; the other functions below stay here for the same reason, so that the
+// modules most programs import (<mem>, <string>, <fs>, <net>, ...) do not claim
+// names like `strcpy`, `snprintf` or `qsort`. A program that declares one of these
+// functions itself must use the same types (a different spelling is a conflicting
+// declaration; sema compares types with aliases expanded).
 //
-// Types follow the C signatures on 64-bit targets: `size_t` and `long long` are
-// int64, `char*` is `*char` for a buffer that is written and `string` for text that
-// is read. `long` differs between Windows (32 bits) and the rest (64 bits), so the
-// `long` functions (strtol, atol, labs, ftell's result) are left out in favor of the
-// `long long` ones (strtoll, atoll, llabs).
+// `char*` is `*char` for a buffer that is written and `string` for text that is
+// read. The C types whose width depends on the target come from <ctypes>: `size_t`
+// and `ssize_t` are as wide as a pointer, `c_long` is C's `long` (32 bits on
+// Windows and on 32-bit targets); `long long` is int64.
 import <ctypes>;
+import <c/string>;
+import <c/stdlib>;
+import <c/stdio>;
+import <c/unistd>;
+import <c/time>;
+import <c/signal>;
+import <c/errno>;
 import <mem>;
 import <io>;
 import <math>;
@@ -33,7 +43,6 @@ extern *char strrchr(string s, int c);
 extern *char strpbrk(string s, string accept);
 extern size_t strspn(string s, string accept);
 extern size_t strcspn(string s, string reject);
-extern string strerror(int e);
 #ifdef _WIN32
 extern *char _strdup(string s);
 *char strdup(string s) {
@@ -48,16 +57,15 @@ extern int strncasecmp(string a, string b, size_t n);
 // ── stdlib.h ─────────────────────────────────────────────────────────────────
 extern *void malloc(size_t n);
 extern *void realloc(*void p, size_t n);
-extern int atoi(string s);
+extern c_long atol(string s);
 extern int64 atoll(string s);
-extern double atof(string s);
+extern c_long strtol(string s, *string end, int base);
 extern int64 strtoll(string s, *string end, int base);
 extern uint64 strtoull(string s, *string end, int base);
-extern double strtod(string s, *string end);
+extern c_long labs(c_long x);
 extern int64 llabs(int64 x);
 extern int rand();
 extern void srand(uint32 seed);
-extern void exit(int code);
 extern void abort();
 extern int system(string command);
 extern int atexit(fn()->void f);
@@ -66,17 +74,10 @@ extern *void bsearch(*void key, *void base, size_t n, size_t size, fn(*void, *vo
 
 // ── stdio.h ──────────────────────────────────────────────────────────────────
 extern int snprintf(*char buf, size_t n, string fmt, ...);
-extern int vsnprintf(*char buf, size_t n, string fmt, va_list ap);
 extern int sscanf(string s, string fmt, ...);
-extern *void fopen(string path, string mode);
-extern int fclose(*void fp);
-extern *uint8 fgets(*uint8 buf, int n, *void fp);
 extern int fputc(int c, *void fp);
-extern int feof(*void fp);
-extern int ferror(*void fp);
 extern void perror(string s);
 extern int remove(string path);
-extern int rename(string from, string to);
 
 // ── ctype.h ──────────────────────────────────────────────────────────────────
 extern int isalpha(int c);
@@ -129,50 +130,15 @@ extern float logf(float x);
 const double LIBC_PI = 3.14159265358979323846;
 const double LIBC_E = 2.71828182845904523536;
 
-// ── time.h, signal.h ─────────────────────────────────────────────────────────
-extern int64 time(*int64 t);
-extern int raise(int sig);
-
 // ── errno ────────────────────────────────────────────────────────────────────
 // The calling thread's errno, read and set through the C library's per-thread cell.
-#ifdef _WIN32
-extern *int _errno();
 int libc_errno() {
-    return *_errno();
+    return _c_errno();
 }
 
 void libc_set_errno(int e) {
-    *_errno() = e;
+    _c_set_errno(e);
 }
-#else
-#ifdef __APPLE__
-extern *int __error();
-int libc_errno() {
-    return *__error();
-}
-
-void libc_set_errno(int e) {
-    *__error() = e;
-}
-#else
-// errno's location: __errno() in Android's bionic, __errno_location() in glibc and musl.
-#ifdef __ANDROID__
-extern *int __errno();
-#ifndef __errno_location
-#define __errno_location __errno
-#endif
-#else
-extern *int __errno_location();
-#endif
-int libc_errno() {
-    return *__errno_location();
-}
-
-void libc_set_errno(int e) {
-    *__errno_location() = e;
-}
-#endif
-#endif
 #ifdef __wasm__
 // WebAssembly (emscripten, WASI) numbers errno as WASI does.
 const int LIBC_EPERM = 63;
@@ -211,18 +177,6 @@ const int LIBC_ERANGE = 34;
 
 // ── unistd.h (POSIX) ─────────────────────────────────────────────────────────
 #ifndef _WIN32
-extern int getpid();
 extern int getppid();
-extern int close(int fd);
-extern ssize_t read(int fd, *void buf, size_t n);
-extern ssize_t write(int fd, *void buf, size_t n);
-extern int isatty(int fd);
-extern int dup2(int from, int to);
-extern int chdir(string path);
-extern *char getcwd(*char buf, size_t size);
-extern int unlink(string path);
 extern int access(string path, int mode);
-extern uint32 sleep(uint32 seconds);
-extern int usleep(uint32 microseconds);
-extern *void signal(int sig, *void handler);
 #endif
