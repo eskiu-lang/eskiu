@@ -1026,6 +1026,23 @@ CgAbi cg_abi_classify(Codegen* g, string ety, int isret, int* fint, int* fsse) {
         r.align = 4;
         return r;
     }
+    if (g.abi == 8) {                                  // wasm32 (mirrors the C++)
+        // One scalar through one-field structs and one-element arrays is that scalar;
+        // any other aggregate goes byval at its alignment and comes back through sret.
+        string e = cg_x86_single(g, lt);
+        if (e[0] != 0) {
+            r.kind = 1;
+            r.ty = e;
+            return r;
+        }
+        r.kind = 4;
+        if (isret == 1) {
+            r.kind = 5;
+        }
+        r.ty = lt;
+        r.align = al;
+        return r;
+    }
     return r;
 }
 
@@ -2402,11 +2419,17 @@ void cg_program(Codegen* g, *Program prog) {
             if (d.script_init == 1) {
                 ginit = null;
             }
+            g.split_union_top = llty;
             string initstr = cg_global_init_ty(g, ginit, d.ret_type);
+            g.split_union_top = "";
             g.lam_expret = "";
             String_append(&g.globals, gsym);
             String_append(&g.globals, " = global ");
             String_append(&g.globals, cg_tyval(llty, initstr));
+            // A literal of another type keeps the declared type's alignment.
+            if ((int)initstr[0] == 33) {
+                String_append(&g.globals, cg_cat(", align ", cg_itoa(cg_c_align(g, llty))));
+            }
             String_append(&g.globals, "\n");
         }
         si = si + 1;
@@ -2453,6 +2476,13 @@ void cg_program(Codegen* g, *Program prog) {
                         && cg_streq(cg_dealias(g, pm.ty), "va_list") == 1) {
                         plt = "ptr";
                     }
+                    // size_t, ssize_t and c_long are the target's C types here.
+                    if (d.kind == DK_EXTERN && cg_prog_defines(prog, d.name) == 0) {
+                        string ck = cg_cint_kinds(prog, d.name, pi);
+                        if (ck[0] != 0) {
+                            plt = cg_cint_ll(g, ck);
+                        }
+                    }
                     List_push<string>(&f.ptys, plt);
                     List_push<string>(&f.petys, pm.ty);
                     if (first == 0) {
@@ -2469,6 +2499,19 @@ void cg_program(Codegen* g, *Program prog) {
                 pi = pi + 1;
             }
             f.fixedtypes = fixed;
+            f.cret = "";
+            if (d.kind == DK_EXTERN && cg_prog_defines(prog, d.name) == 0) {
+                string rk = cg_cint_kinds(prog, d.name, -1);
+                if (rk[0] != 0) {
+                    f.retty = cg_cint_ll(g, rk);
+                    if (cg_streq(f.retty, "i64") == 0) {
+                        f.cret = "s";
+                        if (cg_streq(rk, "z") == 1) {
+                            f.cret = "z";
+                        }
+                    }
+                }
+            }
             cg_push_fn(g, f);
             if (d.operator_sym != null && d.operator_sym[0] != 0 && List_len<CgSub>(&g.aliases) > 0) {
                 let opt: List<string>;

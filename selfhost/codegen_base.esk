@@ -35,6 +35,7 @@ struct CgFn {
     string fixedtypes;
     List<string> ptys;
     List<string> petys;
+    string cret;   // a C result narrower than int64: "z" (zero-extend) or "s"
 }
 
 // An interface: method order (names) + each method's Eskiu return type, parallel by index.
@@ -226,6 +227,7 @@ struct Codegen {
     int safe;                // --safe[=LIST]: run-time checks, 1 bounds | 2 overflow | 4 null
     int freestanding;        // --freestanding: closure envs use esk_alloc/esk_free, not malloc/free
     int no_split;            // folding a byte image: arrays keep their `[N x T]` constant form
+    string split_union_top;  // the LLVM type of the global being folded (C++ splitUnionTop)
     int uses_trap;           // a bounds check was emitted → declare @llvm.trap once
     string cur_unwind;       // active landingpad label inside a try body ("" = plain calls)
     string cur_lbl;          // label of the basic block being emitted (for phi incoming edges)
@@ -695,6 +697,9 @@ void cg_set_target(Codegen* g, string triple) {
         if (win == 1 && cg_has_sub(triple, "mingw") == 0 && cg_has_sub(triple, "gnu") == 0 && cg_has_sub(triple, "cygwin") == 0) {
             g.x86ws = 1;
         }
+    } else if (cg_has_prefix(triple, "wasm32") == 1) {
+        g.ptrsz = 4;
+        g.abi = 8;
     } else if (cg_has_prefix(triple, "arm") == 1 || cg_has_prefix(triple, "thumb") == 1) {
         g.abi = 5;
         g.ptrsz = 4;

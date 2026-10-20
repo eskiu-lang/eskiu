@@ -775,6 +775,9 @@ void sema_stmt_k(Sema* s, *StmtNode st) {
         return;
     }
     if (k == SK_THROW) {
+        if (s.wasm == 1) {
+            sema_error(s, "exceptions are not supported on WebAssembly targets");
+        }
         sema_expr(s, st.expr);
         if (st.expr != null && sema_is_void_value(sema_infer_type(s, st.expr)) == 1) {
             sema_error(s, "cannot throw a 'void' value");
@@ -1311,6 +1314,9 @@ void sema_stmt_k(Sema* s, *StmtNode st) {
         return;
     }
     if (k == SK_TRY) {
+        if (s.wasm == 1) {
+            sema_error(s, "exceptions are not supported on WebAssembly targets");
+        }
         sema_stmt(s, st.s1);               // body
         int ci = 0;
         while (ci < List_len<*StmtNode>(&st.items)) {

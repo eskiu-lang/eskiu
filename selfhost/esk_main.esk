@@ -135,6 +135,9 @@ int is_value_opt(string o) {
     if (cg_streq(o, "--reloc") == 1 || cg_streq(o, "-reloc") == 1) {
         return 1;
     }
+    if (cg_streq(o, "--subsystem") == 1 || cg_streq(o, "-subsystem") == 1) {
+        return 1;
+    }
     if (cg_streq(o, "--hover-at") == 1 || cg_streq(o, "-hover-at") == 1) {
         return 1;
     }
@@ -184,6 +187,167 @@ int str_starts(string s, string pre) {
         i = i + 1;
     }
     return 1;
+}
+
+int str_ends(string s, string suf) {
+    int n = (int)strlen(s);
+    int m = (int)strlen(suf);
+    if (m > n) {
+        return 0;
+    }
+    return cg_streq(str_after(s, n - m), suf);
+}
+
+// Compare two dotted version strings ("27.1.12297006"): <0, 0 or >0.
+int version_cmp(string a, string b) {
+    int i = 0;
+    int j = 0;
+    while (a[i] != 0 || b[j] != 0) {
+        int64 x = 0;
+        int64 y = 0;
+        while (a[i] != 0 && a[i] != '.') {
+            x = x * 10 + (int64)((int)a[i] - 48);
+            i = i + 1;
+        }
+        while (b[j] != 0 && b[j] != '.') {
+            y = y * 10 + (int64)((int)b[j] - 48);
+            j = j + 1;
+        }
+        if (x != y) {
+            return x < y ? -1 : 1;
+        }
+        if (a[i] == '.') {
+            i = i + 1;
+        }
+        if (b[j] == '.') {
+            j = j + 1;
+        }
+    }
+    return 0;
+}
+
+// The Android NDK (C++ androidNdk): $ANDROID_NDK_HOME, $ANDROID_NDK_ROOT, else the newest
+// version under the SDK's ndk/ directory.
+string android_ndk() {
+    string e = getenv("ANDROID_NDK_HOME");
+    if (e != null && e[0] != 0) {
+        return e;
+    }
+    e = getenv("ANDROID_NDK_ROOT");
+    if (e != null && e[0] != 0) {
+        return e;
+    }
+    List<string> sdks;
+    List_init<string>(&sdks, 4);
+    string h = getenv("ANDROID_HOME");
+    if (h != null && h[0] != 0) {
+        List_push<string>(&sdks, h);
+    }
+    h = getenv("ANDROID_SDK_ROOT");
+    if (h != null && h[0] != 0) {
+        List_push<string>(&sdks, h);
+    }
+    h = getenv("HOME");
+    if (h != null && h[0] != 0) {
+        List_push<string>(&sdks, cg_cat(h, "/Library/Android/sdk"));
+        List_push<string>(&sdks, cg_cat(h, "/Android/Sdk"));
+    }
+    int si = 0;
+    while (si < List_len<string>(&sdks)) {
+        string dir = cg_cat(List_get<string>(&sdks, si), "/ndk");
+        List<String> names;
+        List_init<String>(&names, 8);
+        string best = "";
+        if (fs_list_dir(dir, &names) == 0) {
+            int ni = 0;
+            while (ni < names.size) {
+                string nm = names.data[ni].cstr();
+                if (best[0] == 0 || version_cmp(nm, best) > 0) {
+                    best = cg_cat(nm, "");
+                }
+                ni = ni + 1;
+            }
+        }
+        if (best[0] != 0) {
+            return cg_cat(dir, cg_cat("/", best));
+        }
+        si = si + 1;
+    }
+    return null;
+}
+
+// The driver that links a WebAssembly (emscripten), Android or iOS build (C++
+// crossDriver): $CC when set, else emcc, the NDK's clang or `xcrun -sdk ... clang`.
+// 0 when the build links with clang itself (every other triple, wasm32-wasi too).
+int cross_driver(string triple, List<string>* out) {
+    if (triple == null || triple[0] == 0) {
+        return 0;
+    }
+    int wasm = str_starts(triple, "wasm32");
+    int android = str_contains(triple, "android");
+    int ios = str_contains(triple, "-ios");
+    if ((wasm == 0 || str_contains(triple, "emscripten") == 0) && android == 0 && ios == 0) {
+        return 0;
+    }
+    string cc = getenv("CC");
+    if (cc != null && cc[0] != 0) {
+        push_words(out, cc);
+        return 1;
+    }
+    if (wasm == 1) {
+        List_push<string>(out, "emcc");
+        return 1;
+    }
+    if (android == 1) {
+        string ndk = android_ndk();
+        if (ndk == null) {
+            return 0;
+        }
+        List<string> hosts;
+        List_init<string>(&hosts, 3);
+        List_push<string>(&hosts, "darwin-x86_64");
+        List_push<string>(&hosts, "linux-x86_64");
+        List_push<string>(&hosts, "windows-x86_64");
+        int hi = 0;
+        while (hi < List_len<string>(&hosts)) {
+            string c = cg_cat(ndk, cg_cat("/toolchains/llvm/prebuilt/", cg_cat(List_get<string>(&hosts, hi), "/bin/clang")));
+            if (fs_exists(c) == 1) {
+                List_push<string>(out, c);
+                List_push<string>(out, cg_cat("--target=", triple));
+                return 1;
+            }
+            hi = hi + 1;
+        }
+        return 0;
+    }
+    List_push<string>(out, "xcrun");
+    List_push<string>(out, "-sdk");
+    if (str_contains(triple, "simulator") == 1) {
+        List_push<string>(out, "iphonesimulator");
+    }
+    else {
+        List_push<string>(out, "iphoneos");
+    }
+    List_push<string>(out, "clang");
+    List_push<string>(out, "-target");
+    List_push<string>(out, triple);
+    return 1;
+}
+
+// The archiver for a static library: llvm-ar next to $CLANG when there is one, else ar.
+string archiver() {
+    string cl = getenv("CLANG");
+    if (cl != null && str_contains(cl, "/") == 1) {
+        int n = (int)strlen(cl);
+        while (n > 0 && cl[n - 1] != '/') {
+            n = n - 1;
+        }
+        string ar = cg_cat(str_prefix(cl, n), "llvm-ar");
+        if (fs_exists(ar) == 1) {
+            return ar;
+        }
+    }
+    return "ar";
 }
 
 // The run-time checks --safe[=LIST] names, as the C++ CodeGen::Safe* bits: 1 bounds,
@@ -1065,6 +1229,7 @@ int esk_main(int argc, string* argv) {
     string mcpu = "";        // --mcpu CPU
     string mattr = "";       // --mattr +f,-g: target features, passed to clang
     string reloc = "";       // --reloc MODEL: relocation model, passed to clang
+    string subsystem = "";   // --subsystem console|windows: a Windows program's subsystem
     string optflag = "";     // -O0..-O3 (clang optimizes the emitted IR)
     List<string> linkx;      // -l / -L / --link-arg, forwarded to the link
     List_init<string>(&linkx, 4);
@@ -1167,6 +1332,15 @@ int esk_main(int argc, string* argv) {
                 return 1;
             }
             reloc = val;
+        }
+        else if (cg_streq(opt, "--subsystem") == 1 || cg_streq(opt, "-subsystem") == 1) {
+            if (cg_streq(val, "console") == 0 && cg_streq(val, "windows") == 0) {
+                eprint("error: invalid --subsystem '");
+                eprint(val);
+                eprint("' (use console or windows)\n");
+                return 1;
+            }
+            subsystem = val;
         }
         else if (cg_streq(opt, "--link-arg") == 1 || cg_streq(opt, "-link-arg") == 1) {
             List_push<string>(&linkx, val);
@@ -1343,6 +1517,28 @@ int esk_main(int argc, string* argv) {
     else {
         g_pp_arch = "";
     }
+    // WebAssembly, Android and iOS, spelled as clang predefines them (C++
+    // seedPredefinedMacros).
+    if (str_starts(triple, "wasm32") == 1) {
+        List_push<string>(&g_pp_predef, "__wasm__");
+        List_push<string>(&g_pp_predef, "__wasm32__");
+        if (str_contains(triple, "emscripten") == 1) {
+            List_push<string>(&g_pp_predef, "__EMSCRIPTEN__");
+        }
+        if (str_contains(triple, "wasi") == 1) {
+            List_push<string>(&g_pp_predef, "__wasi__");
+        }
+    }
+    if (str_contains(triple, "android") == 1) {
+        List_push<string>(&g_pp_predef, "__ANDROID__");
+    }
+    if (str_contains(triple, "-ios") == 1) {
+        List_push<string>(&g_pp_predef, "TARGET_OS_IPHONE");
+        List_push<string>(&g_pp_predef, "TARGET_OS_IOS");
+        if (str_contains(triple, "simulator") == 1) {
+            List_push<string>(&g_pp_predef, "TARGET_IPHONE_SIMULATOR");
+        }
+    }
     g_stdlib_root = find_stdlib_root();
 
     // --test-lexer: preprocess, then print the token stream (C++ testLexer).
@@ -1517,6 +1713,25 @@ int esk_main(int argc, string* argv) {
     if (runmode == 1) {
         want_obj = 0;
     }
+    // A static library (.a, .lib) is the object in an archive, and a WebAssembly
+    // (emscripten), Android or iOS build links with that platform's driver: both
+    // compile to a temporary object first.
+    string final_out = outfile;
+    int want_lib = 0;
+    if (runmode == 0 && compile_only == 0 && freestanding == 0
+        && (str_ends(outfile, ".a") == 1 || str_ends(outfile, ".lib") == 1)) {
+        want_lib = 1;
+    }
+    List<string> xdrv;
+    List_init<string>(&xdrv, 6);
+    int cross = 0;
+    if (want_obj == 0 && want_lib == 0) {
+        cross = cross_driver(triple, &xdrv);
+    }
+    if (want_lib == 1 || cross == 1) {
+        want_obj = 1;
+        outfile = temp_file("obj", ".o");
+    }
     List_push<string>(&cargs, "-Wno-override-module");
     if (triple[0] != 0) {
         List_push<string>(&cargs, "-target");
@@ -1572,10 +1787,26 @@ int esk_main(int argc, string* argv) {
     List_push<string>(&cargs, tmp);
     List_push<string>(&cargs, "-o");
     List_push<string>(&cargs, outfile);
-    if (want_obj == 0) {
+    // What follows the object on the link line: a shared library's -shared, the
+    // Windows subsystem, the -l/-L/--link-arg flags and the implied libraries.
+    List<string> tail;
+    List_init<string>(&tail, 8);
+    if (str_ends(final_out, ".so") == 1 || str_ends(final_out, ".dylib") == 1 || str_ends(final_out, ".dll") == 1) {
+        List_push<string>(&tail, "-shared");
+    }
+    if (cg_streq(subsystem, "windows") == 1 && cg_streq(g_pp_os, "_WIN32") == 1) {
+        if (str_contains(triple, "msvc") == 1) {
+            List_push<string>(&tail, "-Wl,/subsystem:windows");
+            List_push<string>(&tail, "-Wl,/entry:mainCRTStartup");
+        }
+        else {
+            List_push<string>(&tail, "-mwindows");
+        }
+    }
+    if (want_obj == 0 || cross == 1) {
         int li = 0;
         while (li < List_len<string>(&linkx)) {
-            List_push<string>(&cargs, List_get<string>(&linkx, li));
+            List_push<string>(&tail, List_get<string>(&linkx, li));
             li = li + 1;
         }
         // The libraries the program implies (C++ implicitLinkLibs): its `#pragma link`s,
@@ -1590,12 +1821,18 @@ int esk_main(int argc, string* argv) {
                 pi = pi + 1;
             }
             int gnu = 0;
-            if (cg_streq(g_pp_os, "__linux__") == 1 || cg_streq(g_pp_os, "_WIN32") == 1) {
+            int android = str_contains(triple, "android");
+            if (android == 0 && (cg_streq(g_pp_os, "__linux__") == 1 || cg_streq(g_pp_os, "_WIN32") == 1)) {
                 gnu = 1;
             }
+            // Android: the NDK's static libc++ and its ABI library; pthread is in libc.
             if (g.uses_eh == 1) {
                 if (cg_streq(g_pp_os, "__APPLE__") == 1) {
                     List_push<string>(&implied, "c++");
+                }
+                else if (android == 1) {
+                    List_push<string>(&implied, "c++_static");
+                    List_push<string>(&implied, "c++abi");
                 }
                 else if (gnu == 1) {
                     List_push<string>(&implied, "stdc++");
@@ -1616,15 +1853,47 @@ int esk_main(int argc, string* argv) {
                     di = di + 1;
                 }
                 if (dup == 0) {
-                    List_push<string>(&cargs, cg_cat("-l", lib));
+                    List_push<string>(&tail, cg_cat("-l", lib));
                     List_push<string>(&linked, lib);
                 }
                 ii2 = ii2 + 1;
             }
         }
     }
+    if (want_obj == 0) {
+        int ti = 0;
+        while (ti < List_len<string>(&tail)) {
+            List_push<string>(&cargs, List_get<string>(&tail, ti));
+            ti = ti + 1;
+        }
+    }
     int rc = spawn_wait(&cargs);
     remove(tmp);
+    if (rc == 0 && want_lib == 1) {
+        List<string> aargs;
+        List_init<string>(&aargs, 4);
+        List_push<string>(&aargs, archiver());
+        List_push<string>(&aargs, "rcs");
+        List_push<string>(&aargs, final_out);
+        List_push<string>(&aargs, outfile);
+        remove(final_out);
+        rc = spawn_wait(&aargs);
+        remove(outfile);
+        outfile = final_out;
+    }
+    else if (rc == 0 && cross == 1) {
+        List_push<string>(&xdrv, outfile);
+        List_push<string>(&xdrv, "-o");
+        List_push<string>(&xdrv, final_out);
+        int xi = 0;
+        while (xi < List_len<string>(&tail)) {
+            List_push<string>(&xdrv, List_get<string>(&tail, xi));
+            xi = xi + 1;
+        }
+        rc = spawn_wait(&xdrv);
+        remove(outfile);
+        outfile = final_out;
+    }
     if (rc != 0) {
         if (runmode == 1) {
             remove(outfile);

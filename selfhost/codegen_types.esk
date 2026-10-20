@@ -2432,6 +2432,8 @@ string cg_img_render(Codegen* g, CgImg* im, string llty, int off) {
 
 // Constant text of a bitfield-struct or union literal of `%sname`, folded through its
 // byte image ("" if a member is not constant or has no byte form where one is needed).
+string cg_split_const(string ty, string body);   // fwd
+
 string cg_const_image(Codegen* g, string sname, *ExprNode e) {
     CgStruct s = cg_find_struct(g, sname);
     string llty = cg_cat("%", sname);
@@ -2499,7 +2501,31 @@ string cg_const_image(Codegen* g, string sname, *ExprNode e) {
         List_push<string>(&im.dtx, txt);
         cg_img_put(g, &im, base, mll, txt);
     }
-    return cg_img_render(g, &im, llty, 0);
+    string r = cg_img_render(g, &im, llty, 0);
+    // A union global holding an address narrower than its layout member (a pointer in
+    // an int64-laid-out union on a 32-bit target) is `{ ptr, [N x i8] }` (C++
+    // constAggregateImage).
+    if (r[0] != 0 || isu == 0 || g.split_union_top == null || cg_streq(g.split_union_top, llty) == 0) {
+        return r;
+    }
+    if (List_len<CgLeaf>(&im.dir) != 1 || List_get<CgLeaf>(&im.dir, 0).off != 0
+        || cg_streq(List_get<CgLeaf>(&im.dir, 0).ty, "ptr") == 0) {
+        return "";
+    }
+    int ps = cg_ll_size_of(g, "ptr");
+    if (ps >= im.n) {
+        return "";
+    }
+    int bi = ps;
+    while (bi < im.n) {
+        if (im.b[bi] != (uint8)0) {
+            return "";
+        }
+        bi = bi + 1;
+    }
+    string pad = cg_cat("[", cg_cat(cg_itoa(im.n - ps), " x i8]"));
+    return cg_split_const(cg_cat("{ ptr, ", cg_cat(pad, " }")),
+                          cg_cat("{ ptr ", cg_cat(List_get<string>(&im.dtx, 0), cg_cat(", ", cg_cat(pad, " zeroinitializer }")))));
 }
 
 // A constant whose LLVM type is not the declared one (an array with a long zero tail

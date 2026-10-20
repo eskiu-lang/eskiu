@@ -989,6 +989,56 @@ int cg_prog_defines_var(*Program prog, string name) {
     return 0;
 }
 
+// The C integer type an extern spells by name (<ctypes>, C++ CodeGen::cIntKind):
+// "z" size_t, "s" ssize_t, "l" c_long, "" anything else.
+string cg_cint_kind(string t0) {
+    string t = t0;
+    if (t[0] == 'c' && t[1] == 'o' && t[2] == 'n' && t[3] == 's' && t[4] == 't' && t[5] == ' ') {
+        t = cg_sub_str(t, 6, (int)strlen(t));
+    }
+    if (cg_streq(t, "size_t") == 1) {
+        return "z";
+    }
+    if (cg_streq(t, "ssize_t") == 1) {
+        return "s";
+    }
+    if (cg_streq(t, "c_long") == 1) {
+        return "l";
+    }
+    return "";
+}
+
+// The kind of parameter `idx` (or of the result when idx < 0) of the extern `name`,
+// over all its declarations (C++ externCInts).
+string cg_cint_kinds(*Program prog, string name, int idx) {
+    int i = 0;
+    int n = List_len<*DeclNode>(&prog.decls);
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        if (d.kind == DK_EXTERN && cg_streq(d.name, name) == 1) {
+            string k = "";
+            if (idx < 0) {
+                k = cg_cint_kind(d.ret_type);
+            } else if (idx < List_len<Param>(&d.params)) {
+                k = cg_cint_kind(List_get<Param>(&d.params, idx).ty);
+            }
+            if (k[0] != 0) {
+                return k;
+            }
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+// The LLVM type of a C integer kind on the target (C++ CodeGen::cIntType).
+string cg_cint_ll(Codegen* g, string k) {
+    if ((cg_streq(k, "l") == 1 && g.wintgt == 1) || g.ptrsz == 4) {
+        return "i32";
+    }
+    return "i64";
+}
+
 int cg_prog_defines(*Program prog, string name) {
     int i = 0;
     int n = List_len<*DeclNode>(&prog.decls);

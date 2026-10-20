@@ -265,6 +265,32 @@ CgVal cg_emit_dbg(Codegen* g, *ExprNode e) {
     return r;
 }
 
+// The int64 Eskiu sees for the result of an extern whose C result (size_t, ssize_t,
+// c_long) is narrower on the target (C++ CodeGen::widenCResult).
+CgVal cg_widen_cret(Codegen* g, CgFn* f, CgVal v) {
+    if (f.cret == null || f.cret[0] == 0 || cg_streq(v.ty, "i64") == 1 || cg_streq(v.ty, "void") == 1) {
+        return v;
+    }
+    string r = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, r);
+    if (cg_streq(f.cret, "z") == 1) {
+        cg_emit(g, " = zext ");
+    }
+    else {
+        cg_emit(g, " = sext ");
+    }
+    cg_emit(g, v.ty);
+    cg_emit(g, " ");
+    cg_emit(g, v.op);
+    cg_emit(g, " to i64\n");
+    let w: CgVal;
+    w.op = r;
+    w.ty = "i64";
+    w.ety = v.ety;
+    return w;
+}
+
 CgVal cg_expr(Codegen* g, *ExprNode e) {
     int opened = cg_chain_begin(g, e);
     CgVal v = cg_expr_i(g, e);
@@ -1004,7 +1030,7 @@ CgVal cg_expr_i(Codegen* g, *ExprNode e) {
                     List_push<CgVal>(&cargs, ca);
                     ci = ci + 1;
                 }
-                return cg_cabi_call(g, &cab, &f, &cargs);
+                return cg_widen_cret(g, &f, cg_cabi_call(g, &cab, &f, &cargs));
             }
         }
         // Evaluate the declared args (left to right), coercing each to the callee's
@@ -1061,7 +1087,7 @@ CgVal cg_expr_i(Codegen* g, *ExprNode e) {
         v.op = t;
         v.ty = f.retty;
         v.ety = f.rety;
-        return v;
+        return cg_widen_cret(g, &f, v);
     }
 
     if (e.kind == EK_TEMPLATECALL) {

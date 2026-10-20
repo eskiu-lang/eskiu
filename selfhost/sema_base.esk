@@ -62,6 +62,7 @@ struct Sema {
     int msbf;                // 1: bitfields follow the MS (Windows) layout rules
     int bfal;                // 1: an unnamed bitfield raises its struct's alignment (AAPCS)
     int msvc;                // 1: MSVC (not mingw): a `: 0` under pack(N) is aligned to at most N
+    int wasm;                // 1: a WebAssembly target (no exceptions)
     List<Sym> syms;
     List<string> gaddr;      // names whose address is taken anywhere (a global among them is never narrowed)
     List<FnSig> fns;
@@ -750,6 +751,7 @@ void sema_set_target(Sema* s, string triple) {
     }
     s.ptrsz = 8;
     s.i64al = 8;
+    s.wasm = ast_has_prefix(triple, "wasm32") | ast_has_prefix(triple, "wasm64");
     int win = sema_has_sub(triple, "windows") | sema_has_sub(triple, "win32") | sema_has_sub(triple, "mingw");
     s.msbf = win;
     ast_target_bf(triple, &s.bfal, &s.msvc);
@@ -765,7 +767,8 @@ void sema_set_target(Sema* s, string triple) {
         }
         return;
     }
-    if (ast_has_prefix(triple, "arm") == 1 || ast_has_prefix(triple, "thumb") == 1) {
+    if (ast_has_prefix(triple, "arm") == 1 || ast_has_prefix(triple, "thumb") == 1
+        || ast_has_prefix(triple, "wasm32") == 1) {
         s.ptrsz = 4;
     }
 }
