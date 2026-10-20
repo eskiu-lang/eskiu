@@ -25,22 +25,13 @@
 // fs_write_all returns 1/0 and fs_read_all null on failure, as before.
 // Paths are UTF-8 on every platform (converted to UTF-16 on Windows).
 
-// ── libc declarations ─────────────────────────────────────────────────────
-
-extern *void fopen(string path, string mode);
-extern int fclose(*void fp);
-extern int fflush(*void fp);
-extern size_t fread(*void buf, size_t size, size_t count, *void fp);
-extern size_t fwrite(*void buf, size_t size, size_t count, *void fp);
-extern *uint8 fgets(*uint8 buf, int n, *void fp);
-extern int fputs(string s, *void fp);
-extern int fseek(*void fp, c_long offset, int whence);
-extern c_long ftell(*void fp);
-extern void rewind(*void fp);
-extern int feof(*void fp);
-extern int ferror(*void fp);
-
 import <ctypes>;
+import <c/stdio>;
+import <c/string>;
+import <c/stdlib>;
+import <c/unistd>;
+import <c/errno>;
+import <c/windows>;
 import <mem>;   // heap allocation via the built-in alloc<T>, not raw malloc
 import <string>;
 import <list>;
@@ -199,14 +190,8 @@ int fs_error(*void fp) {
 // POSIX targets get no `struct stat` reader: fs_stat then reports only what
 // fopen/opendir can tell (size, is_dir) with mtime and mode 0.
 
-extern string strerror(int e);
-extern int strcmp(string a, string b);
-extern string getenv(string name);
-
 #ifdef _WIN32
 extern *void _wfopen(*uint16 path, *uint16 mode);
-extern *int _errno();
-extern uint32 GetLastError();
 extern uint32 FormatMessageA(uint32 flags, *void src, uint32 id, uint32 lang, *uint8 buf, uint32 n, *void args);
 extern int MultiByteToWideChar(uint32 cp, uint32 flags, string s, int n, *uint16 w, int wn);
 extern int WideCharToMultiByte(uint32 cp, uint32 flags, *uint16 w, int wn, *uint8 s, int n, *void def_char, *void used_def);
@@ -225,8 +210,6 @@ extern int SetCurrentDirectoryW(*uint16 path);
 extern uint32 GetTempPathW(uint32 n, *uint16 buf);
 extern uint32 GetTempFileNameW(*uint16 dir, *uint16 prefix, uint32 unique, *uint16 out);
 extern uint32 GetFullPathNameW(*uint16 name, uint32 n, *uint16 buf, *void file_part);
-extern *void CreateFileW(*uint16 path, uint32 access, uint32 share, *void sa, uint32 disp, uint32 flags, *void tmpl);
-extern int CloseHandle(*void h);
 extern int GetFileInformationByHandleEx(*void h, int cls, *void buf, uint32 n);
 extern int SetFileInformationByHandle(*void h, int cls, *void buf, uint32 n);
 // ntdll: NtOpenFile opens a name relative to an open directory handle (openat).
@@ -237,61 +220,46 @@ extern uint32 RtlNtStatusToDosError(uint32 status);
 #define _FS_ATTR_DIRECTORY 16
 #define _FS_ATTR_REPARSE   1024
 #else
-extern int unlink(string path);
 extern int rmdir(string path);
-extern int rename(string from, string to);
-extern int chdir(string path);
-extern *char getcwd(*char buf, size_t size);
 extern int mkstemp(*char tmpl);
 extern *char mkdtemp(*char tmpl);
-extern int close(int fd);
 extern *void opendir(string path);
 extern *void readdir(*void dir);
 extern int closedir(*void dir);
-extern int open(string path, int flags, ...);
 extern *void fdopen(int fd, string mode);
 extern int openat(int dfd, string path, int flags, ...);
 extern int unlinkat(int dfd, string path, int flags);
 extern *void fdopendir(int fd);
+// mode_t: 16 bits on Apple, 32 elsewhere.
 #ifdef __APPLE__
-extern int mkdir(string path, uint16 mode);
-extern int chmod(string path, uint16 mode);
-extern int fchmod(int fd, uint16 mode);
-extern *int __error();
-int _fs_errno_now() {
-    return *__error();
-}
-
-int _fs_fchmod(int fd, int mode) {
-    return fchmod(fd, (uint16)mode);
-}
+type _fs_mode_t = uint16;
 #define _FS_O_COPY 16778753   // O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC
 #else
-extern int mkdir(string path, uint32 mode);
-extern int chmod(string path, uint32 mode);
-extern int fchmod(int fd, uint32 mode);
-// errno's location: __errno() in Android's bionic, __errno_location() in glibc and musl.
-#ifdef __ANDROID__
-extern *int __errno();
-#ifndef __errno_location
-#define __errno_location __errno
-#endif
-#else
-extern *int __errno_location();
-#endif
-int _fs_errno_now() {
-    return *__errno_location();
-}
-
-int _fs_fchmod(int fd, int mode) {
-    return fchmod(fd, (uint32)mode);
-}
+type _fs_mode_t = uint32;
 #define _FS_O_COPY 524865     // O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC
 #endif
+extern int mkdir(string path, _fs_mode_t mode);
+extern int chmod(string path, _fs_mode_t mode);
+extern int fchmod(int fd, _fs_mode_t mode);
+int _fs_fchmod(int fd, int mode) {
+    return fchmod(fd, (_fs_mode_t)mode);
+}
 
+// struct stat readers. x86-64 macOS has the 64-bit-inode layout only through the
+// *64 entry points; the other targets with a reader below use the plain ones.
 #if defined(__APPLE__) && defined(__x86_64__)
 extern int stat64(string path, *void buf);
 extern int lstat64(string path, *void buf);
+extern int fstat64(int fd, *void buf);
+extern int fstatat64(int dfd, string path, *void buf, int flags);
+#else
+extern int stat(string path, *void buf);
+extern int lstat(string path, *void buf);
+extern int fstat(int fd, *void buf);
+extern int fstatat(int dfd, string path, *void buf, int flags);
+#endif
+
+#if defined(__APPLE__) && defined(__x86_64__)
 int _fs_stat_raw(string p, *void b) {
     return stat64(p, b);
 }
@@ -300,8 +268,6 @@ int _fs_lstat_raw(string p, *void b) {
     return lstat64(p, b);
 }
 
-extern int fstat64(int fd, *void buf);
-extern int fstatat64(int dfd, string path, *void buf, int flags);
 int _fs_fstat_raw(int fd, *void b) {
     return fstat64(fd, b);
 }
@@ -319,8 +285,6 @@ int _fs_lstatat_raw(int dfd, string name, *void b) {   // AT_SYMLINK_NOFOLLOW
 #define _FS_ST_DEV_SIZE 4
 #define _FS_DIRENT_NAME 8
 #elif defined(__APPLE__)
-extern int stat(string path, *void buf);
-extern int lstat(string path, *void buf);
 int _fs_stat_raw(string p, *void b) {
     return stat(p, b);
 }
@@ -329,8 +293,6 @@ int _fs_lstat_raw(string p, *void b) {
     return lstat(p, b);
 }
 
-extern int fstat(int fd, *void buf);
-extern int fstatat(int dfd, string path, *void buf, int flags);
 int _fs_fstat_raw(int fd, *void b) {
     return fstat(fd, b);
 }
@@ -348,8 +310,6 @@ int _fs_lstatat_raw(int dfd, string name, *void b) {   // AT_SYMLINK_NOFOLLOW
 #define _FS_ST_DEV_SIZE 4
 #define _FS_DIRENT_NAME 21
 #elif defined(__linux__) && defined(__x86_64__)
-extern int stat(string path, *void buf);
-extern int lstat(string path, *void buf);
 int _fs_stat_raw(string p, *void b) {
     return stat(p, b);
 }
@@ -358,8 +318,6 @@ int _fs_lstat_raw(string p, *void b) {
     return lstat(p, b);
 }
 
-extern int fstat(int fd, *void buf);
-extern int fstatat(int dfd, string path, *void buf, int flags);
 int _fs_fstat_raw(int fd, *void b) {
     return fstat(fd, b);
 }
@@ -376,8 +334,6 @@ int _fs_lstatat_raw(int dfd, string name, *void b) {   // AT_SYMLINK_NOFOLLOW
 #define _FS_ST_DEV_SIZE 8
 #define _FS_DIRENT_NAME 19
 #elif defined(__linux__) && defined(__aarch64__)
-extern int stat(string path, *void buf);
-extern int lstat(string path, *void buf);
 int _fs_stat_raw(string p, *void b) {
     return stat(p, b);
 }
@@ -386,8 +342,6 @@ int _fs_lstat_raw(string p, *void b) {
     return lstat(p, b);
 }
 
-extern int fstat(int fd, *void buf);
-extern int fstatat(int dfd, string path, *void buf, int flags);
 int _fs_fstat_raw(int fd, *void b) {
     return fstat(fd, b);
 }
@@ -404,8 +358,6 @@ int _fs_lstatat_raw(int dfd, string name, *void b) {   // AT_SYMLINK_NOFOLLOW
 #define _FS_ST_DEV_SIZE 8
 #define _FS_DIRENT_NAME 19
 #elif defined(__wasm__)   // emscripten and WASI (musl's wasm32 layout)
-extern int stat(string path, *void buf);
-extern int lstat(string path, *void buf);
 int _fs_stat_raw(string p, *void b) {
     return stat(p, b);
 }
@@ -414,8 +366,6 @@ int _fs_lstat_raw(string p, *void b) {
     return lstat(p, b);
 }
 
-extern int fstat(int fd, *void buf);
-extern int fstatat(int dfd, string path, *void buf, int flags);
 int _fs_fstat_raw(int fd, *void b) {
     return fstat(fd, b);
 }
@@ -450,11 +400,11 @@ int _fs_lstatat_raw(int dfd, string name, *void b) {   // AT_SYMLINK_NOFOLLOW
 int _fs_err = 0;
 bool _fs_err_win = false;   // Windows: _fs_err is a GetLastError code, not an errno
 
-#ifdef _WIN32
 int _fs_errno_now() {
-    return *_errno();
+    return _c_errno();
 }
 
+#ifdef _WIN32
 int _fs_fail_os() {
     _fs_err = (int)GetLastError();
     _fs_err_win = true;
@@ -875,11 +825,7 @@ int fs_mkdir(string path) {
     free((*void)w);
     return ok != 0 ? 0 : _fs_fail_os();
 #else
-#ifdef __APPLE__
-    return mkdir(path, (uint16)511) == 0 ? 0 : _fs_fail_os();
-#else
-    return mkdir(path, (uint32)511) == 0 ? 0 : _fs_fail_os();
-#endif
+    return mkdir(path, (_fs_mode_t)511) == 0 ? 0 : _fs_fail_os();
 #endif
 }
 

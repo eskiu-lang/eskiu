@@ -28,18 +28,17 @@
 // term_style_fd takes the stream (2 for stderr). term_sgr writes the escape
 // sequence unconditionally.
 
+import <c/stdlib>;    // getenv
+import <c/unistd>;    // isatty
+import <c/windows>;   // GetStdHandle
 import <io>;
-
-extern string getenv(string name);
 
 #ifdef _WIN32
 extern int _isatty(int fd);
-extern *void GetStdHandle(uint32 which);
 extern int GetConsoleMode(*void h, *uint32 mode);
 extern int SetConsoleMode(*void h, uint32 mode);
 extern int GetConsoleScreenBufferInfo(*void h, *void info);
 #else
-extern int isatty(int fd);
 extern int ioctl(int fd, uint64 request, ...);
 #ifdef __APPLE__
 #define _TERM_TIOCGWINSZ 1074295912
