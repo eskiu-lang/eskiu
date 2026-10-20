@@ -1442,23 +1442,23 @@ names neither a stdlib module nor a package in the lock is an error:
 <code>unknown package 'x' (not in eskiu.toml)</code>.</p>
 <h3 id="native-libraries">Native libraries</h3>
 <p>A package that binds a C library can ship it: a <code>[native.NAME]</code> table lists one prebuilt
-archive per platform, with its SHA-256 and the directory inside it that holds the
-libraries.</p>
+archive per platform for the library that <code>#pragma link("NAME")</code> (or <code>-lNAME</code>) links, with
+its SHA-256 and the directory inside it that holds the libraries.</p>
 <pre><code class="language-toml">[native.onnxruntime]
 macos-arm64  = { url = &quot;https://github.com/microsoft/onnxruntime/releases/download/v1.31.0/onnxruntime-osx-arm64-1.31.0.tgz&quot;,
                  sha256 = &quot;1031b36d...&quot;, lib = &quot;onnxruntime-osx-arm64-1.31.0/lib&quot; }
 linux-x86_64 = { url = &quot;...&quot;, sha256 = &quot;...&quot;, lib = &quot;onnxruntime-linux-x64-1.31.0/lib&quot; }
 </code></pre>
 <p>The platforms are <code>macos-arm64</code>, <code>macos-x86_64</code>, <code>linux-x86_64</code>, <code>linux-arm64</code>,
-<code>windows-x86_64</code> and <code>windows-arm64</code>; <code>lib</code> defaults to <code>lib</code>. <code>eskiuc build</code>, <code>run</code>,
-<code>test</code>, <code>add</code> and <code>fetch</code> download the archive of the machine they run on with <code>curl</code>,
-refuse it when its SHA-256 differs, and unpack it (<code>tar</code>, or <code>unzip</code> for a <code>.zip</code> on Linux)
-into <code>~/.eskiu/native/SHA256</code>, once. A build for this machine inside the package, by those
-commands or by <code>eskiuc file.esk</code>, then links against that directory and records it as the
-program's run-time path; on Windows its DLLs are copied next to the program. The library is
-still named by the package's <code>#pragma link</code>. A platform the table leaves out links the
-library from the system, as before; a cross build (<code>--target</code>) never uses these archives.
-Only the C++ <code>eskiuc</code> reads the table.</p>
+<code>windows-x86_64</code> and <code>windows-arm64</code>; <code>lib</code> defaults to <code>lib</code>. The first build for this
+machine that links the library, inside the package or a package that depends on it (by
+<code>eskiuc build</code>, <code>run</code>, <code>test</code> or <code>eskiuc file.esk</code>), downloads the archive with <code>curl</code>,
+refuses it when its SHA-256 differs, and unpacks it (<code>tar</code>, or <code>unzip</code> for a <code>.zip</code> on
+Linux) into <code>~/.eskiu/native/SHA256</code>, once; <code>eskiuc fetch</code> downloads every one ahead. The
+build then links against that directory and records it as the program's run-time path; on
+Windows the DLLs are copied next to the program. A program that does not link the library
+downloads nothing, a platform the table leaves out links it from the system as before, and
+a cross build (<code>--target</code>) never uses these archives. Only the C++ <code>eskiuc</code> reads the table.</p>
 <p>The <a href="https://github.com/eskiu-lang">eskiu-lang</a> organization publishes packages that are
 added this way: <a href="https://github.com/eskiu-lang/gpu">gpu</a> (WebGPU compute, 3D and machine learning),
 <a href="https://github.com/eskiu-lang/onnx">onnx</a>, <a href="https://github.com/eskiu-lang/tflite">tflite</a>,

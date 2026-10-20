@@ -1333,8 +1333,8 @@ names neither a stdlib module nor a package in the lock is an error:
 ### Native libraries
 
 A package that binds a C library can ship it: a `[native.NAME]` table lists one prebuilt
-archive per platform, with its SHA-256 and the directory inside it that holds the
-libraries.
+archive per platform for the library that `#pragma link("NAME")` (or `-lNAME`) links, with
+its SHA-256 and the directory inside it that holds the libraries.
 
 ```toml
 [native.onnxruntime]
@@ -1344,15 +1344,15 @@ linux-x86_64 = { url = "...", sha256 = "...", lib = "onnxruntime-linux-x64-1.31.
 ```
 
 The platforms are `macos-arm64`, `macos-x86_64`, `linux-x86_64`, `linux-arm64`,
-`windows-x86_64` and `windows-arm64`; `lib` defaults to `lib`. `eskiuc build`, `run`,
-`test`, `add` and `fetch` download the archive of the machine they run on with `curl`,
-refuse it when its SHA-256 differs, and unpack it (`tar`, or `unzip` for a `.zip` on Linux)
-into `~/.eskiu/native/SHA256`, once. A build for this machine inside the package, by those
-commands or by `eskiuc file.esk`, then links against that directory and records it as the
-program's run-time path; on Windows its DLLs are copied next to the program. The library is
-still named by the package's `#pragma link`. A platform the table leaves out links the
-library from the system, as before; a cross build (`--target`) never uses these archives.
-Only the C++ `eskiuc` reads the table.
+`windows-x86_64` and `windows-arm64`; `lib` defaults to `lib`. The first build for this
+machine that links the library, inside the package or a package that depends on it (by
+`eskiuc build`, `run`, `test` or `eskiuc file.esk`), downloads the archive with `curl`,
+refuses it when its SHA-256 differs, and unpacks it (`tar`, or `unzip` for a `.zip` on
+Linux) into `~/.eskiu/native/SHA256`, once; `eskiuc fetch` downloads every one ahead. The
+build then links against that directory and records it as the program's run-time path; on
+Windows the DLLs are copied next to the program. A program that does not link the library
+downloads nothing, a platform the table leaves out links it from the system as before, and
+a cross build (`--target`) never uses these archives. Only the C++ `eskiuc` reads the table.
 
 The [eskiu-lang](https://github.com/eskiu-lang) organization publishes packages that are
 added this way: [gpu](https://github.com/eskiu-lang/gpu) (WebGPU compute, 3D and machine learning),

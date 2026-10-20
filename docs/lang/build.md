@@ -295,8 +295,9 @@ The `root` line is the package itself, so `import <myapp/helper>;` finds its own
 
 A package's prebuilt native libraries (`[native.NAME]`, see
 [getting started](getting-started.md#native-libraries)) are downloaded with `curl` into
-`~/.eskiu/native/SHA256` and checked against their SHA-256; a host build in the package
-links them with no `-L`. The lock does not list them: the manifest's SHA-256 names each one.
+`~/.eskiu/native/SHA256` by the first build that links one (or all of them by
+`eskiuc fetch`) and checked against their SHA-256; a host build in the package links them
+with no `-L`. The lock does not list them: the manifest's SHA-256 names each one.
 
 ## Running Tests
 

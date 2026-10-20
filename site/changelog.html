@@ -267,8 +267,9 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <li>A package manager: <code>eskiuc new</code>, <code>add</code>, <code>build</code>, <code>run</code>, <code>test</code> and <code>fetch</code>, with git and
   path dependencies pinned in <code>eskiu.lock</code>.</li>
 <li>A package can ship the native libraries it binds: <code>[native.NAME]</code> in <code>eskiu.toml</code> lists a
-  prebuilt archive per platform with its SHA-256, which the package commands download and
-  check into <code>~/.eskiu/native</code>, and a host build links against it with no <code>-L</code>.</li>
+  prebuilt archive per platform with its SHA-256, which the first build that links the
+  library downloads and checks into <code>~/.eskiu/native</code>; the build links against it with no
+  <code>-L</code>.</li>
 <li><code>eskiuc fmt</code>: one statement per line, consistent spacing and indentation (type
   arguments as <code>List&lt;int&gt;</code>), without
   changing a program's tokens.</li>

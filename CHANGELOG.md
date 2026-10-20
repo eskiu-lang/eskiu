@@ -104,8 +104,9 @@ The first public release. Code that compiles with 0.12.0 keeps compiling in ever
 - A package manager: `eskiuc new`, `add`, `build`, `run`, `test` and `fetch`, with git and
   path dependencies pinned in `eskiu.lock`.
 - A package can ship the native libraries it binds: `[native.NAME]` in `eskiu.toml` lists a
-  prebuilt archive per platform with its SHA-256, which the package commands download and
-  check into `~/.eskiu/native`, and a host build links against it with no `-L`.
+  prebuilt archive per platform with its SHA-256, which the first build that links the
+  library downloads and checks into `~/.eskiu/native`; the build links against it with no
+  `-L`.
 - `eskiuc fmt`: one statement per line, consistent spacing and indentation (type
   arguments as `List<int>`), without
   changing a program's tokens.
