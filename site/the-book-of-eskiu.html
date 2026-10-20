@@ -1890,7 +1890,8 @@ pre.code-block {
 
  Result&lt;int, string&gt; r = render(argv[1]);
  if (!r.ok) printf(&quot;error: %s\n&quot;, r.error);</pre>
-<p>The package&#39;s README lists its modules: compute kernels, textures, windows over SDL3, PNG and JPEG decoding, and vector and quaternion maths.</p>
+<p>The package&#39;s README lists its modules: compute kernels, textures, windows over SDL3, PNG and JPEG decoding, vector and quaternion maths, and the machine learning ones (<code>&lt;gpu/nn&gt;</code> for inference, which runs Llama models from GGUF and safetensors files, and <code>&lt;gpu/train&gt;</code> for training).</p>
+<p>The other packages of the <a href="https://github.com/eskiu-lang">eskiu-lang</a> organization are added the same way: <a href="https://github.com/eskiu-lang/onnx">onnx</a> and <a href="https://github.com/eskiu-lang/tflite">tflite</a> run models through ONNX Runtime and TensorFlow Lite, <a href="https://github.com/eskiu-lang/compress">compress</a> reads and writes deflate, zlib, gzip and zip in pure Eskiu, <a href="https://github.com/eskiu-lang/audio">audio</a> decodes WAV files and mixes and plays sound, <a href="https://github.com/eskiu-lang/font">font</a> renders TrueType text, and <a href="https://github.com/eskiu-lang/nds">nds</a> reads Nintendo DS file formats.</p>
 <div class="chapter-start" id="chapter-14"><span class="chapter-label">Chapter 14</span>
 <h1 class="chapter-title">C Interop</h1><hr class="chapter-rule"></div>
 <p>The entire C library ecosystem (OpenSSL, zlib, SQLite, libpng, the POSIX API) is available to Eskiu programs. Declare the function with <code>extern</code>, the compiler generates a standard C-ABI call, and the linker resolves it.</p>
