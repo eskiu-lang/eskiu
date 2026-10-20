@@ -1063,6 +1063,48 @@ static std::string rangeLiteralType(const std::string& v) {
     return "uint64";
 }
 
+// Checks a (possibly nested) array literal against a (possibly
+// multi-dimensional) array type: `int[2][3]` expects two rows, each itself a
+// `{...}` of up to three ints; a short list zero-fills. Through a type alias
+// (`type A3 = int[3]; A3 a = {...}`) the target is the array, at any level.
+// Errors are reported at `at`.
+void TypeChecker::checkArrayLiteral(const std::string& arrT0, ArrayLitExpr* a, ASTNode* at) {
+    auto dealiasArr = [&](std::string t) {
+        for (int hops = 0; hops < 32; ++hops) {
+            auto al = typeAliases.find(tyq::strip(t));
+            if (al == typeAliases.end()) break;
+            t = al->second;
+        }
+        return t;
+    };
+    std::string arrT = dealiasArr(arrT0);
+    ty::Type ty = ty::Type::parse(arrT);
+    if (ty.kind != ty::Type::Kind::Array) {
+        errorAt(at, "an array literal '{...}' can only initialize an array type, not '" + arrT + "'");
+        return;
+    }
+    std::string elemT = ty.elem->str();
+    const std::string& dim = ty.dim;
+    bool dimNum = !dim.empty() &&
+        std::all_of(dim.begin(), dim.end(), [](unsigned char c){ return std::isdigit(c); });
+    if (dimNum && a->elements.size() > (size_t)std::stoull(dim))
+        errorAt(at, "array literal has " + std::to_string(a->elements.size()) +
+                    " elements but '" + arrT + "' holds " + dim);
+    bool elemIsArray = ty::Type::parse(dealiasArr(elemT)).kind == ty::Type::Kind::Array;
+    for (auto& el : a->elements) {
+        if (elemIsArray) {
+            if (auto* sub = dynamic_cast<ArrayLitExpr*>(el.get()))
+                checkArrayLiteral(elemT, sub, at);
+            else
+                errorAt(at, "nested array initializer expected '{...}' for element type '" + elemT + "'");
+        } else {
+            std::string et = getExpressionType(el.get());
+            std::string e = assignabilityError(elemT, et, el.get());
+            if (!e.empty()) errorAt(at, "array element: " + e);
+        }
+    }
+}
+
 void TypeChecker::visit(VarDecl* node) {
     // `extern <type> <name>;` names a variable defined in another translation unit
     // (a C global). It lives at top level and carries no initializer.
@@ -1147,46 +1189,7 @@ void TypeChecker::visit(VarDecl* node) {
             // each itself a `{...}` of up to three ints. A short list zero-fills.
             // Through a type alias (`type A3 = int[3]; A3 a = {...}`) the target is the array,
             // at any level (`A3[2] m = {{..}, {..}}`).
-            auto dealiasArr = [&](std::string t) {
-                for (int hops = 0; hops < 32; ++hops) {
-                    auto al = typeAliases.find(tyq::strip(t));
-                    if (al == typeAliases.end()) break;
-                    t = al->second;
-                }
-                return t;
-            };
-            std::function<void(const std::string&, ArrayLitExpr*)> checkArr =
-                [&](const std::string& arrT0, ArrayLitExpr* a) {
-                    std::string arrT = dealiasArr(arrT0);
-                    ty::Type at = ty::Type::parse(arrT);
-                    if (at.kind != ty::Type::Kind::Array) {
-                        errorAt(node, "an array literal '{...}' can only initialize an array type, not '" +
-                                      arrT + "'");
-                        return;
-                    }
-                    std::string elemT = at.elem->str();
-                    const std::string& dim = at.dim;
-                    bool dimNum = !dim.empty() &&
-                        std::all_of(dim.begin(), dim.end(), [](unsigned char c){ return std::isdigit(c); });
-                    if (dimNum && a->elements.size() > (size_t)std::stoull(dim))
-                        errorAt(node, "array literal has " + std::to_string(a->elements.size()) +
-                                      " elements but '" + arrT + "' holds " + dim);
-                    bool elemIsArray = ty::Type::parse(dealiasArr(elemT)).kind == ty::Type::Kind::Array;
-                    for (auto& el : a->elements) {
-                        if (elemIsArray) {
-                            if (auto* sub = dynamic_cast<ArrayLitExpr*>(el.get()))
-                                checkArr(elemT, sub);
-                            else
-                                errorAt(node, "nested array initializer expected '{...}' for element type '" +
-                                              elemT + "'");
-                        } else {
-                            std::string et = getExpressionType(el.get());
-                            std::string e = assignabilityError(elemT, et, el.get());
-                            if (!e.empty()) errorAt(node, "array element: " + e);
-                        }
-                    }
-                };
-            checkArr(node->type, arr);
+            checkArrayLiteral(node->type, arr, node);
         } else if (!badRangeBound) {
             std::string initType = getExpressionType(node->initializer.get());
             if (initType != "unknown") {
@@ -1274,6 +1277,10 @@ void TypeChecker::visit(StructDecl* node) {
         f.defaultValue->accept(this);
         if (!isConstInit(f.defaultValue)) {
             errorAt(at, "default value of field '" + f.name + "' is not a compile-time constant");
+            continue;
+        }
+        if (auto* arr = dynamic_cast<ArrayLitExpr*>(e)) {
+            checkArrayLiteral(f.type, arr, at);
             continue;
         }
         std::string err = assignabilityError(f.type, getExpressionType(e), e);

@@ -55,6 +55,7 @@ public:
     // Visitor methods
     void visit(Program* node) override;
     void visit(FunctionDecl* node) override;
+    void checkArrayLiteral(const std::string& arrT, ArrayLitExpr* a, ASTNode* at);
     void visit(VarDecl* node) override;
     void visit(StructDecl* node) override;
     void visit(ExternDecl* node) override;
