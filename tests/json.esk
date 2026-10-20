@@ -41,7 +41,7 @@ int main() {
 
     // Escape decoding: "a\tb" is 3 characters once decoded.
     *JsonValue esc = json_parse("\"a\\tb\"");
-    printf("esc.len=%d\n", String_len(&esc.str));
+    printf("esc.len=%lld\n", String_len(&esc.str));
     JsonValue_free(esc);
 
     return 0;

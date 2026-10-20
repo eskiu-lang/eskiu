@@ -21,7 +21,7 @@ int main() {
     for (k in 4294967294..4294967296) { printf("%lld\n", k); }   // literal bounds past int
 
     uint u = 4294967294;
-    for (k in u..4294967295) { printf("%u\n", k); }
+    for (k in u..4294967295) { printf("%lld\n", k); }
 
     uint8 b0 = 250; uint16 b1 = 253;
     for (k in b0..b1) { printf("%d\n", k); }              // narrow bounds promote to int

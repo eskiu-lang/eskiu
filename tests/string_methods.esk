@@ -9,7 +9,7 @@ int main() {
     // push + char_at + len
     String_push(&s, '!');
     printf("%s\n", String_cstr(&s));          // hello!
-    printf("%d\n", String_len(&s));           // 6
+    printf("%lld\n", String_len(&s));           // 6
     printf("%c\n", String_char_at(&s, 0));    // h
 
     // set
@@ -17,8 +17,8 @@ int main() {
     printf("%s\n", String_cstr(&s));          // Hello!
 
     // index_of
-    printf("%d\n", String_index_of(&s, 'l')); // 2
-    printf("%d\n", String_index_of(&s, 'z')); // -1
+    printf("%lld\n", String_index_of(&s, 'l')); // 2
+    printf("%lld\n", String_index_of(&s, 'z')); // -1
 
     // equality
     let t: String;
@@ -50,7 +50,7 @@ int main() {
 
     // clear
     String_clear(&s);
-    printf("%d\n", String_len(&s));           // 0
+    printf("%lld\n", String_len(&s));           // 0
 
     String_free(&s);
     String_free(&t);

@@ -31,8 +31,8 @@ int f() {
 
 int main() {
     printf("%d %d %d\n", gb.x, gb.y, gb.z);
-    printf("%lld %llu %d %.2f %s %.2f\n", gm.a, gm.u, gm.s, gm.f, gm.name, gm.d);
-    printf("%lld %llu %d\n", gpos.a, gpos.u, gpos.s);
+    printf("%lld %u %d %.2f %s %.2f\n", gm.a, gm.u, gm.s, gm.f, gm.name, gm.d);
+    printf("%lld %u %d\n", gpos.a, gpos.u, gpos.s);
     printf("%lld %.2f %d %.2f\n", gu.i, gd.d, gv.h, gf.f);
     printf("%d %.2f %d %d %d\n", go.tag, go.u.d, go.b.x, go.b.y, go.b.z);
     printf("%d %lld\n", gpk.a, gpk.b);

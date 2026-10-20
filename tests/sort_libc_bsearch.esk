@@ -2,7 +2,7 @@
 // still declare and call the C library's bsearch.
 import <sort>;
 extern int printf(string fmt, ...);
-extern *void bsearch(*void key, *void base, int64 n, int64 size, *void cmp);
+extern *void bsearch(*void key, *void base, size_t n, size_t size, *void cmp);
 
 int cmp_int(*int a, *int b) {
     if (*a < *b) { return -1; }

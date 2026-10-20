@@ -18,7 +18,7 @@ struct Packed4 { char a; int64 b; int16 c; } // a@0, pad@1..4, b@4..12, c@12..14
 struct Reset { char a; int b; }            // back to natural -> size 8
 
 int main() {
-    printf("%d %d %d %d\n", sizeof(Natural), sizeof(Packed2), sizeof(Packed4), sizeof(Reset));
+    printf("%lld %lld %lld %lld\n", sizeof(Natural), sizeof(Packed2), sizeof(Packed4), sizeof(Reset));
 
     Packed2 p;
     p.a = 65; p.b = 1000;

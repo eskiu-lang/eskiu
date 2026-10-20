@@ -40,7 +40,8 @@ for name in "${names[@]}"; do
         echo "  FAIL  $name: compile: $(grep -m1 -i error "$work/cerr")"
         fail=$((fail+1)); failed+=("$name"); continue
     fi
-    (cd "$here" && node "$work/$name.js" >"$work/out" 2>"$work/err")
+    # 30 s at most per test (perl's alarm: macOS has no timeout(1)).
+    (cd "$here" && perl -e 'alarm shift; exec @ARGV' 30 node "$work/$name.js" >"$work/out" 2>&1)
     code=$?
     if ! diff -q "$work/out" "$here/$name.expected" >/dev/null; then
         echo "  FAIL  $name: output differs (exit $code)"

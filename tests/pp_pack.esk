@@ -37,9 +37,9 @@ int main() {
     printf("%d\n", POLY(0));   // 1
     printf("%d\n", POLY(9));   // 100
 
-    printf("%d\n", sizeof(Natural));      // 8
-    printf("%d\n", sizeof(PackedKw));     // 5
-    printf("%d\n", sizeof(PackedPragma)); // 5
-    printf("%d\n", sizeof(NaturalAgain)); // 8
+    printf("%lld\n", sizeof(Natural));      // 8
+    printf("%lld\n", sizeof(PackedKw));     // 5
+    printf("%lld\n", sizeof(PackedPragma)); // 5
+    printf("%lld\n", sizeof(NaturalAgain)); // 8
     return 0;
 }

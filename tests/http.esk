@@ -35,7 +35,7 @@ int main() {
     HttpResponse_set_body(&res, "nope");
     let out: String;  String_init(&out, 256);
     HttpResponse_render(&res, &out);
-    printf("reason=%s rlen=%d\n", _http_reason(404), out.len);
+    printf("reason=%s rlen=%lld\n", _http_reason(404), out.len);
     String_free(&out);
     HttpResponse_free(&res);
     return 0;

@@ -10,7 +10,7 @@ int main() {
            String_starts_with(&s, "  H"), String_ends_with(&s, "d  "));
 
     String_trim(&s);
-    printf("trimmed=[%s] len=%d\n", String_cstr(&s), String_len(&s));
+    printf("trimmed=[%s] len=%lld\n", String_cstr(&s), String_len(&s));
     printf("starts(Hello)=%d ends(World)=%d ends(x)=%d\n",
            String_starts_with(&s, "Hello"), String_ends_with(&s, "World"),
            String_ends_with(&s, "x"));

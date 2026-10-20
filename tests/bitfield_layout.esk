@@ -18,9 +18,9 @@ int main() {
     printf("C16 %d %d %d %d\n", c.x, (int)c.f, (int)c.g, (int)c.z);
     let d: D64; d.a = 0xFFFFFFFFFF; d.b = 0x3FFFFFFF;
     d.a += 2;
-    printf("D64 %llx %llx\n", d.a, d.b);
+    printf("D64 %llx %x\n", d.a, d.b);
     d.a = 0x123456789A;
-    printf("D64 %llx %llx\n", d.a, d.b);
+    printf("D64 %llx %x\n", d.a, d.b);
     let s: S8; s.s = -3; s.u = 31;
     printf("S8 %d %d\n", (int)s.s, (int)s.u);
     s.s = 3; s.s += 1;
