@@ -27,7 +27,8 @@ The first public release. Code that compiles with 0.12.0 keeps compiling in ever
 - Structural interfaces as first-class values, sum types with exhaustive `match`, closures
   with escape analysis, operator overloading, labeled `break`/`continue`, `?:`,
   `do`/`while`, `static` locals and multidimensional arrays.
-- Default parameter values (`void connect(string host, int port = 443)`) and `dbg(e)`,
+- Default parameter values (`void connect(string host, int port = 443)`, struct literals
+  of constants included: `V3 up = V3{0.0, 1.0, 0.0}`) and `dbg(e)`,
   which prints an expression's source and value to stderr and yields the value.
 - `deprecated("use X")` on functions, and "did you mean" hints on misspelled names.
 - Scripts: a file may have statements at the top level, which run in order as an implicit

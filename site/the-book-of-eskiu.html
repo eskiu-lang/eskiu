@@ -791,7 +791,7 @@ pre.code-block {
  }
  connect(&quot;example.com&quot;);          // example.com:443 0
  connect(&quot;example.com&quot;, 8080);    // example.com:8080 0</pre>
-<p>A default must be a constant: a literal, or an integer expression over literals, enum members and <code>const</code> globals. Once a parameter has a default, every parameter after it needs one too.</p>
+<p>A default must be a constant: a literal, an integer expression over literals, enum members and <code>const</code> globals, or a struct literal made of those (<code>V3 up = V3{0.0, 1.0, 0.0}</code>). Each call gets its own copy. Once a parameter has a default, every parameter after it needs one too.</p>
 <h2 class="section" id="sec-3-4">3.4 Recursion</h2>
 <p>A function can call itself. Useful when a problem is naturally defined in terms of a smaller version of itself:</p>
 <pre class="code-block"> int factorial(int n) {
