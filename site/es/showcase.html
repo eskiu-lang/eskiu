@@ -34,8 +34,8 @@
     <h1>Hecho con Eskiu</h1>
     <p class="lede">
       Programas que ya corren: los módulos de renderizado y el AR web de ReactVision en
-      producción, un modelo de lenguaje en la GPU, un visor de modelos 3D y el mismo compilador,
-      además de un demo de realidad aumentada en una consola portátil hecho por diversión.
+      producción, un modelo de lenguaje en la GPU, un visor de modelos 3D y el mismo compilador.
+      En Labs están los experimentos, como un demo de realidad aumentada en una consola portátil.
     </p>
 
     <nav class="chips" aria-label="Proyectos">
@@ -44,7 +44,7 @@
       <a href="#llama">Llama 2 sobre Metal</a>
       <a href="#viewer">Visor de modelos PBR</a>
       <a href="#selfhost">El compilador</a>
-      <a href="#3ds">Demo de RA en la 3DS</a>
+      <a class="chip-labs" href="#labs">Labs: demo de RA en la 3DS</a>
     </nav>
 
     <h2 id="reactvision">ReactVision</h2>
@@ -140,6 +140,9 @@
       IR para el código fuente del compilador.
     </p>
     <p><a class="more" href="../docs/self-hosting.html">Cómo se verifica el self-hosting →</a></p>
+    <section class="labs" id="labs">
+      <div class="eyebrow">Labs</div>
+      <p class="labs-intro">Experimentos para ver hasta dónde llega Eskiu. Funcionan, y no son productos.</p>
     <h2 id="3ds">Un demo de realidad aumentada en la Nintendo 3DS</h2>
     <figure class="fig-sm">
       <img src="../../assets/case-study-3ds.jpg" alt="Una New Nintendo 3DS con el demo: un modelo 3D low-poly sobre la imagen en vivo de la cámara en la pantalla de arriba, con controles y diagnósticos en la de abajo." width="1400" height="1050" loading="lazy" />
@@ -149,9 +152,10 @@
       Un demo de realidad aumentada con cámara y giroscopio mantiene un modelo 3D fijo sobre la
       imagen en vivo de la cámara. Su lógica está escrita en Eskiu y compilada para el ARM11 de
       32 bits de la consola, y el renderizado pasa por ViroCore sobre citro3d. Se probó en una 3DS
-      real. Es un proyecto hecho por diversión, para ver hasta dónde llega Eskiu, no un producto.
+      real.
     </p>
     <p><a class="more" href="case-study-3ds.html">Lee el caso de estudio de la 3DS →</a></p>
+    </section>
   </main>
   <footer class="foot">
     <div class="bar foot-in">

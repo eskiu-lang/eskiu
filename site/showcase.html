@@ -35,8 +35,8 @@
     <h1>Built with Eskiu</h1>
     <p class="lede">
       Programs that run today: ReactVision's rendering modules and web AR in production, a
-      language model on the GPU, a 3D model viewer and the compiler itself, plus an AR demo on a
-      handheld console made for fun.
+      language model on the GPU, a 3D model viewer and the compiler itself. Labs has the
+      experiments, such as an AR demo on a handheld console.
     </p>
 
     <nav class="chips" aria-label="Projects">
@@ -45,7 +45,7 @@
       <a href="#llama">Llama 2 on Metal</a>
       <a href="#viewer">PBR model viewer</a>
       <a href="#selfhost">The compiler</a>
-      <a href="#3ds">3DS AR demo</a>
+      <a class="chip-labs" href="#labs">Labs: 3DS AR demo</a>
     </nav>
 
     <h2 id="reactvision">ReactVision</h2>
@@ -137,6 +137,9 @@
       for the compiler's own source.
     </p>
     <p><a class="more" href="docs/self-hosting.html">How self-hosting is checked →</a></p>
+    <section class="labs" id="labs">
+      <div class="eyebrow">Labs</div>
+      <p class="labs-intro">Experiments made to see how far Eskiu goes. They work, and they are not products.</p>
     <h2 id="3ds">An AR demo on the Nintendo 3DS</h2>
     <figure class="fig-sm">
       <img src="../assets/case-study-3ds.jpg" alt="A New Nintendo 3DS running the demo: a low-poly 3D model composited over the live camera feed on the top screen, with controls and diagnostics on the bottom screen." width="1400" height="1050" loading="lazy" />
@@ -145,10 +148,10 @@
     <p>
       A camera and gyroscope AR demo holds a 3D model steady over the live camera feed. Its logic
       is written in Eskiu, compiled for the console's 32-bit ARM11, and its rendering goes through
-      ViroCore on citro3d. It was verified on real 3DS hardware. It is a project made for fun,
-      to see how far down Eskiu goes, not a product.
+      ViroCore on citro3d. It was verified on real 3DS hardware.
     </p>
     <p><a class="more" href="case-study-3ds.html">Read the 3DS case study →</a></p>
+    </section>
   </main>
   <footer class="foot">
     <div class="bar foot-in">

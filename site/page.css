@@ -147,3 +147,9 @@ img { max-width: 100%; }
 .more { font-weight: 700; }
 figure.fig-sq { max-width: 512px; }
 figure.fig-sm { max-width: 420px; }
+.labs { margin-top: 80px; padding-top: 40px; border-top: 1px solid var(--rule); scroll-margin-top: 96px; }
+.labs > .eyebrow { margin-bottom: 8px; }
+.labs-intro { color: var(--muted); margin: 0 0 8px; }
+.labs h2 { margin-top: 32px; }
+.chips a.chip-labs { border-style: dashed; color: var(--muted); }
+.chips a.chip-labs:hover { color: var(--paper); }
