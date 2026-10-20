@@ -180,9 +180,11 @@ toolchain's own `clang --target=...`; WASI needs a sysroot (`--link-arg=--sysroo
 and `wasm32-unknown-unknown` is normally built `--freestanding`.
 
 The standard library works there as on other POSIX systems, with an event loop over
-`poll()`, so futures, timers and channels run under node. Exceptions (`try`, `throw`) are
-rejected for WebAssembly targets with a located error, and threads need emscripten's
-`-pthread` build. `tests/wasm/check.sh` runs the test corpus this way (emcc and node on
+`poll()`, so futures, timers and channels run under node. Exceptions work on emscripten
+through its JavaScript-based runtime: the backend lowers each `invoke` and `landingpad` to
+calls into it (clang's `-fexceptions` under emcc), and a program that throws or catches is
+linked with `-sDISABLE_EXCEPTION_CATCHING=0`. On the other wasm32 triples `try` and `throw`
+are a located error. Threads need emscripten's `-pthread` build. `tests/wasm/check.sh` runs the test corpus this way (emcc and node on
 `PATH`), skipping the tests listed in `tests/wasm/skip.txt` with the reason for each.
 
 ## Android

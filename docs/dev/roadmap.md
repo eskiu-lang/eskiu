@@ -47,8 +47,11 @@ first-class in the language without giving up general systems use.
 - **Formatter.** Breaking lines that are too long.
 - **Build times.** Measure a package with several dependencies, then decide whether
   modules need a cache.
-- **Exceptions on WebAssembly.** `try`/`throw` are rejected for wasm32 today; emscripten's
-  wasm exception handling would make them work there.
+- **Native WebAssembly exceptions.** On emscripten, exceptions run through its
+  JavaScript-based runtime, which costs a call into JavaScript at every call that may throw;
+  the WebAssembly exception-handling instructions (`-fwasm-exceptions`) would avoid it and
+  bring exceptions to WASI. That needs a second lowering of `try` (funclet pads instead of
+  `landingpad`) in both compilers.
 - **Native libraries in packages.** A package that links a native library (such as `gpu`
   with wgpu-native and SDL3, or an ONNX Runtime binding) needs it installed by hand today
   (`brew install`, a release archive) and its directory given as `eskiuc build -L...`;

@@ -69,8 +69,8 @@ The first public release. Code that compiles with 0.12.0 keeps compiling in ever
 - macOS, Linux and Windows hosts; cross-compilation with `--target` (including bare-metal
   `none` triples and `--freestanding`); `-O0` to `-O3`.
 - WebAssembly: `wasm32-unknown-emscripten` (linked by `emcc`) and WASI. The standard
-  library and async runtime run there (an event loop over `poll()`); exceptions are not
-  supported on WebAssembly yet.
+  library and async runtime run there (an event loop over `poll()`), and exceptions work
+  on emscripten through its runtime.
 - Android (`aarch64-linux-android24`, armv7, x86_64; linked with the NDK's clang) and iOS
   (devices and the simulator; linked through `xcrun`).
 - Static (`.a`, `.lib`) and shared (`.so`, `.dylib`, `.dll`) library outputs, for apps

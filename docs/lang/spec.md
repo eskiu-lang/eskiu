@@ -3512,7 +3512,7 @@ invocation in `kernel/Makefile`).
 
 ### Cross-compilation
 
-`--target TRIPLE` sets the LLVM target triple for the output object file. The AArch64, X86, 32-bit ARM and WebAssembly LLVM backends are included in the Eskiu build. On a WebAssembly target `try` and `throw` are errors (no exception support there yet). `--mcpu`, `--mattr` and `--reloc` select the CPU, the feature string and the relocation model. See [cross-compile.md](../dev/cross-compile.md) for worked examples.
+`--target TRIPLE` sets the LLVM target triple for the output object file. The AArch64, X86, 32-bit ARM and WebAssembly LLVM backends are included in the Eskiu build. On WebAssembly, exceptions work through emscripten's runtime (`wasm32-unknown-emscripten`); on the other wasm32 triples `try` and `throw` are errors. `--mcpu`, `--mattr` and `--reloc` select the CPU, the feature string and the relocation model. See [cross-compile.md](../dev/cross-compile.md) for worked examples.
 
 ```bash
 eskiuc kernel.esk --target x86_64-pc-linux-gnu --freestanding -o kernel.o
