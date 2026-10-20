@@ -117,10 +117,13 @@ void CodeGen::visit(LambdaExpr* node) {
             uint64_t envSize = module->getDataLayout().getTypeAllocSize(envTy);
             // Under --freestanding there is no libc: use the program's esk_alloc, the
             // same allocator <mem> uses there.
+            // malloc takes a size_t; esk_alloc an int64 (its Eskiu contract).
+            llvm::Type* szTy = freestanding ? llvm::Type::getInt64Ty(*context)
+                                            : module->getDataLayout().getIntPtrType(*context);
             llvm::Function* mallocFn = getOrDeclareFunc(
-                freestanding ? "esk_alloc" : "malloc", ptrTy, {llvm::Type::getInt64Ty(*context)}, false);
+                freestanding ? "esk_alloc" : "malloc", ptrTy, {szTy}, false);
             envAlloca = builder->CreateCall(mallocFn,
-                {llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context), envSize)},
+                {llvm::ConstantInt::get(szTy, envSize)},
                 lambdaName + ".env.heap");
         } else {
             // Non-escaping closure: the env dies with this frame — stack-allocate
@@ -269,8 +272,9 @@ void CodeGen::emitUncaughtReporter() {
     llvm::Value* tname = b.CreateLoad(ptrTy, b.CreateConstGEP1_64(b.getInt8Ty(), obj, 8));
     llvm::Value* pay = b.CreateConstGEP1_64(b.getInt8Ty(), obj, 16);
     llvm::FunctionCallee strcmpFn = module->getOrInsertFunction("strcmp", i32, ptrTy, ptrTy);
+    llvm::Type* szTy = module->getDataLayout().getIntPtrType(c);   // size_t
     llvm::FunctionCallee snprintfFn = module->getOrInsertFunction("snprintf",
-        llvm::FunctionType::get(i32, {ptrTy, i64, ptrTy}, true));
+        llvm::FunctionType::get(i32, {ptrTy, szTy, ptrTy}, true));
     llvm::Value* buf = b.CreateAlloca(llvm::ArrayType::get(b.getInt8Ty(), 512));
     auto isType = [&](const char* name) {
         return b.CreateICmpEQ(b.CreateCall(strcmpFn, {tname, b.CreateGlobalString(name)}), b.getInt32(0));
@@ -314,11 +318,11 @@ void CodeGen::emitUncaughtReporter() {
             fmt = b.CreateSelect(b.CreateIsNull(arg), b.CreateGlobalString(head + "\n"),
                                  b.CreateGlobalString(head + " \"%s\"\n"));
         }
-        lens.push_back({b.CreateCall(snprintfFn, {buf, b.getInt64(512), fmt, tname, arg}), b.GetInsertBlock()});
+        lens.push_back({b.CreateCall(snprintfFn, {buf, llvm::ConstantInt::get(szTy, 512), fmt, tname, arg}), b.GetInsertBlock()});
         b.CreateBr(bOut);
         b.SetInsertPoint(next);
     }
-    lens.push_back({b.CreateCall(snprintfFn, {buf, b.getInt64(512), b.CreateGlobalString(head + "\n"), tname}),
+    lens.push_back({b.CreateCall(snprintfFn, {buf, llvm::ConstantInt::get(szTy, 512), b.CreateGlobalString(head + "\n"), tname}),
                     b.GetInsertBlock()});
     b.CreateBr(bOut);
     b.SetInsertPoint(bOut);
@@ -327,8 +331,8 @@ void CodeGen::emitUncaughtReporter() {
     llvm::Value* len = b.CreateSelect(b.CreateICmpSGT(n, b.getInt32(511)), b.getInt32(511), n);
     llvm::FunctionCallee fflushFn = module->getOrInsertFunction("fflush", i32, ptrTy);
     b.CreateCall(fflushFn, {llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(ptrTy))});
-    llvm::FunctionCallee writeFn = module->getOrInsertFunction("write", i64, i32, ptrTy, i64);
-    b.CreateCall(writeFn, {b.getInt32(2), buf, b.CreateSExt(len, i64)});
+    llvm::FunctionCallee writeFn = module->getOrInsertFunction("write", szTy, i32, ptrTy, szTy);
+    b.CreateCall(writeFn, {b.getInt32(2), buf, b.CreateSExtOrTrunc(len, szTy)});
     llvm::FunctionCallee abortFn = module->getOrInsertFunction("abort", voidTy);
     b.CreateCall(abortFn);
     b.CreateUnreachable();
@@ -654,9 +658,10 @@ void CodeGen::visit(ThreadCreateExpr* node) {
     // body returns. A closure value passed in stays its owner's (free_closure after
     // thread_join), since the same closure may start several threads.
     if (dynamic_cast<LambdaExpr*>(node->worker.get())) {
-        llvm::Function* mallocFn = getOrDeclareFunc("malloc", ptrTy, {llvm::Type::getInt64Ty(*context)}, false);
+        llvm::Type* szTy = module->getDataLayout().getIntPtrType(*context);
+        llvm::Function* mallocFn = getOrDeclareFunc("malloc", ptrTy, {szTy}, false);
         llvm::Value* pack = builder->CreateCall(mallocFn,
-            {llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context), 2 * module->getDataLayout().getPointerSize())},
+            {llvm::ConstantInt::get(szTy, 2 * module->getDataLayout().getPointerSize())},
             "thr.pack");
         llvm::StructType* packTy = llvm::StructType::get(*context, {ptrTy, ptrTy});
         builder->CreateStore(fnPtr, builder->CreateStructGEP(packTy, pack, 0));

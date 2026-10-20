@@ -14,6 +14,25 @@
 // Visitor Methods
 // ============================================================================
 
+// The C library functions whose size_t / ssize_t positions an `int64` spelling also
+// stands for (code written for 64-bit targets): the kind of each parameter, then '.'
+// and the result's, as in externCInts ('z' size_t, 's' ssize_t, '-' other).
+static const std::map<std::string, std::string>& knownCSizes() {
+    static const std::map<std::string, std::string> t = {
+        {"memcpy", "--z.-"}, {"memmove", "--z.-"}, {"memset", "--z.-"}, {"memcmp", "--z.-"},
+        {"memchr", "--z.-"}, {"memmem", "-z-z.-"}, {"strlen", "-.z"}, {"strnlen", "-z.z"},
+        {"strncmp", "--z.-"}, {"strncpy", "--z.-"}, {"strncat", "--z.-"},
+        {"strncasecmp", "--z.-"}, {"strspn", "--.z"}, {"strcspn", "--.z"},
+        {"strxfrm", "--z.z"}, {"malloc", "z.-"}, {"calloc", "zz.-"}, {"realloc", "-z.-"},
+        {"aligned_alloc", "zz.-"}, {"qsort", "-zz-.-"}, {"bsearch", "--zz-.-"},
+        {"snprintf", "-z-.-"}, {"vsnprintf", "-z--.-"}, {"strftime", "-z--.z"},
+        {"fread", "-zz-.z"}, {"fwrite", "-zz-.z"}, {"getcwd", "-z.-"},
+        {"read", "--z.s"}, {"write", "--z.s"}, {"send", "--z-.s"}, {"recv", "--z-.s"},
+        {"mmap", "-z----.-"}, {"munmap", "-z.-"},
+    };
+    return t;
+}
+
 void CodeGen::visit(Program* node) {
     // Three-phase lowering so that any declaration may reference any other
     // regardless of source order (forward references, mutual recursion):
@@ -110,6 +129,16 @@ void CodeGen::visit(Program* node) {
         for (size_t i = 0; i < n; ++i)
             if (char c = cIntKind(e->params[i].first)) k[i] = c;
         if (char c = cIntKind(e->returnType)) k[n] = c;
+        // A known C function spelled with int64 where C has size_t or ssize_t.
+        auto known = knownCSizes().find(e->name);
+        if (known != knownCSizes().end() && known->second.find('.') == n) {
+            const std::string& pat = known->second;
+            size_t dot = pat.find('.');
+            auto wide = [](const std::string& t) { return t == "int64" || t == "uint64"; };
+            for (size_t i = 0; i < n && i < dot; ++i)
+                if (pat[i] != '-' && !k[i] && wide(expandAlias(e->params[i].first))) k[i] = pat[i];
+            if (pat[dot + 1] != '-' && !k[n] && wide(expandAlias(e->returnType))) k[n] = pat[dot + 1];
+        }
     }
     for (auto& decl : node->declarations)
         if (dynamic_cast<ExternDecl*>(decl.get())) decl->accept(this);
