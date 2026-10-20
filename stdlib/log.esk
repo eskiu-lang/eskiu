@@ -27,6 +27,7 @@
 // order when they share a destination. A file gets no colors and is flushed
 // after every line.
 
+import <c/stdio>;   // fopen, fclose
 import <term>;
 import <time>;
 
@@ -42,9 +43,6 @@ const int LOG_TIME_LOCAL = 1;
 const int LOG_TIME_NONE = 2;
 
 const string[5] LOG_LEVEL_TAGS = {"TRACE", "DEBUG", "INFO ", "WARN ", "ERROR"};
-
-extern *void fopen(string path, string mode);
-extern int fclose(*void fp);
 
 int _log_level = -1;         // -1: from LOG_LEVEL
 *void _log_fp = null;          // null: stderr

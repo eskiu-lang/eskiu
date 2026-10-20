@@ -38,10 +38,9 @@
 // long name without its dashes ("output"), a short one ("o" or "-o") or an
 // argument's name; the strings returned point into argv or the defaults.
 
+import <c/stdlib>;   // exit
 import <list>;
 import <io>;
-
-extern void exit(int code);
 
 const int ARGS_OPTIONAL = 0;
 const int ARGS_REQUIRED = 1;

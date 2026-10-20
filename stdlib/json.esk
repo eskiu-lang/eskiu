@@ -15,10 +15,9 @@
 //   printf("%s\n", JsonValue_as_cstr(name));
 //   JsonValue_free(v);
 
+import <c/stdlib>;   // atof
 import <string>;
 import <result>;
-
-extern double atof(string s);
 
 // ── Builder ──────────────────────────────────────────────────────────────────
 

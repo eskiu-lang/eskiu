@@ -143,7 +143,6 @@ int url_query_get(string query, string key, String* out) {
 // in the path or query is percent-encoded. A control byte (below 0x20, or 0x7f)
 // anywhere, a malformed host or port, or a missing "://" makes the URL invalid.
 
-extern int strcmp(string a, string b);
 
 struct Url {
     String scheme;   // "https"
