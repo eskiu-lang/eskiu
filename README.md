@@ -43,7 +43,10 @@ logic is written in Eskiu.
 - **Self-hosted.** The compiler is also written in Eskiu (`selfhost/`) and builds itself.
 
 It runs natively on macOS (arm64), Linux (x86-64 and arm64) and Windows (x86-64), and
-cross-compiles to any of them and to 32-bit ARM and x86. It also runs on bare metal: the
+cross-compiles to any of them, to WebAssembly (emscripten and WASI), to iOS and Android,
+and to 32-bit ARM and x86. For an app's own build it writes static and shared libraries
+(`-o libtracker.a`, `-o libtracker.so`); see
+[docs/dev/cross-compile.md](docs/dev/cross-compile.md). It also runs on bare metal: the
 screenshot below is an Eskiu kernel booting on ARM64 in QEMU with no libc.
 
 <p align="center">
