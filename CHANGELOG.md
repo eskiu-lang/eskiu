@@ -7,7 +7,7 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
-## [0.12.0] - 2026-10-18
+## [0.12.0] - 2026-10-20
 
 The first public release. Code that compiles with 0.12.0 keeps compiling in every 0.12.x
 ([stability.md](docs/lang/stability.md)).
@@ -82,6 +82,9 @@ The first public release. Code that compiles with 0.12.0 keeps compiling in ever
 ### Standard library
 - Collections (`List`, `Map`, `HashMap`, `Set`), strings and bytes, math, sorting, random
   numbers, regex (RE2 syntax over UTF-8), time and calendars, UUIDs.
+- `<sort>` is libc++'s `std::sort`, `std::partial_sort` and `std::nth_element`
+  (`sort<T>`, `sort_partial<T>`, `sort_nth<T>`), so code ported from C++ orders tied
+  elements the same way; `List_reserve`, `List_resize` and `List_copy_from` in `<list>`.
 - Files, directories, globbing and temp files (`<fs>`), child processes (`<process>`),
   environment and `.env` files, DNS, sockets, URLs.
 - JSON, CSV, base64, hashes (SHA-256, SHA-1, MD5, HMAC-SHA256), multipart forms.

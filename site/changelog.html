@@ -164,7 +164,7 @@ details.cl-full[open] { padding-bottom: 8px; }</style>
 <p>The format is based on <a href="https://keepachangelog.com/en/1.1.0/">Keep a Changelog</a>, and the
 project follows the compatibility rules in <a href="docs/stability.html">docs/lang/stability.md</a>.</p>
 <hr>
-<h2 id="0120-2026-10-18">[0.12.0] - 2026-10-18</h2>
+<h2 id="0120-2026-10-20">[0.12.0] - 2026-10-20</h2>
 <details class="cl-full">
 <summary>Details</summary>
 <p>The first public release. Code that compiles with 0.12.0 keeps compiling in every 0.12.x
@@ -185,7 +185,8 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <li>Structural interfaces as first-class values, sum types with exhaustive <code>match</code>, closures
   with escape analysis, operator overloading, labeled <code>break</code>/<code>continue</code>, <code>?:</code>,
   <code>do</code>/<code>while</code>, <code>static</code> locals and multidimensional arrays.</li>
-<li>Default parameter values (<code>void connect(string host, int port = 443)</code>) and <code>dbg(e)</code>,
+<li>Default parameter values (<code>void connect(string host, int port = 443)</code>, struct literals
+  of constants included: <code>V3 up = V3{0.0, 1.0, 0.0}</code>) and <code>dbg(e)</code>,
   which prints an expression's source and value to stderr and yields the value.</li>
 <li><code>deprecated("use X")</code> on functions, and "did you mean" hints on misspelled names.</li>
 <li>Scripts: a file may have statements at the top level, which run in order as an implicit
@@ -243,6 +244,9 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <ul>
 <li>Collections (<code>List</code>, <code>Map</code>, <code>HashMap</code>, <code>Set</code>), strings and bytes, math, sorting, random
   numbers, regex (RE2 syntax over UTF-8), time and calendars, UUIDs.</li>
+<li><code>&lt;sort&gt;</code> is libc++'s <code>std::sort</code>, <code>std::partial_sort</code> and <code>std::nth_element</code>
+  (<code>sort&lt;T&gt;</code>, <code>sort_partial&lt;T&gt;</code>, <code>sort_nth&lt;T&gt;</code>), so code ported from C++ orders tied
+  elements the same way; <code>List_reserve</code>, <code>List_resize</code> and <code>List_copy_from</code> in <code>&lt;list&gt;</code>.</li>
 <li>Files, directories, globbing and temp files (<code>&lt;fs&gt;</code>), child processes (<code>&lt;process&gt;</code>),
   environment and <code>.env</code> files, DNS, sockets, URLs.</li>
 <li>JSON, CSV, base64, hashes (SHA-256, SHA-1, MD5, HMAC-SHA256), multipart forms.</li>

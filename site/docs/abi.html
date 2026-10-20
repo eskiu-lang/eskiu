@@ -357,6 +357,16 @@ parameter; the caller allocates the result buffer and passes its address.
 Structs ≤ 16 bytes are returned by value (the target ABI splits them into
 registers as usual). This is the convention between Eskiu functions; calls to
 <code>extern</code> C functions follow the C ABI lowering below.</p>
+<p><strong>Large aggregates on WebAssembly.</strong> WebAssembly gives each scalar of an aggregate
+argument a parameter of its own, and engines accept at most 1000 parameters per function
+(V8), so a function taking a large struct by value (<code>Ok&lt;Big, E&gt;(b)</code>) would not load. On a
+wasm32 target the C++ compiler rewrites every function and every call (direct, through a
+function value, <code>invoke</code> included) whose parameter is an aggregate of more than 64 scalars:
+the parameter becomes a pointer to a copy the caller makes in its frame, which the callee
+loads at entry (<code>passLargeAggregatesByPointer</code>, run after code generation). By-value
+semantics are unchanged; the callee still works on its own copy. The self-hosted compiler
+does not do this yet, so it cannot build such a program for WebAssembly. Test
+<code>large_struct_arg</code>.</p>
 <p><strong>Aggregates across <code>extern</code> (C ABI).</strong> Between Eskiu functions a struct or
 union argument/result is a first-class LLVM value. An <code>extern</code> function that
 takes or returns one by value is instead declared with the lowered C signature

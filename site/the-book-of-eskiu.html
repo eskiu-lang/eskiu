@@ -2291,8 +2291,9 @@ pre.code-block {
                       base64_encoded_len(n)        base64_decoded_len(n)
                       // decode returns -1 on bad characters, misplaced '=' or a truncated input
  import &lt;path&gt;;       path_join      path_basename      path_dirname   path_extension</pre>
-<pre class="code-block"> // sort: generic heapsort + binary search over a *T array (O(n log n) worst case)
+<pre class="code-block"> // sort: libc++'s introsort, partial sort and nth element, + binary search over a *T array
  import &lt;sort&gt;;       sort&lt;T&gt;(a, n, cmp)        sort_search&lt;T&gt;(a, n, key, cmp)
+                      sort_partial&lt;T&gt;(a, mid, n, cmp)    sort_nth&lt;T&gt;(a, nth, n, cmp)
      // cmp(&amp;x, &amp;y) returns &lt;0 / 0 / &gt;0, like C qsort; works on a List's .data too</pre>
 <pre class="code-block"> // url: RFC 3986 percent-encoding + form-query lookup
  import &lt;url&gt;;        url_encode(s, &amp;out)      url_decode(s, &amp;out)
