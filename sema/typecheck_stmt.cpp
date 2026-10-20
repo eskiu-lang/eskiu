@@ -615,9 +615,10 @@ void TypeChecker::visit(ThreadJoinStmt* node) {
         errorAt(node, "thread_join expects a thread handle ('*void' from thread_create), got '" + t + "'");
 }
 
-// WebAssembly has no C++-style unwinding in the toolchains Eskiu links with yet.
+// WebAssembly has C++-style unwinding only through emscripten's runtime.
 static bool wasmTarget(const std::string& triple) {
-    return triple.rfind("wasm32", 0) == 0 || triple.rfind("wasm64", 0) == 0;
+    return (triple.rfind("wasm32", 0) == 0 || triple.rfind("wasm64", 0) == 0) &&
+           triple.find("emscripten") == std::string::npos;
 }
 
 void TypeChecker::visit(ThrowStmt* node) {

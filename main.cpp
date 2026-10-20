@@ -857,6 +857,8 @@ static int compilerMain(int argc, char** argv) {
                 bool usesThreads = mod->getFunction("pthread_create") != nullptr;
                 std::vector<std::string> implied = pragmaLibs;
                 for (const auto& l : implicitLinkLibs(macros, usesEH, usesThreads)) implied.push_back(l);
+                // emscripten catches exceptions only when linked to (its JavaScript runtime).
+                if (usesEH && macros.count("__EMSCRIPTEN__")) extra.push_back("-sDISABLE_EXCEPTION_CATCHING=0");
                 std::set<std::string> seen(libs.begin(), libs.end());
                 for (const auto& l : implied)
                     if (seen.insert(l).second) extra.push_back("-l" + l);

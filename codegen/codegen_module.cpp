@@ -1,3 +1,4 @@
+#include "llvm/Support/CommandLine.h"
 #include "codegen.h"
 #include "../sema/type_checker.h"
 #include "../ast/type_qual.h"
@@ -92,6 +93,19 @@ static void initCodegenTargets(bool withAsm) {
     }
 }
 
+// emscripten's JavaScript-based C++ exceptions (clang's -fexceptions under emcc): the
+// WebAssembly backend lowers each invoke and landingpad to calls into its runtime. The
+// option is set as if given on the command line (it keeps its value elsewhere).
+static void enableEmscriptenEH() {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    auto& opts = llvm::cl::getRegisteredOptions();
+    auto it = opts.find("enable-emscripten-cxx-exceptions");
+    if (it != opts.end() && it->second->getNumOccurrences() == 0)
+        it->second->addOccurrence(0, "enable-emscripten-cxx-exceptions", "true");
+}
+
 // Build a TargetMachine for `triple`, applying the CPU, feature, relocation, and
 // float-ABI selection shared by every code-emitting path (returns nullptr when the
 // triple has no registered target). Centralizing this keeps the three call sites
@@ -100,6 +114,7 @@ static void initCodegenTargets(bool withAsm) {
 // Tag_ABI_VFP_args attribute that hard-float libraries like libctru require.
 static std::unique_ptr<llvm::TargetMachine> makeTargetMachine(
         const CodeGen& cg, const llvm::Triple& triple, const std::string& tripleStr) {
+    if (triple.isOSEmscripten()) enableEmscriptenEH();
     std::string err;
 #if LLVM_VERSION_MAJOR >= 22
     const llvm::Target* target = llvm::TargetRegistry::lookupTarget(triple, err);

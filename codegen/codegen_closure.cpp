@@ -272,6 +272,7 @@ void CodeGen::emitUncaughtReporter() {
     llvm::Value* exc = b.CreateExtractValue(pad, {0});
     llvm::FunctionCallee beginCatch = module->getOrInsertFunction("__cxa_begin_catch", ptrTy, ptrTy);
     llvm::Value* obj = b.CreateCall(beginCatch, {exc});
+    if (llvm::Triple(module->getTargetTriple()).isOSEmscripten()) obj = exc;   // see visit(TryStmt)
     llvm::Value* tname = b.CreateLoad(ptrTy, b.CreateConstGEP1_64(b.getInt8Ty(), obj, 8));
     llvm::Value* pay = b.CreateConstGEP1_64(b.getInt8Ty(), obj, 16);
     llvm::FunctionCallee strcmpFn = module->getOrInsertFunction("strcmp", i32, ptrTy, ptrTy);
@@ -367,10 +368,11 @@ void CodeGen::visit(ThrowStmt* node) {
     if (!node->rethrowCaptured) {
         llvm::Type* payTy = val->getType();
         uint64_t paySize = module->getDataLayout().getTypeAllocSize(payTy);
+        llvm::Type* szTy = module->getDataLayout().getIntPtrType(*context);   // size_t
         llvm::Function* allocEx = getOrDeclareFunc("__cxa_allocate_exception",
-            ptrTy, {i64});
+            ptrTy, {szTy});
         exPtr = builder->CreateCall(allocEx,
-            {llvm::ConstantInt::get(i64, 16 + paySize)}, "ex.alloc");
+            {llvm::ConstantInt::get(szTy, 16 + paySize)}, "ex.alloc");
         builder->CreateStore(llvm::ConstantInt::get(i64, 16 + paySize), exPtr);
         auto* paySlot = builder->CreateConstGEP1_64(
             llvm::Type::getInt8Ty(*context), exPtr, 16, "ex.pay.slot");
@@ -483,6 +485,10 @@ void CodeGen::visit(TryStmt* node) {
     llvm::Function* beginCatch = getOrDeclareFunc("__cxa_begin_catch",
         ptrTy, {ptrTy});
     llvm::Value* exData = builder->CreateCall(beginCatch, {exObjPtr}, "ex.data");
+    // emscripten's runtime hands the thrown object itself to the landingpad, and its
+    // __cxa_begin_catch returns that pointer adjusted for the `void*` typeinfo it was
+    // thrown with (the first word of the object), so the object is the landingpad's.
+    if (llvm::Triple(module->getTargetTriple()).isOSEmscripten()) exData = exObjPtr;
 
     // Read the type name (offset 8)
     auto* typeSlot = builder->CreateConstGEP1_64(
@@ -501,8 +507,9 @@ void CodeGen::visit(TryStmt* node) {
             // is at offset 0) for a later rethrow, and release the caught one.
             pushScope();
             llvm::Value* exSize = builder->CreateLoad(i64, exData, "ex.size");
-            llvm::Function* allocEx = getOrDeclareFunc("__cxa_allocate_exception", ptrTy, {i64});
-            llvm::Value* copy = builder->CreateCall(allocEx, {exSize}, "ex.copy");
+            llvm::Type* szTy = module->getDataLayout().getIntPtrType(*context);   // size_t
+            llvm::Function* allocEx = getOrDeclareFunc("__cxa_allocate_exception", ptrTy, {szTy});
+            llvm::Value* copy = builder->CreateCall(allocEx, {builder->CreateZExtOrTrunc(exSize, szTy)}, "ex.copy");
             builder->CreateMemCpy(copy, llvm::MaybeAlign(8), exData, llvm::MaybeAlign(8), exSize);
             auto* slot = entryAlloca(ptrTy, nullptr, c.name);
             builder->CreateStore(copy, slot);
