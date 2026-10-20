@@ -395,16 +395,31 @@ converts to and from it, so it links against C compiled by clang/gcc:</p>
 <td>≤ 16 bytes made only of 32/64-bit scalars (<code>int</code>, <code>int64</code>, <code>float</code>, <code>double</code>, pointers) with no padding → those scalars as separate arguments (<code>{ int, double }</code> → <code>i32, double</code>; not on Windows, where <code>double</code> is 8-aligned and leaves padding); anything else → <code>byval</code> in a 4-byte-aligned stack slot</td>
 <td>Linux (and other SysV i386 systems): always <code>sret</code>. Darwin, Windows and the BSDs: 1, 2, 4 or 8 bytes whose fields are each register-sized → <code>iN</code> in EAX:EDX, except a single-element struct of a <code>float</code>/<code>double</code> (in ST0; not under MSVC's rules, mingw keeps it) or a pointer, returned as that scalar; otherwise <code>sret</code></td>
 </tr>
+<tr>
+<td>wasm32 (emscripten, WASI)</td>
+<td>a single-element struct (one scalar through one-field structs, one-element arrays and one-member unions) → that scalar; anything else → <code>byval</code> at its alignment</td>
+<td>single-element struct → that scalar; otherwise <code>sret</code></td>
+</tr>
 </tbody>
 </table></div>
 <p>The coerced types match what clang emits for the same C signature
-(<code>tests/selfhost/cabi_parity.sh</code> checks the 32-bit x86 ones against clang's IR
+(<code>tests/selfhost/cabi_parity.sh</code> checks the 32-bit x86 and wasm32 ones against clang's IR
 for the tests' C companions). Other targets keep the first-class lowering. Fat values (closures, slices) and
 <code>va_list</code> are not C aggregates and keep their own layout.</p>
 <p>Where gcc and clang disagree, Eskiu follows clang. The one known case: since GCC 12, gcc on
 x86-64 classifies a struct holding a zero-width bitfield (<code>uint32 : 0;</code>) differently when it
 is passed or returned by value, so such a struct crossing an <code>extern</code> matches C compiled by
 clang, not by GCC 12 or later.</p>
+<p><strong>Target-width C integers.</strong> <code>size_t</code>, <code>ssize_t</code> and <code>c_long</code> (<code>&lt;ctypes&gt;</code>) are <code>int64</code>
+aliases in Eskiu. In an <code>extern</code>'s parameters and result the compiler declares the target's
+C type instead (<code>cIntKind</code>/<code>cIntType</code> / self-host <code>cg_cint_kind</code>/<code>cg_cint_ll</code>): pointer
+width for <code>size_t</code> and <code>ssize_t</code>, and for <code>c_long</code> 32 bits on Windows and pointer width
+elsewhere. Every declaration of the extern counts, so one spelled <code>size_t</code> in one module and
+<code>int64</code> in another is lowered as <code>size_t</code>. An argument is truncated to the C width and a
+narrower result is zero-extended (<code>size_t</code>) or sign-extended (the others) back to <code>int64</code>
+(<code>widenCResult</code> / <code>cg_widen_cret</code>). On a 64-bit target nothing changes. The compiler's own
+calls (<code>malloc</code> for a heap closure env, <code>snprintf</code>/<code>write</code> in the uncaught-exception
+reporter) use the same <code>size_t</code>.</p>
 <p><strong>Narrow integers.</strong> Like clang, an <code>extern</code>'s <code>int8</code>/<code>int16</code>/<code>uint8</code>/<code>uint16</code>/
 <code>bool</code>/<code>char</code> parameters and results are declared <code>signext</code> or <code>zeroext</code> (by the
 type's signedness; <code>char</code> follows the target's C <code>char</code>, unsigned on AArch64 and
@@ -421,8 +436,14 @@ with the C convention. When it takes or returns an aggregate by value, the cast
 yields the address of a thunk <code>__cabi_&lt;name&gt;</code> instead of <code>@name</code>: the thunk has
 the lowered C signature from the table above (with the same <code>sret</code>/<code>byval</code>
 attributes), rebuilds the Eskiu-level values, calls <code>f</code>, and returns the result
-the C way. A function without by-value aggregates is passed as itself. Eskiu
-code calling <code>f</code> directly is unaffected.</p>
+the C way. A <code>va_list</code> parameter gets a thunk too, which takes the <code>va_list</code> the
+way C passes it (see Variadics below) and rebuilds the Eskiu value: on x86-64
+System V and AArch64 outside Darwin and Windows it copies the 24 or 32 bytes at
+the address into the front of the storage, elsewhere it puts the <code>char*</code> at
+offset 0 (<code>cVaListToEskiu</code> / <code>cg_va_from_c</code>). This is what C error-reporter
+callbacks such as TensorFlow Lite's <code>void (*)(void*, const char*, va_list)</code> need.
+A function without by-value aggregates or <code>va_list</code> parameters is passed as
+itself. Eskiu code calling <code>f</code> directly is unaffected.</p>
 <p><strong>C function pointer parameters.</strong> A parameter of fn type in an <code>extern</code> (one the
 program does not also define) is a C function pointer: it is declared <code>ptr</code>, not
 the <code>{ fn, env }</code> closure, and each call passes the named top-level function's C

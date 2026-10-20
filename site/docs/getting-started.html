@@ -1090,6 +1090,10 @@ import &lt;math&gt;;
 <td><code>alloc&lt;T&gt;(n)</code>, <code>free(p)</code>, <code>memcpy</code>, <code>memset</code>, <code>memmove</code>, <code>memcmp</code>, <code>strlen</code></td>
 </tr>
 <tr>
+<td><code>&lt;ctypes&gt;</code></td>
+<td><code>size_t</code>, <code>ssize_t</code>, <code>c_long</code>: C integer types for <code>extern</code> declarations, as wide as the target's C types (32 bits on wasm32 and 32-bit ARM and x86)</td>
+</tr>
+<tr>
 <td><code>&lt;libc&gt;</code></td>
 <td>the common C library for ported code (opt-in): string.h, stdlib.h (<code>malloc</code>, <code>strtoll</code>, <code>qsort</code>, ...), stdio.h (<code>snprintf</code>, <code>sscanf</code>, <code>fopen</code>, ...), ctype.h, the rest of libm (<code>sin</code>, <code>log</code>, <code>round</code>, ...), POSIX unistd, <code>libc_errno()</code></td>
 </tr>
@@ -1435,6 +1439,11 @@ import &lt;myapp/helper&gt;;  // the package's own src/helper.esk
 <p>A stdlib module keeps its name: <code>import &lt;io&gt;;</code> is always the stdlib one. An import that
 names neither a stdlib module nor a package in the lock is an error:
 <code>unknown package 'x' (not in eskiu.toml)</code>.</p>
+<p>The <a href="https://github.com/eskiu-lang">eskiu-lang</a> organization publishes packages that are
+added this way: <a href="https://github.com/eskiu-lang/gpu">gpu</a> (WebGPU compute, 3D and machine learning),
+<a href="https://github.com/eskiu-lang/onnx">onnx</a>, <a href="https://github.com/eskiu-lang/tflite">tflite</a>,
+<a href="https://github.com/eskiu-lang/compress">compress</a>, <a href="https://github.com/eskiu-lang/audio">audio</a>,
+<a href="https://github.com/eskiu-lang/font">font</a> and <a href="https://github.com/eskiu-lang/nds">nds</a>.</p>
 <p>The package commands:</p>
 <pre><code class="language-bash">eskiuc build [-o out] [flags]   # compile src/main.esk to build/NAME
 eskiuc run [args]               # build, then run with args

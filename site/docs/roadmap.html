@@ -186,9 +186,11 @@ first-class in the language without giving up general systems use.</p>
 <li><strong>Standard library.</strong> Collections, strings, JSON, regex, time, random, allocators,
   threads and atomics, an async runtime, and HTTP/1.1, HTTP/2 and TLS servers.</li>
 <li><strong>Targets.</strong> Native on macOS arm64, Linux x86-64 and arm64, and Windows x86-64, with
-  prebuilt binaries for all four. Cross-compilation to 32-bit ARM (verified on a Nintendo
-  3DS) and 32-bit x86, and freestanding builds for bare metal (an ARM64 kernel boots in
-  QEMU). The C ABI is followed on every target. See <a href="cross-compile.html"><code>cross-compile.md</code></a>.</li>
+  prebuilt binaries for all four. Cross-compilation to WebAssembly (emscripten and WASI),
+  Android and iOS, with static and shared library outputs for app builds, to 32-bit ARM
+  (verified on a Nintendo 3DS) and 32-bit x86, and freestanding builds for bare metal (an
+  ARM64 kernel boots in QEMU). The C ABI is followed on every target. See
+  <a href="cross-compile.html"><code>cross-compile.md</code></a>.</li>
 <li><strong>Self-hosting.</strong> The compiler is also written in Eskiu (<code>selfhost/</code>). It reaches a
   three-stage bootstrap fixpoint, behaves like the C++ compiler over the whole test corpus,
   and is built and checked by CI as <code>eskiuc-esk</code>. The C++ <code>eskiuc</code> remains the released
@@ -203,6 +205,18 @@ first-class in the language without giving up general systems use.</p>
 <li><strong>Formatter.</strong> Breaking lines that are too long.</li>
 <li><strong>Build times.</strong> Measure a package with several dependencies, then decide whether
   modules need a cache.</li>
+<li><strong>Native WebAssembly exceptions.</strong> On emscripten, exceptions run through its
+  JavaScript-based runtime, which costs a call into JavaScript at every call that may throw;
+  the WebAssembly exception-handling instructions (<code>-fwasm-exceptions</code>) would avoid it and
+  bring exceptions to WASI. That needs a second lowering of <code>try</code> (funclet pads instead of
+  <code>landingpad</code>) in both compilers.</li>
+<li><strong>Native libraries in packages.</strong> A package that links a native library (such as <code>gpu</code>
+  with wgpu-native and SDL3, or an ONNX Runtime binding) needs it installed by hand today
+  (<code>brew install</code>, a release archive) and its directory given as <code>eskiuc build -L...</code>;
+  <code>eskiuc run</code> inside a package passes its arguments to the program, so it cannot take one.
+  The manifest should declare the prebuilt library per platform (URL and sha256), so that
+  <code>eskiuc fetch</code> downloads and verifies it into the package cache, and the link directory
+  and run-time path are set by <code>eskiuc build</code> and <code>eskiuc run</code> with no flags.</li>
 </ul>
 <h2 id="next-10">Next: 1.0</h2>
 <ul>

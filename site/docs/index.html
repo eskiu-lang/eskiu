@@ -291,7 +291,7 @@ compiling in every 0.12.x, and later changes are announced by warnings first
 </tr>
 <tr>
 <td><strong>Cross-compile</strong></td>
-<td><code>--target TRIPLE</code> (AArch64, x86-64, 32-bit ARM, 32-bit x86), plus <code>--mcpu</code> / <code>--mattr</code> / <code>--reloc</code>; hard-float ARM for the 3DS, COFF for Windows. See <a href="cross-compile.html">cross-compile.md</a></td>
+<td><code>--target TRIPLE</code> (AArch64, x86-64, 32-bit ARM, 32-bit x86, WebAssembly), plus <code>--mcpu</code> / <code>--mattr</code> / <code>--reloc</code>; hard-float ARM for the 3DS, COFF for Windows, emscripten and WASI, Android through the NDK, iOS through Xcode; <code>.a</code> and <code>.so</code> library outputs and <code>--subsystem=windows</code>. See <a href="cross-compile.html">cross-compile.md</a></td>
 </tr>
 <tr>
 <td><strong>Multi-file</strong></td>

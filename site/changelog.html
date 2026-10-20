@@ -220,12 +220,23 @@ project follows the compatibility rules in <a href="docs/lang/stability.md">docs
 <h3 id="c-interop-and-targets">C interop and targets</h3>
 <ul>
 <li><code>extern</code> functions and variables, with structs and unions passed and returned by value
-  in the target's C ABI (AArch64, x86-64 SysV and Windows, 32-bit ARM, 32-bit x86),
-  callbacks, <code>va_list</code> and variadic functions.</li>
+  in the target's C ABI (AArch64, x86-64 SysV and Windows, 32-bit ARM, 32-bit x86,
+  wasm32), callbacks (also ones taking a C <code>va_list</code>), <code>va_list</code> and variadic functions.</li>
+<li><code>&lt;ctypes&gt;</code>: <code>size_t</code>, <code>ssize_t</code> and <code>c_long</code> for <code>extern</code> declarations, passed at the
+  target's C width (32 bits on 32-bit targets), so one declaration is right everywhere.</li>
 <li>Inline assembly with outputs, inputs and clobbers; <code>volatile</code> accesses; <code>intrinsic</code>.</li>
 <li><code>#pragma link</code> and implied libraries, so no <code>-lm</code>, <code>-lc++</code> or <code>-lpthread</code> flags.</li>
 <li>macOS, Linux and Windows hosts; cross-compilation with <code>--target</code> (including bare-metal
   <code>none</code> triples and <code>--freestanding</code>); <code>-O0</code> to <code>-O3</code>.</li>
+<li>WebAssembly: <code>wasm32-unknown-emscripten</code> (linked by <code>emcc</code>) and WASI. The standard
+  library and async runtime run there (an event loop over <code>poll()</code>), and exceptions work
+  on emscripten through its runtime.</li>
+<li>Android (<code>aarch64-linux-android24</code>, armv7, x86_64; linked with the NDK's clang) and iOS
+  (devices and the simulator; linked through <code>xcrun</code>).</li>
+<li>Static (<code>.a</code>, <code>.lib</code>) and shared (<code>.so</code>, <code>.dylib</code>, <code>.dll</code>) library outputs, for apps
+  that link Eskiu code from Xcode, Gradle or emscripten builds.</li>
+<li><code>--subsystem=windows</code> links a Windows program that opens its own window without a
+  console.</li>
 </ul>
 <h3 id="standard-library">Standard library</h3>
 <ul>

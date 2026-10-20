@@ -187,11 +187,18 @@ details.cl-full[open] { padding-bottom: 8px; }</style>
 </tr>
 </tbody>
 </table></div>
-<p>The registered backends are AArch64, x86 (x86-64 and 32-bit i686), and 32-bit ARM. For a
-cross target, emit an object file (<code>-c</code>, or an output ending in <code>.o</code>) and link it with a
-cross toolchain for the same platform. An executable output makes <code>eskiuc</code> link through
-<code>$CC</code> (else <code>cc</code>, <code>clang</code> or <code>gcc</code>), which only works for another target when <code>CC</code> points
-at a C driver for it.</p>
+<p>The registered backends are AArch64, x86 (x86-64 and 32-bit i686), 32-bit ARM and
+WebAssembly (wasm32). For a cross target, emit an object file (<code>-c</code>, or an output ending in
+<code>.o</code>) and link it with a cross toolchain for the same platform. An executable output makes
+<code>eskiuc</code> link through <code>$CC</code>. When <code>$CC</code> is not set, a WebAssembly, Android or iOS triple
+picks that platform's driver (see the sections below); any other target uses <code>cc</code>, <code>clang</code>
+or <code>gcc</code>, which only works for another target when one of them is a C driver for it.</p>
+<p>The output's extension decides what is built: an executable, an object (<code>.o</code>, <code>.obj</code>), a
+static library (<code>.a</code>, <code>.lib</code>: the object in an archive, written by <code>eskiuc</code> itself) or a
+shared library (<code>.so</code>, <code>.dylib</code>, <code>.dll</code>: linked with <code>-shared</code>; objects are
+position-independent by default). A library is how an Eskiu module goes into an app that
+another build system links, such as an Xcode project, a Gradle module or an emscripten
+build.</p>
 <h2 id="platform-macros">Platform macros</h2>
 <p>The preprocessor predefines a platform macro so <code>import</code>ed stdlib code can branch per OS:</p>
 <ul>
@@ -205,6 +212,11 @@ at a C driver for it.</p>
 <p>An architecture macro follows the same rule (the <code>--target</code> triple, else the build host):
 <code>__aarch64__</code> for AArch64, <code>__x86_64__</code> for x86-64, <code>__arm__</code> for 32-bit ARM. At most one
 is defined.</p>
+<p>Three more families get the macros clang predefines for them: a <code>wasm32</code> triple defines
+<code>__wasm__</code> and <code>__wasm32__</code> (plus <code>__EMSCRIPTEN__</code> for emscripten and <code>__wasi__</code> for WASI),
+an Android triple defines <code>__ANDROID__</code> next to <code>__linux__</code>, and an iOS triple defines
+<code>TARGET_OS_IPHONE</code> and <code>TARGET_OS_IOS</code> next to <code>__APPLE__</code> (plus <code>TARGET_IPHONE_SIMULATOR</code>
+for a simulator).</p>
 <p><code>--freestanding</code> additionally predefines <code>__ESKIU_FREESTANDING__</code> and routes <code>alloc</code>/<code>free</code>
 to caller-supplied <code>esk_alloc</code>/<code>esk_free</code> instead of libc.</p>
 <h2 id="hard-float-arm">Hard-float ARM</h2>
@@ -280,8 +292,68 @@ with these. Each has an end-to-end check on a native Windows runner in
 sequential fd (handles like 236 are normal), so the loop's fd-indexed slot table grows to fit
 the largest handle rather than assuming a dense <code>[0, max_fds)</code> range. A non-blocking socket
 round-trip over the reactor is checked end to end on the native Windows runner.</p>
+<h2 id="c-types-whose-width-depends-on-the-target">C types whose width depends on the target</h2>
+<p>C's <code>size_t</code>, <code>ssize_t</code> and <code>long</code> change width between targets: 32 bits on wasm32,
+32-bit ARM and i686, and <code>long</code> also on Windows. Eskiu sees each of them as an <code>int64</code>;
+spelled <code>size_t</code>, <code>ssize_t</code> or <code>c_long</code> (from <code>import &lt;ctypes&gt;;</code>) in an <code>extern</code>'s
+parameters or result, the declaration uses the target's C type, an argument is converted to
+it and the result widened back. The standard library declares the C functions it uses this
+way, so <code>strlen</code>, <code>memcpy</code>, <code>malloc</code>, <code>read</code> or <code>snprintf</code> are right on every target. A
+program that declares such a function itself should do the same; an <code>int64</code> there is wrong
+on a 32-bit target (on WebAssembly the call traps on the signature mismatch).</p>
+<h2 id="webassembly">WebAssembly</h2>
+<p><code>--target wasm32-unknown-emscripten</code> builds for <a href="https://emscripten.org">emscripten</a>, the
+toolchain most web projects use. With no <code>$CC</code>, <code>eskiuc</code> links through <code>emcc</code>, so the
+output's extension chooses what emcc writes (<code>.js</code> with its <code>.wasm</code>, <code>.html</code>, or <code>.wasm</code>),
+and <code>--link-arg</code> passes emcc's settings:</p>
+<pre><code class="language-bash">eskiuc app.esk --target wasm32-unknown-emscripten -o app.js --link-arg=-sEXIT_RUNTIME=1
+node app.js
+</code></pre>
+<p>To use Eskiu inside an existing emscripten project, build a static library and link it like
+any other: <code>eskiuc tracker.esk --target wasm32-unknown-emscripten -o libtracker.a</code>, then
+<code>emcc main.cpp libtracker.a ...</code>. Eskiu functions are C symbols, so C++ (an embind
+binding, for instance) declares them <code>extern "C"</code> and calls them; JavaScript reaches one
+exported with <code>-sEXPORTED_FUNCTIONS=_name</code>.</p>
+<p>Other wasm32 triples (<code>wasm32-wasip1</code>, <code>wasm32-unknown-unknown</code>) link with the LLVM
+toolchain's own <code>clang --target=...</code>; WASI needs a sysroot (<code>--link-arg=--sysroot=...</code>),
+and <code>wasm32-unknown-unknown</code> is normally built <code>--freestanding</code>.</p>
+<p>The standard library works there as on other POSIX systems, with an event loop over
+<code>poll()</code>, so futures, timers and channels run under node. Exceptions work on emscripten
+through its JavaScript-based runtime: the backend lowers each <code>invoke</code> and <code>landingpad</code> to
+calls into it (clang's <code>-fexceptions</code> under emcc), and a program that throws or catches is
+linked with <code>-sDISABLE_EXCEPTION_CATCHING=0</code>. On the other wasm32 triples <code>try</code> and <code>throw</code>
+are a located error. Threads need emscripten's <code>-pthread</code> build. <code>tests/wasm/check.sh</code> runs the test corpus this way (emcc and node on
+<code>PATH</code>), skipping the tests listed in <code>tests/wasm/skip.txt</code> with the reason for each.</p>
+<h2 id="android">Android</h2>
+<p>An Android triple carries the API level: <code>aarch64-linux-android24</code>,
+<code>armv7a-linux-androideabi24</code>, <code>x86_64-linux-android24</code>. With no <code>$CC</code>, <code>eskiuc</code> links with
+the NDK's clang, from <code>$ANDROID_NDK_HOME</code>, <code>$ANDROID_NDK_ROOT</code>, or the newest NDK under
+the SDK (<code>$ANDROID_HOME/ndk</code>, or the SDK manager's default directory). A shared library is
+what an app loads (<code>System.loadLibrary</code>, or a React Native module's native part):</p>
+<pre><code class="language-bash">eskiuc tracker.esk --target aarch64-linux-android24 -o libtracker.so
+</code></pre>
+<p>pthread is part of Android's libc, so a program with threads links no <code>-lpthread</code>, and one
+that throws links the NDK's <code>libc++_static</code> and <code>libc++abi</code>. <code>PLATFORM=android
+tests/mobile/check.sh</code> runs the test corpus on an emulator or device through <code>adb</code>.</p>
+<h2 id="ios">iOS</h2>
+<p><code>arm64-apple-ios15.0</code> builds for devices and <code>arm64-apple-ios15.0-simulator</code> (or
+<code>x86_64-apple-ios15.0-simulator</code>) for the simulator. With no <code>$CC</code>, <code>eskiuc</code> links through
+<code>xcrun -sdk iphoneos clang</code> (<code>iphonesimulator</code> for a simulator triple). An app embeds a
+static library, one per slice, which <code>xcodebuild -create-xcframework</code> can combine:</p>
+<pre><code class="language-bash">eskiuc tracker.esk --target arm64-apple-ios15.0 -o ios/libtracker.a
+eskiuc tracker.esk --target arm64-apple-ios15.0-simulator -o sim/libtracker.a
+xcodebuild -create-xcframework -library ios/libtracker.a -library sim/libtracker.a \
+    -output Tracker.xcframework
+</code></pre>
+<p>The C ABI is the Darwin AArch64 one, as on macOS. <code>tests/mobile/check.sh</code> runs the test
+corpus on a booted simulator (<code>xcrun simctl spawn</code>).</p>
+<h2 id="windows-gui-programs">Windows GUI programs</h2>
+<p>A program that opens its own window, such as one using the <code>gpu</code> package, links for the GUI
+subsystem with <code>--subsystem=windows</code>, so Windows does not open a console for it. The entry
+point stays <code>main</code>: the driver passes <code>-mwindows</code> to a mingw link, and <code>/subsystem:windows</code>
+with <code>/entry:mainCRTStartup</code> to an MSVC one. On other targets the option has no effect.</p>
     </main>
-    <nav class="toc" aria-label="On this page"><span class="grp">On this page</span><a href="#platform-macros">Platform macros</a><a href="#hard-float-arm">Hard-float ARM</a><a href="#example-nintendo-3ds">Example: Nintendo 3DS</a><a href="#example-windows-x86-64">Example: Windows (x86-64)</a></nav>
+    <nav class="toc" aria-label="On this page"><span class="grp">On this page</span><a href="#platform-macros">Platform macros</a><a href="#hard-float-arm">Hard-float ARM</a><a href="#example-nintendo-3ds">Example: Nintendo 3DS</a><a href="#example-windows-x86-64">Example: Windows (x86-64)</a><a href="#c-types-whose-width-depends-on-the-target">C types whose width depends on the target</a><a href="#webassembly">WebAssembly</a><a href="#android">Android</a><a href="#ios">iOS</a><a href="#windows-gui-programs">Windows GUI programs</a></nav>
   </div>
   <footer class="foot">
     <div class="bar foot-in">

@@ -2296,12 +2296,19 @@ int main() {
 <h3 id="131-extern-function-declarations">13.1 Extern Function Declarations</h3>
 <p>An <code>extern</code> declaration makes a C function available to Eskiu code. The declaration must match the C function's ABI exactly.</p>
 <p>The standard library already declares the common C functions: <code>&lt;io&gt;</code> has <code>printf</code>, <code>puts</code> and the rest of C stdio, <code>&lt;mem&gt;</code> the memory and string functions (<code>memcpy</code>, <code>memset</code>, <code>strlen</code>, <code>strcmp</code>, <code>strncmp</code>, <code>strchr</code>, <code>strstr</code>), <code>&lt;math&gt;</code> the libm ones (<code>sqrt</code>, <code>pow</code>, ...), and <code>&lt;process&gt;</code> has <code>process_exit</code>. A program imports those modules and declares an <code>extern</code> itself only for other functions; an <code>extern</code> that repeats one of them with different types is a conflicting declaration.</p>
-<pre><code class="language-eskiu">extern int printf(string fmt, ...);
-extern int64 strlen(string s);
-extern *void memcpy(*void dst, *void src, int64 n);
+<pre><code class="language-eskiu">import &lt;ctypes&gt;;
+extern int printf(string fmt, ...);
+extern size_t strlen(string s);
+extern *void memcpy(*void dst, *void src, size_t n);
 extern int open(string path, int flags);
 extern void exit(int code);
 </code></pre>
+<p>C's <code>size_t</code>, <code>ssize_t</code> and <code>long</code> change width between targets (32 bits on wasm32,
+32-bit ARM and i686; <code>long</code> also on Windows). <code>import &lt;ctypes&gt;</code> gives <code>size_t</code>, <code>ssize_t</code>
+and <code>c_long</code>: each is an <code>int64</code> in Eskiu, and in an <code>extern</code>'s parameters and result the
+compiler passes the target's C type, converting an argument to it and widening the result
+back (zero-extending a <code>size_t</code>). Declare such parameters with these names; an <code>int64</code> in
+their place is only right on 64-bit targets.</p>
 <h3 id="132-extern-variables">13.2 Extern Variables</h3>
 <p>An <code>extern</code> declaration with no parameter list (a type, a name, and a semicolon) names a global variable defined in another translation unit. It emits an external-linkage global with no initializer; reads and writes resolve at link time.</p>
 <pre><code class="language-eskiu">extern int   opterr;       // libc's getopt flag
@@ -2332,12 +2339,12 @@ apply to Eskiu code, not inside the C function, so a C function that does not ac
 <h3 id="134-c-abi-compatibility">13.4 C ABI Compatibility</h3>
 <p><code>extern</code> declarations emit standard C-ABI-compatible LLVM IR <code>call</code> instructions. Any function exported from a C library, including system libraries, OpenSSL, or any other C-compatible library, may be called this way.</p>
 <p>For functions that accept or return <code>void*</code>, use <code>*void</code> on the Eskiu side:</p>
-<pre><code class="language-eskiu">extern *void malloc(int64 size);
-extern *void memcpy(*void dst, *void src, int64 n);
-extern *void memset(*void ptr, int value, int64 n);
+<pre><code class="language-eskiu">extern *void malloc(size_t size);
+extern *void memcpy(*void dst, *void src, size_t n);
+extern *void memset(*void ptr, int value, size_t n);
 </code></pre>
 <p>(For heap allocation, prefer <code>import &lt;mem&gt;</code> and <code>alloc&lt;T&gt;</code>/<code>free</code> over declaring <code>malloc</code>/<code>free</code> as <code>extern</code> yourself; see §11.2.)</p>
-<p>A struct or union may be passed to or returned from an <code>extern</code> function <strong>by value</strong>. The compiler lowers such a call to the target's C calling convention (register classes, homogeneous float aggregates, hidden return pointer), matching what clang emits for the same C signature, on AArch64, x86-64 System V, Windows x64, 32-bit ARM (AAPCS, soft and hard float) and 32-bit x86 (cdecl), following <code>--target</code>. See <a href="abi.html">abi.md</a> for the per-target rules.</p>
+<p>A struct or union may be passed to or returned from an <code>extern</code> function <strong>by value</strong>. The compiler lowers such a call to the target's C calling convention (register classes, homogeneous float aggregates, hidden return pointer), matching what clang emits for the same C signature, on AArch64, x86-64 System V, Windows x64, 32-bit ARM (AAPCS, soft and hard float), 32-bit x86 (cdecl) and wasm32, following <code>--target</code>. See <a href="abi.html">abi.md</a> for the per-target rules.</p>
 <pre><code class="language-eskiu">struct Vec2 { double x; double y; }
 extern Vec2 vec2_add(Vec2 a, Vec2 b);   // a C function taking and returning structs
 </code></pre>
@@ -2346,7 +2353,7 @@ extern Vec2 vec2_add(Vec2 a, Vec2 b);   // a C function taking and returning str
 …). Casting a <strong>top-level</strong> Eskiu function to a pointer type yields its bare C
 function-pointer address, the raw symbol, not the <code>{fn, env}</code> closure fat
 pointer a function name otherwise decays to:</p>
-<pre><code class="language-eskiu">extern void qsort(*void base, int64 n, int64 size, *void compar);
+<pre><code class="language-eskiu">extern void qsort(*void base, size_t n, size_t size, *void compar);
 
 int cmp(*void a, *void b) { return *(*int)a - *(*int)b; }
 
@@ -2357,11 +2364,14 @@ qsort((*void)&amp;arr[0], (int64)5, (int64)4, (*void)cmp);   // (*void)cmp is th
 only for top-level functions (a closure or fn-pointer variable still carries an
 environment and is not C-callable). A callback that takes or returns a struct by
 value works too: C reaches it through a generated thunk with the C calling
-convention.</p>
+convention. So does one with a <code>va_list</code> parameter, such as a C library's
+error-reporter callback <code>void (*)(void* ud, const char* fmt, va_list ap)</code>: the
+thunk takes the <code>va_list</code> as C passes it, and the function can hand it to
+<code>vsnprintf</code> or read it with <code>va_arg</code>.</p>
 <p>An <code>extern</code> parameter of fn type is a C function pointer, so the prototype can
 spell the callback's signature and the call passes a top-level function by name
 (or <code>null</code>), with no cast:</p>
-<pre><code class="language-eskiu">extern void qsort(*void base, int64 n, int64 size, fn(*void, *void)-&gt;int cmp);
+<pre><code class="language-eskiu">extern void qsort(*void base, size_t n, size_t size, fn(*void, *void)-&gt;int cmp);
 
 qsort((*void)&amp;arr[0], (int64)5, (int64)4, cmp);
 </code></pre>
@@ -3631,6 +3641,18 @@ asm(&quot;addq $1, $0&quot; : &quot;+r&quot;(acc) : &quot;r&quot;(b));          
 <td>Compile to an object file only (no link)</td>
 </tr>
 <tr>
+<td><code>eskiuc file.esk -o libfile.a</code></td>
+<td>Compile to a static library (<code>.a</code>, or <code>.lib</code>)</td>
+</tr>
+<tr>
+<td><code>eskiuc file.esk -o libfile.so</code></td>
+<td>Link a shared library (<code>.so</code>, <code>.dylib</code>, <code>.dll</code>)</td>
+</tr>
+<tr>
+<td><code>eskiuc file.esk -o prog --subsystem=windows</code></td>
+<td>Link a Windows program for the GUI subsystem (no console)</td>
+</tr>
+<tr>
 <td><code>eskiuc file.esk -c -o name</code></td>
 <td>Compile to an object file only, any name</td>
 </tr>
@@ -3687,7 +3709,12 @@ asm(&quot;addq $1, $0&quot; : &quot;+r&quot;(acc) : &quot;r&quot;(b));          
 <p><strong>Linking.</strong> When the <code>-o</code> output is not an object file (no <code>.o</code> suffix) and <code>-c</code>
 is absent, <code>eskiuc</code> links the program into an executable by invoking the system
 C toolchain (<code>$CC</code>, then <code>cc</code>/<code>clang</code>/<code>gcc</code> on the <code>PATH</code>) exactly as <code>rustc</code>
-and <code>clang</code> do internally. <code>$CC</code> may include arguments (<code>CC="clang --target=..."</code>). <code>-l&lt;lib&gt;</code> and <code>-L&lt;path&gt;</code> flags, and any <code>--link-arg=&lt;arg&gt;</code>,
+and <code>clang</code> do internally. Without <code>$CC</code>, a WebAssembly (emscripten), Android or iOS
+<code>--target</code> links with that platform's driver instead: <code>emcc</code>, the Android NDK's clang, or
+<code>xcrun -sdk iphoneos clang</code>. An output ending in <code>.a</code> or <code>.lib</code> is a static library (the
+object in an archive), and one ending in <code>.so</code>, <code>.dylib</code> or <code>.dll</code> a shared library
+(linked with <code>-shared</code>). <code>--subsystem=windows</code> links a Windows program for the GUI
+subsystem, still entered at <code>main</code>. <code>$CC</code> may include arguments (<code>CC="clang --target=..."</code>). <code>-l&lt;lib&gt;</code> and <code>-L&lt;path&gt;</code> flags, and any <code>--link-arg=&lt;arg&gt;</code>,
 are forwarded to the linker. A C toolchain must therefore be installed (it is the
 only build-time dependency besides LLVM).</p>
 <p>The driver also adds the libraries the program itself implies, so the usual ones
@@ -3717,7 +3744,7 @@ invocation in <code>kernel/Makefile</code>).</p>
 <p><strong>Sanitizers.</strong> <code>--asan</code> instruments the program with AddressSanitizer (detecting heap, stack and global memory errors) and links the matching LLVM runtime; <code>--ubsan</code> inserts trapping bounds checks (an out-of-bounds access aborts via a trap; no runtime is required). Both are real LLVM instrumentation passes and compose with <code>eskiuc run</code>.</p>
 <p><code>--hover-at</code>, <code>--definition-at</code> and <code>--complete-at</code> accept the format <code>LINE:COL</code> with 1-based line and column numbers. They are used by the VS Code extension to provide hover type information, go-to-definition navigation and completion. The self-hosted <code>eskiuc-esk</code> implements these modes and the <code>-Wall</code>/<code>-Wextra</code> warnings with the same output.</p>
 <h3 id="cross-compilation">Cross-compilation</h3>
-<p><code>--target TRIPLE</code> sets the LLVM target triple for the output object file. The AArch64, X86 and 32-bit ARM LLVM backends are included in the Eskiu build. <code>--mcpu</code>, <code>--mattr</code> and <code>--reloc</code> select the CPU, the feature string and the relocation model. See <a href="cross-compile.html">cross-compile.md</a> for worked examples.</p>
+<p><code>--target TRIPLE</code> sets the LLVM target triple for the output object file. The AArch64, X86, 32-bit ARM and WebAssembly LLVM backends are included in the Eskiu build. On WebAssembly, exceptions work through emscripten's runtime (<code>wasm32-unknown-emscripten</code>); on the other wasm32 triples <code>try</code> and <code>throw</code> are errors. <code>--mcpu</code>, <code>--mattr</code> and <code>--reloc</code> select the CPU, the feature string and the relocation model. See <a href="cross-compile.html">cross-compile.md</a> for worked examples.</p>
 <pre><code class="language-bash">eskiuc kernel.esk --target x86_64-pc-linux-gnu --freestanding -o kernel.o
 eskiuc kernel.esk --target aarch64-unknown-none --freestanding -o kernel.o
 </code></pre>
@@ -3757,6 +3784,22 @@ eskiuc kernel.esk --target aarch64-unknown-none --freestanding -o kernel.o
 <tr>
 <td><code>armv6k-none-eabihf</code></td>
 <td>Bare-metal 32-bit ARM, hard float (e.g. the Nintendo 3DS with <code>--mcpu=mpcore</code>)</td>
+</tr>
+<tr>
+<td><code>wasm32-unknown-emscripten</code></td>
+<td>WebAssembly through emscripten (browsers and node)</td>
+</tr>
+<tr>
+<td><code>wasm32-wasip1</code></td>
+<td>WebAssembly with WASI</td>
+</tr>
+<tr>
+<td><code>aarch64-linux-android24</code></td>
+<td>Android, 64-bit ARM, API level 24 (also <code>armv7a-linux-androideabi24</code>, <code>x86_64-linux-android24</code>)</td>
+</tr>
+<tr>
+<td><code>arm64-apple-ios15.0</code></td>
+<td>iOS devices (<code>arm64-apple-ios15.0-simulator</code> for the simulator)</td>
 </tr>
 </tbody>
 </table></div>
