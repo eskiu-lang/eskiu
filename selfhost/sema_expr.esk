@@ -1229,39 +1229,18 @@ int sema_pdefs(Sema* s, string key, *DeclNode sd, string mname) {
                 List_push<*ExprNode>(&out, null);
                 continue;
             }
-            *ExprNode lit = null;
-            if (def.kind == EK_LITERAL) {
-                lit = ast_new_expr();
-                lit.kind = EK_LITERAL;
-                lit.lit_kind = def.lit_kind;
-                lit.sval = def.sval;
-                lit.slen = def.slen;
-            } else if (def.kind == EK_UNARY && sema_streq(def.sval, "-") == 1 && def.a != null
-                       && def.a.kind == EK_LITERAL && def.a.lit_kind == LIT_FLOAT) {
-                lit = ast_new_expr();
-                lit.kind = EK_LITERAL;
-                lit.lit_kind = LIT_FLOAT;
-                lit.sval = sema_cat("-", def.a.sval);
-            } else {
-                int64 v = (int64)0;
-                s.global_only = 1;
-                int ok = sema_fold_int(s, def, &v);
-                s.global_only = 0;
-                if (ok == 1) {
-                    lit = ast_new_expr();
-                    lit.kind = EK_LITERAL;
-                    lit.lit_kind = LIT_INT;
-                    lit.sval = sema_i64_text(v);
-                }
-            }
+            *ExprNode lit = sema_fold_pdef(s, def);
             if (lit == null) {
                 s.had_error = 1;
-                dprintf(2, "error: %s:%d:%d: default value of parameter '%s' is not a constant (a literal or an integer constant expression)\n",
+                dprintf(2, "error: %s:%d:%d: default value of parameter '%s' is not a constant (a literal, an integer constant expression or a struct literal of those)\n",
                         s.filename, def.line, def.col, pm.name);
                 List_push<*ExprNode>(&out, null);
                 continue;
             }
             if (List_len<TypeParam>(&fd.type_params) == 0) {   // its type is checked where it is declared
+                if (lit.kind == EK_STRUCTINIT) {
+                    sema_expr(s, lit);             // its fields, as C++ lit->accept(this)
+                }
                 string derr = sema_assign_err(s, pm.ty, lit);
                 if (derr[0] != 0) {
                     s.had_error = 1;
@@ -1274,6 +1253,89 @@ int sema_pdefs(Sema* s, string key, *DeclNode sd, string mname) {
     }
     List_push<List<*ExprNode>>(&s.pd_lists, out);
     return idx;
+}
+
+// A parameter default folded to a constant (C++ TypeChecker::foldParamDefault): a
+// literal, a negative float literal, an integer constant expression folded in the global
+// scope, or a struct literal whose values are all of these. Null when it is none of them.
+*ExprNode sema_fold_pdef(Sema* s, *ExprNode def) {
+    *ExprNode lit = null;
+    if (def.kind == EK_LITERAL) {
+        lit = ast_new_expr();
+        lit.kind = EK_LITERAL;
+        lit.lit_kind = def.lit_kind;
+        lit.sval = def.sval;
+        lit.slen = def.slen;
+        return lit;
+    }
+    if (def.kind == EK_UNARY && sema_streq(def.sval, "-") == 1 && def.a != null
+        && def.a.kind == EK_LITERAL && def.a.lit_kind == LIT_FLOAT) {
+        lit = ast_new_expr();
+        lit.kind = EK_LITERAL;
+        lit.lit_kind = LIT_FLOAT;
+        lit.sval = sema_cat("-", def.a.sval);
+        return lit;
+    }
+    if (def.kind == EK_STRUCTINIT) {
+        lit = ast_new_expr();
+        lit.kind = EK_STRUCTINIT;
+        lit.sval = def.sval;
+        lit.line = def.line;
+        lit.col = def.col;
+        List_init<*ExprNode>(&lit.kids, 4);
+        List_init<string>(&lit.names, 4);
+        int i = 0;
+        while (i < List_len<*ExprNode>(&def.kids)) {
+            *ExprNode k = List_get<*ExprNode>(&def.kids, i);
+            *ExprNode v = null;
+            if (k != null) {
+                v = sema_fold_pdef(s, k);
+            }
+            if (v == null) {
+                return null;
+            }
+            v.line = k.line;
+            v.col = k.col;
+            List_push<*ExprNode>(&lit.kids, v);
+            List_push<string>(&lit.names, List_get<string>(&def.names, i));
+            i = i + 1;
+        }
+        return lit;
+    }
+    int64 v = (int64)0;
+    s.global_only = 1;
+    int ok = sema_fold_int(s, def, &v);
+    s.global_only = 0;
+    if (ok == 1) {
+        lit = ast_new_expr();
+        lit.kind = EK_LITERAL;
+        lit.lit_kind = LIT_INT;
+        lit.sval = sema_i64_text(v);
+    }
+    return lit;
+}
+
+// A fresh copy of a folded default (a literal, or a struct literal of them) at a call.
+*ExprNode sema_clone_pdef(*ExprNode d, int line, int col) {
+    *ExprNode out = ast_new_expr();
+    out.kind = d.kind;
+    out.line = line;
+    out.col = col;
+    out.sval = d.sval;
+    if (d.kind == EK_LITERAL) {
+        out.lit_kind = d.lit_kind;
+        out.slen = d.slen;
+        return out;
+    }
+    List_init<*ExprNode>(&out.kids, 4);
+    List_init<string>(&out.names, 4);
+    int i = 0;
+    while (i < List_len<*ExprNode>(&d.kids)) {
+        List_push<*ExprNode>(&out.kids, sema_clone_pdef(List_get<*ExprNode>(&d.kids, i), line, col));
+        List_push<string>(&out.names, List_get<string>(&d.names, i));
+        i = i + 1;
+    }
+    return out;
 }
 
 // A call that omits trailing arguments with default values gets a copy of each, at the
@@ -1360,15 +1422,7 @@ void sema_fill_defaults(Sema* s, *ExprNode e) {
     }
     i = given;
     while (i < n) {
-        *ExprNode d = List_get<*ExprNode>(&defs, i);
-        *ExprNode lit = ast_new_expr();
-        lit.kind = EK_LITERAL;
-        lit.lit_kind = d.lit_kind;
-        lit.sval = d.sval;
-        lit.slen = d.slen;
-        lit.line = e.line;
-        lit.col = e.col;
-        List_push<*ExprNode>(&e.kids, lit);
+        List_push<*ExprNode>(&e.kids, sema_clone_pdef(List_get<*ExprNode>(&defs, i), e.line, e.col));
         i = i + 1;
     }
 }
