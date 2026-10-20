@@ -7,7 +7,7 @@
 # every `declare` (externs) and every `@__cabi_*` callback thunk. Parameter names and
 # the trailing `{` are stripped, so only types and ABI attributes (sret/byval/align/
 # alignstack) are compared. Cross targets can't run here, so this is an IR-level check.
-# For the 32-bit x86 targets each compiler's lowered `declare`s are also compared with
+# For the 32-bit x86 and wasm32 targets each compiler's lowered `declare`s are also compared with
 # the definitions clang emits for the program's C companion (NAME.c), when $CLANG can
 # target them.
 #
@@ -34,8 +34,10 @@ fi
 TARGETS="arm64-apple-darwin aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
 x86_64-apple-darwin x86_64-pc-windows-msvc x86_64-w64-windows-gnu
 armv7-none-linux-gnueabihf armv6k-none-eabihf armv7-none-linux-gnueabi
-i686-pc-linux-gnu i386-apple-darwin i686-w64-windows-gnu i686-pc-windows-msvc"
-X86_32="i686-pc-linux-gnu i386-apple-darwin i686-w64-windows-gnu i686-pc-windows-msvc"
+i686-pc-linux-gnu i386-apple-darwin i686-w64-windows-gnu i686-pc-windows-msvc
+wasm32-unknown-emscripten"
+VS_CLANG="i686-pc-linux-gnu i386-apple-darwin i686-w64-windows-gnu i686-pc-windows-msvc
+wasm32-unknown-emscripten"
 INPUTS="tests/c_abi_struct.esk tests/c_abi_callback.esk tests/c_abi_va_callback.esk tests/c_abi_try.esk tests/c_abi_fnptr.esk tests/bitfield_c_layout.esk tests/c_abi_union.esk tests/c_abi_narrow.esk tests/c_abi_x86_32.esk tests/pack_nested_c.esk tests/pack_union_c.esk tests/bitfield_unnamed_c.esk"
 
 # The lowered signatures in an IR file, one per line, sorted: `NAME<TAB>signature`. The C++
@@ -54,6 +56,8 @@ for src in $INPUTS; do
         n=$((n + 1))
         name="$(basename "$src" .esk)@$t"
         if ! ESKIU_ROOT="$(pwd)" "$BIN" "$src" --test-codegen --target "$t" >"$WORK/cpp.ll" 2>&1; then
+            # A program the target cannot build (exceptions on WebAssembly) is skipped.
+            if grep -q "not supported on WebAssembly" "$WORK/cpp.ll"; then echo "skip  $name"; continue; fi
             echo "FAIL  $name  (C++ codegen failed)"; fail=1; continue
         fi
         if ! ESKIU_ROOT="$(pwd)" "$ESKMAIN" "$src" --test-codegen --target "$t" >"$WORK/esk.ll" 2>"$WORK/esk.err"; then
@@ -76,13 +80,13 @@ for src in $INPUTS; do
         fi
     done
 done
-# 32-bit x86: the lowered extern signatures equal clang's definitions of the C side, by
+# 32-bit x86 and wasm32: the lowered extern signatures equal clang's definitions of the C side, by
 # function name (clang's `noundef`/`dead_on_*`/`noalias`/`writable`/`dso_local`
 # attributes and its `%struct.`/`%union.` prefixes are dropped).
 CLANG="${CLANG:-clang}"
 clang_sigs() {
     grep -E '^define .*@' "$1" \
-        | sed -E 's/^define //; s/ #[0-9]+//; s/ *\{$//; s/(dso_local|noundef|dead_on_unwind|dead_on_return|noalias|writable|local_unnamed_addr) //g' \
+        | sed -E 's/^define //; s/ #[0-9]+//; s/ *\{$//; s/(dso_local|hidden|noundef|dead_on_unwind|dead_on_return|noalias|writable|local_unnamed_addr) //g' \
         | sed -E 's/ %[A-Za-z0-9_.]+([,)])/\1/g; s/%(struct|union)\./%/g' \
         | sed -E "s/^([^@]*@)([A-Za-z0-9_.]+)(\\(.*)$/\\2$TAB\\1\\2\\3/" | sort
 }
@@ -94,7 +98,7 @@ decl_sigs() {
 for src in $INPUTS; do
     csrc="${src%.esk}.c"
     [ -f "$csrc" ] || continue
-    for t in $X86_32; do
+    for t in $VS_CLANG; do
         name="$(basename "$src" .esk)@$t vs clang"
         if ! "$CLANG" -target "$t" -O0 -S -emit-llvm -o "$WORK/c.ll" "$csrc" 2>/dev/null; then
             echo "skip  $name  ($CLANG cannot target $t)"; continue
@@ -102,8 +106,9 @@ for src in $INPUTS; do
         clang_sigs "$WORK/c.ll" >"$WORK/c.sig"
         for who in C++ self-host; do
             n=$((n + 1))
-            if [ "$who" = C++ ]; then ESKIU_ROOT="$(pwd)" "$BIN" "$src" --test-codegen --target "$t" >"$WORK/x.ll" 2>/dev/null
-            else ESKIU_ROOT="$(pwd)" "$ESKMAIN" "$src" --test-codegen --target "$t" >"$WORK/x.ll" 2>/dev/null; fi
+            if [ "$who" = C++ ]; then ESKIU_ROOT="$(pwd)" "$BIN" "$src" --test-codegen --target "$t" >"$WORK/x.ll" 2>"$WORK/x.err"
+            else ESKIU_ROOT="$(pwd)" "$ESKMAIN" "$src" --test-codegen --target "$t" >"$WORK/x.ll" 2>"$WORK/x.err"; fi
+            if grep -q "not supported on WebAssembly" "$WORK/x.err"; then echo "skip  $name ($who)"; continue; fi
             decl_sigs "$WORK/x.ll" >"$WORK/x.sig"
             join -t "$TAB" "$WORK/x.sig" "$WORK/c.sig" >"$WORK/both"
             diffs="$(awk -F"$TAB" '$2 != $3 { print $2 "  vs clang  " $3 }' "$WORK/both")"
