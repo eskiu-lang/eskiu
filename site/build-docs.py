@@ -654,7 +654,8 @@ PKG_TEXT = {
         "soon_tag": "private for now",
         "soon_p": "Corners, optical flow, multi-view geometry and planes, in pure Eskiu. It comes from "
                   "tinyvio, the tracker behind ViroReact's web AR, and computes the same bits as its "
-                  "C++. The repository opens together with tinyvio.",
+                  "C++. The repository is private for now. "
+                  "<a href=\"{p}vision.html\">What it does and how it was checked →</a>",
         "repo": "Repository", "ci": "CI status",
         "outro": "Every package needs Eskiu 0.12 or newer. Its README has the full module list, "
                  "more examples and the details for each operating system.",
@@ -684,7 +685,8 @@ PKG_TEXT = {
         "soon_tag": "privado por ahora",
         "soon_p": "Esquinas, flujo óptico, geometría multivista y planos, en Eskiu puro. Sale de tinyvio, "
                   "el tracker detrás del AR web de ViroReact, y calcula los mismos bits que su C++. El "
-                  "repositorio se abre junto con tinyvio.",
+                  "repositorio es privado por ahora. "
+                  "<a href=\"vision.html\">Qué hace y cómo se verificó →</a>",
         "repo": "Repositorio", "ci": "Estado de CI",
         "outro": "Todos los paquetes necesitan Eskiu 0.12 o más nuevo. En el README de cada uno "
                  "están la lista completa de módulos, más ejemplos y los detalles para cada sistema "
@@ -825,7 +827,7 @@ def build_packages():
         b += [f'    <section class="pkg pkg-soon" id="vision">',
               '      <h2>vision</h2>',
               f'      <div class="pkg-meta"><span class="tag">{T["soon_tag"]}</span></div>',
-              f'      <p>{T["soon_p"]}</p>',
+              f'      <p>{T["soon_p"].format(p=p)}</p>',
               "    </section>"]
         b.append(f'    <p>{T["outro"]}</p>')
         page = render_site_page(lang, "packages.html", "packages", T["title"], T["desc"], "\n".join(b))

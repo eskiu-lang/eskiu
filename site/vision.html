@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script>try{if(localStorage.getItem("eskiu-lang")==="es")location.replace("es/vision.html"+location.hash);}catch(e){}</script>
+  <title>vision · Eskiu</title>
+  <meta name="description" content="vision: the computer vision core of a visual-inertial tracker in pure Eskiu, from ReactVision's tinyvio, with the same bits as its C++ over more than 200,000 compared cases." />
+  <link rel="canonical" href="https://eskiu-lang.org/vision.html" />
+  <link rel="alternate" hreflang="en" href="https://eskiu-lang.org/vision.html" />
+  <link rel="alternate" hreflang="es" href="https://eskiu-lang.org/es/vision.html" />
+  <link rel="icon" type="image/png" href="../assets/logo.png" />
+  <meta name="theme-color" content="#fbf8f3" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&amp;family=DM+Sans:wght@400;500;700&amp;family=DM+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="page.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="bar top-in">
+      <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.12.0</span></a>
+      <nav class="nav" aria-label="Main"><a href="quickstart.html">Learn</a><a href="docs/index.html">Docs</a><a href="packages.html">Packages</a><a href="platforms.html">Platforms</a><a href="showcase.html">Showcase</a><a href="the-book-of-eskiu.html">Book</a><a href="changelog.html">Changelog</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+      <div class="top-right">
+        <span class="lang"><span aria-current="page">EN</span> / <a href="es/vision.html" onclick="try{localStorage.setItem('eskiu-lang','es')}catch(e){}">ES</a></span>
+        <a class="btn-install" href="index.html#install">Install 0.12.0</a>
+        <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="drawer"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg></button>
+      </div>
+    </div>
+    <nav class="drawer" id="drawer" aria-label="Main"><a href="quickstart.html">Learn</a><a href="docs/index.html">Docs</a><a href="packages.html">Packages</a><a href="platforms.html">Platforms</a><a href="showcase.html">Showcase</a><a href="the-book-of-eskiu.html">Book</a><a href="changelog.html">Changelog</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+  </header>
+  <main class="bar article">
+    <div class="eyebrow">Package</div>
+    <h1>vision</h1>
+
+    <div class="pull">
+      The computer vision core of a visual-inertial tracker, in Eskiu with no C library
+      beyond libm. It comes from tinyvio, ReactVision's tracker behind ViroReact's web AR,
+      and computes the same bits as tinyvio's C++.
+      <span class="stat">Over 200,000 cases compared bit for bit with the C++, 0 mismatches.</span>
+    </div>
+
+    <p>
+      The repository is private for now. This page describes what the package does and how
+      it was checked.
+    </p>
+
+    <h2>What it does</h2>
+    <ul>
+      <li><strong>Images.</strong> Grayscale images, bilinear sampling, pyramids, a box blur.</li>
+      <li><strong>Features.</strong> FAST-9 corners spread over the frame, pyramidal Lucas-Kanade
+        flow with a forward-backward check, oriented BRIEF descriptors and Hamming matching.</li>
+      <li><strong>Geometry.</strong> Rotations and poses, two-view translation with RANSAC,
+        triangulation, pose from 3D-2D matches, Gauss-Newton refinement and sliding-window
+        bundle adjustment.</li>
+      <li><strong>Direct alignment.</strong> A pose solved photometrically against a pyramid,
+        with an epipolar depth search to seed it.</li>
+      <li><strong>Inertial.</strong> A complementary filter for attitude and gravity, IMU
+        preintegration and a visual-inertial metric scale.</li>
+      <li><strong>Planes.</strong> Detection in a point cloud, tracking across updates with
+        boundary polygons, and ray casts for hit tests.</li>
+    </ul>
+
+    <h2>An example</h2>
+    <p>Corners in one frame, followed into the next with Lucas-Kanade flow:</p>
+<pre><code>import &lt;list&gt;;
+import &lt;vision/image&gt;;
+import &lt;vision/fast&gt;;
+import &lt;vision/klt&gt;;
+
+ImageRef first = a.ref();
+FastConfig fast;
+List&lt;Corner&gt; corners;
+vision_fast(&amp;first, &amp;fast, &amp;corners);
+
+List&lt;V2&gt; from;
+for (i in 0..corners.size) from.push(corners.data[i].px);
+Pyramid pa;
+Pyramid pb;
+pa.build(first, 3);
+pb.build(b.ref(), 3);
+KltConfig klt;
+List&lt;FlowResult&gt; flow;
+vision_klt_track(&amp;pa, &amp;pb, from.data, from.size, null, 0, &amp;klt, &amp;flow);
+// flow.data[i].ok() and flow.data[i].px: where corner i went</code></pre>
+    <p>
+      Every config struct carries the defaults of the original, so <code>KltConfig klt;</code>
+      is a working setup. On two test frames the example prints
+      <code>152 corners, 150 tracked, median motion (5.00, -2.00) px</code>.
+    </p>
+
+    <h2>Same bits as the C++</h2>
+    <p>
+      The package's tests link tinyvio's C++ core, pinned at a commit and built with
+      <code>-ffp-contract=off</code> as its WebAssembly builds are, against each module, and
+      compare every output bit for bit on frames and an IMU stream rendered for the test. They
+      run on every commit:
+    </p>
+    <div class="tablewrap"><table>
+      <tr><th>Module</th><th>Cases</th><th>Mismatches</th></tr>
+      <tr><td>geometry</td><td class="n">110,384</td><td class="n">0</td></tr>
+      <tr><td>klt</td><td class="n">73,724</td><td class="n">0</td></tr>
+      <tr><td>descriptors</td><td class="n">16,674</td><td class="n">0</td></tr>
+      <tr><td>plane</td><td class="n">6,300</td><td class="n">0</td></tr>
+      <tr><td>imu</td><td class="n">4,782</td><td class="n">0</td></tr>
+      <tr><td>direct</td><td class="n">3,768</td><td class="n">0</td></tr>
+      <tr><td>bundle</td><td class="n">1,500</td><td class="n">0</td></tr>
+      <tr><td>calibrate</td><td class="n">300</td><td class="n">0</td></tr>
+      <tr><td>fast</td><td class="n">150</td><td class="n">0</td></tr>
+    </table></div>
+    <p>
+      Two things a C++ build does implicitly are made explicit. Tied elements are ordered as
+      libc++ orders them, since Eskiu's <code>&lt;sort&gt;</code> is libc++'s algorithm. And
+      <code>sin</code> and <code>cos</code> of one angle go through one <code>sincos</code>
+      call on Apple platforms, as clang merges them there.
+    </p>
+
+    <h2>Where it runs</h2>
+    <p>
+      vision is pure Eskiu, so it builds wherever Eskiu does: its tests run on macOS, Linux and
+      Windows, and it cross-compiles for iOS, Android (arm64, armv7, x86_64) and WebAssembly.
+      The results are the same bits on every platform whose C library rounds <code>sin</code>,
+      <code>cos</code> and the other math functions the same way.
+    </p>
+    <p>
+      The same code, under tinyvio's own names, is tinyvio's Eskiu engine. Replaying a
+      recording through its C API gives the same output as the C++ engine on macOS,
+      WebAssembly, the iOS simulator and the Android emulator. See
+      <a href="case-study-reactvision.html#tinyvio">the ReactVision case study</a>.
+    </p>
+  </main>
+  <footer class="foot">
+    <div class="bar foot-in">
+      <span class="brand">eskiu</span>
+      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family · MIT</span>
+      <nav class="foot-links" aria-label="Footer"><a href="docs/index.html">Docs</a><a href="the-book-of-eskiu.html">Book</a><a href="docs/internals.html">Internals</a><a href="changelog.html">Changelog</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a><a href="https://reactvision.xyz">ReactVision</a></nav>
+    </div>
+  </footer>
+  <script>(function(){var t=document.querySelector(".top"),b=document.querySelector(".menu-btn");if(!t||!b)return;b.addEventListener("click",function(){var o=t.classList.toggle("open");b.setAttribute("aria-expanded",o?"true":"false");});})();</script>
+</body>
+</html>

@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>vision · Eskiu</title>
+  <meta name="description" content="vision: el núcleo de visión por computadora de un tracker visual-inercial en Eskiu puro, de tinyvio de ReactVision, con los mismos bits que su C++ en más de 200,000 casos comparados." />
+  <link rel="canonical" href="https://eskiu-lang.org/es/vision.html" />
+  <link rel="alternate" hreflang="en" href="https://eskiu-lang.org/vision.html" />
+  <link rel="alternate" hreflang="es" href="https://eskiu-lang.org/es/vision.html" />
+  <link rel="icon" type="image/png" href="../../assets/logo.png" />
+  <meta name="theme-color" content="#fbf8f3" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&amp;family=DM+Sans:wght@400;500;700&amp;family=DM+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../page.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="bar top-in">
+      <a class="brand" href="index.html"><img src="../../assets/logo.png" alt="" />eskiu<span class="v">v0.12.0</span></a>
+      <nav class="nav" aria-label="Principal"><a href="quickstart.html">Aprende</a><a href="../docs/index.html">Docs</a><a href="packages.html">Paquetes</a><a href="platforms.html">Plataformas</a><a href="showcase.html">Proyectos</a><a href="../the-book-of-eskiu.html">Libro</a><a href="../changelog.html">Cambios</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+      <div class="top-right">
+        <span class="lang"><a href="../vision.html" onclick="try{localStorage.setItem('eskiu-lang','en')}catch(e){}">EN</a> / <span aria-current="page">ES</span></span>
+        <a class="btn-install" href="index.html#install">Instalar 0.12.0</a>
+        <button class="menu-btn" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="drawer"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg></button>
+      </div>
+    </div>
+    <nav class="drawer" id="drawer" aria-label="Principal"><a href="quickstart.html">Aprende</a><a href="../docs/index.html">Docs</a><a href="packages.html">Paquetes</a><a href="platforms.html">Plataformas</a><a href="showcase.html">Proyectos</a><a href="../the-book-of-eskiu.html">Libro</a><a href="../changelog.html">Cambios</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+  </header>
+  <main class="bar article">
+    <div class="eyebrow">Paquete</div>
+    <h1>vision</h1>
+
+    <div class="pull">
+      El núcleo de visión por computadora de un tracker visual-inercial, en Eskiu y sin
+      ninguna biblioteca de C además de libm. Sale de tinyvio, el tracker de ReactVision detrás
+      del AR web de ViroReact, y calcula los mismos bits que el C++ de tinyvio.
+      <span class="stat">Más de 200,000 casos comparados bit por bit con el C++, 0 diferencias.</span>
+    </div>
+
+    <p>
+      El repositorio es privado por ahora. Esta página describe qué hace el paquete y cómo se
+      verificó.
+    </p>
+
+    <h2>Qué hace</h2>
+    <ul>
+      <li><strong>Imágenes.</strong> Imágenes en escala de grises, muestreo bilineal, pirámides,
+        un desenfoque de caja.</li>
+      <li><strong>Características.</strong> Esquinas FAST-9 repartidas por el cuadro, flujo
+        Lucas-Kanade piramidal con verificación de ida y vuelta, descriptores BRIEF orientados y
+        emparejamiento por distancia de Hamming.</li>
+      <li><strong>Geometría.</strong> Rotaciones y poses, traslación entre dos vistas con RANSAC,
+        triangulación, pose a partir de correspondencias 3D-2D, refinamiento de Gauss-Newton y
+        bundle adjustment sobre una ventana deslizante.</li>
+      <li><strong>Alineación directa.</strong> Una pose resuelta fotométricamente contra una
+        pirámide, con una búsqueda de profundidad sobre la línea epipolar para iniciarla.</li>
+      <li><strong>Inercial.</strong> Un filtro complementario para la orientación y la gravedad,
+        preintegración de la IMU y la escala métrica visual-inercial.</li>
+      <li><strong>Planos.</strong> Detección en una nube de puntos, seguimiento entre
+        actualizaciones con polígonos de borde, y rayos para hit tests.</li>
+    </ul>
+
+    <h2>Un ejemplo</h2>
+    <p>Esquinas en un cuadro, seguidas en el siguiente con flujo Lucas-Kanade:</p>
+<pre><code>import &lt;list&gt;;
+import &lt;vision/image&gt;;
+import &lt;vision/fast&gt;;
+import &lt;vision/klt&gt;;
+
+ImageRef first = a.ref();
+FastConfig fast;
+List&lt;Corner&gt; corners;
+vision_fast(&amp;first, &amp;fast, &amp;corners);
+
+List&lt;V2&gt; from;
+for (i in 0..corners.size) from.push(corners.data[i].px);
+Pyramid pa;
+Pyramid pb;
+pa.build(first, 3);
+pb.build(b.ref(), 3);
+KltConfig klt;
+List&lt;FlowResult&gt; flow;
+vision_klt_track(&amp;pa, &amp;pb, from.data, from.size, null, 0, &amp;klt, &amp;flow);
+// flow.data[i].ok() y flow.data[i].px: a dónde se movió la esquina i</code></pre>
+    <p>
+      Cada struct de configuración trae los valores por defecto del original, así que
+      <code>KltConfig klt;</code> ya es una configuración que funciona. Con dos cuadros de prueba
+      el ejemplo imprime <code>152 corners, 150 tracked, median motion (5.00, -2.00) px</code>.
+    </p>
+
+    <h2>Los mismos bits que el C++</h2>
+    <p>
+      Las pruebas del paquete enlazan el núcleo en C++ de tinyvio, fijado en un commit y
+      compilado con <code>-ffp-contract=off</code> como sus builds de WebAssembly, contra cada
+      módulo, y comparan cada resultado bit por bit sobre cuadros y una secuencia de IMU
+      generados para la prueba. Corren en cada commit:
+    </p>
+    <div class="tablewrap"><table>
+      <tr><th>Módulo</th><th>Casos</th><th>Diferencias</th></tr>
+      <tr><td>geometry</td><td class="n">110,384</td><td class="n">0</td></tr>
+      <tr><td>klt</td><td class="n">73,724</td><td class="n">0</td></tr>
+      <tr><td>descriptors</td><td class="n">16,674</td><td class="n">0</td></tr>
+      <tr><td>plane</td><td class="n">6,300</td><td class="n">0</td></tr>
+      <tr><td>imu</td><td class="n">4,782</td><td class="n">0</td></tr>
+      <tr><td>direct</td><td class="n">3,768</td><td class="n">0</td></tr>
+      <tr><td>bundle</td><td class="n">1,500</td><td class="n">0</td></tr>
+      <tr><td>calibrate</td><td class="n">300</td><td class="n">0</td></tr>
+      <tr><td>fast</td><td class="n">150</td><td class="n">0</td></tr>
+    </table></div>
+    <p>
+      Dos cosas que un build de C++ hace de forma implícita se vuelven explícitas. Los
+      elementos empatados se ordenan como los ordena libc++, porque el <code>&lt;sort&gt;</code>
+      de Eskiu es el algoritmo de libc++. Y el <code>sin</code> y el <code>cos</code> de un mismo
+      ángulo pasan por una sola llamada a <code>sincos</code> en las plataformas de Apple, como
+      los fusiona clang ahí.
+    </p>
+
+    <h2>Dónde corre</h2>
+    <p>
+      vision es Eskiu puro, así que se compila donde se compile Eskiu: sus pruebas corren en
+      macOS, Linux y Windows, y se compila cruzado para iOS, Android (arm64, armv7, x86_64) y
+      WebAssembly. Los resultados son los mismos bits en toda plataforma cuya biblioteca de C
+      redondee igual <code>sin</code>, <code>cos</code> y las demás funciones matemáticas.
+    </p>
+    <p>
+      El mismo código, con los nombres propios de tinyvio, es el motor en Eskiu de tinyvio. Al
+      reproducir una grabación por su API de C da la misma salida que el motor en C++ en macOS,
+      WebAssembly, el simulador de iOS y el emulador de Android. Ver
+      <a href="case-study-reactvision.html#tinyvio">el caso de estudio de ReactVision</a>.
+    </p>
+  </main>
+  <footer class="foot">
+    <div class="bar foot-in">
+      <span class="brand">eskiu</span>
+      <span>Parte de la familia <a href="https://reactvision.xyz">ReactVision</a> · MIT</span>
+      <nav class="foot-links" aria-label="Pie de página"><a href="../docs/index.html">Docs</a><a href="../the-book-of-eskiu.html">Libro</a><a href="../docs/internals.html">Internals</a><a href="../changelog.html">Cambios</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a><a href="https://reactvision.xyz">ReactVision</a></nav>
+    </div>
+  </footer>
+  <script>(function(){var t=document.querySelector(".top"),b=document.querySelector(".menu-btn");if(!t||!b)return;b.addEventListener("click",function(){var o=t.classList.toggle("open");b.setAttribute("aria-expanded",o?"true":"false");});})();</script>
+</body>
+</html>
