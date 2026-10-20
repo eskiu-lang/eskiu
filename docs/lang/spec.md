@@ -2458,7 +2458,10 @@ The callback's signature must match what the C side expects (C ABI). This works
 only for top-level functions (a closure or fn-pointer variable still carries an
 environment and is not C-callable). A callback that takes or returns a struct by
 value works too: C reaches it through a generated thunk with the C calling
-convention.
+convention. So does one with a `va_list` parameter, such as a C library's
+error-reporter callback `void (*)(void* ud, const char* fmt, va_list ap)`: the
+thunk takes the `va_list` as C passes it, and the function can hand it to
+`vsnprintf` or read it with `va_arg`.
 
 An `extern` parameter of fn type is a C function pointer, so the prototype can
 spell the callback's signature and the call passes a top-level function by name

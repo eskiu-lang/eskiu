@@ -61,7 +61,7 @@ The first public release. Code that compiles with 0.12.0 keeps compiling in ever
 ### C interop and targets
 - `extern` functions and variables, with structs and unions passed and returned by value
   in the target's C ABI (AArch64, x86-64 SysV and Windows, 32-bit ARM, 32-bit x86),
-  callbacks, `va_list` and variadic functions.
+  callbacks (also ones taking a C `va_list`), `va_list` and variadic functions.
 - Inline assembly with outputs, inputs and clobbers; `volatile` accesses; `intrinsic`.
 - `#pragma link` and implied libraries, so no `-lm`, `-lc++` or `-lpthread` flags.
 - macOS, Linux and Windows hosts; cross-compilation with `--target` (including bare-metal

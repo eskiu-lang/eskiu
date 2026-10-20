@@ -1959,7 +1959,7 @@ pre.code-block {
  for (i in 0..5) { printf(&quot;%d &quot;, arr[i]); }     // 1 1 3 4 5</pre>
 <p class="output"><em>Output:</em> 1 1 3 4 5</p>
 <p>Only a top-level function (or <code>null</code>) is accepted there. Passing a lambda or a fn-typed variable is a compile error (&quot;is a C function pointer&quot;), because its environment cannot cross into C.</p>
-<p>A callback may take or return a struct by value. C then calls it through a small thunk the compiler generates with the target&#x27;s C calling convention, so the struct arrives the way the C side passed it. Your own Eskiu calls to the function are unaffected.</p>
+<p>A callback may take or return a struct by value. C then calls it through a small thunk the compiler generates with the target&#x27;s C calling convention, so the struct arrives the way the C side passed it. The same holds for a <code>va_list</code> parameter, which C error-reporter callbacks often take (<code>void (*)(void* ud, const char* fmt, va_list ap)</code>): the function can pass it to <code>vsnprintf</code> or read it with <code>va_arg&lt;T&gt;</code>. Your own Eskiu calls to the function are unaffected.</p>
 <div class="chapter-start" id="chapter-15"><span class="chapter-label">Chapter 15</span>
 <h1 class="chapter-title">The Standard Library</h1><hr class="chapter-rule"></div>
 <p>Eskiu&#x27;s standard library ships as 42 plain .esk files with the compiler. There is no magic: they are Eskiu code, readable at lib/eskiu/stdlib/ in your installation. Import each module with an angle-bracket <code>import</code>.</p>

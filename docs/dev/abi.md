@@ -213,8 +213,14 @@ with the C convention. When it takes or returns an aggregate by value, the cast
 yields the address of a thunk `__cabi_<name>` instead of `@name`: the thunk has
 the lowered C signature from the table above (with the same `sret`/`byval`
 attributes), rebuilds the Eskiu-level values, calls `f`, and returns the result
-the C way. A function without by-value aggregates is passed as itself. Eskiu
-code calling `f` directly is unaffected.
+the C way. A `va_list` parameter gets a thunk too, which takes the `va_list` the
+way C passes it (see Variadics below) and rebuilds the Eskiu value: on x86-64
+System V and AArch64 outside Darwin and Windows it copies the 24 or 32 bytes at
+the address into the front of the storage, elsewhere it puts the `char*` at
+offset 0 (`cVaListToEskiu` / `cg_va_from_c`). This is what C error-reporter
+callbacks such as TensorFlow Lite's `void (*)(void*, const char*, va_list)` need.
+A function without by-value aggregates or `va_list` parameters is passed as
+itself. Eskiu code calling `f` directly is unaffected.
 
 **C function pointer parameters.** A parameter of fn type in an `extern` (one the
 program does not also define) is a C function pointer: it is declared `ptr`, not
