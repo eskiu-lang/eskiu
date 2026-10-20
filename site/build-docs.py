@@ -379,8 +379,9 @@ def render(*, title, desc, canon, p, d, a, current, active, summary, body, toc_t
     )
 
 
-def make_rewriter(srcdir):
-    """Return a regex callback that rewrites .md hrefs relative to srcdir."""
+def make_rewriter(srcdir, prefix=""):
+    """Return a regex callback that rewrites .md hrefs relative to srcdir; prefix is the
+    path from the output page to site/docs/."""
 
     def rewrite(m):
         target = m.group(1)
@@ -395,7 +396,7 @@ def make_rewriter(srcdir):
         # resolve relative to the source file's directory, against repo root
         resolved = os.path.normpath(os.path.join(srcdir, target))
         if resolved in PATHMAP:
-            return f'href="{PATHMAP[resolved]}{anchor}"'
+            return f'href="{prefix}{PATHMAP[resolved]}{anchor}"'
         if target.endswith(".md"):  # un-ported doc -> GitHub source
             return f'href="{GH_BLOB}{resolved}{anchor}"'
         return m.group(0)
@@ -834,6 +835,7 @@ def main():
         cl_text = f.read()
     md.reset()
     cl_body = md.convert(collapse_changelog(cl_text))
+    cl_body = re.sub(r'href="([^"]+)"', make_rewriter("", "docs/"), cl_body)
     cl_body = cl_body.replace("<table>", '<div class="tablewrap"><table>').replace(
         "</table>", "</table></div>"
     )
