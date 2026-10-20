@@ -133,3 +133,4 @@ img { max-width: 100%; }
 .pkg-meta a { font-weight: 700; }
 .tag { font-family: var(--mono); font-size: 13px; color: var(--purple); background: var(--lilac); border-radius: 999px; padding: 2px 12px; }
 .more { font-weight: 700; }
+figure.fig-sq { max-width: 512px; }

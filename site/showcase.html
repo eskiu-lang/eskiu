@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script>try{if(localStorage.getItem("eskiu-lang")==="es")location.replace("es/showcase.html"+location.hash);}catch(e){}</script>
+  <title>Showcase · Eskiu</title>
+  <meta name="description" content="What has been built with Eskiu: Llama 2 inference on Metal at 45 tokens per second, a glTF viewer with physically based shading, an AR demo on the Nintendo 3DS, ReactVision's rendering engine and the compiler itself." />
+  <link rel="canonical" href="https://eskiu-lang.org/showcase.html" />
+  <link rel="alternate" hreflang="en" href="https://eskiu-lang.org/showcase.html" />
+  <link rel="alternate" hreflang="es" href="https://eskiu-lang.org/es/showcase.html" />
+  <link rel="alternate" hreflang="x-default" href="https://eskiu-lang.org/showcase.html" />
+  <link rel="icon" type="image/png" href="../assets/logo.png" />
+  <meta name="theme-color" content="#fbf8f3" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&amp;family=DM+Sans:wght@400;500;700&amp;family=DM+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="page.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="bar top-in">
+      <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.12.0</span></a>
+      <nav class="nav" aria-label="Main"><a href="quickstart.html">Learn</a><a href="docs/index.html">Docs</a><a href="packages.html">Packages</a><a href="platforms.html">Platforms</a><a href="showcase.html" aria-current="page">Showcase</a><a href="the-book-of-eskiu.html">Book</a><a href="changelog.html">Changelog</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+      <div class="top-right">
+        <span class="lang"><span aria-current="page">EN</span> / <a href="es/showcase.html" onclick="try{localStorage.setItem('eskiu-lang','es')}catch(e){}">ES</a></span>
+        <a class="btn-install" href="index.html#install">Install 0.12.0</a>
+        <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="drawer"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg></button>
+      </div>
+    </div>
+    <nav class="drawer" id="drawer" aria-label="Main"><a href="quickstart.html">Learn</a><a href="docs/index.html">Docs</a><a href="packages.html">Packages</a><a href="platforms.html">Platforms</a><a href="showcase.html" aria-current="page">Showcase</a><a href="the-book-of-eskiu.html">Book</a><a href="changelog.html">Changelog</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+  </header>
+  <main class="bar article">
+    <div class="eyebrow">Showcase</div>
+    <h1>Built with Eskiu</h1>
+    <p class="lede">
+      Programs that run today: a language model on the GPU, a 3D model viewer, an AR demo on a
+      handheld console, modules in a production rendering engine, and the compiler itself.
+    </p>
+
+    <nav class="chips" aria-label="Projects">
+      <a href="#llama">Llama 2 on Metal</a>
+      <a href="#viewer">PBR model viewer</a>
+      <a href="#3ds">3DS AR demo</a>
+      <a href="#reactvision">ReactVision</a>
+      <a href="#selfhost">The compiler</a>
+    </nav>
+
+    <h2 id="llama">Llama 2 on Metal</h2>
+    <p>
+      <code>examples/llama2.esk</code> in the <a href="packages.html#gpu">gpu</a> package is
+      Llama 2 inference after Andrej Karpathy's llama2.c. It reads llama2.c checkpoints, llama
+      GGUF files (Q4_0 and Q8_0 run quantized on the GPU) and Hugging Face model directories
+      with safetensors, and runs on the GPU through WebGPU, which is Metal on a Mac:
+    </p>
+    <pre><code>eskiuc build -L/opt/homebrew/lib &amp;&amp; ./build/llama2 llama-2-7b.Q4_0.gguf -t 0 -i "The capital of France is"</code></pre>
+    <div class="tablewrap"><table>
+      <tr><th>Model</th><th>Eskiu</th><th>Reference</th></tr>
+      <tr><td>stories110M (llama2.c, f16)</td><td class="n">350 tokens/s</td><td>llama2.c on the CPU: 22 tokens/s</td></tr>
+      <tr><td>TinyLlama 1.1B Q4_0 (GGUF)</td><td class="n">178 tokens/s</td><td>llama.cpp (Metal): 260 tokens/s</td></tr>
+      <tr><td>Llama 2 7B Q4_0 (GGUF)</td><td class="n">45 tokens/s</td><td>llama.cpp (Metal): 58 tokens/s</td></tr>
+    </table></div>
+    <p>
+      Measured on an Apple M4 Pro with greedy decoding. The outputs match llama2.c byte for byte,
+      and llama.cpp and Hugging Face transformers token for token, on the prompts tested. The
+      forward pass is a program of <code>&lt;gpu/nn&gt;</code> operations recorded once and
+      replayed as one compute pass per token.
+    </p>
+    <p>
+      The same package trains networks: <code>examples/mnist.esk</code> trains a two-layer
+      network on MNIST with <code>&lt;gpu/train&gt;</code> to 97% test accuracy in three epochs,
+      and saves the weights as safetensors, which PyTorch loads with the same accuracy.
+    </p>
+
+    <h2 id="viewer">A glTF and OBJ viewer with PBR</h2>
+    <figure class="fig-sq">
+      <img src="../assets/gpu-helmet.png" alt="The DamagedHelmet glTF model drawn by the gpu package" width="512" height="512" loading="lazy" />
+      <figcaption>DamagedHelmet by theblueturtle_, CC BY 4.0</figcaption>
+    </figure>
+    <p>
+      <code>examples/model.esk</code> in the gpu package opens glTF 2.0 (<code>.gltf</code> and
+      <code>.glb</code>) and Wavefront OBJ files in a window: drag to orbit, scroll to zoom, and
+      space pauses the animation. <code>&lt;gpu/model&gt;</code> shades with glTF's
+      metallic-roughness model under one directional light and a hemisphere ambient term, with
+      normal maps, alpha modes, skinning and animation. The same code runs on Metal, Vulkan and
+      DirectX 12.
+    </p>
+    <p><a class="more" href="https://github.com/eskiu-lang/gpu">github.com/eskiu-lang/gpu →</a></p>
+
+    <h2 id="3ds">An AR demo on the Nintendo 3DS</h2>
+    <figure>
+      <img src="../assets/case-study-3ds.jpg" alt="A New Nintendo 3DS running the demo: a low-poly 3D model composited over the live camera feed on the top screen, with controls and diagnostics on the bottom screen." width="1400" height="1050" loading="lazy" />
+      <figcaption>The demo on a New Nintendo 3DS.</figcaption>
+    </figure>
+    <p>
+      A camera and gyroscope AR demo holds a 3D model steady over the live camera feed. Its logic
+      is written in Eskiu, compiled for the console's 32-bit ARM11, and its rendering goes through
+      ViroCore on citro3d. It was verified on real 3DS hardware.
+    </p>
+    <p><a class="more" href="case-study-3ds.html">Read the 3DS case study →</a></p>
+
+    <h2 id="reactvision">ReactVision</h2>
+    <p>
+      ReactVision builds ViroCore, the native AR/VR rendering engine behind
+      <code>@reactvision/react-viro</code> on iOS, Android, Meta Quest and visionOS. The team
+      replaces memory-sensitive C++ components with Eskiu modules that link in over the C ABI,
+      one module at a time, while the rest of the engine stays as it is. The rendering modules
+      moved so far use about 85% less memory.
+    </p>
+    <p><a class="more" href="case-study-reactvision.html">Read the ReactVision case study →</a></p>
+
+    <h2 id="selfhost">The compiler, written in Eskiu</h2>
+    <p>
+      Eskiu has two implementations of its compiler. The released <code>eskiuc</code> is written
+      in C++ and links LLVM. The second, under <code>selfhost/</code>, is written in Eskiu: it
+      covers the same pipeline and command line, writes LLVM IR as text and calls
+      <code>clang</code> to assemble and link it. CMake builds it as <code>eskiuc-esk</code>, and
+      CI checks that both compilers agree on every runnable program in the test suite.
+    </p>
+    <pre><code>preprocessor → lexer → parser → sema → async lowering → codegen (LLVM IR text) → clang</code></pre>
+    <p>
+      It is also checked against itself. The C++ <code>eskiuc</code> builds <code>cc0</code>,
+      <code>cc0</code> builds <code>cc1</code>, and <code>cc1</code> builds <code>cc2</code>; the
+      bootstrap reaches a fixpoint when <code>cc1</code> and <code>cc2</code> produce identical IR
+      for the compiler's own source.
+    </p>
+    <p><a class="more" href="docs/self-hosting.html">How self-hosting is checked →</a></p>
+  </main>
+  <footer class="foot">
+    <div class="bar foot-in">
+      <span class="brand">eskiu</span>
+      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family · MIT</span>
+      <nav class="foot-links" aria-label="Footer"><a href="docs/index.html">Docs</a><a href="the-book-of-eskiu.html">Book</a><a href="docs/internals.html">Internals</a><a href="changelog.html">Changelog</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a><a href="https://reactvision.xyz">ReactVision</a></nav>
+    </div>
+  </footer>
+  <script>(function(){var t=document.querySelector(".top"),b=document.querySelector(".menu-btn");if(!t||!b)return;b.addEventListener("click",function(){var o=t.classList.toggle("open");b.setAttribute("aria-expanded",o?"true":"false");});})();</script>
+</body>
+</html>
