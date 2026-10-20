@@ -41,13 +41,13 @@ for f in tests/*.esk; do
         ${CC:-clang} -c "tests/$n.c" -o "$work/$n.c.o" >/dev/null 2>&1 && extra=(--link-arg "$work/$n.c.o")
     fi
     # Compile+link at both levels (the driver adds the libraries a program implies).
-    if ! "$ESKIUC"     "$f" ${extra[@]+"${extra[@]}"} -o "$work/$n.a" >/dev/null 2>&1 \
-    || ! "$ESKIUC" -O2 "$f" ${extra[@]+"${extra[@]}"} -o "$work/$n.b" >/dev/null 2>&1; then
+    if ! "$ESKIUC"     "$f" ${extra[@]+"${extra[@]}"} -o "$work/$n.o0" >/dev/null 2>&1 \
+    || ! "$ESKIUC" -O2 "$f" ${extra[@]+"${extra[@]}"} -o "$work/$n.o2" >/dev/null 2>&1; then
         skip=$((skip + 1)); continue
     fi
     total=$((total + 1))
-    a="$($TO "$work/$n.a" 2>&1; echo "rc=$?")"
-    b="$($TO "$work/$n.b" 2>&1; echo "rc=$?")"
+    a="$($TO "$work/$n.o0" 2>&1; echo "rc=$?")"
+    b="$($TO "$work/$n.o2" 2>&1; echo "rc=$?")"
     if [ "$a" = "$b" ]; then
         echo "ok    $n"
     else
