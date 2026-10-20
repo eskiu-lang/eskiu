@@ -13,13 +13,13 @@
 // dns_last_error() describes why. The strings are heap copies the list owns:
 // free them with dns_free_list. <net>'s net_tcp_connect uses the same lookup.
 
+import <c/socket>;   // inet_ntop, WSAStartup
 import <mem>;
 import <list>;
 
 #define DNS_AF_UNSPEC 0
 #ifdef _WIN32
 #pragma link("ws2_32")
-extern int WSAStartup(int version, *void data);
 #define DNS_AF_INET6 23
 #else
 #ifdef __APPLE__
@@ -71,10 +71,7 @@ struct _dns_addrinfo {
 
 extern int getaddrinfo(string node, string service, *_dns_addrinfo hints, **_dns_addrinfo res);
 extern void freeaddrinfo(*_dns_addrinfo ai);
-#ifdef _WIN32
-extern string inet_ntop(int af, *void src, *char dst, int64 size);
-#else
-extern string inet_ntop(int af, *void src, *char dst, uint32 size);
+#ifndef _WIN32
 extern string gai_strerror(int code);
 #endif
 
@@ -183,8 +180,6 @@ int _dns_numeric(*_dns_addrinfo ai, *char dst) {
     }
     return r != null ? 1 : 0;
 }
-
-extern int strcmp(string a, string b);
 
 // Append the addresses of `host` to `out` (see the top of the file). The
 // number added, or -1 when the name does not resolve.

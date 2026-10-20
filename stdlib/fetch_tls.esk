@@ -29,11 +29,11 @@
 // whether it needs the socket readable or writable (<fetch> waits with poll,
 // or with the event loop in fetch_async).
 
+import <c/stdlib>;   // getenv
+import <c/signal>;   // signal (Linux)
 import <mem>;
 import <string>;
 import <net>;
-
-extern string getenv(string name);
 
 #ifdef _WIN32
 extern *void LoadLibraryA(string name);
@@ -471,7 +471,6 @@ int _ftls_is_ip(string host) {
 }
 
 #ifdef __linux__
-extern *void signal(int sig, *void handler);
 bool _ftls_sigpipe_off = false;
 #endif
 

@@ -73,6 +73,8 @@
 //
 // fetch_last_error() keeps one message for the whole program (not per thread).
 
+import <c/string>;   // strerror
+import <c/socket>;   // getsockopt
 import <mem>;
 import <string>;
 import <bytes>;
@@ -123,11 +125,6 @@ int _ftls_verify_error(*void ssl, String* out) {
 }
 
 void _ftls_free(*void ssl) {}
-#endif
-
-extern int getsockopt(int fd, int level, int opt, *void val, *int len);
-#ifndef _WIN32
-extern string strerror(int e);
 #endif
 
 // ── Errors ───────────────────────────────────────────────────────────────────

@@ -13,6 +13,7 @@
 // Build: link with OpenSSL, e.g.
 //   eskiuc app.esk -o app -L/opt/homebrew/opt/openssl@3/lib -lssl -lcrypto
 
+import <c/signal>;   // signal (Linux)
 import <mem>;
 import <future>;
 import <eventloop>;
@@ -54,7 +55,6 @@ const int SSL_TLSEXT_ERR_NOACK = 3;   // ALPN: none acceptable
 // so the first TLS connection sets SIGPIPE to ignored for the process (every
 // write to a closed peer then fails with EPIPE, which SSL_write reports).
 #ifdef __linux__
-extern *void signal(int sig, *void handler);
 bool _tls_sigpipe_off = false;
 #endif
 void _tls_nosigpipe(int fd) {

@@ -13,6 +13,8 @@
 //   // await f  ->  number of bytes read (0 = EOF, <0 = error)
 
 import <ctypes>;
+import <c/unistd>;   // read, write, fcntl
+import <c/socket>;   // ioctlsocket (Windows)
 import <mem>;
 import <future>;
 import <eventloop>;
@@ -25,7 +27,6 @@ import <timer>;
 // async bodies below stay platform-agnostic.
 // The errno helpers (_net_errno, _NET_EAGAIN) live in <net>.
 #ifdef _WIN32
-extern int ioctlsocket(int fd, int cmd, *int argp);
 // FIONBIO = 0x8004667E as a signed 32-bit value (its top bit is set).
 void net_set_nonblocking(int fd) {
     int one = 1;
@@ -40,10 +41,6 @@ int64 _net_write(int fd, *void buf, int64 n) {
     return net_send(fd, buf, n);
 }
 #else
-extern ssize_t read(int fd, *void buf, size_t n);
-extern ssize_t write(int fd, *void buf, size_t n);
-extern int fcntl(int fd, int cmd, ...);        // variadic in C: arm64 Apple passes `...` on the stack
-
 #ifdef __APPLE__
 const int _NET_NONBLOCK = 4;     // O_NONBLOCK
 const int _NET_ENOTSOCK = 38;
