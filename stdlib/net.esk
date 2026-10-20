@@ -11,37 +11,18 @@
 //   net_close(c);
 
 import <ctypes>;
+import <c/socket>;   // socket, bind, connect, send, recv, ... (closesocket, WSAStartup)
+import <c/unistd>;   // close
+import <c/string>;   // strlen
+import <c/errno>;
+import <c/poll>;
 import <time>;
 import <dns>;    // host names in net_tcp_connect
 
-extern int socket(int domain, int type, int protocol);
-extern int bind(int fd, *void addr, int len);
-extern int listen(int fd, int backlog);
-extern int accept(int fd, *void addr, *int len);
-extern int connect(int fd, *void addr, int len);
 #ifdef _WIN32
-// Winsock (ws2_32): sockets are closed with closesocket, not the CRT close, and the library
-// must be started once before any socket call. WSADATA is ~400 bytes; 512 is a safe buffer.
+// Winsock (ws2_32). WSADATA is ~400 bytes; 512 is a safe buffer.
 #pragma link("ws2_32")
-extern int closesocket(int fd);
-extern int WSAStartup(int version, *void data);
-#else
-extern int close(int fd);
 #endif
-extern int setsockopt(int fd, int level, int opt, *void val, int len);
-#ifdef _WIN32
-// Winsock's send/recv take and return an int: read as int64, SOCKET_ERROR
-// (-1) would be 4294967295.
-extern int send(int fd, *void buf, int n, int flags);
-extern int recv(int fd, *void buf, int n, int flags);
-#else
-extern ssize_t send(int fd, *void buf, size_t n, int flags);
-extern ssize_t recv(int fd, *void buf, size_t n, int flags);
-#endif
-extern uint16 htons(uint16 x);
-extern uint32 htonl(uint32 x);
-extern uint32 inet_addr(string dotted);
-extern size_t strlen(string s);
 
 // sockaddr_in — an exact 16-byte layout (hence `packed`). macOS leads with a
 // `sin_len` byte; Linux starts with a 2-byte `sin_family`. Selected at compile
@@ -284,7 +265,6 @@ void net_close(int fd) {
 // is also what a blocking recv/send returns once SO_RCVTIMEO / SO_SNDTIMEO runs
 // out; Winsock reports that as WSAETIMEDOUT.
 #ifdef _WIN32
-extern int WSAGetLastError();
 int _net_errno() {
     return WSAGetLastError();
 }
@@ -292,27 +272,13 @@ int _net_errno() {
 const int _NET_EAGAIN = 10035;   // WSAEWOULDBLOCK
 const int _NET_ETIMEDOUT = 10060;   // WSAETIMEDOUT
 #else
-#ifdef __APPLE__
-extern *int __error();
 int _net_errno() {
-    return *__error();
+    return _c_errno();
 }
 
+#ifdef __APPLE__
 const int _NET_EAGAIN = 35;     // EAGAIN == EWOULDBLOCK on macOS
 #else
-// errno's location: __errno() in Android's bionic, __errno_location() in glibc and musl.
-#ifdef __ANDROID__
-extern *int __errno();
-#ifndef __errno_location
-#define __errno_location __errno
-#endif
-#else
-extern *int __errno_location();
-#endif
-int _net_errno() {
-    return *__errno_location();
-}
-
 const int _NET_EAGAIN = 11;     // EAGAIN == EWOULDBLOCK on Linux
 #endif
 const int _NET_ETIMEDOUT = _NET_EAGAIN;
@@ -392,12 +358,10 @@ int64 net_deadline(int64 ms) {
 const int NET_TIMED_OUT = -3;
 
 // ── Readiness wait (blocking) ────────────────────────────────────────────────
-// poll() on one socket (WSAPoll on Windows). struct pollfd is { int fd; short
-// events; short revents; } on POSIX; WSAPOLLFD on x64 is { SOCKET fd; SHORT
-// events; SHORT revents; } padded to 16 bytes. nfds_t is macOS's unsigned int,
-// Linux's unsigned long; WSAPoll takes a ULONG.
+// poll() on one socket (WSAPoll on Windows, <c/poll>). struct pollfd is { int fd;
+// short events; short revents; } on POSIX; WSAPOLLFD on x64 is { SOCKET fd; SHORT
+// events; SHORT revents; } padded to 16 bytes.
 #ifdef _WIN32
-extern int WSAPoll(*void fdarray, int nfds, int timeout);
 packed struct _net_pollfd {
     int64 fd;
     int16 events;
@@ -407,9 +371,6 @@ packed struct _net_pollfd {
 
 const int _NET_POLLIN = 256;   // POLLRDNORM
 const int _NET_POLLOUT = 16;    // POLLWRNORM
-int _net_poll1(_net_pollfd* p, int timeout) {
-    return WSAPoll((*void)p, 1, timeout);
-}
 #else
 struct _net_pollfd {
     int fd;
@@ -420,17 +381,6 @@ struct _net_pollfd {
 const int _NET_POLLIN = 1;
 const int _NET_POLLOUT = 4;
 const int _NET_EINTR = 4;
-#ifdef __APPLE__
-extern int poll(*void fds, uint32 nfds, int timeout);
-int _net_poll1(_net_pollfd* p, int timeout) {
-    return poll((*void)p, (uint32)1, timeout);
-}
-#else
-extern int poll(*void fds, _net_long nfds, int timeout);
-int _net_poll1(_net_pollfd* p, int timeout) {
-    return poll((*void)p, (_net_long)1, timeout);
-}
-#endif
 #endif
 
 // Wait until socket `fd` is readable (mode 0) or writable (mode 1), by
@@ -455,7 +405,7 @@ int net_wait_ready(int fd, int mode, int64 deadline) {
 #endif
         p.events = (int16)(mode == 0 ? _NET_POLLIN : _NET_POLLOUT);
         p.revents = (int16)0;
-        const int r = _net_poll1(&p, timeout);
+        const int r = _c_poll((*void)&p, 1, timeout);
         if (r > 0) {
             return 0;
         }

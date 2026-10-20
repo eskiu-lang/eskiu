@@ -36,6 +36,11 @@
 // process_run fills every field of the result; free it with ProcessResult_free.
 
 import <ctypes>;
+import <c/stdlib>;
+import <c/unistd>;
+import <c/signal>;
+import <c/poll>;
+import <c/windows>;
 import <mem>;
 import <string>;
 import <list>;
@@ -105,12 +110,9 @@ void process_last_error(String* out) {
 #ifdef _WIN32
 extern int CreatePipe(**void rd, **void wr, *void sa, uint32 size);
 extern int SetHandleInformation(*void h, uint32 mask, uint32 flags);
-extern *void GetStdHandle(uint32 which);
 extern *void GetCurrentProcess();
 extern int DuplicateHandle(*void sp, *void h, *void tp, **void out, uint32 access, int inherit, uint32 opts);
-extern *void CreateFileW(*uint16 name, uint32 access, uint32 share, *void sa, uint32 disp, uint32 flags, *void tmpl);
 extern int CreateProcessW(*uint16 app, *uint16 cmd, *void pa, *void ta, int inherit, uint32 flags, *void env, *uint16 cwd, *void si, *void pi);
-extern int CloseHandle(*void h);
 extern int ReadFile(*void h, *void buf, uint32 n, *uint32 got, *void ov);
 extern int WriteFile(*void h, *void buf, uint32 n, *uint32 put, *void ov);
 extern uint32 WaitForSingleObject(*void h, uint32 ms);
@@ -121,8 +123,6 @@ extern *void CreateJobObjectW(*void sa, *uint16 name);
 extern int AssignProcessToJobObject(*void job, *void proc);
 extern int TerminateJobObject(*void job, uint32 code);
 extern uint32 ResumeThread(*void thread);
-extern uint32 GetLastError();
-extern void exit(int code);
 
 struct _proc_sa {
     uint32 n;
@@ -134,19 +134,8 @@ extern int fork();
 extern int execvp(string file, *string argv);
 extern int waitpid(int pid, *int status, int options);
 extern void _exit(int code);
-extern void exit(int code);
-extern int getpid();
-extern int dup2(int from, int to);
-extern int close(int fd);
-extern ssize_t read(int fd, *void buf, size_t n);
-extern ssize_t write(int fd, *void buf, size_t n);
-extern int open(string path, int flags, ...);
-extern int fcntl(int fd, int cmd, ...);
 extern int kill(int pid, int sig);
 extern int setpgid(int pid, int pgid);
-extern int isatty(int fd);
-extern *void signal(int sig, *void handler);
-extern int chdir(string path);
 
 struct _proc_pollfd {
     int fd;
@@ -154,14 +143,8 @@ struct _proc_pollfd {
     int16 revents;
 }
 
+// The environment block (environ, or _NSGetEnviron() on Apple) is declared in <env>.
 #ifdef __APPLE__
-extern int pipe(*int fds);
-extern int poll(*void fds, uint32 nfds, int timeout);
-extern **string _NSGetEnviron();
-int _proc_poll(*void fds, int n, int ms) {
-    return poll(fds, (uint32)n, ms);
-}
-
 void _proc_set_environ(*string e) {
     *_NSGetEnviron() = e;
 }
@@ -172,18 +155,6 @@ void _proc_set_environ(*string e) {
 #define _PROC_SIG_SETMASK 3
 #else
 extern int pipe2(*int fds, int flags);
-#if defined(__aarch64__) || defined(__x86_64__)
-extern int poll(*void fds, int64 nfds, int timeout);
-int _proc_poll(*void fds, int n, int ms) {
-    return poll(fds, (int64)n, ms);
-}
-#else
-extern int poll(*void fds, int32 nfds, int timeout);
-int _proc_poll(*void fds, int n, int ms) {
-    return poll(fds, (int32)n, ms);
-}
-#endif
-extern *string environ;
 void _proc_set_environ(*string e) {
     environ = e;
 }
@@ -943,7 +914,7 @@ int _proc_reap(Process* p, int64 deadline, *bool timed_out) {
                 *timed_out = true;
                 deadline = 0;
             } else {
-                _proc_poll(null, 0, 5);
+                _c_poll(null, 0, 5);
             }
         }
     }
@@ -1015,7 +986,7 @@ int _proc_run(List<string>* argv, ProcessOptions* o, ProcessResult* r) {
             const int64 left = deadline - time_monotonic_ms();
             wait_ms = left <= 0 ? 0 : (left > 1000000 ? 1000000 : (int)left);
         }
-        const int pr = _proc_poll((*void)&fds[0], nf, wait_ms);
+        const int pr = _c_poll((*void)&fds[0], nf, wait_ms);
         if (pr < 0) {
             if (_fs_errno_now() == _PROC_EINTR) {
                 continue;

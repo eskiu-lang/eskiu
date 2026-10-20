@@ -15,6 +15,8 @@
 //       EventLoop_run(lp);                       // blocks, dispatching callbacks
 //   }
 
+import <c/unistd>;   // close
+import <c/poll>;     // poll, WSAPoll
 import <mem>;
 import <time>;
 
@@ -64,8 +66,6 @@ struct EvNative {
     int64 data;
     *void udata;
 }
-
-extern int close(int fd);
 
 int _el_backend_new() {
     return kqueue();
@@ -137,7 +137,6 @@ int _el_wait(int kq, *EvNative evs, *int fds, int max, int64 timeout_ms) {
 // pollfd array each call. So the interest set lives in a user-space table, rebuilt in place by
 // _el_ctl and handed to WSAPoll by _el_wait. One event loop is assumed (a single global set).
 #pragma link("ws2_32")
-extern int WSAPoll(*void fdarray, int nfds, int timeout);
 
 // WSAPOLLFD: { SOCKET fd; SHORT events; SHORT revents; }. On x64 SOCKET is 8 bytes and forces
 // 8-byte alignment, so the record is 16 bytes: fd@0, events@8, revents@10, then 4 pad.
@@ -201,7 +200,7 @@ int _el_wait(int backend, *EvNative evs, *int fds, int max, int64 timeout_ms) {
     if (_el_wsa.n == 0) {                  // WSAPoll rejects a 0-length set
         return 0;
     }
-    int r = WSAPoll((*void)&_el_wsa.pfds[0], _el_wsa.n, (int)timeout_ms);
+    int r = _c_poll((*void)&_el_wsa.pfds[0], _el_wsa.n, (int)timeout_ms);
     if (r <= 0) {                          // 0 = timeout, <0 = error
         return 0;
     }
@@ -219,8 +218,7 @@ int _el_wait(int backend, *EvNative evs, *int fds, int max, int64 timeout_ms) {
 
 // poll is stateless like WSAPoll: the interest set is a user-space table handed to it on
 // each wait. struct pollfd is { int fd; short events; short revents; } (8 bytes).
-// nfds_t is a C unsigned long, 32 bits on wasm32 (as <net> and <process> spell it).
-extern int poll(*void fds, int32 nfds, int timeout);
+import <c/time>;   // usleep
 
 struct EvNative {
     int fd;
@@ -275,12 +273,10 @@ void _el_ctl(int backend, int fd, int mode, int wasActive) {
     _el_pset.pfds[idx].revents = 0;
 }
 
-extern int usleep(uint32 us);
-
 int _el_wait(int backend, *EvNative evs, *int fds, int max, int64 timeout_ms) {
     // emscripten's poll takes no timeout: check the descriptors without waiting, then
     // sleep until the nearest timer when none is ready (a wait with no timer returns).
-    int r = poll(_el_pset.n == 0 ? null : (*void)&_el_pset.pfds[0], (int32)_el_pset.n, 0);
+    int r = _c_poll(_el_pset.n == 0 ? null : (*void)&_el_pset.pfds[0], _el_pset.n, 0);
     if (r <= 0) {
         if (timeout_ms > 0) {
             usleep((uint32)(timeout_ms * 1000));
@@ -316,8 +312,6 @@ struct EvNative {
     uint64 data;
 }
 #endif
-
-extern int close(int fd);
 
 int _el_backend_new() {
     return epoll_create1(0);
