@@ -1,0 +1,28 @@
+// An Eskiu function with a va_list parameter called back from C through `(*void)f`:
+// its C-ABI thunk takes the va_list the way C passes it (an address on x86-64 System V
+// and AArch64 Linux, the `char*` elsewhere), so vsnprintf and va_arg read the C caller's
+// arguments.
+extern int printf(string fmt, ...);
+extern int vsnprintf(*char buf, int64 n, string fmt, va_list ap);
+extern int c_report(*void cb, *void ud);
+extern int c_sum(*void cb);
+
+int report(*void ud, string fmt, va_list ap) {
+    char[64] buf;
+    int n = vsnprintf(&buf[0], 64, fmt, ap);
+    printf("[%s] %s\n", (string)ud, (string)&buf[0]);
+    return n;
+}
+
+int sum(*void ud, string fmt, va_list ap) {
+    int count = va_arg<int>(ap);
+    int total = 0;
+    for (i in 0..count) total += va_arg<int>(ap);
+    return total;
+}
+
+int main() {
+    int n = c_report((*void)report, (*void)"tflite");
+    printf("%d %d\n", n, c_sum((*void)sum));
+    return 0;
+}

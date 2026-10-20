@@ -36,7 +36,7 @@ x86_64-apple-darwin x86_64-pc-windows-msvc x86_64-w64-windows-gnu
 armv7-none-linux-gnueabihf armv6k-none-eabihf armv7-none-linux-gnueabi
 i686-pc-linux-gnu i386-apple-darwin i686-w64-windows-gnu i686-pc-windows-msvc"
 X86_32="i686-pc-linux-gnu i386-apple-darwin i686-w64-windows-gnu i686-pc-windows-msvc"
-INPUTS="tests/c_abi_struct.esk tests/c_abi_callback.esk tests/c_abi_try.esk tests/c_abi_fnptr.esk tests/bitfield_c_layout.esk tests/c_abi_union.esk tests/c_abi_narrow.esk tests/c_abi_x86_32.esk tests/pack_nested_c.esk tests/pack_union_c.esk tests/bitfield_unnamed_c.esk"
+INPUTS="tests/c_abi_struct.esk tests/c_abi_callback.esk tests/c_abi_va_callback.esk tests/c_abi_try.esk tests/c_abi_fnptr.esk tests/bitfield_c_layout.esk tests/c_abi_union.esk tests/c_abi_narrow.esk tests/c_abi_x86_32.esk tests/pack_nested_c.esk tests/pack_union_c.esk tests/bitfield_unnamed_c.esk"
 
 # The lowered signatures in an IR file, one per line, sorted: `NAME<TAB>signature`. The C++
 # names a union's storage type `%U.union` and the self-host `%U`; only the spelling differs.
