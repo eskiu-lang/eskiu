@@ -1547,11 +1547,60 @@ void TypeChecker::checkVariadicArg(Expr* call, Expr* arg, size_t i) {
         errorAt(call, "argument " + std::to_string(i + 1) + " has type 'void' (a void call has no value)");
 }
 
-// The folded default values of function `fn`'s parameters (see paramDefaultCache). A
-// default is a literal or an integer constant expression over literals, enum members and
-// `const` globals, folded in the global scope (a caller's locals never rebind it), so
-// each call site gets a fresh literal. Errors are reported once, at the default.
-const std::vector<std::shared_ptr<LiteralExpr>>& TypeChecker::paramDefaultsOf(const std::string& fn) {
+// A parameter default folded to a constant: a literal, a negative float literal, an
+// integer constant expression over literals, enum members and `const` globals (folded in
+// the global scope, so a caller's locals never rebind it), or a struct literal whose
+// values are all of these (`V3 up = V3{0.0, 1.0, 0.0}`). Null when it is none of them.
+ExprPtr TypeChecker::foldParamDefault(Expr* def) {
+    if (auto* l = dynamic_cast<LiteralExpr*>(def)) return std::make_shared<LiteralExpr>(l->kind, l->value);
+    auto* u = dynamic_cast<UnaryExpr*>(def);
+    auto* ul = u && u->op == "-" ? dynamic_cast<LiteralExpr*>(u->operand.get()) : nullptr;
+    if (ul && ul->kind == LiteralExpr::Kind::FLOAT) return std::make_shared<LiteralExpr>(ul->kind, "-" + ul->value);
+    if (auto* si = dynamic_cast<StructInitExpr*>(def)) {
+        std::vector<std::pair<std::string, ExprPtr>> fields;
+        for (auto& f : si->fieldInits) {
+            ExprPtr v = f.second ? foldParamDefault(f.second.get()) : nullptr;
+            if (!v) return nullptr;
+            v->line = f.second->line;
+            v->col = f.second->col;
+            fields.emplace_back(f.first, v);
+        }
+        auto out = std::make_shared<StructInitExpr>(si->structName, std::move(fields));
+        out->line = si->line;
+        out->col = si->col;
+        return out;
+    }
+    long long v = 0;
+    globalLookupOnly = true;
+    bool ok = foldConstInt(def, v);
+    globalLookupOnly = false;
+    if (ok) return std::make_shared<LiteralExpr>(LiteralExpr::Kind::INT, std::to_string(v));
+    return nullptr;
+}
+
+namespace {
+// A fresh copy of a folded default (a literal, or a struct literal of them) at a call.
+ExprPtr cloneParamDefault(const Expr* d, int line, int col) {
+    ExprPtr out;
+    if (auto* l = dynamic_cast<const LiteralExpr*>(d)) {
+        out = std::make_shared<LiteralExpr>(l->kind, l->value);
+    } else if (auto* si = dynamic_cast<const StructInitExpr*>(d)) {
+        std::vector<std::pair<std::string, ExprPtr>> fields;
+        for (const auto& f : si->fieldInits) fields.emplace_back(f.first, cloneParamDefault(f.second.get(), line, col));
+        out = std::make_shared<StructInitExpr>(si->structName, std::move(fields));
+    }
+    if (out) {
+        out->line = line;
+        out->col = col;
+    }
+    return out;
+}
+}  // namespace
+
+// The folded default values of function `fn`'s parameters (see paramDefaultCache and
+// foldParamDefault); each call site gets a fresh copy. Errors are reported once, at the
+// default.
+const std::vector<ExprPtr>& TypeChecker::paramDefaultsOf(const std::string& fn) {
     auto cached = paramDefaultCache.find(fn);
     if (cached != paramDefaultCache.end()) return cached->second;
     auto& out = paramDefaultCache[fn];
@@ -1608,24 +1657,10 @@ const std::vector<std::shared_ptr<LiteralExpr>>& TypeChecker::paramDefaultsOf(co
             out.push_back(nullptr);
             continue;
         }
-        std::shared_ptr<LiteralExpr> lit;
-        auto* l = dynamic_cast<LiteralExpr*>(def);
-        auto* u = dynamic_cast<UnaryExpr*>(def);
-        auto* ul = u && u->op == "-" ? dynamic_cast<LiteralExpr*>(u->operand.get()) : nullptr;
-        long long v = 0;
-        if (l) {
-            lit = std::make_shared<LiteralExpr>(l->kind, l->value);
-        } else if (ul && ul->kind == LiteralExpr::Kind::FLOAT) {
-            lit = std::make_shared<LiteralExpr>(ul->kind, "-" + ul->value);
-        } else {
-            globalLookupOnly = true;
-            bool ok = foldConstInt(def, v);
-            globalLookupOnly = false;
-            if (ok) lit = std::make_shared<LiteralExpr>(LiteralExpr::Kind::INT, std::to_string(v));
-        }
+        ExprPtr lit = foldParamDefault(def);
         if (!lit) {
             errorAt(def, "default value of parameter '" + pname +
-                         "' is not a constant (a literal or an integer constant expression)");
+                         "' is not a constant (a literal, an integer constant expression or a struct literal of those)");
             out.push_back(nullptr);
             continue;
         }
@@ -1663,12 +1698,7 @@ void TypeChecker::appendDefaultArgs(std::vector<ExprPtr>& args, size_t given, co
     if (given >= defs.size()) return;
     for (size_t i = given; i < defs.size(); ++i)
         if (!defs[i]) return;
-    for (size_t i = given; i < defs.size(); ++i) {
-        auto lit = std::make_shared<LiteralExpr>(defs[i]->kind, defs[i]->value);
-        lit->line = at->line;
-        lit->col = at->col;
-        args.push_back(lit);
-    }
+    for (size_t i = given; i < defs.size(); ++i) args.push_back(cloneParamDefault(defs[i].get(), at->line, at->col));
 }
 
 void TypeChecker::checkCallArgs(CallExpr* node, const std::string& what,

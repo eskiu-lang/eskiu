@@ -166,9 +166,10 @@ public:
     // folded default values of its parameters (parallel to the call's parameters, the
     // implicit `self` of an inline method included; null = none), built on first use.
     std::map<std::string, std::vector<const FunctionDecl*>> fnDeclsAll;
-    std::map<std::string, std::vector<std::shared_ptr<LiteralExpr>>> paramDefaultCache;
+    std::map<std::string, std::vector<ExprPtr>> paramDefaultCache;
     bool globalLookupOnly = false;
-    const std::vector<std::shared_ptr<LiteralExpr>>& paramDefaultsOf(const std::string& fn);
+    const std::vector<ExprPtr>& paramDefaultsOf(const std::string& fn);
+    ExprPtr foldParamDefault(Expr* def);
     void fillDefaultArgs(CallExpr* node, const std::string& method);
     void appendDefaultArgs(std::vector<ExprPtr>& args, size_t given, const std::string& fn, const Expr* at);
     // Struct field definitions, keyed "Struct.field".
