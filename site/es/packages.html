@@ -46,10 +46,10 @@ eskiuc run</code></pre>
       <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/gpu/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/gpu/actions/workflows/ci.yml/badge.svg" alt="Estado de CI: gpu" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/gpu">github.com/eskiu-lang/gpu</a></div>
       <p><strong>Cómputo en GPU, renderizado, modelos 3D y machine learning para Eskiu, sobre WebGPU.</strong></p>
       <p>Una sola API corre sobre Metal (macOS), Vulkan (Linux) y DirectX 12 (Windows) a través de wgpu-native, con shaders en WGSL. Dibuja modelos glTF y OBJ con sombreado físico (PBR), corre modelos Llama desde archivos GGUF o safetensors (Llama 2 7B Q4_0 a 45 tokens por segundo en un M4 Pro; llama.cpp da 58 en la misma máquina) y entrena redes pequeñas (97% de precisión en MNIST).</p>
-      <p class="note">Necesita wgpu-native 29, y SDL3 para abrir ventanas: <code>brew install wgpu-native sdl3</code> en macOS, los archivos de cada release en Linux y Windows.</p>
+      <p class="note">El primer build descarga wgpu-native 29 por ti. Las ventanas (el módulo <code>&lt;gpu/window&gt;</code>) también necesitan SDL3 del sistema: <code>brew install sdl3</code> en macOS, y compilar con <code>-L/opt/homebrew/lib</code>.</p>
       <h3>Instalación</h3>
       <pre><code>eskiuc add gpu --git https://github.com/eskiu-lang/gpu --rev v0.1.0
-eskiuc build -L/opt/homebrew/lib</code></pre>
+eskiuc build</code></pre>
       <details class="pkg-example"><summary>Ejemplo del README</summary>
       <pre><code>Gltf data = model_load("helmet.glb")?;   <span class="c">// or a .gltf, or an .obj</span>
 defer data.free();
@@ -70,10 +70,10 @@ pass.end()?;</code></pre>
       <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/onnx/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/onnx/actions/workflows/ci.yml/badge.svg" alt="Estado de CI: onnx" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/onnx">github.com/eskiu-lang/onnx</a></div>
       <p><strong>Inferencia de modelos ONNX para Eskiu, sobre ONNX Runtime.</strong></p>
       <p>Un modelo exportado desde PyTorch, TensorFlow o scikit-learn corre en el CPU en cualquier sistema, y en CoreML, CUDA, DirectML o WebGPU cuando el build de ONNX Runtime los trae. Un nombre, tipo o shape de entrada equivocado regresa como mensaje de error.</p>
-      <p class="note">Necesita ONNX Runtime 1.31 o más nuevo: <code>brew install onnxruntime</code> en macOS, los archivos de cada release en Linux y Windows.</p>
+      <p class="note">Nada que instalar: el primer build descarga ONNX Runtime 1.31 (macOS arm64, Linux y Windows).</p>
       <h3>Instalación</h3>
       <pre><code>eskiuc add onnx --git https://github.com/eskiu-lang/onnx --rev v0.1.0
-eskiuc build -L/opt/homebrew/lib</code></pre>
+eskiuc build</code></pre>
       <details class="pkg-example"><summary>Ejemplo del README</summary>
       <pre><code>import &lt;io&gt;;
 import &lt;onnx&gt;;
@@ -101,12 +101,10 @@ if (!r.ok) printf("error: %s\n", r.error);</code></pre>
       <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/tflite/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/tflite/actions/workflows/ci.yml/badge.svg" alt="Estado de CI: tflite" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/tflite">github.com/eskiu-lang/tflite</a></div>
       <p><strong>Inferencia de modelos de TensorFlow Lite para Eskiu.</strong></p>
       <p>Un modelo <code>.tflite</code> convertido desde TensorFlow, Keras, JAX o PyTorch corre en el CPU con XNNPACK, y en la GPU con el delegado de Metal (macOS) o el de OpenCL/OpenGL (Linux). Las entradas y salidas cuantizadas se convierten solas.</p>
-      <p class="note">Necesita <code>libtensorflowlite_c</code> 2.21, que Google no publica para escritorio; el script <code>tools/get_tflite.sh</code> del paquete descarga un build para tu plataforma.</p>
+      <p class="note">Nada que instalar en macOS y Linux: el primer build descarga <code>libtensorflowlite_c</code> 2.21, que Google no publica para escritorio. En Windows lo baja el script <code>tools/get_tflite.sh</code> del paquete.</p>
       <h3>Instalación</h3>
-      <pre><code>curl -fsSL https://raw.githubusercontent.com/eskiu-lang/tflite/v0.1.0/tools/get_tflite.sh | sh -s -- ~/tflite
-export TFL=~/tflite
-eskiuc add tflite --git https://github.com/eskiu-lang/tflite --rev v0.1.0
-eskiuc build -L$TFL/lib --link-arg=-Wl,-rpath,$TFL/lib</code></pre>
+      <pre><code>eskiuc add tflite --git https://github.com/eskiu-lang/tflite --rev v0.1.0
+eskiuc build</code></pre>
       <details class="pkg-example"><summary>Ejemplo del README</summary>
       <pre><code>import &lt;io&gt;;
 import &lt;tflite&gt;;

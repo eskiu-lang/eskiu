@@ -1330,6 +1330,30 @@ A stdlib module keeps its name: `import <io>;` is always the stdlib one. An impo
 names neither a stdlib module nor a package in the lock is an error:
 `unknown package 'x' (not in eskiu.toml)`.
 
+### Native libraries
+
+A package that binds a C library can ship it: a `[native.NAME]` table lists one prebuilt
+archive per platform, with its SHA-256 and the directory inside it that holds the
+libraries.
+
+```toml
+[native.onnxruntime]
+macos-arm64  = { url = "https://github.com/microsoft/onnxruntime/releases/download/v1.31.0/onnxruntime-osx-arm64-1.31.0.tgz",
+                 sha256 = "1031b36d...", lib = "onnxruntime-osx-arm64-1.31.0/lib" }
+linux-x86_64 = { url = "...", sha256 = "...", lib = "onnxruntime-linux-x64-1.31.0/lib" }
+```
+
+The platforms are `macos-arm64`, `macos-x86_64`, `linux-x86_64`, `linux-arm64`,
+`windows-x86_64` and `windows-arm64`; `lib` defaults to `lib`. `eskiuc build`, `run`,
+`test`, `add` and `fetch` download the archive of the machine they run on with `curl`,
+refuse it when its SHA-256 differs, and unpack it (`tar`, or `unzip` for a `.zip` on Linux)
+into `~/.eskiu/native/SHA256`, once. A build for this machine inside the package, by those
+commands or by `eskiuc file.esk`, then links against that directory and records it as the
+program's run-time path; on Windows its DLLs are copied next to the program. The library is
+still named by the package's `#pragma link`. A platform the table leaves out links the
+library from the system, as before; a cross build (`--target`) never uses these archives.
+Only the C++ `eskiuc` reads the table.
+
 The [eskiu-lang](https://github.com/eskiu-lang) organization publishes packages that are
 added this way: [gpu](https://github.com/eskiu-lang/gpu) (WebGPU compute, 3D and machine learning),
 [onnx](https://github.com/eskiu-lang/onnx), [tflite](https://github.com/eskiu-lang/tflite),

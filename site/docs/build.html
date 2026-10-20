@@ -426,6 +426,10 @@ util    path   /home/me/util
 </code></pre>
 <p>The <code>root</code> line is the package itself, so <code>import &lt;myapp/helper&gt;;</code> finds its own
 <code>src/helper.esk</code>. Both compilers read this file to resolve package imports.</p>
+<p>A package's prebuilt native libraries (<code>[native.NAME]</code>, see
+<a href="getting-started.html#native-libraries">getting started</a>) are downloaded with <code>curl</code> into
+<code>~/.eskiu/native/SHA256</code> and checked against their SHA-256; a host build in the package
+links them with no <code>-L</code>. The lock does not list them: the manifest's SHA-256 names each one.</p>
 <h2 id="running-tests">Running Tests</h2>
 <p>The automated suite is driven by <code>tests/run.sh</code>, which compiles, links, and runs every
 <code>tests/*.esk</code> case (matching stdout against <code>*.expected</code>, smoke-running the rest, and

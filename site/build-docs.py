@@ -439,12 +439,16 @@ PACKAGES_CATALOG = [
                    "sombreado físico (PBR), corre modelos Llama desde archivos GGUF o safetensors "
                    "(Llama 2 7B Q4_0 a 45 tokens por segundo en un M4 Pro; llama.cpp da 58 en la "
                    "misma máquina) y entrena redes pequeñas (97% de precisión en MNIST).",
-        "needs_en": "Needs wgpu-native 29, and SDL3 for windows: <code>brew install wgpu-native sdl3</code> "
-                    "on macOS, the release archives on Linux and Windows.",
-        "needs_es": "Necesita wgpu-native 29, y SDL3 para abrir ventanas: <code>brew install wgpu-native sdl3</code> "
-                    "en macOS, los archivos de cada release en Linux y Windows.",
+        "needs_en": "The first build downloads wgpu-native 29 for you. Opening a window "
+                    "(<code>&lt;gpu/window&gt;</code>) also needs SDL3 from the system: "
+                    "<code>brew install sdl3</code> on macOS, then build with "
+                    "<code>-L/opt/homebrew/lib</code>.",
+        "needs_es": "El primer build descarga wgpu-native 29 por ti. Las ventanas (el módulo "
+                    "<code>&lt;gpu/window&gt;</code>) también necesitan SDL3 del sistema: "
+                    "<code>brew install sdl3</code> en macOS, y compilar con "
+                    "<code>-L/opt/homebrew/lib</code>.",
         "setup": [],
-        "build": ["eskiuc build -L/opt/homebrew/lib"],
+        "build": ["eskiuc build"],
     },
     {
         "name": "onnx",
@@ -457,12 +461,12 @@ PACKAGES_CATALOG = [
                    "cualquier sistema, y en CoreML, CUDA, DirectML o WebGPU cuando el build de ONNX "
                    "Runtime los trae. Un nombre, tipo o shape de entrada equivocado regresa como "
                    "mensaje de error.",
-        "needs_en": "Needs ONNX Runtime 1.31 or newer: <code>brew install onnxruntime</code> on macOS, "
-                    "the release archives on Linux and Windows.",
-        "needs_es": "Necesita ONNX Runtime 1.31 o más nuevo: <code>brew install onnxruntime</code> en "
-                    "macOS, los archivos de cada release en Linux y Windows.",
+        "needs_en": "Nothing to install: the first build downloads ONNX Runtime 1.31 (macOS arm64, "
+                    "Linux and Windows).",
+        "needs_es": "Nada que instalar: el primer build descarga ONNX Runtime 1.31 (macOS arm64, "
+                    "Linux y Windows).",
         "setup": [],
-        "build": ["eskiuc build -L/opt/homebrew/lib"],
+        "build": ["eskiuc build"],
     },
     {
         "name": "tflite",
@@ -474,15 +478,14 @@ PACKAGES_CATALOG = [
         "note_es": "Un modelo <code>.tflite</code> convertido desde TensorFlow, Keras, JAX o PyTorch "
                    "corre en el CPU con XNNPACK, y en la GPU con el delegado de Metal (macOS) o el de "
                    "OpenCL/OpenGL (Linux). Las entradas y salidas cuantizadas se convierten solas.",
-        "needs_en": "Needs <code>libtensorflowlite_c</code> 2.21, which Google does not publish for "
-                    "desktops; the package's <code>tools/get_tflite.sh</code> downloads a build for "
-                    "your platform.",
-        "needs_es": "Necesita <code>libtensorflowlite_c</code> 2.21, que Google no publica para "
-                    "escritorio; el script <code>tools/get_tflite.sh</code> del paquete descarga un "
-                    "build para tu plataforma.",
-        "setup": ["curl -fsSL https://raw.githubusercontent.com/eskiu-lang/tflite/v0.1.0/tools/get_tflite.sh | sh -s -- ~/tflite",
-                  "export TFL=~/tflite"],
-        "build": ["eskiuc build -L$TFL/lib --link-arg=-Wl,-rpath,$TFL/lib"],
+        "needs_en": "Nothing to install on macOS and Linux: the first build downloads "
+                    "<code>libtensorflowlite_c</code> 2.21, which Google does not publish for desktops. "
+                    "On Windows the package's <code>tools/get_tflite.sh</code> fetches it.",
+        "needs_es": "Nada que instalar en macOS y Linux: el primer build descarga "
+                    "<code>libtensorflowlite_c</code> 2.21, que Google no publica para escritorio. "
+                    "En Windows lo baja el script <code>tools/get_tflite.sh</code> del paquete.",
+        "setup": [],
+        "build": ["eskiuc build"],
     },
     {
         "name": "compress",

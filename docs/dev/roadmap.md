@@ -52,13 +52,9 @@ first-class in the language without giving up general systems use.
   the WebAssembly exception-handling instructions (`-fwasm-exceptions`) would avoid it and
   bring exceptions to WASI. That needs a second lowering of `try` (funclet pads instead of
   `landingpad`) in both compilers.
-- **Native libraries in packages.** A package that links a native library (such as `gpu`
-  with wgpu-native and SDL3, or an ONNX Runtime binding) needs it installed by hand today
-  (`brew install`, a release archive) and its directory given as `eskiuc build -L...`;
-  `eskiuc run` inside a package passes its arguments to the program, so it cannot take one.
-  The manifest should declare the prebuilt library per platform (URL and sha256), so that
-  `eskiuc fetch` downloads and verifies it into the package cache, and the link directory
-  and run-time path are set by `eskiuc build` and `eskiuc run` with no flags.
+- **Native libraries beyond the host.** A package's `[native.NAME]` archives cover a build
+  for the machine eskiuc runs on, with the C++ compiler. Cross builds (an Android `.so`,
+  an iOS xcframework) and the self-hosted compiler still take `-L`.
 
 ## Next: 1.0
 

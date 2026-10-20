@@ -293,6 +293,11 @@ util    path   /home/me/util
 The `root` line is the package itself, so `import <myapp/helper>;` finds its own
 `src/helper.esk`. Both compilers read this file to resolve package imports.
 
+A package's prebuilt native libraries (`[native.NAME]`, see
+[getting started](getting-started.md#native-libraries)) are downloaded with `curl` into
+`~/.eskiu/native/SHA256` and checked against their SHA-256; a host build in the package
+links them with no `-L`. The lock does not list them: the manifest's SHA-256 names each one.
+
 ## Running Tests
 
 The automated suite is driven by `tests/run.sh`, which compiles, links, and runs every
