@@ -28,7 +28,7 @@ int sum(int* p, int n) {
     return s;
 }
 
-int stat() {
+int stat_cell() {
     static int[3000] st = {6};
     st[2999] = st[2999] + 1;
     return st[0] + st[2999];
@@ -44,8 +44,8 @@ int main(int argc, string* argv) {
     printf("struct: %d %d %d\n", b.tag, (int)b.vals[0], (int)b.vals[999]);
     printf("globals: %d %d %d %d\n", g1[1] + g1[1999], g2[1][1] + g2[39][1999], sum(&g2[0][0], 80000), (int)gb.vals[1] + gb.tag);
     printf("extern: %d\n", use_ge());
-    stat();
-    printf("static: %d\n", stat());
+    stat_cell();
+    printf("static: %d\n", stat_cell());
     if (argc > 5) { printf("%d\n", never()); }
     return 0;
 }
