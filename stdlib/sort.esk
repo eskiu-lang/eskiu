@@ -10,47 +10,531 @@
 // when x sorts after y (the C qsort/bsearch convention). It works on List<T>
 // data too: pass the list's `.data` pointer and `.size`.
 //
-// The algorithm is heapsort: in place, no extra allocation, and a guaranteed
-// O(n log n) worst case (no quicksort pathological input). It is not stable.
+// sort<T>, sort_partial<T> and sort_nth<T> are std::sort, std::partial_sort and
+// std::nth_element as libc++ implements them (LLVM 19+, the library of Xcode and
+// Emscripten), with the comparator cmp(x, y) < 0: introsort, so O(n log n) in the
+// worst case, in place and not stable. Elements cmp calls equal end up in the order the
+// C++ calls leave them in, so code ported from C++ sorts the same way, ties included.
 
 import <list>;   // List_sort_by
 
-// Restore the max-heap property at `root` within the first `n` elements.
-void _heap_sift<T>(*T a, int root, int n, fn(*T, *T)->int cmp) {
+void _srt_swap<T>(*T a, int i, int j) {
+    T t = a[i];
+    a[i] = a[j];
+    a[j] = t;
+}
+
+bool _srt_sort3<T>(*T a, int x, int y, int z, fn(*T, *T)->bool c) {
+    if (!c(&a[y], &a[x])) {
+        if (!c(&a[z], &a[y])) return false;
+        _srt_swap<T>(a, y, z);
+        if (c(&a[y], &a[x])) _srt_swap<T>(a, x, y);
+        return true;
+    }
+    if (c(&a[z], &a[y])) {
+        _srt_swap<T>(a, x, z);
+        return true;
+    }
+    _srt_swap<T>(a, x, y);
+    if (c(&a[z], &a[y])) _srt_swap<T>(a, y, z);
+    return true;
+}
+
+void _srt_sort4<T>(*T a, int x1, int x2, int x3, int x4, fn(*T, *T)->bool c) {
+    _srt_sort3<T>(a, x1, x2, x3, c);
+    if (c(&a[x4], &a[x3])) {
+        _srt_swap<T>(a, x3, x4);
+        if (c(&a[x3], &a[x2])) {
+            _srt_swap<T>(a, x2, x3);
+            if (c(&a[x2], &a[x1])) _srt_swap<T>(a, x1, x2);
+        }
+    }
+}
+
+void _srt_sort5<T>(*T a, int x1, int x2, int x3, int x4, int x5, fn(*T, *T)->bool c) {
+    _srt_sort4<T>(a, x1, x2, x3, x4, c);
+    if (c(&a[x5], &a[x4])) {
+        _srt_swap<T>(a, x4, x5);
+        if (c(&a[x4], &a[x3])) {
+            _srt_swap<T>(a, x3, x4);
+            if (c(&a[x3], &a[x2])) {
+                _srt_swap<T>(a, x2, x3);
+                if (c(&a[x2], &a[x1])) _srt_swap<T>(a, x1, x2);
+            }
+        }
+    }
+}
+
+void _srt_insertion_sort<T>(*T a, int first, int last, fn(*T, *T)->bool c) {
+    if (first == last) return;
+    for (i in first + 1..last) {
+        int j = i - 1;
+        if (c(&a[i], &a[j])) {
+            T t = a[i];
+            int k = j;
+            j = i;
+            while (true) {
+                a[j] = a[k];
+                j = k;
+                if (j == first) break;
+                k--;
+                if (!c(&t, &a[k])) break;
+            }
+            a[j] = t;
+        }
+    }
+}
+
+void _srt_insertion_sort_unguarded<T>(*T a, int first, int last, fn(*T, *T)->bool c) {
+    if (first == last) return;
+    for (i in first + 1..last) {
+        int j = i - 1;
+        if (c(&a[i], &a[j])) {
+            T t = a[i];
+            int k = j;
+            j = i;
+            while (true) {
+                a[j] = a[k];
+                j = k;
+                k--;
+                if (!c(&t, &a[k])) break;
+            }
+            a[j] = t;
+        }
+    }
+}
+
+bool _srt_insertion_sort_incomplete<T>(*T a, int first, int last, fn(*T, *T)->bool c) {
+    int len = last - first;
+    if (len < 2) return true;
+    if (len == 2) {
+        if (c(&a[last - 1], &a[first])) _srt_swap<T>(a, first, last - 1);
+        return true;
+    }
+    if (len == 3) {
+        _srt_sort3<T>(a, first, first + 1, last - 1, c);
+        return true;
+    }
+    if (len == 4) {
+        _srt_sort4<T>(a, first, first + 1, first + 2, last - 1, c);
+        return true;
+    }
+    if (len == 5) {
+        _srt_sort5<T>(a, first, first + 1, first + 2, first + 3, last - 1, c);
+        return true;
+    }
+    int j = first + 2;
+    _srt_sort3<T>(a, first, first + 1, j, c);
+    int count = 0;
+    int i = j + 1;
+    while (i != last) {
+        if (c(&a[i], &a[j])) {
+            T t = a[i];
+            int k = j;
+            j = i;
+            while (true) {
+                a[j] = a[k];
+                j = k;
+                if (j == first) break;
+                k--;
+                if (!c(&t, &a[k])) break;
+            }
+            a[j] = t;
+            count++;
+            if (count == 8) {
+                i++;
+                return i == last;
+            }
+        }
+        j = i;
+        i++;
+    }
+    return true;
+}
+
+// Returns the pivot position; *already says whether the range was already partitioned.
+int _srt_partition_right<T>(*T a, int first, int last, fn(*T, *T)->bool c, *bool already) {
+    int begin = first;
+    T pivot = a[first];
+    first++;
+    while (c(&a[first], &pivot)) first++;
+    if (begin == first - 1) {
+        while (first < last) {
+            last--;
+            if (c(&a[last], &pivot)) break;
+        }
+    } else {
+        last--;
+        while (!c(&a[last], &pivot)) last--;
+    }
+    *already = first >= last;
+    while (first < last) {
+        _srt_swap<T>(a, first, last);
+        first++;
+        while (c(&a[first], &pivot)) first++;
+        last--;
+        while (!c(&a[last], &pivot)) last--;
+    }
+    int pivot_pos = first - 1;
+    if (begin != pivot_pos) a[begin] = a[pivot_pos];
+    a[pivot_pos] = pivot;
+    return pivot_pos;
+}
+
+int _srt_partition_left<T>(*T a, int first, int last, fn(*T, *T)->bool c) {
+    int begin = first;
+    T pivot = a[first];
+    if (c(&pivot, &a[last - 1])) {
+        first++;
+        while (!c(&pivot, &a[first])) first++;
+    } else {
+        while (true) {
+            first++;
+            if (first >= last) break;
+            if (c(&pivot, &a[first])) break;
+        }
+    }
+    if (first < last) {
+        last--;
+        while (c(&pivot, &a[last])) last--;
+    }
+    while (first < last) {
+        _srt_swap<T>(a, first, last);
+        first++;
+        while (!c(&pivot, &a[first])) first++;
+        last--;
+        while (c(&pivot, &a[last])) last--;
+    }
+    int pivot_pos = first - 1;
+    if (begin != pivot_pos) a[begin] = a[pivot_pos];
+    a[pivot_pos] = pivot;
+    return first;
+}
+
+// Heaps, as libc++ builds them for a non-arithmetic element type.
+
+void _srt_sift_down<T>(*T f, int len, int start, fn(*T, *T)->bool c) {
+    int child = start;
+    if (len < 2 || (len - 2) / 2 < child) return;
+    child = 2 * child + 1;
+    if (child + 1 < len && c(&f[child], &f[child + 1])) child++;
+    if (c(&f[child], &f[start])) return;
+    T top = f[start];
     while (true) {
-        int child = 2 * root + 1;
-        if (child >= n) {
+        f[start] = f[child];
+        start = child;
+        if ((len - 2) / 2 < child) break;
+        child = 2 * child + 1;
+        if (child + 1 < len && c(&f[child], &f[child + 1])) child++;
+        if (c(&f[child], &top)) break;
+    }
+    f[start] = top;
+}
+
+int _srt_floyd_sift_down<T>(*T f, int len, fn(*T, *T)->bool c) {
+    int hole = 0;
+    int child = 0;
+    while (true) {
+        child = 2 * child + 1;
+        if (child + 1 < len && c(&f[child], &f[child + 1])) child++;
+        f[hole] = f[child];
+        hole = child;
+        if (child > (len - 2) / 2) return hole;
+    }
+    return hole;
+}
+
+void _srt_sift_up<T>(*T f, int last, int len, fn(*T, *T)->bool c) {
+    if (len <= 1) return;
+    len = (len - 2) / 2;
+    int ptr = len;
+    last--;
+    if (c(&f[ptr], &f[last])) {
+        T t = f[last];
+        while (true) {
+            f[last] = f[ptr];
+            last = ptr;
+            if (len == 0) break;
+            len = (len - 1) / 2;
+            ptr = len;
+            if (!c(&f[ptr], &t)) break;
+        }
+        f[last] = t;
+    }
+}
+
+void _srt_pop_heap<T>(*T f, int last, int len, fn(*T, *T)->bool c) {
+    if (len <= 1) return;
+    T top = f[0];
+    int hole = _srt_floyd_sift_down<T>(f, len, c);
+    last--;
+    if (hole == last) {
+        f[hole] = top;
+    } else {
+        f[hole] = f[last];
+        hole++;
+        f[last] = top;
+        _srt_sift_up<T>(f, hole, hole, c);
+    }
+}
+
+void _srt_make_heap<T>(*T f, int n, fn(*T, *T)->bool c) {
+    if (n > 1) {
+        int start = (n - 2) / 2;
+        while (start >= 0) {
+            _srt_sift_down<T>(f, n, start, c);
+            start--;
+        }
+    }
+}
+
+void _srt_sort_heap<T>(*T f, int n, fn(*T, *T)->bool c) {
+    int last = n;
+    int nn = n;
+    while (nn > 1) {
+        _srt_pop_heap<T>(f, last, nn, c);
+        last--;
+        nn--;
+    }
+}
+
+void _srt_partial_sort<T>(*T a, int first, int middle, int last, fn(*T, *T)->bool c) {
+    if (first == middle) return;
+    *T f = a + first;
+    int len = middle - first;
+    _srt_make_heap<T>(f, len, c);
+    for (i in middle..last) {
+        if (c(&a[i], &f[0])) {
+            _srt_swap<T>(a, i, first);
+            _srt_sift_down<T>(f, len, 0, c);
+        }
+    }
+    _srt_sort_heap<T>(f, len, c);
+}
+
+void _srt_introsort<T>(*T a, int first, int last, fn(*T, *T)->bool c, int depth, bool leftmost) {
+    while (true) {
+        int len = last - first;
+        if (len < 2) return;
+        if (len == 2) {
+            if (c(&a[last - 1], &a[first])) _srt_swap<T>(a, first, last - 1);
             return;
         }
-        if (child + 1 < n && cmp(&a[child], &a[child + 1]) < 0) {
-            child++;
-        }
-        if (cmp(&a[root], &a[child]) >= 0) {
+        if (len == 3) {
+            _srt_sort3<T>(a, first, first + 1, last - 1, c);
             return;
         }
-        const T tmp = a[root];
-        a[root] = a[child];
-        a[child] = tmp;
-        root = child;
+        if (len == 4) {
+            _srt_sort4<T>(a, first, first + 1, first + 2, last - 1, c);
+            return;
+        }
+        if (len == 5) {
+            _srt_sort5<T>(a, first, first + 1, first + 2, first + 3, last - 1, c);
+            return;
+        }
+        if (len < 24) {
+            if (leftmost) _srt_insertion_sort<T>(a, first, last, c);
+            else _srt_insertion_sort_unguarded<T>(a, first, last, c);
+            return;
+        }
+        if (depth == 0) {
+            _srt_partial_sort<T>(a, first, last, last, c);
+            return;
+        }
+        depth--;
+        int half = len / 2;
+        if (len > 128) {
+            _srt_sort3<T>(a, first, first + half, last - 1, c);
+            _srt_sort3<T>(a, first + 1, first + (half - 1), last - 2, c);
+            _srt_sort3<T>(a, first + 2, first + (half + 1), last - 3, c);
+            _srt_sort3<T>(a, first + (half - 1), first + half, first + (half + 1), c);
+            _srt_swap<T>(a, first, first + half);
+        } else {
+            _srt_sort3<T>(a, first + half, first, last - 1, c);
+        }
+        if (!leftmost && !c(&a[first - 1], &a[first])) {
+            first = _srt_partition_left<T>(a, first, last, c);
+            continue;
+        }
+        bool already = false;
+        int i = _srt_partition_right<T>(a, first, last, c, &already);
+        if (already) {
+            bool fs = _srt_insertion_sort_incomplete<T>(a, first, i, c);
+            if (_srt_insertion_sort_incomplete<T>(a, i + 1, last, c)) {
+                if (fs) return;
+                last = i;
+                continue;
+            } else {
+                if (fs) {
+                    first = i + 1;
+                    continue;
+                }
+            }
+        }
+        _srt_introsort<T>(a, first, i, c, depth, leftmost);
+        leftmost = false;
+        first = i + 1;
+    }
+}
+
+void _srt_sort<T>(*T a, int n, fn(*T, *T)->bool c) {
+    if (n <= 0) return;
+    int lg = 0;
+    uint64 u = (uint64)n;
+    while (u > (uint64)1) {
+        u = u >> 1;
+        lg++;
+    }
+    _srt_introsort<T>(a, 0, n, c, 2 * lg, true);
+}
+
+void _srt_selection_sort<T>(*T a, int first, int last, fn(*T, *T)->bool c) {
+    int lm1 = last - 1;
+    while (first != lm1) {
+        int m = first;
+        for (j in first + 1..last) {
+            if (c(&a[j], &a[m])) m = j;
+        }
+        if (m != first) _srt_swap<T>(a, first, m);
+        first++;
+    }
+}
+
+void _srt_nth_element<T>(*T a, int first, int nth, int last, fn(*T, *T)->bool c) {
+    while (true) {
+        if (nth == last) return;
+        int len = last - first;
+        if (len < 2) return;
+        if (len == 2) {
+            if (c(&a[last - 1], &a[first])) _srt_swap<T>(a, first, last - 1);
+            return;
+        }
+        if (len == 3) {
+            _srt_sort3<T>(a, first, first + 1, last - 1, c);
+            return;
+        }
+        if (len <= 7) {
+            _srt_selection_sort<T>(a, first, last, c);
+            return;
+        }
+        int m = first + len / 2;
+        int lm1 = last - 1;
+        int n_swaps = _srt_sort3<T>(a, first, m, lm1, c) ? 1 : 0;
+        int i = first;
+        int j = lm1;
+        bool equal_first = !c(&a[i], &a[m]);
+        bool guarded = false;
+        if (equal_first) {
+            // Find a guard for the downward-moving j.
+            bool found = false;
+            while (true) {
+                j--;
+                if (i == j) break;
+                if (c(&a[j], &a[m])) {
+                    found = true;
+                    break;
+                }
+            }
+            if (found) {
+                _srt_swap<T>(a, i, j);
+                n_swaps++;
+                guarded = true;
+            } else {
+                i++;
+                j = last;
+                j--;
+                if (!c(&a[first], &a[j])) {
+                    while (true) {
+                        if (i == j) return;
+                        if (c(&a[first], &a[i])) {
+                            _srt_swap<T>(a, i, j);
+                            n_swaps++;
+                            i++;
+                            break;
+                        }
+                        i++;
+                    }
+                }
+                if (i == j) return;
+                while (true) {
+                    while (!c(&a[first], &a[i])) i++;
+                    j--;
+                    while (c(&a[first], &a[j])) j--;
+                    if (i >= j) break;
+                    _srt_swap<T>(a, i, j);
+                    n_swaps++;
+                    i++;
+                }
+                if (nth < i) return;
+                first = i;
+                continue;
+            }
+        }
+        i++;
+        if (i < j) {
+            while (true) {
+                while (c(&a[i], &a[m])) i++;
+                j--;
+                while (!c(&a[j], &a[m])) j--;
+                if (i >= j) break;
+                _srt_swap<T>(a, i, j);
+                n_swaps++;
+                if (m == i) m = j;
+                i++;
+            }
+        }
+        if (i != m && c(&a[m], &a[i])) {
+            _srt_swap<T>(a, i, m);
+            n_swaps++;
+        }
+        if (nth == i) return;
+        if (n_swaps == 0) {
+            if (nth < i) {
+                m = first;
+                j = first;
+                while (true) {
+                    j++;
+                    if (j == i) return;
+                    if (c(&a[j], &a[m])) break;
+                    m = j;
+                }
+            } else {
+                m = i;
+                j = i;
+                while (true) {
+                    j++;
+                    if (j == last) return;
+                    if (c(&a[j], &a[m])) break;
+                    m = j;
+                }
+            }
+        }
+        if (nth < i) last = i;
+        else first = i + 1;
     }
 }
 
 // Sort the first `n` elements of `a` ascending by `cmp`.
 void sort<T>(*T a, int n, fn(*T, *T)->int cmp) {
-    if (n < 2) {
+    _srt_sort<T>(a, n, bool(*T x, *T y) { return cmp(x, y) < 0; });
+}
+
+// Put the `mid` smallest of the first `n` elements of `a`, sorted, in a[0..mid); the
+// rest follow in an unspecified order (std::partial_sort).
+void sort_partial<T>(*T a, int mid, int n, fn(*T, *T)->int cmp) {
+    if (mid < 0 || mid > n) {
         return;
     }
-    // Build the max-heap bottom-up, from the last parent down to the root.
-    for (int i = n / 2 - 1; i >= 0; i--) {
-        _heap_sift<T>(a, i, n, cmp);
+    _srt_partial_sort<T>(a, 0, mid, n, bool(*T x, *T y) { return cmp(x, y) < 0; });
+}
+
+// Put in a[nth] the element a full sort would put there, with nothing after it that
+// sorts before it and nothing before it that sorts after it (std::nth_element).
+void sort_nth<T>(*T a, int nth, int n, fn(*T, *T)->int cmp) {
+    if (nth < 0 || nth >= n) {
+        return;
     }
-    // Move the max to the end of the shrinking heap, then repair the root.
-    for (int end = n - 1; end > 0; end--) {
-        const T tmp = a[0];
-        a[0] = a[end];
-        a[end] = tmp;
-        _heap_sift<T>(a, 0, end, cmp);
-    }
+    _srt_nth_element<T>(a, 0, nth, n, bool(*T x, *T y) { return cmp(x, y) < 0; });
 }
 
 // Sort a List<T> in place by `cmp` (same convention as sort<T>; not stable).

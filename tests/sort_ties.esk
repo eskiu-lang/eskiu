@@ -1,0 +1,47 @@
+// sort, sort_partial and sort_nth order tied elements as libc++'s std::sort,
+// std::partial_sort and std::nth_element do. sort_ties.expected comes from a C++
+// program running the same arrays through libc++ (see the comment at the end).
+import <sort>;
+extern int printf(string fmt, ...);
+
+struct KV {
+    int key;
+    int id;
+}
+
+int kv_desc(*KV a, *KV b) { return b.key - a.key; }
+
+uint32 rng = 7;
+
+uint32 next() {
+    rng = rng ^ (rng << 13);
+    rng = rng ^ (rng >> 17);
+    rng = rng ^ (rng << 5);
+    return rng;
+}
+
+uint64 hash(*KV v, int n) {
+    uint64 h = 1469598103934665603;
+    for (i in 0..n) h = (h ^ (uint64)(v[i].key * 1000 + v[i].id)) * 1099511628211;
+    return h;
+}
+
+int main() {
+    KV[600] v;
+    for (it in 0..60) {
+        int n = (int)(next() % 600);
+        int range = 1 + (int)(next() % (uint32)(n / 4 + 2));
+        for (i in 0..n) v[i] = KV{(int)(next() % (uint32)range), i};
+        int op = it % 3;
+        int mid = n > 0 ? (int)(next() % (uint32)n) : 0;
+        if (op == 0) sort<KV>(&v[0], n, kv_desc);
+        if (op == 1) sort_partial<KV>(&v[0], mid, n, kv_desc);
+        if (op == 2) sort_nth<KV>(&v[0], mid, n, kv_desc);
+        printf("%d %d %d %llx\n", op, n, mid, hash(&v[0], n));
+    }
+    return 0;
+}
+
+// The C++ side: the same generator and hash, std::sort / std::partial_sort /
+// std::nth_element on std::vector<KV> with [](a, b) { return a.key > b.key; },
+// built with clang++ -std=c++17 against Xcode's libc++.
