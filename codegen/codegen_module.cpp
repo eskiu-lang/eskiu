@@ -130,6 +130,9 @@ static std::unique_ptr<llvm::TargetMachine> makeTargetMachine(
         : (triple.isAArch64() && triple.isOSDarwin() ? llvm::StringRef("apple-m1")
                                                      : llvm::StringRef("generic"));
     llvm::TargetOptions opt;
+    // Constructors go in .init_array, as clang emits them: Android's bionic runs no
+    // .ctors (the uncaught-exception reporter is one).
+    opt.UseInitArray = true;
     // Hard-float ABI for hard-float ARM triples (those ending in "hf", e.g. the
     // 3DS's armv6k-none-eabihf). LLVM parses "eabihf" into the OS field, not the
     // environment, so match the triple string directly. This makes LLVM emit the
