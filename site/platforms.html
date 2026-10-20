@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script>try{if(localStorage.getItem("eskiu-lang")==="es")location.replace("es/platforms.html"+location.hash);}catch(e){}</script>
+  <title>Platforms · Eskiu</title>
+  <meta name="description" content="Where Eskiu programs run and the commands that build for each target: macOS, Linux and Windows, WebAssembly with emscripten, Android, iOS, Windows GUI programs, bare metal and the Nintendo 3DS." />
+  <link rel="canonical" href="https://eskiu-lang.org/platforms.html" />
+  <link rel="alternate" hreflang="en" href="https://eskiu-lang.org/platforms.html" />
+  <link rel="alternate" hreflang="es" href="https://eskiu-lang.org/es/platforms.html" />
+  <link rel="alternate" hreflang="x-default" href="https://eskiu-lang.org/platforms.html" />
+  <link rel="icon" type="image/png" href="../assets/logo.png" />
+  <meta name="theme-color" content="#fbf8f3" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&amp;family=DM+Sans:wght@400;500;700&amp;family=DM+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="page.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="bar top-in">
+      <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.12.0</span></a>
+      <nav class="nav" aria-label="Main"><a href="quickstart.html">Learn</a><a href="docs/index.html">Docs</a><a href="packages.html">Packages</a><a href="platforms.html" aria-current="page">Platforms</a><a href="showcase.html">Showcase</a><a href="the-book-of-eskiu.html">Book</a><a href="changelog.html">Changelog</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+      <div class="top-right">
+        <span class="lang"><span aria-current="page">EN</span> / <a href="es/platforms.html" onclick="try{localStorage.setItem('eskiu-lang','es')}catch(e){}">ES</a></span>
+        <a class="btn-install" href="index.html#install">Install 0.12.0</a>
+        <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="drawer"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg></button>
+      </div>
+    </div>
+    <nav class="drawer" id="drawer" aria-label="Main"><a href="quickstart.html">Learn</a><a href="docs/index.html">Docs</a><a href="packages.html">Packages</a><a href="platforms.html" aria-current="page">Platforms</a><a href="showcase.html">Showcase</a><a href="the-book-of-eskiu.html">Book</a><a href="changelog.html">Changelog</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+  </header>
+  <main class="bar article">
+    <div class="eyebrow">Platforms</div>
+    <h1>One compiler, every target</h1>
+    <p class="lede">
+      <code>eskiuc</code> builds for the machine it runs on and, with <code>--target</code>,
+      for another one: the web, Android, iOS, Windows or a board with no operating system.
+    </p>
+
+    <nav class="chips" aria-label="Targets">
+      <a href="#native">macOS, Linux, Windows</a>
+      <a href="#wasm">WebAssembly</a>
+      <a href="#android">Android</a>
+      <a href="#ios">iOS</a>
+      <a href="#windows-gui">Windows GUI</a>
+      <a href="#bare-metal">Bare metal</a>
+      <a href="#3ds">Nintendo 3DS</a>
+      <a href="#ctypes">C types</a>
+    </nav>
+
+    <p>
+      The compiler has the AArch64, x86 (x86-64 and 32-bit i686), 32-bit ARM and WebAssembly
+      (wasm32) backends built in. The extension of the <code>-o</code> name decides what is
+      built:
+    </p>
+    <div class="tablewrap"><table>
+      <tr><th>Output</th><th>What you get</th></tr>
+      <tr><td><code>app</code>, <code>app.exe</code></td><td>An executable, linked through the platform's C driver</td></tr>
+      <tr><td><code>.o</code>, <code>.obj</code></td><td>An object file, to link yourself</td></tr>
+      <tr><td><code>.a</code>, <code>.lib</code></td><td>A static library (the object in an archive, written by <code>eskiuc</code> itself)</td></tr>
+      <tr><td><code>.so</code>, <code>.dylib</code>, <code>.dll</code></td><td>A shared library, linked with <code>-shared</code></td></tr>
+    </table></div>
+    <p>
+      A library is how an Eskiu module goes into an app that another build system links,
+      such as an Xcode project, a Gradle module or an emscripten build. Eskiu functions are
+      C symbols, so the app's C, C++, Objective-C or JNI code declares them and calls them.
+    </p>
+
+    <h2 id="native">macOS, Linux and Windows</h2>
+    <p>
+      Release builds of the compiler exist for four hosts. On macOS and Linux the install
+      script picks the right one:
+    </p>
+    <pre><code>curl -fsSL https://eskiu-lang.org/install.sh | sh</code></pre>
+    <div class="btns">
+      <a class="btn-w" href="https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-macos-arm64.tar.gz">↓ macOS (arm64)</a>
+      <a class="btn-w" href="https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-linux-x86_64.tar.gz">↓ Linux (x86-64)</a>
+      <a class="btn-w" href="https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-linux-arm64.tar.gz">↓ Linux (arm64)</a>
+      <a class="btn-w" href="https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiuc-windows-x86_64.zip">↓ Windows (x86-64)</a>
+    </div>
+    <p>With no <code>--target</code>, the program is built for the host:</p>
+    <pre><code>eskiuc run app.esk          <span class="c"># build, run, clean up</span>
+eskiuc app.esk -o app       <span class="c"># keep the executable</span>
+eskiuc app.esk -o libapp.a  <span class="c"># or a static library</span></code></pre>
+    <p>
+      Without <code>--mcpu</code> the CPU is the target's baseline, as in clang:
+      <code>apple-m1</code> on arm64 Apple targets and <code>generic</code> elsewhere, so a
+      binary built on one machine runs on another of the same platform.
+    </p>
+    <p class="note">
+      Windows is validated end to end on a native CI runner (exceptions, the blocking and
+      async networking stacks) but is not yet part of the release gate.
+    </p>
+
+    <h2 id="wasm">WebAssembly</h2>
+    <p>
+      <code>--target wasm32-unknown-emscripten</code> builds for
+      <a href="https://emscripten.org">emscripten</a>, the toolchain most web projects use.
+      With no <code>$CC</code>, <code>eskiuc</code> links through <code>emcc</code>, so the
+      output's extension chooses what emcc writes (<code>.js</code> with its <code>.wasm</code>,
+      <code>.html</code>, or <code>.wasm</code>), and <code>--link-arg</code> passes emcc's
+      settings:
+    </p>
+    <pre><code>eskiuc app.esk --target wasm32-unknown-emscripten -o app.js --link-arg=-sEXIT_RUNTIME=1
+node app.js</code></pre>
+    <h3>Inside an existing emscripten project</h3>
+    <p>Build a static library and link it like any other:</p>
+    <pre><code>eskiuc tracker.esk --target wasm32-unknown-emscripten -o libtracker.a
+emcc main.cpp libtracker.a ...</code></pre>
+    <p>
+      Eskiu functions are C symbols, so C++ (an embind binding, for instance) declares
+      them <code>extern "C"</code> and calls them:
+    </p>
+    <pre><code><span class="c">// main.cpp</span>
+extern "C" int tracker_score(int hits, int misses);   <span class="c">// defined in tracker.esk</span></code></pre>
+    <p>
+      JavaScript reaches a function exported with emcc's
+      <code>-sEXPORTED_FUNCTIONS=_name</code> (for <code>tracker_score</code>,
+      <code>-sEXPORTED_FUNCTIONS=_tracker_score</code>).
+    </p>
+    <h3>What runs there</h3>
+    <p>
+      The standard library works as on other POSIX systems, with an event loop over
+      <code>poll()</code>, so futures, timers and channels run under node. Exceptions work on
+      emscripten through its JavaScript-based runtime: a program that throws or catches is
+      linked with <code>-sDISABLE_EXCEPTION_CATCHING=0</code>. Threads need emscripten's
+      <code>-pthread</code> build.
+    </p>
+    <h3>WASI and other wasm32 triples</h3>
+    <p>
+      <code>wasm32-wasip1</code> and <code>wasm32-unknown-unknown</code> link with the LLVM
+      toolchain's own <code>clang --target=...</code>. WASI needs a sysroot
+      (<code>--link-arg=--sysroot=...</code>), and <code>wasm32-unknown-unknown</code> is
+      normally built <code>--freestanding</code>. On these triples <code>try</code> and
+      <code>throw</code> are a compile error.
+    </p>
+
+    <h2 id="android">Android</h2>
+    <p>
+      An Android triple carries the API level: <code>aarch64-linux-android24</code>,
+      <code>armv7a-linux-androideabi24</code> or <code>x86_64-linux-android24</code>. With no
+      <code>$CC</code>, <code>eskiuc</code> links with the NDK's clang, which it finds through
+      <code>$ANDROID_NDK_HOME</code>, <code>$ANDROID_NDK_ROOT</code>, or the newest NDK under
+      the SDK (<code>$ANDROID_HOME/ndk</code>, or the SDK manager's default directory).
+    </p>
+    <p>An app loads a shared library:</p>
+    <pre><code>eskiuc tracker.esk --target aarch64-linux-android24 -o libtracker.so</code></pre>
+    <p>
+      The app loads it with <code>System.loadLibrary("tracker")</code>, and its JNI code, or
+      the native part of a React Native module, declares the Eskiu functions and calls them
+      like C functions. pthread is part of Android's libc, so a program with threads links no
+      <code>-lpthread</code>, and one that throws links the NDK's <code>libc++_static</code>
+      and <code>libc++abi</code>.
+    </p>
+
+    <h2 id="ios">iOS</h2>
+    <p>
+      <code>arm64-apple-ios15.0</code> builds for devices, and
+      <code>arm64-apple-ios15.0-simulator</code> (or <code>x86_64-apple-ios15.0-simulator</code>)
+      for the simulator. With no <code>$CC</code>, <code>eskiuc</code> links through
+      <code>xcrun -sdk iphoneos clang</code> (<code>iphonesimulator</code> for a simulator
+      triple). An app embeds a static library, one per slice, and
+      <code>xcodebuild -create-xcframework</code> combines them:
+    </p>
+    <pre><code>eskiuc tracker.esk --target arm64-apple-ios15.0 -o ios/libtracker.a
+eskiuc tracker.esk --target arm64-apple-ios15.0-simulator -o sim/libtracker.a
+xcodebuild -create-xcframework -library ios/libtracker.a -library sim/libtracker.a \
+    -output Tracker.xcframework</code></pre>
+    <p>The C ABI is the Darwin AArch64 one, as on macOS.</p>
+
+    <h2 id="windows-gui">Windows GUI programs</h2>
+    <p>
+      A program that opens its own window, such as one using the
+      <a href="packages.html#gpu">gpu</a> package, links for the GUI subsystem, so Windows
+      does not open a console next to it:
+    </p>
+    <pre><code>eskiuc viewer.esk -o viewer.exe --subsystem=windows</code></pre>
+    <p>
+      The entry point stays <code>main</code>: the driver passes <code>-mwindows</code> to a
+      mingw link, and <code>/subsystem:windows</code> with <code>/entry:mainCRTStartup</code> to
+      an MSVC one. On other targets the option has no effect. To build Windows objects from
+      another host (<code>--target x86_64-pc-windows-gnu</code>, linked with
+      <code>lld-link</code>), see <a href="docs/cross-compile.html">Cross-compiling</a>.
+    </p>
+
+    <h2 id="bare-metal">Bare metal</h2>
+    <p>
+      A triple whose OS is <code>none</code> targets hardware with no operating system.
+      Such a triple defines no OS macro (<code>__linux__</code>, <code>__APPLE__</code>,
+      <code>_WIN32</code>), so portable code guards that path itself.
+      <code>--freestanding</code> predefines <code>__ESKIU_FREESTANDING__</code> and routes
+      <code>alloc</code> and <code>free</code> to an <code>esk_alloc</code> and
+      <code>esk_free</code> you write, instead of libc:
+    </p>
+    <pre><code>eskiuc kernel.esk --target aarch64-unknown-none-elf --freestanding -o kernel.o</code></pre>
+    <p>
+      The repository's ARM64 kernel is built this way and boots in QEMU; chapter 18 of
+      <a href="the-book-of-eskiu.html#chapter-18">the Book</a> walks through it.
+      <code>--mcpu</code>, <code>--mattr</code> and <code>--reloc</code> (<code>pic</code>,
+      <code>static</code> or <code>dynamic-no-pic</code>) tune the machine and the relocation
+      model.
+    </p>
+
+    <h2 id="3ds">Nintendo 3DS</h2>
+    <p>
+      The 3DS is an ARM11 MPCore (<code>armv6k</code>) with VFPv2, hard-float, and a homebrew
+      loader that applies static relocations:
+    </p>
+    <pre><code>eskiuc lib.esk -o lib.o \
+    --target armv6k-none-eabihf --mcpu mpcore --mattr +vfp2 \
+    --reloc static --freestanding</code></pre>
+    <p>
+      Then link it with the <a href="https://devkitpro.org/">devkitARM</a> toolchain,
+      alongside a C entry point and libctru, and package the result:
+    </p>
+    <pre><code>arm-none-eabi-gcc -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft \
+    -I$DEVKITPRO/libctru/include -c main.c -o main.o
+arm-none-eabi-gcc -specs=3dsx.specs -march=armv6k -mtune=mpcore -mfloat-abi=hard \
+    main.o lib.o -L$DEVKITPRO/libctru/lib -lctru -lm -o app.elf
+3dsxtool app.elf app.3dsx</code></pre>
+    <p>
+      The <code>hf</code> suffix selects the hard-float ABI, which the linker requires to mix
+      the Eskiu object with hard-float libctru. The
+      <a href="case-study-3ds.html">3DS case study</a> shows what was built this way: a
+      camera and gyroscope AR demo, verified on the console.
+    </p>
+
+    <h2 id="ctypes">C types whose width depends on the target</h2>
+    <p>
+      C's <code>size_t</code>, <code>ssize_t</code> and <code>long</code> are 32 bits on
+      wasm32, 32-bit ARM and i686, and <code>long</code> is also 32 bits on Windows. Eskiu sees
+      each of them as an <code>int64</code>. Spelled <code>size_t</code>, <code>ssize_t</code>
+      or <code>c_long</code> (from <code>import &lt;ctypes&gt;;</code>) in an
+      <code>extern</code>'s parameters or result, the declaration uses the target's C type, an
+      argument is converted to it and the result widened back:
+    </p>
+    <pre><code>import &lt;ctypes&gt;;
+
+extern size_t strlen(string s);   <span class="c">// right on 32-bit and 64-bit targets</span></code></pre>
+    <p>
+      The standard library declares the C functions it uses this way, so <code>strlen</code>,
+      <code>memcpy</code>, <code>malloc</code>, <code>read</code> or <code>snprintf</code> are
+      right on every target. A program that declares such a function itself should do the
+      same: an <code>int64</code> there is wrong on a 32-bit target, and on WebAssembly the
+      call traps on the signature mismatch.
+    </p>
+    <p>
+      The full reference, with the platform macros and the Windows linker walkthrough, is
+      <a href="docs/cross-compile.html">Cross-compiling</a> in the docs.
+    </p>
+  </main>
+  <footer class="foot">
+    <div class="bar foot-in">
+      <span class="brand">eskiu</span>
+      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family · MIT</span>
+      <nav class="foot-links" aria-label="Footer"><a href="docs/index.html">Docs</a><a href="the-book-of-eskiu.html">Book</a><a href="docs/internals.html">Internals</a><a href="changelog.html">Changelog</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a><a href="https://reactvision.xyz">ReactVision</a></nav>
+    </div>
+  </footer>
+  <script>(function(){var t=document.querySelector(".top"),b=document.querySelector(".menu-btn");if(!t||!b)return;b.addEventListener("click",function(){var o=t.classList.toggle("open");b.setAttribute("aria-expanded",o?"true":"false");});})();</script>
+</body>
+</html>
