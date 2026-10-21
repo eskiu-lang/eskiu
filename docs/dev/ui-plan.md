@@ -504,10 +504,14 @@ stays the last parameter of everything added meanwhile):
    (`kit_toast`, `ToastHost`), `Calendar`, `DatePicker`, `ColorPicker`; in the core,
    `Overlay` (an undimmed layer), a tap on a modal's backdrop, window positions in `Frame`
    and min and max sizes in `Style`.
-10. Device packages, as Expo's modules, each with its `native/` and `ui.toml`: notifications,
-    camera and photo picking, location, then sensors, secure storage and biometrics.
-    Single-platform APIs (Android toasts and permissions, iOS action sheets) too.
-11. `ui serve` (phase 5), then phase 2 and the 0.13 release.
+10. **Done.** `ui serve` (phase 5): it watches what a build reads, builds again in a child
+    process and reloads the page (web, the macOS window) through a long poll, showing a failed
+    build's output over the app; on iOS and Android it installs and launches the app again.
+11. Device packages, as Expo's modules, each in its own repository with its `native/` and
+    `ui.toml` (`ui-location`, `ui-notifications`, `ui-camera`), then sensors, secure storage
+    and biometrics. Single-platform APIs (Android toasts and permissions, iOS action sheets)
+    too.
+12. Phase 2 and the 0.13 release.
 
 The repository has its documentation in `docs/` (getting started, architecture, state,
 components, style and layout, the platform, navigation, native code, protocol, hosts,
