@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&amp;family=DM+Sans:wght@400;500;700&amp;family=DM+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="page.css?v=cdc30d8d3b" />
+  <link rel="stylesheet" href="page.css?v=406c48f622" />
 </head>
 <body>
   <header class="top">
@@ -34,7 +34,7 @@
     <div class="eyebrow">Packages</div>
     <h1>Official packages</h1>
     <p class="lede">Libraries from the <a href="https://github.com/eskiu-lang">eskiu-lang</a> organization on GitHub. Each one is a git repository with an <code>eskiu.toml</code>, added to a project with one command.</p>
-    <nav class="chips" aria-label="Packages"><a href="#gpu">gpu</a><a href="#onnx">onnx</a><a href="#tflite">tflite</a><a href="#compress">compress</a><a href="#audio">audio</a><a href="#font">font</a><a href="#jni">jni</a><a href="#nds">nds</a><a href="#location">location</a><a href="#notifications">notifications</a><a href="#camera">camera</a><a href="#vision">vision</a></nav>
+    <nav class="pkg-grid" aria-label="Packages"><a href="#gpu"><b>gpu</b><span>GPU compute, rendering, 3D models and machine learning for Eskiu, over WebGPU.</span></a><a href="#onnx"><b>onnx</b><span>ONNX model inference for Eskiu, over ONNX Runtime.</span></a><a href="#tflite"><b>tflite</b><span>TensorFlow Lite model inference for Eskiu.</span></a><a href="#compress"><b>compress</b><span>zlib, gzip, raw DEFLATE and ZIP archives for Eskiu, written in Eskiu.</span></a><a href="#audio"><b>audio</b><span>Sound for Eskiu: WAV files, a mixer and output through SDL3.</span></a><a href="#font"><b>font</b><span>TrueType fonts for Eskiu: glyph outlines, antialiased rendering, text layout and atlases.</span></a><a href="#jni"><b>jni</b><span>Native methods for Android and the JVM, written in Eskiu.</span></a><a href="#nds"><b>nds</b><span>Nintendo DS file formats for Eskiu: ROMs, NARC archives, sound, 2D graphics and 3D textures.</span></a><a href="#location"><b>location</b><span>Where the device is, for apps on eskiu-lang/ui.</span><em>ui</em></a><a href="#notifications"><b>notifications</b><span>Local notifications for apps on eskiu-lang/ui.</span><em>ui</em></a><a href="#camera"><b>camera</b><span>Photos for apps on eskiu-lang/ui: the library, the camera and a live view.</span><em>ui</em></a><a class="pkg-grid-soon" href="#vision"><b>vision</b><span>Computer vision, bit for bit with C++.</span><em>private for now</em></a></nav>
     <h2 id="using">Using a package</h2>
     <p><code>eskiuc add</code> writes the dependency into <code>eskiu.toml</code>, fetches it with git and records its commit in <code>eskiu.lock</code>, so later builds reuse it without touching the network. There is no registry: a dependency is a git URL with a rev (a tag, branch or commit) or a local path.</p>
     <pre><code>eskiuc new myapp

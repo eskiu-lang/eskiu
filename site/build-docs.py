@@ -735,6 +735,7 @@ PKG_TEXT = {
                   "and <code>eskiuc test</code>.",
         "chips": "Packages", "install": "Install", "example": "Example from the README",
         "soon_tag": "private for now",
+        "vision_line": "Computer vision, bit for bit with C++.",
         "soon_p": "Corners, optical flow, multi-view geometry and planes, in pure Eskiu. It comes from "
                   "tinyvio, the tracker behind ViroReact's web AR, and computes the same bits as its "
                   "C++. The repository is private for now. "
@@ -766,6 +767,7 @@ PKG_TEXT = {
                   "el lock y <code>eskiuc test</code>.",
         "chips": "Paquetes", "install": "Instalación", "example": "Ejemplo del README",
         "soon_tag": "privado por ahora",
+        "vision_line": "Visión por computadora, bit por bit con C++.",
         "soon_p": "Esquinas, flujo óptico, geometría multivista y planos, en Eskiu puro. Sale de tinyvio, "
                   "el tracker detrás del AR web de ViroReact, y calcula los mismos bits que su C++. El "
                   "repositorio es privado por ahora. "
@@ -881,9 +883,15 @@ def build_packages():
         b = [f'    <div class="eyebrow">{T["eyebrow"]}</div>',
              f'    <h1>{T["h1"]}</h1>',
              f'    <p class="lede">{T["lede"]}</p>',
-             f'    <nav class="chips" aria-label="{T["chips"]}">' +
-             "".join(f'<a href="#{pkg["name"]}">{pkg["name"]}</a>' for pkg, _, _ in data) +
-             '<a href="#vision">vision</a></nav>',
+             # A card per package, to its section: the name, its line, and "ui" for the
+             # packages of ui apps (their repositories are ui-NAME).
+             f'    <nav class="pkg-grid" aria-label="{T["chips"]}">' +
+             "".join(f'<a href="#{pkg["name"]}"><b>{pkg["name"]}</b>'
+                     f'<span>{html.escape(tagline if lang == "en" else pkg["tag_es"])}</span>'
+                     + (f'<em>ui</em>' if pkg.get("repo", "").startswith("ui-") else "") + '</a>'
+                     for pkg, tagline, _ in data) +
+             f'<a class="pkg-grid-soon" href="#vision"><b>vision</b><span>{T["vision_line"]}</span>'
+             f'<em>{T["soon_tag"]}</em></a></nav>',
              f'    <h2 id="using">{T["how_h"]}</h2>',
              f'    <p>{T["how_p"]}</p>',
              "    <pre><code>" + "\n".join(html.escape(c) for c in T["how_cmd"]) + "</code></pre>",
