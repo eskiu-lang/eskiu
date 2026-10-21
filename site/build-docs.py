@@ -599,6 +599,26 @@ PACKAGES_CATALOG = [
         "setup": [],
         "build": [],
     },
+    {
+        "name": "location",
+        "repo": "ui-location",
+        "section": None,
+        "tag_es": "Dónde está el dispositivo, para apps hechas con eskiu-lang/ui.",
+        "note_en": "A component calls <code>use_location</code> and gets the latest position while "
+                   "it is mounted, measured by the platform's own service: CoreLocation on iOS, "
+                   "LocationManager on Android and the browser's geolocation on the web. The first "
+                   "use asks for permission, and the package brings the framework, the usage text "
+                   "and the Android permissions through its <code>ui.toml</code>.",
+        "note_es": "Un componente llama a <code>use_location</code> y recibe la última posición mientras "
+                   "está montado, medida por el servicio de cada plataforma: CoreLocation en iOS, "
+                   "LocationManager en Android y la geolocalización del navegador en la web. El primer "
+                   "uso pide permiso, y el paquete trae el framework, el texto de uso y los permisos de "
+                   "Android en su <code>ui.toml</code>.",
+        "needs_en": "An app made with eskiu-lang/ui (ui new).",
+        "needs_es": "Una app hecha con eskiu-lang/ui (ui new).",
+        "setup": ["ui new myapp && cd myapp"],
+        "build": ["ui run ios"],
+    },
 ]
 
 
@@ -816,7 +836,7 @@ def render_site_page(lang, page, current, title, desc, body):
 def build_packages():
     data = []
     for pkg in PACKAGES_CATALOG:
-        text = fetch_readme(pkg["name"])
+        text = fetch_readme(pkg.get("repo", pkg["name"]))
         data.append((pkg, readme_tagline(text, pkg["name"]),
                      readme_example(text, pkg["name"], pkg["section"])))
     for lang in ("en", "es"):
@@ -834,7 +854,8 @@ def build_packages():
              f'    <p>{T["how_p2"].format(p=p)}</p>']
         for pkg, tagline, example in data:
             n = pkg["name"]
-            repo = f"https://github.com/{PKG_ORG}/{n}"
+            # The repository's name, when it is not the package's (ui-location holds location).
+            repo = f"https://github.com/{PKG_ORG}/{pkg.get('repo', n)}"
             install = pkg["setup"] + [f"eskiuc add {n} --git {repo} --rev {PKG_REV}"] + pkg["build"]
             b += [f'    <section class="pkg" id="{n}">',
                   f'      <h2>{n}</h2>',
@@ -842,7 +863,7 @@ def build_packages():
                   f'<span class="tag">{PKG_REV}</span>'
                   f'<a href="{repo}/actions/workflows/ci.yml"><img src="{repo}/actions/workflows/ci.yml/badge.svg" '
                   f'alt="{T["ci"]}: {n}" width="90" height="20" loading="lazy" /></a>'
-                  f'<a href="{repo}">github.com/{PKG_ORG}/{n}</a></div>',
+                  f'<a href="{repo}">github.com/{PKG_ORG}/{pkg.get("repo", n)}</a></div>',
                   f'      <p><strong>{html.escape(tagline if lang == "en" else pkg["tag_es"])}</strong></p>',
                   f'      <p>{pkg["note_" + lang]}</p>',
                   f'      <p class="note">{pkg["needs_" + lang]}</p>',

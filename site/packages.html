@@ -34,7 +34,7 @@
     <div class="eyebrow">Packages</div>
     <h1>Official packages</h1>
     <p class="lede">Libraries from the <a href="https://github.com/eskiu-lang">eskiu-lang</a> organization on GitHub. Each one is a git repository with an <code>eskiu.toml</code>, added to a project with one command.</p>
-    <nav class="chips" aria-label="Packages"><a href="#gpu">gpu</a><a href="#onnx">onnx</a><a href="#tflite">tflite</a><a href="#compress">compress</a><a href="#audio">audio</a><a href="#font">font</a><a href="#jni">jni</a><a href="#nds">nds</a><a href="#vision">vision</a></nav>
+    <nav class="chips" aria-label="Packages"><a href="#gpu">gpu</a><a href="#onnx">onnx</a><a href="#tflite">tflite</a><a href="#compress">compress</a><a href="#audio">audio</a><a href="#font">font</a><a href="#jni">jni</a><a href="#nds">nds</a><a href="#location">location</a><a href="#vision">vision</a></nav>
     <h2 id="using">Using a package</h2>
     <p><code>eskiuc add</code> writes the dependency into <code>eskiu.toml</code>, fetches it with git and records its commit in <code>eskiu.lock</code>, so later builds reuse it without touching the network. There is no registry: a dependency is a git URL with a rev (a tag, branch or commit) or a local path.</p>
     <pre><code>eskiuc new myapp
@@ -242,6 +242,34 @@ Narc n = rom.narc("a/0/0/4")?;            <span class="c">// views into the ROM<
 defer n.close();
 Bytes f = nds_unpack(n.file(12).data, n.file(12).len)?;   <span class="c">// LZ data decompressed</span>
 Bytes ov = rom.overlay(12)?;              <span class="c">// decompressed when compressed</span></code></pre>
+      </details>
+    </section>
+    <section class="pkg" id="location">
+      <h2>location</h2>
+      <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/ui-location/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/ui-location/actions/workflows/ci.yml/badge.svg" alt="CI status: location" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/ui-location">github.com/eskiu-lang/ui-location</a></div>
+      <p><strong>Where the device is, for apps on eskiu-lang/ui.</strong></p>
+      <p>A component calls <code>use_location</code> and gets the latest position while it is mounted, measured by the platform's own service: CoreLocation on iOS, LocationManager on Android and the browser's geolocation on the web. The first use asks for permission, and the package brings the framework, the usage text and the Android permissions through its <code>ui.toml</code>.</p>
+      <p class="note">An app made with eskiu-lang/ui (ui new).</p>
+      <h3>Install</h3>
+      <pre><code>ui new myapp &amp;&amp; cd myapp
+eskiuc add location --git https://github.com/eskiu-lang/ui-location --rev v0.1.0
+ui run ios</code></pre>
+      <details class="pkg-example"><summary>Example from the README</summary>
+      <pre><code>import &lt;location&gt;;
+
+void Here() {
+    Location here = use_location(true);
+    if (here.status == LocationReady) {
+        String text;
+        defer String_free(&amp;text);
+        String_format(&amp;text, "%.5f, %.5f (± %.0f m)", here.latitude, here.longitude, here.accuracy);
+        Text(text.data);
+    } else if (here.status == LocationDenied) {
+        Text("Allow the location in Settings");
+    } else {
+        ActivityIndicator(Style{}, true);
+    }
+}</code></pre>
       </details>
     </section>
     <section class="pkg pkg-soon" id="vision">

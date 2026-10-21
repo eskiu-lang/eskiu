@@ -51,7 +51,7 @@
         <div class="eyebrow">eskiu-lang/ui</div>
         <h1>Componentes y APIs</h1>
         <p class="lede">De qué está hecha una app: los elementos que dibuja, los hooks que guardan su estado y los servicios del teléfono y del navegador. Cada uno funciona en iOS, Android y la web.</p>
-        <nav class="chips" aria-label="Componentes y APIs"><a href="#layout">Layout</a><a href="#text">Texto, botones y entrada</a><a href="#lists">Medios y listas</a><a href="#overlays">Overlays</a><a href="#motion">Movimiento y gestos</a><a href="#state">Estado</a><a href="#navigation">Navegación</a><a href="#system">El sistema</a><a href="#native">Código nativo</a><a href="#kit">El kit</a></nav>
+        <nav class="chips" aria-label="Componentes y APIs"><a href="#layout">Layout</a><a href="#text">Texto, botones y entrada</a><a href="#lists">Medios y listas</a><a href="#overlays">Overlays</a><a href="#motion">Movimiento y gestos</a><a href="#state">Estado</a><a href="#navigation">Navegación</a><a href="#system">El sistema</a><a href="#native">Código nativo</a><a href="#packages">Paquetes de dispositivo</a><a href="#kit">El kit</a></nav>
       </section>
       <section class="uc-group" id="layout">
         <h2>Layout</h2>
@@ -97,6 +97,11 @@
         <h2>Código nativo</h2>
         <p>Código por plataforma en native/, llamado con funciones extern. <a href="https://github.com/eskiu-lang/ui/blob/main/docs/native.md">La guía &rarr;</a></p>
         <div class="uc-items"><div><code>NativeView(Style, type, on_event)</code>Una vista que la app registró en cada host.</div><div><code>ui_native_prop(name, value)</code>Una prop con nombre para el NativeView que le sigue.</div><div><code>use_native_event(channel, handler)</code>Los eventos de un módulo nativo mientras está montado.</div><div><code>ui.toml</code>Frameworks, permisos, entradas del plist, bibliotecas de Maven y paquetes de Swift.</div></div>
+      </section>
+      <section class="uc-group" id="packages">
+        <h2>Paquetes de dispositivo</h2>
+        <p>Paquetes que traen un servicio de la plataforma a cada app que los agrega, con su código nativo y sus permisos. <a href="https://github.com/eskiu-lang/ui-location">La guía &rarr;</a></p>
+        <div class="uc-items"><div><code>location: use_location(precise)</code>Dónde está el dispositivo, con CoreLocation, LocationManager y la geolocalización del navegador.</div><div><code>location_distance(a, b)</code>La distancia entre dos posiciones sobre la superficie de la Tierra.</div></div>
       </section>
       <section class="uc-group" id="kit">
         <h2>El kit</h2>

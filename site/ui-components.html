@@ -52,7 +52,7 @@
         <div class="eyebrow">eskiu-lang/ui</div>
         <h1>Components and APIs</h1>
         <p class="lede">What an app is made of: the elements it draws, the hooks that hold its state, and the services of the phone and the browser. Each one works on iOS, Android and the web.</p>
-        <nav class="chips" aria-label="Components and APIs"><a href="#layout">Layout</a><a href="#text">Text, buttons and input</a><a href="#lists">Media and lists</a><a href="#overlays">Overlays</a><a href="#motion">Motion and gestures</a><a href="#state">State</a><a href="#navigation">Navigation</a><a href="#system">The system</a><a href="#native">Native code</a><a href="#kit">The kit</a></nav>
+        <nav class="chips" aria-label="Components and APIs"><a href="#layout">Layout</a><a href="#text">Text, buttons and input</a><a href="#lists">Media and lists</a><a href="#overlays">Overlays</a><a href="#motion">Motion and gestures</a><a href="#state">State</a><a href="#navigation">Navigation</a><a href="#system">The system</a><a href="#native">Native code</a><a href="#packages">Device packages</a><a href="#kit">The kit</a></nav>
       </section>
       <section class="uc-group" id="layout">
         <h2>Layout</h2>
@@ -98,6 +98,11 @@
         <h2>Native code</h2>
         <p>Code per platform in native/, called through extern functions. <a href="https://github.com/eskiu-lang/ui/blob/main/docs/native.md">The guide &rarr;</a></p>
         <div class="uc-items"><div><code>NativeView(Style, type, on_event)</code>A view the app registered with each host.</div><div><code>ui_native_prop(name, value)</code>A named prop for the NativeView after it.</div><div><code>use_native_event(channel, handler)</code>A native module&#x27;s events while mounted.</div><div><code>ui.toml</code>Frameworks, permissions, plist entries, Maven libraries and Swift packages.</div></div>
+      </section>
+      <section class="uc-group" id="packages">
+        <h2>Device packages</h2>
+        <p>Packages that bring a platform service to every app that adds them, with their native code and permissions. <a href="https://github.com/eskiu-lang/ui-location">The guide &rarr;</a></p>
+        <div class="uc-items"><div><code>location: use_location(precise)</code>Where the device is, through CoreLocation, LocationManager and the browser&#x27;s geolocation.</div><div><code>location_distance(a, b)</code>The distance between two positions over the Earth&#x27;s surface.</div></div>
       </section>
       <section class="uc-group" id="kit">
         <h2>The kit</h2>
