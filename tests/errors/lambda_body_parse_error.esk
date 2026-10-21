@@ -1,0 +1,8 @@
+// EXPECT-ERROR: lambda_body_parse_error.esk:6:27: Expected ')'
+// A parse error inside a lambda's body is reported where it is, not at the lambda around it.
+void run(fn()->void f) { f(); }
+void show(string s, fn()->void f) { f(); }
+int main() {
+    run(void() { show("a" missing, void() { }); });
+    return 0;
+}

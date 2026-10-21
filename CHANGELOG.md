@@ -10,6 +10,10 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 ## [Unreleased]
 
 ### Fixed
+- A parse error inside a lambda's body is reported where it is. The C++ compiler took the
+  failed body as a failed guess at a lambda and backed out, so the error pointed at the
+  lambda's return type, or at a lambda around it (`Expected expression, got VOID`); the
+  self-hosted compiler already reported it in place.
 - A lambda in a generic function, passed to a parameter that does not escape, gets its
   env on the stack as it does elsewhere. It got a heap env that was never freed, so each
   `sort<T>`, `sort_partial<T>` and `sort_nth<T>` call leaked 16 bytes.
