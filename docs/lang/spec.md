@@ -1073,6 +1073,23 @@ int r   = apply(inc, 41);          // r == 42
 
 The compiler synthesizes a tiny adapter so the function fits the `{fn_ptr, env_ptr}` calling convention (the function does not take an environment); this is transparent to your code.
 
+**Trailing blocks.** A call statement may end in a block. The block is a `void()` lambda passed as the call's last argument, so `f(a) { BODY }` is `f(a, void() { BODY })`:
+
+```eskiu
+void twice(fn()->void body) { body(); body(); }
+
+twice() {
+    printf("hi\n");
+}
+Column(Style{gap: 8}) {
+    Text("one");
+    Text("two");
+}
+list.each() { total_seen++; }   // a dot-call, a generic call or a closure variable work too
+```
+
+The block is a lambda in every other respect: it captures by value, a `return;` leaves the block, and `break`, `continue`, `await`, `?` and `return` with a value cannot reach the enclosing function (each is a compile error that says the block is a closure). A `;` after the block is accepted. The block must follow the call's own `)` on a call statement: `(f()) { }`, `f()() { }`, an initializer (`int x = f(1) { };`) and a `return` value are errors. At the start of a statement `Name(...) {` is a call with a trailing block, not a lambda whose return type is `Name`; write a lambda there in parentheses or bind it.
+
 ### 6.6 Template Functions
 
 Template functions are parameterized by one or more type variables declared in angle brackets after the function name:

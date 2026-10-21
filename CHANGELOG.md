@@ -9,6 +9,16 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ## [Unreleased]
 
+### Added
+- Trailing blocks: a call statement may end in a block, passed as its last argument, so
+  `f(a) { BODY }` is `f(a, void() { BODY })`. `break`, `continue`, `await`, `?` and
+  `return` with a value inside the block are errors that say the block is a closure.
+
+### Changed
+- At the start of a statement, `Name(...) { ... }` is now a call with a trailing block. It
+  used to parse as a lambda returning `Name` whose value the statement dropped; write such a
+  lambda in parentheses or bind it to a variable.
+
 ### Fixed
 - A git dependency on a branch, a tag or `HEAD` that the lock does not pin yet resolves to
   the remote's commit. The package mirror in `$ESKIU_HOME/pkgs` answered from what it had

@@ -331,6 +331,7 @@ pre.code-block {
 <a href="#sec-9-5" class="toc-sec">9.5 Function pointers as return types and struct fields</a>
 <a href="#sec-9-6" class="toc-sec">9.6 Escaping closures</a>
 <a href="#sec-9-7" class="toc-sec">9.7 Closures inside generic functions</a>
+<a href="#sec-9-8" class="toc-sec">9.8 Trailing blocks</a>
 <a href="#chapter-10" class="toc-ch">Chapter 10</a>
 <a href="#sec-10-1" class="toc-sec">10.1 Result</a>
 <a href="#sec-10-2" class="toc-sec">10.2 try / catch / finally</a>
@@ -1504,6 +1505,21 @@ pre.code-block {
        return r1 + r2;
  }
  printf(&quot;%d\n&quot;, box&lt;int&gt;(10, 1));       // 23 (11+12)</pre>
+<h2 class="section" id="sec-9-8">9.8 Trailing blocks</h2>
+<p>When the last parameter of a function is a <code>fn()-&gt;void</code>, a call statement can pass it as a block after the parentheses. These two lines do the same:</p>
+<pre class="code-block"> void twice(fn()-&gt;void body) { body(); body(); }
+
+ twice(void() { printf(&quot;hi\n&quot;); });
+ twice() { printf(&quot;hi\n&quot;); }</pre>
+<p>This reads well for code that nests, such as a user interface:</p>
+<pre class="code-block"> Column(Style{gap: 8}) {
+       Text(&quot;Settings&quot;);
+       Row() {
+            Text(&quot;Dark mode&quot;);
+            Switch(dark);
+       }
+ }</pre>
+<p>The block is still a lambda. It captures by value, and a <code>return;</code> inside it leaves the block, not the function around it. So <code>break</code>, <code>continue</code>, <code>await</code>, <code>?</code> and <code>return</code> with a value are compile errors inside a block, each saying that the block is a closure. Only a call statement takes a block: it cannot follow a call used as a value, in an initializer or a <code>return</code>.</p>
 <div class="chapter-start" id="chapter-10"><span class="chapter-label">Chapter 10</span>
 <h1 class="chapter-title">Error Handling</h1><hr class="chapter-rule"></div>
 <p>Programs fail. Files do not exist. Numbers fall outside valid ranges. Network connections drop mid-request. Good error handling makes failures visible and recoverable rather than silent and catastrophic. Eskiu provides two tools: <code>Result</code> for expected failures, and try/catch for exceptional ones.</p>
