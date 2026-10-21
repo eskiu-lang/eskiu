@@ -1,0 +1,8 @@
+// EXPECT-ERROR: 'break' cannot leave a trailing block
+void twice(fn()->void body) { body(); body(); }
+int main() {
+    for (i in 0..3) {
+        twice() { break; }
+    }
+    return 0;
+}

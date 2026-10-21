@@ -1,0 +1,9 @@
+// EXPECT-ERROR: await is not allowed in a trailing block
+import <future>;
+import <futureval>;
+void twice(fn()->void body) { body(); body(); }
+async int run(*Future<int> f) {
+    twice() { int x = await f; }
+    return 0;
+}
+int main() { return 0; }

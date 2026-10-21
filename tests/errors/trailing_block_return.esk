@@ -1,0 +1,6 @@
+// EXPECT-ERROR: a trailing block returns nothing
+void twice(fn()->void body) { body(); body(); }
+int main() {
+    twice() { return 1; }
+    return 0;
+}

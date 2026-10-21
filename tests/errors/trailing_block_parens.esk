@@ -1,0 +1,6 @@
+// EXPECT-ERROR: a trailing block must follow the call's own ')'
+void twice(fn()->void body) { body(); body(); }
+int main() {
+    (twice()) { }
+    return 0;
+}

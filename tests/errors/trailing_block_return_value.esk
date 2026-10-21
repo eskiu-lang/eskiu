@@ -1,0 +1,5 @@
+// EXPECT-ERROR: a trailing block is only allowed on a call statement
+int count(int n, fn()->void body) { body(); return n; }
+int main() {
+    return count(2) { };
+}

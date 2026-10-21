@@ -1,0 +1,6 @@
+// EXPECT-ERROR: a trailing block cannot follow a call of what a call returns
+fn(fn()->void)->void pick() { return void(fn()->void body) { body(); }; }
+int main() {
+    pick()() { }
+    return 0;
+}

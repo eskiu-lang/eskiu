@@ -1,0 +1,9 @@
+// EXPECT-ERROR: `?` is not allowed in a trailing block
+import <result>;
+void twice(fn()->void body) { body(); body(); }
+Result<int, string> one() { return Ok<int, string>(1); }
+Result<int, string> run() {
+    twice() { int x = one()?; }
+    return Ok<int, string>(2);
+}
+int main() { return 0; }
