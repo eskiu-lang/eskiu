@@ -493,8 +493,12 @@ stays the last parameter of everything added meanwhile):
    4 to 9); key-value storage and the data directory; `ui_fetch` through `NSURLSession`,
    `HttpURLConnection` and the browser's `fetch` (the system's TLS). In the conformance scene
    on every host, the fetch against a local server.
-8. `Animated` and `Easing` on the frame scheduler, then gestures (pan, swipe; the
-   interactive iOS back swipe, swipe to delete).
+8. **Done.** Motion: transforms (`translate_x`, `translate_y`, `scale`, `rotate`) and
+   transitions (`transition_ms`, `easing`) in `Style`, animated by each host
+   (`UIView` animations, `ViewPropertyAnimator`, CSS transitions); `use_animated` for values
+   the host cannot animate; `ui_on_pan` (a drag taken from a pressable inside past the slop);
+   the kit's `SwipeToDelete`; the interactive iOS back swipe. Layout changes are not animated
+   yet.
 9. The kit's overlays: `Toast`, `Popover`, `Tooltip`, `DropdownMenu`, `Select`, date and
    color pickers.
 10. Device packages, as Expo's modules, each with its `native/` and `ui.toml`: notifications,
