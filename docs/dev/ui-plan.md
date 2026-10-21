@@ -479,12 +479,24 @@ Taken in groups after phase 1, each on every renderer with conformance cases:
    the URL and the history (command 3, event 10), under a configurable `<base>`. Links open
    their route. A removal is now sent before its descendants, so a leaving screen keeps its
    content while it slides out.
-6. `Animated`, on the frame scheduler; designed on its own; gestures, `DragAndDropList`, the
-   overlay components (`Toast`, `Popover`, `Tooltip`, `DropdownMenu`, `Select`, date and
-   color pickers) and the core primitives they need (absolute positioning, `on_layout`,
-   timers, hover, `Slider`).
-7. Single-platform APIs (Android toasts, drawer, permissions; iOS action sheets) in a
-   separate package.
+Next, in this order (phase 2 goes last: trailing blocks change no API, as long as a block
+stays the last parameter of everything added meanwhile):
+
+6. Core primitives: absolute positioning, `aspect_ratio`, `on_layout`, timers
+   (`use_interval`, `use_timeout`), hover, `Slider`.
+7. Core APIs (React Native's APIs list), in `<ui/...>` modules over the native-module
+   mechanism: `Platform`, `Appearance` (dark mode, the kit's theme following it), `Keyboard`
+   (dismiss, events), storage (the app's directory, `localStorage` on the web), `fetch` on
+   the web (the browser's, since the page has no sockets), `Share`, `Clipboard`, vibration
+   and haptics, `AccessibilityInfo`, the system language and RTL.
+8. `Animated` and `Easing` on the frame scheduler, then gestures (pan, swipe; the
+   interactive iOS back swipe, swipe to delete).
+9. The kit's overlays: `Toast`, `Popover`, `Tooltip`, `DropdownMenu`, `Select`, date and
+   color pickers.
+10. Device packages, as Expo's modules, each with its `native/` and `ui.toml`: notifications,
+    camera and photo picking, location, then sensors, secure storage and biometrics.
+    Single-platform APIs (Android toasts and permissions, iOS action sheets) too.
+11. `ui serve` (phase 5), then phase 2 and the 0.13 release.
 
 The repository has its documentation in `docs/` (getting started, architecture, state,
 components, style and layout, the platform, navigation, native code, protocol, hosts,
