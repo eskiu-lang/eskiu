@@ -117,16 +117,16 @@
 import &lt;ui&gt;;
 
 void Counter() {
-    Column(Style{padding: 24, gap: 12}, void() {
+    Column(Style{padding: 24, gap: 12}) {
         *Signal&lt;int&gt; count = use_signal&lt;int&gt;(0);
         String label;
         defer String_free(&amp;label);
         String_format(&amp;label, "Pressed %d times", count.get());
         TextWith(Style{font_size: 28, font_weight: 700}, label.data);
-        Button("Press me", void() {
+        Button("Press me") {
             count.set(count.get() + 1);
-        });
-    });
+        }
+    }
 }</code></pre>
       </section>
 
@@ -241,9 +241,9 @@ ui_on_pan(void(Pan p) {
 });
 Row(Style{translate_x: dx.get(),
           transition_ms: held.get() ? 0 : 250,
-          easing: EaseSpring}, void() {
+          easing: EaseSpring}) {
     Text("Arrástrame");
-});</code></pre>
+}</code></pre>
       </section>
 
       <section class="ui-wide" id="system">
@@ -346,9 +346,8 @@ ui serve          <span class="c"># o ui serve ios, android, macos</span></code>
       </section>
 
       <p class="note ui-note">
-        ui está en preview. Hoy las vistas usan lambdas explícitas; los trailing blocks,
-        planeados para Eskiu 0.13, permitirán escribir <code>Column(Style{padding: 16}) { ... }</code>
-        para la misma llamada. Los hosts de Windows y Linux llegan después.
+        ui está en preview. Las vistas se escriben con trailing blocks: <code>Column(Style{padding: 16}) { ... }</code>
+        pasa el bloque como último argumento de la llamada. Los hosts de Windows y Linux llegan después.
       </p>
     </div>
   </main>

@@ -520,7 +520,7 @@ The repository has its documentation in `docs/` (getting started, architecture, 
 components, style and layout, the platform, navigation, native code, protocol, hosts,
 testing), and the site a page for it (`site/ui.html`).
 
-### Phase 2: trailing blocks in the compiler (branch `trailing-blocks`)
+### Phase 2: trailing blocks in the compiler (done)
 
 Lockstep, one layer per commit:
 
@@ -538,7 +538,8 @@ Lockstep, one layer per commit:
 5. Formatter (`fmt_parity.sh`), editor grammars and version, LSP cases in `tests/lsp/`.
 6. Docs: spec section, book chapter, stability note, AGENTS row, CHANGELOG.
 
-Then the `ui` examples move to trailing blocks.
+Then the `ui` examples move to trailing blocks (done on `trailing-blocks` branches of ui, its
+packages and templates, merged once 0.13 is released, since their CI uses the latest release).
 
 ### Phase 3: native renderers
 

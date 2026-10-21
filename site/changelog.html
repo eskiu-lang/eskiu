@@ -193,8 +193,21 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <h2 id="unreleased">[Unreleased]</h2>
 <details class="cl-full">
 <summary>Details</summary>
+<h3 id="added">Added</h3>
+<ul>
+<li>Trailing blocks: a call statement may end in a block, passed as its last argument, so
+  <code>f(a) { BODY }</code> is <code>f(a, void() { BODY })</code>. <code>break</code>, <code>continue</code>, <code>await</code>, <code>?</code> and
+  <code>return</code> with a value inside the block are errors that say the block is a closure.</li>
+</ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li>A git dependency on a branch, a tag or <code>HEAD</code> that the lock does not pin yet resolves to
+  the remote's commit. The package mirror in <code>$ESKIU_HOME/pkgs</code> answered from what it had
+  fetched in an earlier run, so a new project got an old commit until <code>eskiuc fetch</code>.</li>
+<li>A parse error inside a lambda's body is reported where it is. The C++ compiler took the
+  failed body as a failed guess at a lambda and backed out, so the error pointed at the
+  lambda's return type, or at a lambda around it (<code>Expected expression, got VOID</code>); the
+  self-hosted compiler already reported it in place.</li>
 <li>A lambda in a generic function, passed to a parameter that does not escape, gets its
   env on the stack as it does elsewhere. It got a heap env that was never freed, so each
   <code>sort&lt;T&gt;</code>, <code>sort_partial&lt;T&gt;</code> and <code>sort_nth&lt;T&gt;</code> call leaked 16 bytes.</li>

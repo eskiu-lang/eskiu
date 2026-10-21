@@ -1335,6 +1335,19 @@ int  inc(int x) { return x + 1; }
 int r   = apply(inc, 41);          // r == 42
 </code></pre>
 <p>The compiler synthesizes a tiny adapter so the function fits the <code>{fn_ptr, env_ptr}</code> calling convention (the function does not take an environment); this is transparent to your code.</p>
+<p><strong>Trailing blocks.</strong> A call statement may end in a block. The block is a <code>void()</code> lambda passed as the call's last argument, so <code>f(a) { BODY }</code> is <code>f(a, void() { BODY })</code>:</p>
+<pre><code class="language-eskiu">void twice(fn()-&gt;void body) { body(); body(); }
+
+twice() {
+    printf(&quot;hi\n&quot;);
+}
+Column(Style{gap: 8}) {
+    Text(&quot;one&quot;);
+    Text(&quot;two&quot;);
+}
+list.each() { total_seen++; }   // a dot-call, a generic call or a closure variable work too
+</code></pre>
+<p>The block is a lambda in every other respect: it captures by value, a <code>return;</code> leaves the block, and <code>break</code>, <code>continue</code>, <code>await</code>, <code>?</code> and <code>return</code> with a value cannot reach the enclosing function (each is a compile error that says the block is a closure). A <code>;</code> after the block is accepted. The block must follow the call's own <code>)</code> on a call statement: <code>(f()) { }</code>, <code>f()() { }</code>, an initializer (<code>int x = f(1) { };</code>) and a <code>return</code> value are errors. At the start of a statement <code>Name(...) {</code> is a call with a trailing block, not a lambda whose return type is <code>Name</code>; write a lambda there in parentheses or bind it.</p>
 <h3 id="66-template-functions">6.6 Template Functions</h3>
 <p>Template functions are parameterized by one or more type variables declared in angle brackets after the function name:</p>
 <pre><code class="language-eskiu">T identity&lt;T&gt;(T x) {
