@@ -280,8 +280,9 @@ Checks:
   omitted keys never collide. String keys are a later addition.
 - **Scope of a key:** the siblings emitted by one run of one parent. The same key under two
   parents names two different nodes; moving an item between parents remounts it.
-- **Unkeyed children** match by position among the unkeyed siblings and by element kind (a
-  primitive or the component's function).
+- **Unkeyed children** match by position among the unkeyed siblings of their own kind, so an
+  element that comes and goes does not move its siblings of other kinds (found when a modal
+  opening before a list remounted it).
 - **Keyed children** match by key among keyed siblings; a moved keyed child keeps its node and
   state and produces a `move` mutation.
 - **Same key, different kind:** the old child is unmounted (its state freed) and a new one
@@ -454,9 +455,12 @@ Taken in groups after phase 1, each on every renderer with conformance cases:
    border, radius, opacity, align, justify), `Pressable`, `Switch`, `ActivityIndicator`,
    window size and scale (Dimensions, PixelRatio). Controlled inputs: a refused edit or
    toggle is sent back.
-2. Lists and overlays: a virtualized `FlatList` (mounts only what is near the viewport) and
-   `SectionList` over it, `RefreshControl`, `Modal`, `Alert`, `StatusBar`, `BackHandler`
-   (Android) and `Linking`.
+2. **Done.** Lists and overlays: a virtualized `FlatList` (mounts only what is near the
+   viewport; fixed row heights, as `getItemLayout`) and `SectionList` over it,
+   `RefreshControl` (native on iOS; on Android, whose framework has no pull to refresh, a
+   drag at the top with an overlapping indicator; on the web, wheel or drag), `Modal` (a
+   layer over the screen with its own layout; back and Escape ask it to close), `Alert`
+   and `Linking` (commands in the commit, op 10), `StatusBar`, `use_back`.
 3. `Animated`, on the frame scheduler; designed on its own.
 4. Single-platform APIs (Android toasts, drawer, permissions; iOS action sheets) in a
    separate package.
