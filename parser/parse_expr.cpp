@@ -232,26 +232,30 @@ bool Parser::lambdaAhead() const {
 }
 
 // Lambda: RetType(params) { body }. Speculative: backs out (returns null) when the
-// tokens do not form one.
+// tokens do not form one. Only the header is a guess: once `RetType(params) {` is read the
+// body is parsed for good, so an error in it is reported where it is, not as a failed guess
+// at the lambda (the self-hosted parser does the same).
 ExprPtr Parser::tryParseLambda() {
     Token tok = peek();
-    return speculate([&]() -> ExprPtr {
-        std::string retType = parseType();
+    std::string retType;
+    std::vector<bool> esc;
+    std::vector<std::pair<std::string, std::string>> params;
+    bool header = speculate([&]() -> bool {
+        retType = parseType();
         consume(TokenType::LPAREN, "");
-        std::vector<bool> esc;
-        auto params = parseParameterList(&esc);
+        params = parseParameterList(&esc);
         consume(TokenType::RPAREN, "");
-        if (check(TokenType::LBRACE)) {
-            LocalScope scope(*this);
-            declareParams(params);
-            StmtPtr body = parseBlockStatement();
-            auto lambda = std::make_shared<LambdaExpr>(params, retType, body);
-            lambda->line = tok.line; lambda->col = tok.column;
-            lambda->paramEscaping = esc;
-            return lambda;
-        }
-        throw ParseError("not a lambda");
+        if (!check(TokenType::LBRACE)) throw ParseError("not a lambda");
+        return true;
     });
+    if (!header) return nullptr;
+    LocalScope scope(*this);
+    declareParams(params);
+    StmtPtr body = parseBlockStatement();
+    auto lambda = std::make_shared<LambdaExpr>(params, retType, body);
+    lambda->line = tok.line; lambda->col = tok.column;
+    lambda->paramEscaping = esc;
+    return lambda;
 }
 
 ExprPtr Parser::parseUnary() {
