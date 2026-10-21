@@ -1,0 +1,9 @@
+void twice(fn()->void body) { body(); body(); }
+int main() {
+    twice() { printf("a\n"); twice() { printf("b\n"); } }
+    twice()   {
+  printf("c\n");
+    };
+    if (1 == 1) twice() { printf("d\n"); }
+    return 0;
+}
