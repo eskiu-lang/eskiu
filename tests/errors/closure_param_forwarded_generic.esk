@@ -1,0 +1,5 @@
+// EXPECT-ERROR: closure parameter 'f' escapes (used beyond a direct call); mark it `escaping`
+// A generic's closure params are not checked for escape, so forwarding to one escapes.
+int g<T>(T x, fn()->int f) { return f(); }
+int h(fn()->int f) { return g(1, f); }
+int main() { return h(int() { return 1; }); }

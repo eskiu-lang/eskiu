@@ -75,6 +75,13 @@ if [ "$#" -eq 0 ]; then
     vb="$(ESKIU_ROOT="$(pwd)" "$CGBIN" --test-codegen tests/volatile_bitfield.esk 2>/dev/null | grep -c 'volatile i16')"
     if [ "$vb" = 12 ]; then echo "ok    volatile_bitfield  (IR: 12 volatile accesses)"
     else echo "FAIL  volatile_bitfield  (IR: $vb volatile i16 accesses, expected 12)"; fail=1; fi
+    # A lambda in a generic body keeps a heap env only where an instance lets it escape
+    # (3 in the test's gl_ functions; tests/run.sh checks the C++ side).
+    total=$((total + 1))
+    gn="$(ESKIU_ROOT="$(pwd)" "$CGBIN" --test-codegen tests/generic_lambda_env.esk 2>/dev/null |
+        awk '/^define/{fn=$0} /call ptr @malloc/{print fn}' | grep -c '@gl_')"
+    if [ "$gn" = 3 ]; then echo "ok    generic_lambda_env  (IR: 3 heap envs)"
+    else echo "FAIL  generic_lambda_env  (IR: $gn heap envs in gl_ functions, expected 3)"; fail=1; fi
     # Inline asm outputs lower like clang's on x86-64 (tests/run.sh checks the C++ side).
     total=$((total + 1))
     ia="$(ESKIU_ROOT="$(pwd)" "$CGBIN" --target x86_64-unknown-linux-gnu --test-codegen tests/inline_asm_out.esk 2>/dev/null)"

@@ -326,6 +326,11 @@ fi
 v_n="$("$ESKIUC" --test-codegen "$here/volatile_access.esk" 2>/dev/null | grep -c 'volatile i32')"
 if [[ "$v_n" -eq 10 ]]; then ok "codegen/volatile-access"
 else bad "codegen/volatile-access" "$v_n volatile i32 accesses in the IR, expected 10"; fi
+# A lambda in a generic body keeps a heap env only where an instance lets it escape (3).
+gl_n="$("$ESKIUC" --test-codegen "$here/generic_lambda_env.esk" 2>/dev/null |
+    awk '/^define/{fn=$0} /env.heap = /{print fn}' | grep -c '@gl_')"
+if [[ "$gl_n" -eq 3 ]]; then ok "codegen/generic-lambda-env"
+else bad "codegen/generic-lambda-env" "$gl_n heap envs in the gl_ functions, expected 3"; fi
 # A bitfield through a `volatile` variable, and a volatile variable's initializing store.
 vb_n="$("$ESKIUC" --test-codegen "$here/volatile_bitfield.esk" 2>/dev/null | grep -c 'volatile i16')"
 if [[ "$vb_n" -eq 12 ]]; then ok "codegen/volatile-bitfield"
