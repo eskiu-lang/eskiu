@@ -461,9 +461,34 @@ Taken in groups after phase 1, each on every renderer with conformance cases:
    drag at the top with an overlapping indicator; on the web, wheel or drag), `Modal` (a
    layer over the screen with its own layout; back and Escape ask it to close), `Alert`
    and `Linking` (commands in the commit, op 10), `StatusBar`, `use_back`.
-3. `Animated`, on the frame scheduler; designed on its own.
-4. Single-platform APIs (Android toasts, drawer, permissions; iOS action sheets) in a
+3. **Done.** A component kit, `<ui/kit>` (Dioxus's components as a reference): a theme,
+   `Card`, `Badge`, `Avatar`, `Separator`, `ProgressBar`, `KitButton`, `TextField`,
+   `Checkbox`, `RadioGroup`, `SegmentedControl`, `TabBar`, `Toolbar`, `NavBar`, `ListItem`,
+   `Collapsible`, `Accordion`; `ui_own` frees the closures a component keeps.
+4. **Done.** Native modules and views: code per platform in `native/{web,ios,android}` of the
+   app and of every package in the lock (Objective-C, Swift, Java, Kotlin, C, JavaScript);
+   `use_native_event` and `ui_native_emit` (any thread) for modules, `NativeView` with named
+   props (op 11) and events for views, a registry in each host. `ui.toml` (kept apart from
+   `eskiu.toml`, whose reader rejects unknown tables) gives the app's name, id and URL scheme,
+   frameworks, permissions and plist entries; Maven dependencies or Kotlin build through a
+   generated Gradle project, Swift packages or Swift through a generated Xcode project.
+   Checked by `tests/web.mjs` and `tools/check_native.py` on iOS and Android.
+5. **Done.** Navigation: a `Router` (a stack of routes owned by the model) and `Navigator`,
+   whose screens (kind 14) stay mounted under the top. On iOS and Android pushes and pops
+   slide, with the back button and the iOS edge swipe; on the web the first navigator follows
+   the URL and the history (command 3, event 10), under a configurable `<base>`. Links open
+   their route. A removal is now sent before its descendants, so a leaving screen keeps its
+   content while it slides out.
+6. `Animated`, on the frame scheduler; designed on its own; gestures, `DragAndDropList`, the
+   overlay components (`Toast`, `Popover`, `Tooltip`, `DropdownMenu`, `Select`, date and
+   color pickers) and the core primitives they need (absolute positioning, `on_layout`,
+   timers, hover, `Slider`).
+7. Single-platform APIs (Android toasts, drawer, permissions; iOS action sheets) in a
    separate package.
+
+The repository has its documentation in `docs/` (getting started, architecture, state,
+components, style and layout, the platform, navigation, native code, protocol, hosts,
+testing), and the site a page for it (`site/ui.html`).
 
 ### Phase 2: trailing blocks in the compiler (branch `trailing-blocks`)
 
