@@ -2851,6 +2851,14 @@ void sema_expr_k(Sema* s, *ExprNode e) {
                 hi = hi + 1;
             }
         }
+        int cgen = 0;
+        if (cfd != null && List_len<TypeParam>(&cfd.type_params) > 0) {
+            cgen = 1;
+        }
+        while (i < n && cgen == 1) {
+            sema_generic_call_arg(s, cfd, i, List_get<*ExprNode>(&e.kids, i));
+            i = i + 1;
+        }
         while (i < n) {
             *ExprNode ka = List_get<*ExprNode>(&e.kids, i);
             int fwd = 0;
@@ -2874,6 +2882,13 @@ void sema_expr_k(Sema* s, *ExprNode e) {
                 }
                 if (lesc == 0 && s.in_inst == 0 && cfd.is_async == 0) {
                     s.lam_arg_stack = 1;
+                }
+                if (s.in_inst == 1) {   // decided after the instances
+                    int desc = lesc;
+                    if (cfd.is_async == 1) {
+                        desc = 1;
+                    }
+                    sema_defer_lambda(s, ka, desc);
                 }
             }
             if (fwd == 1) {
@@ -3034,7 +3049,11 @@ void sema_expr_k(Sema* s, *ExprNode e) {
         int i = 0;
         int n = List_len<*ExprNode>(&e.kids);
         while (i < n) {
-            sema_expr(s, List_get<*ExprNode>(&e.kids, i));
+            if (fd != null && List_len<TypeParam>(&fd.type_params) > 0) {
+                sema_generic_call_arg(s, fd, i, List_get<*ExprNode>(&e.kids, i));
+            } else {
+                sema_expr(s, List_get<*ExprNode>(&e.kids, i));
+            }
             i = i + 1;
         }
         return;
@@ -3116,7 +3135,7 @@ void sema_stack_envs(Sema* s) {
         }
     }
     int k = 0;
-    while (k < List_len<*ExprNode>(&s.wlam)) {
+    while (k < List_len<*ExprNode>(&s.wlam) && s.in_inst == 0) {   // not per instance (as the C++)
         if (List_get<int>(&s.wlam_async, k) == 0 && sema_in_list(&s.wlocals_esc, List_get<string>(&s.wlam_name, k)) == 0) {
             *ExprNode wl = List_get<*ExprNode>(&s.wlam, k);
             wl.stack_env = 1;
@@ -3134,10 +3153,11 @@ int sema_captured_by_escaping(Sema* s, string name) {
     int sd = List_get<Sym>(&s.syms, si).depth;
     int j = 0;
     while (j < List_len<int>(&s.lam_bounds)) {
-        if (sd <= List_get<int>(&s.lam_bounds, j) && List_get<int>(&s.lam_esc, j) == 1) {
+        // In an instance no lambda's env is decided yet: each one outlives the call.
+        if (sd <= List_get<int>(&s.lam_bounds, j) && (List_get<int>(&s.lam_esc, j) == 1 || s.in_inst == 1)) {
             // A lambda bound to a local escapes only if that local is used beyond a call.
             string lo = List_get<string>(&s.lam_local_of, j);
-            if (lo[0] == 0) {
+            if (lo[0] == 0 || s.in_inst == 1) {
                 return 1;
             }
             List_push<string>(&s.cap_param, name);
@@ -3146,6 +3166,156 @@ int sema_captured_by_escaping(Sema* s, string name) {
         j = j + 1;
     }
     return 0;
+}
+
+// Note a lambda whose env is decided after the instances; `esc` = 1 when this use escapes.
+void sema_defer_lambda(Sema* s, *ExprNode lam, int esc) {
+    int i = 0;
+    while (i < List_len<*ExprNode>(&s.dl_lam)) {
+        if (List_get<*ExprNode>(&s.dl_lam, i) == lam) {
+            if (esc == 1) {
+                List_set<int>(&s.dl_esc, i, 1);
+            }
+            return;
+        }
+        i = i + 1;
+    }
+    List_push<*ExprNode>(&s.dl_lam, lam);
+    List_push<int>(&s.dl_esc, esc);
+}
+
+// Argument `i` of a call to the generic `fd` (mirrors the C++ visitGenericCallArg). A
+// closure param of the instance being checked, passed to a non-escaping param of `fd`,
+// escapes only if that param does; a lambda passed to one is decided after the instances.
+void sema_generic_call_arg(Sema* s, *DeclNode fd, int i, *ExprNode ka) {
+    int esc = fd.is_async;
+    if (i < List_len<int>(&fd.param_escaping) && List_get<int>(&fd.param_escaping, i) == 1) {
+        esc = 1;
+    }
+    if (i >= List_len<Param>(&fd.params) || sema_streq(List_get<Param>(&fd.params, i).ty, "...") == 1) {
+        esc = 1;
+    }
+    int own = -1;
+    if (ka != null && ka.kind == EK_IDENT && esc == 0 && s.in_inst == 1 && s.cur_tmpl != null
+        && sema_in_list(&s.watched, ka.sval) == 1) {
+        int j = 0;
+        while (j < List_len<Param>(&s.cur_tmpl.params)) {
+            if (sema_streq(List_get<Param>(&s.cur_tmpl.params, j).name, ka.sval) == 1) {
+                own = j;
+            }
+            j = j + 1;
+        }
+    }
+    if (own >= 0) {
+        string prev = s.callee_ctx;
+        s.callee_ctx = ka.sval;
+        sema_expr(s, ka);
+        s.callee_ctx = prev;
+        List_push<*DeclNode>(&s.gfw_fn, s.cur_tmpl);
+        List_push<int>(&s.gfw_idx, own);
+        List_push<*DeclNode>(&s.gfw_to, fd);
+        List_push<int>(&s.gfw_to_idx, i);
+    } else {
+        sema_expr(s, ka);
+    }
+    if (ka != null && ka.kind == EK_LAMBDA) {
+        sema_defer_lambda(s, ka, esc);
+        if (esc == 0) {
+            List_push<*ExprNode>(&s.dv_lam, ka);
+            List_push<*DeclNode>(&s.dv_fn, fd);
+            List_push<int>(&s.dv_idx, i);
+        }
+    }
+}
+
+// The index of generic param (fn, idx) in the gpe lists, or -1 if no instance recorded it.
+int sema_gpe_find(Sema* s, *DeclNode fd, int idx) {
+    int i = 0;
+    while (i < List_len<*DeclNode>(&s.gpe_fn)) {
+        if (List_get<*DeclNode>(&s.gpe_fn, i) == fd && List_get<int>(&s.gpe_idx, i) == idx) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+// Does generic param (fn, idx) escape (unrecorded counts as escaping)?
+int sema_gpe_escapes(Sema* s, *DeclNode fd, int idx) {
+    int at = sema_gpe_find(s, fd, idx);
+    if (at < 0) {
+        return 1;
+    }
+    return List_get<int>(&s.gpe_esc, at);
+}
+
+// At the end of an instance of a free generic: whether each closure param escaped here.
+void sema_record_generic_params(Sema* s, *DeclNode f) {
+    if (s.in_inst == 0 || s.cur_tmpl == null) {
+        return;
+    }
+    int i = 0;
+    while (i < List_len<Param>(&f.params)) {
+        Param pm = List_get<Param>(&f.params, i);
+        if (sema_is_fn_type(sema_isub(s, pm.ty)) == 1) {
+            int esc = f.is_async;
+            if (i < List_len<int>(&f.param_escaping) && List_get<int>(&f.param_escaping, i) == 1) {
+                esc = 1;
+            }
+            if (sema_in_list(&s.escaped, pm.name) == 1) {
+                esc = 1;
+            }
+            int at = sema_gpe_find(s, s.cur_tmpl, i);
+            if (at < 0) {
+                List_push<*DeclNode>(&s.gpe_fn, s.cur_tmpl);
+                List_push<int>(&s.gpe_idx, i);
+                List_push<int>(&s.gpe_esc, esc);
+            } else if (esc == 1) {
+                List_set<int>(&s.gpe_esc, at, 1);
+            }
+        }
+        i = i + 1;
+    }
+}
+
+// Decide the env of every deferred lambda (mirrors the C++ finalizeGenericEscapes): a
+// generic param escapes when an instance let it escape or it is forwarded to one that does.
+void sema_finalize_generic_escapes(Sema* s) {
+    int changed = 1;
+    while (changed == 1) {
+        changed = 0;
+        int i = 0;
+        while (i < List_len<*DeclNode>(&s.gfw_fn)) {
+            *DeclNode from = List_get<*DeclNode>(&s.gfw_fn, i);
+            int fi = List_get<int>(&s.gfw_idx, i);
+            int at = sema_gpe_find(s, from, fi);
+            if (at >= 0 && List_get<int>(&s.gpe_esc, at) == 0
+                && sema_gpe_escapes(s, List_get<*DeclNode>(&s.gfw_to, i), List_get<int>(&s.gfw_to_idx, i)) == 1) {
+                List_set<int>(&s.gpe_esc, at, 1);
+                changed = 1;
+            }
+            i = i + 1;
+        }
+    }
+    int l = 0;
+    while (l < List_len<*ExprNode>(&s.dl_lam)) {
+        *ExprNode lam = List_get<*ExprNode>(&s.dl_lam, l);
+        int esc = List_get<int>(&s.dl_esc, l);
+        int v = 0;
+        while (v < List_len<*ExprNode>(&s.dv_lam)) {
+            if (List_get<*ExprNode>(&s.dv_lam, v) == lam
+                && sema_gpe_escapes(s, List_get<*DeclNode>(&s.dv_fn, v), List_get<int>(&s.dv_idx, v)) == 1) {
+                esc = 1;
+            }
+            v = v + 1;
+        }
+        if (esc == 1) {
+            lam.stack_env = 0;
+        } else {
+            lam.stack_env = 1;
+        }
+        l = l + 1;
+    }
 }
 
 void sema_check_lambda(Sema* s, *ExprNode e) {

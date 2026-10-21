@@ -1850,7 +1850,12 @@ void sema_check_fn(Sema* s, *DeclNode f, string self_type) {
         if (pe < List_len<int>(&f.param_escaping)) {
             marked = List_get<int>(&f.param_escaping, pe);
         }
-        if (sema_is_fn_type(pm.ty) == 1 && marked == 0 && s.in_inst == 0) {
+        // In an instance the param's type is the instance's (a `T` may be a closure).
+        string wty = pm.ty;
+        if (s.in_inst == 1) {
+            wty = sema_isub(s, pm.ty);
+        }
+        if (sema_is_fn_type(wty) == 1 && marked == 0) {
             List_push<string>(&s.watched, pm.name);
         }
         pe = pe + 1;
@@ -1932,9 +1937,10 @@ void sema_check_fn(Sema* s, *DeclNode f, string self_type) {
         }
         ci = ci + 1;
     }
+    sema_record_generic_params(s, f);
     int wi = 0;
     int wn = List_len<string>(&s.watched);
-    while (wi < wn) {
+    while (wi < wn && s.in_inst == 0) {   // enforced on non-generic functions (as the C++)
         string wnm = List_get<string>(&s.watched, wi);
         if (sema_in_list(&s.escaped, wnm) == 1) {
             s.had_error = 1;

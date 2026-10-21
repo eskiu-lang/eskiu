@@ -490,6 +490,9 @@ void TypeChecker::visit(FunctionDecl* node) {
     // call. A local of an async body keeps a heap env: it lives in the frame across
     // suspensions, and the async lowering frees it with the frame.
     auto outlives = [&](LambdaExpr* l) {
+        // In an instance a lambda's env is not decided yet (finalizeGenericEscapes), and a
+        // stamp left by an earlier check is not this instance's: it outlives the call.
+        if (inInstance) return true;
         if (!l->escapes) return false;
         auto b = lambdaLocal.find(l);
         return b == lambdaLocal.end() || escapedLambdaLocals.count(b->second) || asyncLocalLambdas.count(l);
@@ -505,10 +508,20 @@ void TypeChecker::visit(FunctionDecl* node) {
     for (const auto& [lam, name] : lambdaLocal)
         if (!escapedLambdaLocals.count(name) && !asyncLocalLambdas.count(lam)) lam->escapes = false;
     for (const auto& [lam, name] : watchedCaptures) {
-        if (!lam->escapes) continue;
+        if (!lam->escapes && !inInstance) continue;
         auto bound = lambdaLocal.find(lam);
         if (bound != lambdaLocal.end() && !escapedLambdaLocals.count(bound->second)) continue;
         escapedFnParams.insert(name);
+    }
+    // An instance of a free generic records, per closure param, whether it escaped here.
+    if (inInstance && curTemplate && node->params.size() == curTemplate->params.size()) {
+        for (size_t i = 0; i < node->params.size(); ++i) {
+            const std::string& pty = node->params[i].first;
+            if (pty.size() <= 3 || pty.substr(0, 3) != "fn(") continue;
+            bool marked = i < node->paramEscaping.size() && node->paramEscaping[i];
+            bool& e = genericParamEscapes[{curTemplate, i}];
+            e = e || marked || node->isAsync || escapedFnParams.count(node->params[i].second);
+        }
     }
     for (size_t i = 0; i < node->params.size() && !inInstance; ++i) {
         if (escapedFnParams.count(node->params[i].second)) {

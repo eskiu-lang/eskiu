@@ -128,6 +128,22 @@ struct Sema {
     List<string> isub_a;
     int in_inst;
     int inst_depth;
+    // Generic bodies are checked per instance, so a lambda in one, or one passed to a
+    // generic callee, gets its env decided once every instance is checked
+    // (sema_finalize_generic_escapes; mirrors the C++ finalizeGenericEscapes).
+    *DeclNode cur_tmpl;          // the free generic whose instance is being checked
+    List<*DeclNode> gpe_fn;      // per generic closure param (fn, index): escapes in some instance
+    List<int> gpe_idx;
+    List<int> gpe_esc;
+    List<*DeclNode> gfw_fn;      // a generic's param forwarded to another generic's param
+    List<int> gfw_idx;
+    List<*DeclNode> gfw_to;
+    List<int> gfw_to_idx;
+    List<*ExprNode> dl_lam;      // deferred lambdas and whether one of their uses escapes
+    List<int> dl_esc;
+    List<*ExprNode> dv_lam;      // a deferred lambda passed to a generic's param
+    List<*DeclNode> dv_fn;
+    List<int> dv_idx;
     // Globals declared after the top-level declaration being checked: C declares a global
     // at its definition, so an earlier initializer or function body cannot name it.
     StrTab late_globals;   // a set: name -> 1
@@ -900,6 +916,19 @@ void sema_init(Sema* s, string filename) {
     List_init<string>(&s.watched, 4);
     List_init<string>(&s.escaped, 4);
     List_init<string>(&s.narrowed, 4);
+    s.cur_tmpl = null;
+    List_init<*DeclNode>(&s.gpe_fn, 4);
+    List_init<int>(&s.gpe_idx, 4);
+    List_init<int>(&s.gpe_esc, 4);
+    List_init<*DeclNode>(&s.gfw_fn, 4);
+    List_init<int>(&s.gfw_idx, 4);
+    List_init<*DeclNode>(&s.gfw_to, 4);
+    List_init<int>(&s.gfw_to_idx, 4);
+    List_init<*ExprNode>(&s.dl_lam, 4);
+    List_init<int>(&s.dl_esc, 4);
+    List_init<*ExprNode>(&s.dv_lam, 4);
+    List_init<*DeclNode>(&s.dv_fn, 4);
+    List_init<int>(&s.dv_idx, 4);
     s.has_ops = 0;
     List_init<*ExprNode>(&s.tern_ifn, 4);
     List_init<string>(&s.tern_ift, 4);

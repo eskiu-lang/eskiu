@@ -1212,7 +1212,11 @@ void sema_check_insts(Sema* s, string primary) {
         s.had_error = 0;
         s.in_inst = 1;
         s.inst_depth = p.depth;
+        if (p.owner == null) {
+            s.cur_tmpl = p.func;
+        }
         sema_check_fn(s, p.func, self_t);
+        s.cur_tmpl = null;
         s.in_inst = 0;
         s.inst_depth = 0;
         if (s.had_error == 1) {
@@ -1546,6 +1550,7 @@ int sema_check(Sema* s, *Program prog) {
         i = i + 1;
     }
     sema_check_insts(s, primary);
+    sema_finalize_generic_escapes(s);
     s.filename = primary;
     sema_check_value_cycles(s);
     sema_warn_unused_fns(s);

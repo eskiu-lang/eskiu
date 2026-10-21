@@ -1210,7 +1210,7 @@ void TypeChecker::visit(CallExpr* node) {
         auto tmplIt = funcTemplateDecls.find(funcName);
         if (tmplIt != funcTemplateDecls.end()) {
             FunctionDecl* fd = tmplIt->second;
-            for (auto& a : node->args) a->accept(this);
+            for (size_t j = 0; j < node->args.size(); ++j) visitGenericCallArg(fd, j, node->args[j]);
             std::set<std::string> tps(fd->typeParams.begin(), fd->typeParams.end());
             std::map<std::string, std::string> subs;
             // A parameter spelled as a bare type parameter (`T a`) is a by-value deduction;
@@ -1338,6 +1338,14 @@ void TypeChecker::visit(CallExpr* node) {
             // Set both ways: the check after the async lowering sees an async fn's closure
             // params as escaping (the frame keeps them), overriding the first check.
             if (!inInstance) lam->escapes = paramEscapes;
+            else {
+                // Decided after the instances; an async callee's frame keeps its closures.
+                bool asyncCallee = false;
+                auto fa = fnDeclsAll.find(funcName);
+                if (fa != fnDeclsAll.end())
+                    for (const FunctionDecl* d : fa->second) asyncCallee = asyncCallee || d->isAsync;
+                deferredLambdas[lam].escapes |= paramEscapes || asyncCallee;
+            }
         }
         if (i < fixedCount) {
             std::string argType = getExpressionType(node->args[i].get());
@@ -2296,6 +2304,33 @@ void TypeChecker::visit(ThreadCreateExpr* node) {
     expressionTypes[node] = "*void";
 }
 
+// Argument `i` of a call to the generic `fd`. A closure param of the instance being checked,
+// passed to a non-escaping param of `fd`, escapes only if that param does; a lambda passed
+// to one is decided after every instance is checked.
+void TypeChecker::visitGenericCallArg(FunctionDecl* fd, size_t i, const ExprPtr& arg) {
+    bool escapes = fd->isAsync || (i < fd->paramEscaping.size() && fd->paramEscaping[i]) ||
+                   i >= fd->params.size() || fd->params[i].first == "...";
+    auto* id = dynamic_cast<IdentExpr*>(arg.get());
+    long own = -1;
+    if (id && !escapes && inInstance && curTemplate && nonEscapingFnParams.count(id->name))
+        for (size_t j = 0; j < curTemplate->params.size(); ++j)
+            if (curTemplate->params[j].second == id->name) own = (long)j;
+    if (own >= 0) {
+        std::string prev = calleeContext;
+        calleeContext = id->name;
+        arg->accept(this);
+        calleeContext = prev;
+        genericParamForwards[{curTemplate, (size_t)own}].insert({fd, i});
+    } else {
+        arg->accept(this);
+    }
+    if (auto* lam = dynamic_cast<LambdaExpr*>(arg.get())) {
+        auto& d = deferredLambdas[lam];
+        if (escapes) d.escapes = true;
+        else d.via.insert({fd, i});
+    }
+}
+
 void TypeChecker::visit(TemplateCallExpr* node) {
     noteDeprecatedUse(node->templateName, node->line, node->col);
     // The callee may assign any global: a global's narrowing ends after the call.
@@ -2391,7 +2426,7 @@ void TypeChecker::visit(TemplateCallExpr* node) {
     for (size_t i = 0; i < node->args.size() && i < fixed; ++i) {
         if (node->typeArgs.size() == tp.size())
             inferVariantTarget(node->args[i], substType(fd->params[i].first, writtenSubs), true);
-        node->args[i]->accept(this);
+        visitGenericCallArg(fd, i, node->args[i]);
         std::string expected = substType(fd->params[i].first, subs);
         std::string got      = getExpressionType(node->args[i].get());
         std::string e = assignabilityError(expected, got, node->args[i].get());

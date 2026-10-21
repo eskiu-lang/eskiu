@@ -411,6 +411,19 @@ private:
     // Lambdas bound to a local of an async body: the local becomes a frame field, so the
     // env must outlive a suspension (heap; the async lowering frees it with the frame).
     std::set<LambdaExpr*> asyncLocalLambdas;
+    // Generic bodies are checked per instance and never stamp the shared AST, so a lambda
+    // in one, or one passed to a generic callee, gets its env decided once every instance
+    // is checked (finalizeGenericEscapes): a closure param of a generic escapes when it
+    // escapes in some instance, or is forwarded to a generic's param that does. A param
+    // never recorded counts as escaping.
+    using EscKey = std::pair<const FunctionDecl*, size_t>;
+    const FunctionDecl* curTemplate = nullptr;   // the free generic whose instance is checked
+    std::map<EscKey, bool> genericParamEscapes;
+    std::map<EscKey, std::set<EscKey>> genericParamForwards;
+    struct DeferredLambda { bool escapes = false; std::set<EscKey> via; };
+    std::map<LambdaExpr*, DeferredLambda> deferredLambdas;
+    void visitGenericCallArg(FunctionDecl* fd, size_t i, const ExprPtr& arg);
+    void finalizeGenericEscapes();
     std::string calleeContext;
     // True while checking the body of an `async fn` — gates `await`.
     bool inAsyncFn = false;

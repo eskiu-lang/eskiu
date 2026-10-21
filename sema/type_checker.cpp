@@ -254,6 +254,7 @@ bool TypeChecker::check(Program* program) {
             if (!d->paramDefaults.empty()) { paramDefaultsOf(kv.first); break; }
 
     checkPendingInstances();
+    finalizeGenericEscapes();
 
     checkValueCycles(program);
 
@@ -586,6 +587,28 @@ std::string TypeChecker::genericCallRet(FunctionDecl* fd, const std::map<std::st
     return normalizeType(r);
 }
 
+// Decide the env of every lambda whose escape depended on generic instances. Set both ways:
+// the check after the async lowering decides again.
+void TypeChecker::finalizeGenericEscapes() {
+    std::set<EscKey> escaping;
+    for (const auto& [k, e] : genericParamEscapes)
+        if (e) escaping.insert(k);
+    auto escapes = [&](const EscKey& k) { return escaping.count(k) || !genericParamEscapes.count(k); };
+    for (bool changed = true; changed;) {
+        changed = false;
+        for (const auto& [k, to] : genericParamForwards) {
+            if (escaping.count(k)) continue;
+            for (const auto& d : to)
+                if (escapes(d)) { escaping.insert(k); changed = true; break; }
+        }
+    }
+    for (auto& [lam, d] : deferredLambdas) {
+        bool e = d.escapes;
+        for (const auto& k : d.via) e = e || escapes(k);
+        lam->escapes = e;
+    }
+}
+
 void TypeChecker::checkPendingInstances() {
     static const int kMaxDepth = 64;
     for (size_t i = 0; i < pendingInstances.size(); ++i) {
@@ -622,7 +645,9 @@ void TypeChecker::checkPendingInstances() {
         instDepth = p.depth;
         instRawReturnType = p.fn->returnType;
         inInstance = true;
+        curTemplate = p.selfType.empty() ? p.fn : nullptr;
         inst.accept(this);
+        curTemplate = nullptr;
         inInstance = false;
         if (p.fn->isAsync)
             for (const auto& [e, t] : expressionTypes) instanceExprTypes[e].push_back({p.subs, t});
