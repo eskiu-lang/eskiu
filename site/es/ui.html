@@ -48,7 +48,20 @@
     .ui-hosts div { background: var(--lilac-2); border-radius: 14px; padding: 14px 16px; font-size: 15px; line-height: 1.5; }
     .ui-hosts b { display: block; color: var(--ink); }
     .ui-note { max-width: 1180px; margin: 0 auto; }
+    .ui-wide { padding-block: 64px; border-top: 1px solid var(--rule); max-width: 1180px; margin: 0 auto;
+               scroll-margin-top: 96px; }
+    .ui-wide h2 { margin: 0 0 14px; font-family: var(--serif); font-weight: 700; font-size: clamp(30px, 3.4vw, 40px);
+                  line-height: 1.1; letter-spacing: -0.02em; color: var(--ink); }
+    .ui-wide > p { margin: 0 0 16px; max-width: 760px; }
+    .ui-wide figure { margin: 32px 0 0; }
+    .ui-wide img { display: block; width: 100%; height: auto; border: 0; border-radius: 0; box-shadow: none; }
+    .ui-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-top: 28px; }
+    .ui-grid div { background: #fff; border: 1.5px solid var(--rule); border-radius: 16px; padding: 18px; font-size: 15px;
+                   line-height: 1.5; color: var(--ink2); }
+    .ui-grid b { display: block; margin-bottom: 4px; color: var(--ink); font-size: 16px; }
+    .ui-grid code { font-size: 13px; }
     @media (min-width: 960px) {
+      .ui-wide > p { font-size: 18px; }
       .ui-row { grid-template-columns: 1fr 1.1fr; gap: 64px; }
       .ui-row.flip > :first-child { order: 2; }
       .ui-row p, .ui-row li { font-size: 18px; }
@@ -59,14 +72,14 @@
   <header class="top">
     <div class="bar top-in">
       <a class="brand" href="index.html"><img src="../../assets/logo.png" alt="" />eskiu<span class="v">v0.12.0</span></a>
-      <nav class="nav" aria-label="Main"><div class="nav-g"><button type="button" class="nav-t">Aprende<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="quickstart.html"><b>Empieza</b><span>Instálalo y corre un primer programa</span></a><a href="index.html#playground"><b>Playground</b><span>Corre código en el navegador</span></a><a href="../the-book-of-eskiu.html"><b>El libro de Eskiu</b><span>El lenguaje, capítulo por capítulo</span></a><a href="../docs/index.html"><b>Docs</b><span>La especificación, la biblioteca estándar y el compilador</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Paquetes<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="packages.html"><b>Todos los paquetes</b><span>Cada uno a un eskiuc add de distancia</span></a><a href="vision.html"><b>vision</b><span>Visión por computadora, bit por bit con C++</span></a><a href="packages.html#gpu"><b>gpu</b><span>Cómputo con WebGPU, modelos 3D y Llama</span></a><a href="packages.html#onnx"><b>onnx</b><span>Inferencia con ONNX Runtime</span></a><a href="packages.html#jni"><b>jni</b><span>Java y Android sin código de C de por medio</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Plataformas<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="platforms.html"><b>Resumen</b><span>Un compilador, todas las plataformas</span></a><a href="platforms.html#wasm"><b>WebAssembly</b><span>El navegador, con emscripten</span></a><a href="platforms.html#ios"><b>iOS</b><span>Bibliotecas estáticas para Swift y Objective-C</span></a><a href="platforms.html#android"><b>Android</b><span>Bibliotecas compartidas para Kotlin y Java</span></a><a href="platforms.html#bare-metal"><b>Bare metal</b><span>Kernels y tarjetas sin sistema operativo</span></a></div></div><div class="nav-g cur"><button type="button" class="nav-t">UI<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="ui.html" aria-current="page"><b>Resumen</b><span>Apps nativas para iOS, Android y la web</span></a><a href="ui.html#navigation"><b>Navegación</b><span>Pantallas en el teléfono, páginas en la web</span></a><a href="ui.html#native"><b>Código nativo</b><span>Swift, Kotlin, Gradle y paquetes de Swift</span></a><a href="ui.html#start"><b>Empieza</b><span>La herramienta ui y una primera app</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Proyectos<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="showcase.html"><b>Hecho con Eskiu</b><span>Lo que corre con Eskiu hoy</span></a><a href="case-study-reactvision.html"><b>ReactVision</b><span>Eskiu en todo un stack de AR, en producción</span></a><a href="index.html#labs"><b>Labs</b><span>Un framework de UI, una Nintendo 3DS y un kernel</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+      <nav class="nav" aria-label="Main"><div class="nav-g"><button type="button" class="nav-t">Aprende<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="quickstart.html"><b>Empieza</b><span>Instálalo y corre un primer programa</span></a><a href="index.html#playground"><b>Playground</b><span>Corre código en el navegador</span></a><a href="../the-book-of-eskiu.html"><b>El libro de Eskiu</b><span>El lenguaje, capítulo por capítulo</span></a><a href="../docs/index.html"><b>Docs</b><span>La especificación, la biblioteca estándar y el compilador</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Paquetes<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="packages.html"><b>Todos los paquetes</b><span>Cada uno a un eskiuc add de distancia</span></a><a href="vision.html"><b>vision</b><span>Visión por computadora, bit por bit con C++</span></a><a href="packages.html#gpu"><b>gpu</b><span>Cómputo con WebGPU, modelos 3D y Llama</span></a><a href="packages.html#onnx"><b>onnx</b><span>Inferencia con ONNX Runtime</span></a><a href="packages.html#jni"><b>jni</b><span>Java y Android sin código de C de por medio</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Plataformas<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="platforms.html"><b>Resumen</b><span>Un compilador, todas las plataformas</span></a><a href="platforms.html#wasm"><b>WebAssembly</b><span>El navegador, con emscripten</span></a><a href="platforms.html#ios"><b>iOS</b><span>Bibliotecas estáticas para Swift y Objective-C</span></a><a href="platforms.html#android"><b>Android</b><span>Bibliotecas compartidas para Kotlin y Java</span></a><a href="platforms.html#bare-metal"><b>Bare metal</b><span>Kernels y tarjetas sin sistema operativo</span></a></div></div><div class="nav-g cur"><button type="button" class="nav-t">UI<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="ui.html" aria-current="page"><b>Resumen</b><span>Apps nativas para iOS, Android y la web</span></a><a href="ui-components.html"><b>Componentes y APIs</b><span>Cada elemento, hook y servicio</span></a><a href="ui.html#dev"><b>Ciclo de desarrollo</b><span>Cada cambio en pantalla en un tercio de segundo</span></a><a href="ui.html#navigation"><b>Navegación</b><span>Pantallas en el teléfono, páginas en la web</span></a><a href="ui.html#native"><b>Código nativo</b><span>Swift, Kotlin, Gradle y paquetes de Swift</span></a><a href="ui.html#start"><b>Empieza</b><span>La herramienta ui y una primera app</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Proyectos<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="showcase.html"><b>Hecho con Eskiu</b><span>Lo que corre con Eskiu hoy</span></a><a href="case-study-reactvision.html"><b>ReactVision</b><span>Eskiu en todo un stack de AR, en producción</span></a><a href="index.html#labs"><b>Labs</b><span>Un framework de UI, una Nintendo 3DS y un kernel</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
       <div class="top-right">
         <span class="lang"><a href="../ui.html" onclick="try{localStorage.setItem('eskiu-lang','en')}catch(e){}">EN</a> / <span aria-current="page">ES</span></span>
         <a class="btn-install" href="index.html#install">Instalar 0.12.0</a>
         <button class="menu-btn" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="drawer"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg></button>
       </div>
     </div>
-    <nav class="drawer" id="drawer" aria-label="Main"><div class="dr-g"><span class="dr-h">Aprende</span><a href="quickstart.html">Empieza</a><a href="index.html#playground">Playground</a><a href="../the-book-of-eskiu.html">El libro de Eskiu</a><a href="../docs/index.html">Docs</a></div><div class="dr-g"><span class="dr-h">Paquetes</span><a href="packages.html">Todos los paquetes</a><a href="vision.html">vision</a><a href="packages.html#gpu">gpu</a><a href="packages.html#onnx">onnx</a><a href="packages.html#jni">jni</a></div><div class="dr-g"><span class="dr-h">Plataformas</span><a href="platforms.html">Resumen</a><a href="platforms.html#wasm">WebAssembly</a><a href="platforms.html#ios">iOS</a><a href="platforms.html#android">Android</a><a href="platforms.html#bare-metal">Bare metal</a></div><div class="dr-g"><span class="dr-h">UI</span><a href="ui.html" aria-current="page">Resumen</a><a href="ui.html#navigation">Navegación</a><a href="ui.html#native">Código nativo</a><a href="ui.html#start">Empieza</a></div><div class="dr-g"><span class="dr-h">Proyectos</span><a href="showcase.html">Hecho con Eskiu</a><a href="case-study-reactvision.html">ReactVision</a><a href="index.html#labs">Labs</a></div><a class="dr-gh" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+    <nav class="drawer" id="drawer" aria-label="Main"><div class="dr-g"><span class="dr-h">Aprende</span><a href="quickstart.html">Empieza</a><a href="index.html#playground">Playground</a><a href="../the-book-of-eskiu.html">El libro de Eskiu</a><a href="../docs/index.html">Docs</a></div><div class="dr-g"><span class="dr-h">Paquetes</span><a href="packages.html">Todos los paquetes</a><a href="vision.html">vision</a><a href="packages.html#gpu">gpu</a><a href="packages.html#onnx">onnx</a><a href="packages.html#jni">jni</a></div><div class="dr-g"><span class="dr-h">Plataformas</span><a href="platforms.html">Resumen</a><a href="platforms.html#wasm">WebAssembly</a><a href="platforms.html#ios">iOS</a><a href="platforms.html#android">Android</a><a href="platforms.html#bare-metal">Bare metal</a></div><div class="dr-g"><span class="dr-h">UI</span><a href="ui.html" aria-current="page">Resumen</a><a href="ui-components.html">Componentes y APIs</a><a href="ui.html#dev">Ciclo de desarrollo</a><a href="ui.html#navigation">Navegación</a><a href="ui.html#native">Código nativo</a><a href="ui.html#start">Empieza</a></div><div class="dr-g"><span class="dr-h">Proyectos</span><a href="showcase.html">Hecho con Eskiu</a><a href="case-study-reactvision.html">ReactVision</a><a href="index.html#labs">Labs</a></div><a class="dr-gh" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
   </header>
   <main>
     <section class="bar ui-hero">
@@ -158,6 +171,100 @@ void Counter() {
         </div>
       </section>
 
+      <section class="ui-row flip" id="dev">
+        <div>
+          <h2>Cada cambio en pantalla en un tercio de segundo</h2>
+          <p>
+            <code>ui serve</code> vigila la app y los paquetes de los que depende, y vuelve a
+            compilar cuando cambia un archivo. En la web la página se recarga y conserva su URL y
+            sus datos guardados. En el simulador y en Android la app que ya está abierta arranca
+            otra vez con el código nuevo en el mismo proceso, sin instalarla ni lanzarla de nuevo.
+          </p>
+          <p>
+            Si un build falla, los errores del compilador se ven encima de la app hasta que el
+            siguiente compila.
+          </p>
+          <div class="ui-stats">
+            <div class="ui-stat"><b>0.3 s</b><span>de guardar al cambio en el simulador de iOS</span></div>
+            <div class="ui-stat"><b>0.4 s</b><span>en un emulador de Android</span></div>
+            <div class="ui-stat"><b>0.6 s</b><span>en el navegador</span></div>
+            <div class="ui-stat"><b>0</b><span>reinstalaciones, salvo que cambie el código nativo</span></div>
+          </div>
+        </div>
+        <pre><code>$ ui serve ios
+ui: built in 2.4 s
+Watching for changes
+ui: changed, building
+Restarted the app on the new build
+ui: built in 0.3 s
+
+<span class="c"># medido con la galería del kit en una Mac con Apple silicon</span></code></pre>
+      </section>
+
+      <section class="ui-wide" id="kit">
+        <h2>Overlays, selectores y avisos</h2>
+        <p>
+          <code>&lt;ui/kit&gt;</code> es un conjunto de componentes con tema hechos con los mismos
+          elementos: tarjetas, botones, campos, checkboxes, pestañas y barras, y lo que se abre
+          encima del contenido. Un <code>Popover</code> se coloca junto a lo que lo abrió, arriba o
+          abajo, dentro de la ventana. <code>DatePicker</code>, <code>Select</code>,
+          <code>DropdownMenu</code>, <code>ColorPicker</code> y <code>Tooltip</code> están hechos
+          sobre él, y <code>kit_toast</code> muestra un mensaje por unos segundos.
+        </p>
+        <p>El tema sigue la apariencia clara u oscura del sistema, o la que tú elijas.</p>
+        <figure>
+          <img src="../../assets/ui-overlays.png" alt="El planificador de viajes de la app Explore: un calendario abierto bajo el campo de fecha en iOS, el menú de viajeros abierto en Android y un aviso de que el viaje a Kyoto se guardó en la web" width="1187" height="875" loading="lazy" />
+        </figure>
+      </section>
+
+      <section class="ui-row" id="motion">
+        <div>
+          <h2>Movimiento y gestos</h2>
+          <p>
+            Un estilo puede mover, escalar, girar y desvanecer un elemento, y
+            <code>transition_ms</code> anima cada cambio en la plataforma: animaciones de UIKit,
+            el animador de vistas de Android y transiciones de CSS. Una de las curvas es un
+            resorte.
+          </p>
+          <p>
+            <code>ui_on_pan</code> reporta un arrastre con su distancia y su velocidad, y se lo
+            quita a un botón de adentro en cuanto el dedo se mueve. <code>use_animated</code>
+            lleva un número a su nuevo valor, para lo que la plataforma no puede animar.
+            <code>SwipeToDelete</code> del kit está hecho con los dos.
+          </p>
+        </div>
+        <pre><code>*Signal&lt;int&gt; dx = use_signal&lt;int&gt;(0);
+*Signal&lt;bool&gt; held = use_signal&lt;bool&gt;(false);
+ui_on_pan(void(Pan p) {
+    held.set(p.phase == PanBegan || p.phase == PanMoved);
+    dx.set(held.get() ? p.dx : 0);
+});
+Row(Style{translate_x: dx.get(),
+          transition_ms: held.get() ? 0 : 250,
+          easing: EaseSpring}, void() {
+    Text("Arrástrame");
+});</code></pre>
+      </section>
+
+      <section class="ui-wide" id="system">
+        <h2>Los servicios del teléfono, con una sola API</h2>
+        <p>
+          Lo que una app le pide al sistema tiene un solo nombre en todas las plataformas, y cada
+          host responde con el servicio propio de la plataforma.
+        </p>
+        <div class="ui-grid">
+          <div><b>Claro y oscuro</b><code>ui_color_scheme()</code> y los temas del kit siguen al sistema cuando cambia.</div>
+          <div><b>Accesibilidad</b>Etiquetas para VoiceOver, TalkBack y lectores de pantalla, el tamaño del texto, menos movimiento y anuncios.</div>
+          <div><b>Idioma</b>El idioma del usuario y si se lee de derecha a izquierda.</div>
+          <div><b>Red</b><code>ui_fetch</code> con <code>NSURLSession</code>, <code>HttpURLConnection</code> y el <code>fetch</code> del navegador.</div>
+          <div><b>Datos guardados</b>Valores pequeños que sobreviven a la app, y un directorio de datos para archivos.</div>
+          <div><b>Compartir y portapapeles</b>La hoja para compartir del sistema, copiar y pegar.</div>
+          <div><b>Hápticos</b>Vibraciones de selección, impacto y notificación, y una vibración en la web.</div>
+          <div><b>Temporizadores</b><code>use_interval</code> y <code>use_timeout</code>, con el reloj de la plataforma.</div>
+          <div><b>Teclado y márgenes</b>El área segura y el teclado, o la pantalla completa de borde a borde.</div>
+        </div>
+      </section>
+
       <section class="ui-row flip" id="navigation">
         <div>
           <h2>Pantallas en el teléfono, páginas en la web</h2>
@@ -221,15 +328,15 @@ permissions = ["android.permission.CAMERA"]</code></pre>
             Android.
           </p>
           <p>
-            <code>&lt;ui/kit&gt;</code> agrega tarjetas, badges, botones, campos, checkboxes,
-            pestañas, barras y acordeones con tema, hechos con los mismos elementos.
+            Cada elemento, hook y servicio está en
+            <a href="ui-components.html">Componentes y APIs</a>.
           </p>
         </div>
         <pre><code>git clone https://github.com/eskiu-lang/ui
 eskiuc ui/tools/ui/main.esk -o ~/.eskiu/bin/ui
 
 ui new myapp &amp;&amp; cd myapp
-ui run web        <span class="c"># o macos, ios, android</span></code></pre>
+ui serve          <span class="c"># o ui serve ios, android, macos</span></code></pre>
       </section>
 
       <p class="note ui-note">
@@ -243,11 +350,11 @@ ui run web        <span class="c"># o macos, ios, android</span></code></pre>
     <div class="bar cta-in">
       <div class="cta-txt">
         <h2>Crea tu primera app.</h2>
-        <p>Las guías cubren el estado, los componentes, la navegación y el código nativo.</p>
+        <p>Las guías cubren el estado, los componentes, la navegación, la plataforma y el código nativo.</p>
       </div>
       <div class="cta-btns">
         <a class="cta-dark" href="https://github.com/eskiu-lang/ui/blob/main/docs/getting-started.md">Empieza</a>
-        <a class="cta-line" href="https://github.com/eskiu-lang/ui/tree/main/docs">Lee la documentación</a>
+        <a class="cta-line" href="ui-components.html">Componentes y APIs</a>
       </div>
     </div>
   </section>

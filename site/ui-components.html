@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script>try{if(localStorage.getItem("eskiu-lang")==="es")location.replace("es/ui-components.html"+location.hash);}catch(e){}</script>
+  <title>Components and APIs · Eskiu UI</title>
+  <meta name="description" content="Every element, hook and service of Eskiu&#x27;s ui framework: layout, input, lists, overlays, motion, state, navigation, the system, native code and the kit." />
+  <link rel="canonical" href="https://eskiu-lang.org/ui-components.html" />
+  <link rel="alternate" hreflang="en" href="https://eskiu-lang.org/ui-components.html" />
+  <link rel="alternate" hreflang="es" href="https://eskiu-lang.org/es/ui-components.html" />
+  <link rel="alternate" hreflang="x-default" href="https://eskiu-lang.org/ui-components.html" />
+  <link rel="icon" type="image/png" href="../assets/logo.png" />
+  <meta name="theme-color" content="#fbf8f3" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&amp;family=DM+Sans:wght@400;500;700&amp;family=DM+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="page.css?v=cdc30d8d3b" />
+  <style>
+    .uc-hero { padding-block: 64px 8px; }
+    .uc-hero h1 { margin: 0 0 18px; font-family: var(--serif); font-weight: 800; font-size: clamp(40px, 6vw, 64px);
+                  line-height: 1.04; letter-spacing: -0.03em; color: var(--ink); }
+    .uc-hero .lede { margin: 0 0 28px; max-width: 760px; }
+    .uc-group { padding-block: 48px; border-top: 1px solid var(--rule); scroll-margin-top: 96px; }
+    .uc-group h2 { margin: 0 0 8px; font-family: var(--serif); font-weight: 700; font-size: clamp(26px, 3vw, 34px);
+                   letter-spacing: -0.02em; color: var(--ink); }
+    .uc-group > p { margin: 0 0 22px; max-width: 760px; color: var(--ink2); }
+    .uc-group > p a { white-space: nowrap; }
+    .uc-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+    .uc-items div { background: #fff; border: 1.5px solid var(--rule); border-radius: 16px; padding: 16px 18px;
+                    font-size: 15px; line-height: 1.5; color: var(--ink2); }
+    .uc-items code { display: block; margin-bottom: 6px; font-size: 13.5px; color: var(--ink); background: none;
+                     padding: 0; word-break: break-word; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="bar top-in">
+      <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.12.0</span></a>
+      <nav class="nav" aria-label="Main"><div class="nav-g"><button type="button" class="nav-t">Learn<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="quickstart.html"><b>Get started</b><span>Install it and run a first program</span></a><a href="index.html#playground"><b>Playground</b><span>Run code in the browser</span></a><a href="the-book-of-eskiu.html"><b>The Book of Eskiu</b><span>The language, chapter by chapter</span></a><a href="docs/index.html"><b>Docs</b><span>The specification, the standard library and the compiler</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Packages<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="packages.html"><b>All packages</b><span>Each one is one eskiuc add away</span></a><a href="vision.html"><b>vision</b><span>Computer vision, bit for bit with C++</span></a><a href="packages.html#gpu"><b>gpu</b><span>WebGPU compute, 3D models and Llama</span></a><a href="packages.html#onnx"><b>onnx</b><span>ONNX Runtime inference</span></a><a href="packages.html#jni"><b>jni</b><span>Java and Android with no C glue</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Platforms<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="platforms.html"><b>Overview</b><span>One compiler, every target</span></a><a href="platforms.html#wasm"><b>WebAssembly</b><span>The browser, through emscripten</span></a><a href="platforms.html#ios"><b>iOS</b><span>Static libraries for Swift and Objective-C</span></a><a href="platforms.html#android"><b>Android</b><span>Shared libraries for Kotlin and Java</span></a><a href="platforms.html#bare-metal"><b>Bare metal</b><span>Kernels and boards with no operating system</span></a></div></div><div class="nav-g cur"><button type="button" class="nav-t">UI<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="ui.html"><b>Overview</b><span>Native apps for iOS, Android and the web</span></a><a href="ui-components.html" aria-current="page"><b>Components and APIs</b><span>Every element, hook and service</span></a><a href="ui.html#dev"><b>Developer loop</b><span>Each change on screen in a third of a second</span></a><a href="ui.html#navigation"><b>Navigation</b><span>Screens on the phone, pages on the web</span></a><a href="ui.html#native"><b>Native code</b><span>Swift, Kotlin, Gradle and Swift packages</span></a><a href="ui.html#start"><b>Get started</b><span>The ui tool and a first app</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Showcase<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="showcase.html"><b>Built with Eskiu</b><span>What runs on it today</span></a><a href="case-study-reactvision.html"><b>ReactVision</b><span>Eskiu across an AR stack, in production</span></a><a href="index.html#labs"><b>Labs</b><span>A UI framework, a Nintendo 3DS and a kernel</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+      <div class="top-right">
+        <span class="lang"><span aria-current="page">EN</span> / <a href="es/ui-components.html" onclick="try{localStorage.setItem('eskiu-lang','es')}catch(e){}">ES</a></span>
+        <a class="btn-install" href="index.html#install">Install 0.12.0</a>
+        <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="drawer"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg></button>
+      </div>
+    </div>
+    <nav class="drawer" id="drawer" aria-label="Main"><div class="dr-g"><span class="dr-h">Learn</span><a href="quickstart.html">Get started</a><a href="index.html#playground">Playground</a><a href="the-book-of-eskiu.html">The Book of Eskiu</a><a href="docs/index.html">Docs</a></div><div class="dr-g"><span class="dr-h">Packages</span><a href="packages.html">All packages</a><a href="vision.html">vision</a><a href="packages.html#gpu">gpu</a><a href="packages.html#onnx">onnx</a><a href="packages.html#jni">jni</a></div><div class="dr-g"><span class="dr-h">Platforms</span><a href="platforms.html">Overview</a><a href="platforms.html#wasm">WebAssembly</a><a href="platforms.html#ios">iOS</a><a href="platforms.html#android">Android</a><a href="platforms.html#bare-metal">Bare metal</a></div><div class="dr-g"><span class="dr-h">UI</span><a href="ui.html">Overview</a><a href="ui-components.html" aria-current="page">Components and APIs</a><a href="ui.html#dev">Developer loop</a><a href="ui.html#navigation">Navigation</a><a href="ui.html#native">Native code</a><a href="ui.html#start">Get started</a></div><div class="dr-g"><span class="dr-h">Showcase</span><a href="showcase.html">Built with Eskiu</a><a href="case-study-reactvision.html">ReactVision</a><a href="index.html#labs">Labs</a></div><a class="dr-gh" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+  </header>
+  <main>
+    <div class="bar">
+      <section class="uc-hero">
+        <div class="eyebrow">eskiu-lang/ui</div>
+        <h1>Components and APIs</h1>
+        <p class="lede">What an app is made of: the elements it draws, the hooks that hold its state, and the services of the phone and the browser. Each one works on iOS, Android and the web.</p>
+        <nav class="chips" aria-label="Components and APIs"><a href="#layout">Layout</a><a href="#text">Text, buttons and input</a><a href="#lists">Media and lists</a><a href="#overlays">Overlays</a><a href="#motion">Motion and gestures</a><a href="#state">State</a><a href="#navigation">Navigation</a><a href="#system">The system</a><a href="#native">Native code</a><a href="#kit">The kit</a></nav>
+      </section>
+      <section class="uc-group" id="layout">
+        <h2>Layout</h2>
+        <p>Containers take their content as a block, and every element takes a Style. <a href="https://github.com/eskiu-lang/ui/blob/main/docs/components.md">The guide &rarr;</a></p>
+        <div class="uc-items"><div><code>Column(Style, block)</code>Children top to bottom.</div><div><code>Row(Style, block)</code>Children left to right.</div><div><code>Scroll(Style, block)</code>A column whose content scrolls when it is taller than the space it gets.</div><div><code>Pressable(Style, on_press, block)</code>A column that reacts to a press anywhere in it.</div><div><code>Scope(name, Key, block)</code>A component&#x27;s own scope: its state, its identity and its name in diagnostics.</div><div><code>Style</code>Size, flexbox, colors, borders, radius, shadow, transforms and transitions.</div></div>
+      </section>
+      <section class="uc-group" id="text">
+        <h2>Text, buttons and input</h2>
+        <p>Text, buttons and controls are the platform&#x27;s own, with its accessibility. <a href="https://github.com/eskiu-lang/ui/blob/main/docs/components.md">The guide &rarr;</a></p>
+        <div class="uc-items"><div><code>Text, TextWith</code>Text, copied when it is given.</div><div><code>Button, ButtonWith</code>A button with a title.</div><div><code>TextInput(Input, on_change)</code>A controlled text field, told about each edit and, if asked, about focus.</div><div><code>Switch(Style, value, on_change)</code>A controlled on/off switch.</div><div><code>Slider(Style, value, min, max, on_change)</code>A controlled slider in whole steps: UISlider, SeekBar or a range input.</div></div>
+      </section>
+      <section class="uc-group" id="lists">
+        <h2>Media and lists</h2>
+        <p>Lists mount only the rows near the viewport, so a million rows cost what a screenful does. <a href="https://github.com/eskiu-lang/ui/blob/main/docs/components.md">The guide &rarr;</a></p>
+        <div class="uc-items"><div><code>Image(Style, source)</code>An image from a URL or from the app&#x27;s assets.</div><div><code>ActivityIndicator(Style, animating)</code>The platform&#x27;s busy indicator.</div><div><code>FlatList(Style, count, height, render)</code>A virtual list of rows of a fixed height.</div><div><code>SectionList(Style, sizes, header, height, render)</code>The same, in sections with headers.</div><div><code>RefreshControl(refreshing, on_refresh)</code>Pull to refresh for the scroll or list after it.</div></div>
+      </section>
+      <section class="uc-group" id="overlays">
+        <h2>Overlays</h2>
+        <p>Layers over the screen. Back on Android, Escape on the web and a tap outside close them. <a href="https://github.com/eskiu-lang/ui/blob/main/docs/components.md">The guide &rarr;</a></p>
+        <div class="uc-items"><div><code>Modal(visible, on_request_close, block)</code>Content over the whole screen, over a dim backdrop.</div><div><code>Overlay(visible, on_dismiss, block)</code>The same layer without the dim, for content placed next to something.</div><div><code>Alert(title, message, buttons, on_choice)</code>The platform&#x27;s alert.</div></div>
+      </section>
+      <section class="uc-group" id="motion">
+        <h2>Motion and gestures</h2>
+        <p>Transforms are drawn, not laid out, and the platform animates them. <a href="https://github.com/eskiu-lang/ui/blob/main/docs/style-and-layout.md">The guide &rarr;</a></p>
+        <div class="uc-items"><div><code>translate_x, translate_y, scale, rotate</code>Move, scale and turn the drawn element.</div><div><code>transition_ms, easing</code>Animate the changes of the opacity, the transforms and the colors; a spring is one of the curves.</div><div><code>use_animated(target, ms, easing)</code>A number on its way to a new value.</div><div><code>ui_on_pan(fn(Pan))</code>A drag on the next element, with its distance and speed.</div><div><code>ui_on_hover(fn(bool))</code>A pointer over the next element.</div><div><code>ui_on_layout(fn(Frame))</code>The next element&#x27;s frame, in its parent and in the window.</div></div>
+      </section>
+      <section class="uc-group" id="state">
+        <h2>State</h2>
+        <p>A block records the signals it reads and runs again when one changes. <a href="https://github.com/eskiu-lang/ui/blob/main/docs/state.md">The guide &rarr;</a></p>
+        <div class="uc-items"><div><code>use_signal&lt;T&gt;(initial)</code>State kept by the scope while it is mounted.</div><div><code>use_memo&lt;T&gt;(compute)</code>A derived value, computed when read.</div><div><code>use_effect(callback), on_cleanup</code>Work after a commit, with its cleanup.</div><div><code>use_string(initial)</code>Text state, reference counted.</div><div><code>signal_new&lt;T&gt;(initial)</code>A model signal that no scope owns.</div><div><code>use_interval, use_timeout</code>Timers kept by the platform&#x27;s clock.</div></div>
+      </section>
+      <section class="uc-group" id="navigation">
+        <h2>Navigation</h2>
+        <p>A stack of routes: screens on the phone, URLs and history on the web. <a href="https://github.com/eskiu-lang/ui/blob/main/docs/navigation.md">The guide &rarr;</a></p>
+        <div class="uc-items"><div><code>router_new(root)</code>A stack of routes, owned by the app&#x27;s model.</div><div><code>Navigator(router, screen)</code>The stack as screens; the ones under the top stay mounted.</div><div><code>push, back, replace, reset</code>Change the stack.</div><div><code>route_match(pattern, route, params)</code>&quot;/places/:id&quot; against a route.</div><div><code>use_back(handler)</code>Take the back button or gesture while mounted.</div><div><code>ui_link(), ui_open_url(url)</code>The link the app was opened with, and opening one.</div></div>
+      </section>
+      <section class="uc-group" id="system">
+        <h2>The system</h2>
+        <p>One name on every platform, answered by the platform&#x27;s own service. <a href="https://github.com/eskiu-lang/ui/blob/main/docs/platform.md">The guide &rarr;</a></p>
+        <div class="uc-items"><div><code>ui_platform()</code>iOS, Android, the web or macOS.</div><div><code>ui_color_scheme()</code>Light or dark, as the system is.</div><div><code>ui_screen_reader(), ui_reduce_motion(), ui_font_scale()</code>The accessibility settings.</div><div><code>ui_locale(), ui_is_rtl()</code>The language and its direction.</div><div><code>ui_insets(), ui_window(), ui_is_active()</code>The safe area and the keyboard, the window, the foreground.</div><div><code>StatusBar(style, hidden)</code>The system status bar.</div><div><code>ui_fetch(request, on_result)</code>HTTP through the platform&#x27;s networking.</div><div><code>ui_storage_get, set, remove</code>Small values that outlive the app.</div><div><code>ui_data_dir()</code>The app&#x27;s data directory, for files.</div><div><code>ui_share(text, url)</code>The system&#x27;s share sheet.</div><div><code>ui_clipboard_set, ui_clipboard_get</code>Copy and paste.</div><div><code>ui_haptic(kind)</code>Selection, impact and notification feedback.</div><div><code>ui_announce(text)</code>Read text aloud with the screen reader.</div><div><code>ui_keyboard_dismiss()</code>Hide the software keyboard.</div></div>
+      </section>
+      <section class="uc-group" id="native">
+        <h2>Native code</h2>
+        <p>Code per platform in native/, called through extern functions. <a href="https://github.com/eskiu-lang/ui/blob/main/docs/native.md">The guide &rarr;</a></p>
+        <div class="uc-items"><div><code>NativeView(Style, type, on_event)</code>A view the app registered with each host.</div><div><code>ui_native_prop(name, value)</code>A named prop for the NativeView after it.</div><div><code>use_native_event(channel, handler)</code>A native module&#x27;s events while mounted.</div><div><code>ui.toml</code>Frameworks, permissions, plist entries, Maven libraries and Swift packages.</div></div>
+      </section>
+      <section class="uc-group" id="kit">
+        <h2>The kit</h2>
+        <p>import &lt;ui/kit&gt;: themed components made from the elements above, light and dark. <a href="https://github.com/eskiu-lang/ui/blob/main/docs/components.md">The guide &rarr;</a></p>
+        <div class="uc-items"><div><code>Card, Badge, Avatar, Separator</code>Surfaces, labels and pictures.</div><div><code>KitButton, TextField, Checkbox</code>Buttons in variants, fields and checkboxes.</div><div><code>RadioGroup, SegmentedControl, TabBar</code>One choice among options.</div><div><code>NavBar, Toolbar, ListItem</code>Bars and rows.</div><div><code>Collapsible, Accordion</code>Sections that open and close.</div><div><code>ProgressBar</code>Progress that moves to its new value.</div><div><code>Popover, DropdownMenu, Select, Tooltip</code>Panels and menus next to what opened them.</div><div><code>Calendar, DatePicker, ColorPicker</code>Choosing a day or a color.</div><div><code>kit_toast, ToastHost</code>A short message at the bottom.</div><div><code>SwipeToDelete</code>A row the user drags away.</div><div><code>kit_light, kit_dark, kit_follow_system</code>The themes.</div></div>
+      </section>
+    </div>
+  </main>
+  <section class="cta-band" aria-label="Get started">
+    <div class="bar cta-in">
+      <div class="cta-txt">
+        <h2>Build your first app.</h2>
+        <p>The guides cover state, components, navigation, the platform and native code.</p>
+      </div>
+      <div class="cta-btns">
+        <a class="cta-dark" href="https://github.com/eskiu-lang/ui/blob/main/docs/getting-started.md">Get started</a>
+        <a class="cta-line" href="https://github.com/eskiu-lang/ui/tree/main/docs">Read the docs</a>
+      </div>
+    </div>
+  </section>
+  <footer class="foot">
+    <div class="bar foot-in">
+      <span class="brand">eskiu</span>
+      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family · MIT</span>
+      <nav class="foot-links" aria-label="Footer"><a href="docs/index.html">Docs</a><a href="the-book-of-eskiu.html">Book</a><a href="docs/internals.html">Internals</a><a href="changelog.html">Changelog</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a><a href="https://reactvision.xyz">ReactVision</a></nav>
+    </div>
+  </footer>
+  <script>(function(){var t=document.querySelector(".top"),b=document.querySelector(".menu-btn");if(!t||!b)return;b.addEventListener("click",function(){var o=t.classList.toggle("open");b.setAttribute("aria-expanded",o?"true":"false");});})();</script>
+</body>
+</html>

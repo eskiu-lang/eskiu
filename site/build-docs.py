@@ -911,6 +911,10 @@ NAV = [
     ("ui", "UI", "UI", [
         ("ui.html", "Overview", "Native apps for iOS, Android and the web",
          "Resumen", "Apps nativas para iOS, Android y la web"),
+        ("ui-components.html", "Components and APIs", "Every element, hook and service",
+         "Componentes y APIs", "Cada elemento, hook y servicio"),
+        ("ui.html#dev", "Developer loop", "Each change on screen in a third of a second",
+         "Ciclo de desarrollo", "Cada cambio en pantalla en un tercio de segundo"),
         ("ui.html#navigation", "Navigation", "Screens on the phone, pages on the web",
          "Navegación", "Pantallas en el teléfono, páginas en la web"),
         ("ui.html#native", "Native code", "Swift, Kotlin, Gradle and Swift packages",
@@ -930,7 +934,7 @@ NAV = [
 NAV_CURRENT = {"quickstart.html": "learn", "docs/": "learn", "packages.html": "packages",
                "vision.html": "packages", "platforms.html": "platforms", "showcase.html": "showcase",
                "case-study-reactvision.html": "showcase", "case-study-3ds.html": "showcase",
-               "ui.html": "ui"}
+               "ui.html": "ui", "ui-components.html": "ui"}
 CHEVRON = ('<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" '
            'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
            '<path d="M2 3.5 5 6.5 8 3.5"/></svg>')
