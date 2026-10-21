@@ -190,6 +190,22 @@ details.cl-full[open] { padding-bottom: 8px; }
 <p>The format is based on <a href="https://keepachangelog.com/en/1.1.0/">Keep a Changelog</a>, and the
 project follows the compatibility rules in <a href="docs/stability.html">docs/lang/stability.md</a>.</p>
 <hr>
+<h2 id="unreleased">[Unreleased]</h2>
+<details class="cl-full">
+<summary>Details</summary>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li>A lambda in a generic function, passed to a parameter that does not escape, gets its
+  env on the stack as it does elsewhere. It got a heap env that was never freed, so each
+  <code>sort&lt;T&gt;</code>, <code>sort_partial&lt;T&gt;</code> and <code>sort_nth&lt;T&gt;</code> call leaked 16 bytes.</li>
+<li>The self-hosted compiler gave a stack env to a lambda passed to a generic function that
+  keeps its closure parameter, which then read a dead stack frame; it now decides as the
+  C++ compiler does. It also rejects forwarding a non-<code>escaping</code> closure parameter to a
+  generic function, as the C++ compiler does.</li>
+<li>The self-hosted compiler captures a variable a lambda names only inside <code>free_closure</code>,
+  <code>thread_create</code> or <code>alloc_with</code>; it emitted invalid IR for such a lambda.</li>
+</ul>
+</details>
 <h2 id="0120-2026-10-20">[0.12.0] - 2026-10-20</h2>
 <details class="cl-full">
 <summary>Details</summary>
