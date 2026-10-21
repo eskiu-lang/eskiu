@@ -30,6 +30,8 @@ struct Parser {
     int is_import;         // an imported file: a top-level statement is an error
     List<*StmtNode> so_stmts;   // scripts: the top-level statements and variables, in
     List<*DeclNode> so_vars;    //   order (one of each pair is null; p_build_script_main)
+    int last_call_close;   // 1 + the index of the ')' that closed the last call (0: none)
+    int trailing_start;    // 1 + the first token of a statement that may end in a block
 }
 
 // Session state shared across every file parsed in one run (mirrors the C++ parser's
@@ -1756,6 +1758,7 @@ int lambda_ahead(Parser* p) {
                         }
                     }
                     p_expect(p, RPAREN, "Expected ')'");
+                    p.last_call_close = p.pos;
                     e = tc;
                     matched = 1;
                 } else if (p_at(p) == LBRACE) {
@@ -1788,6 +1791,7 @@ int lambda_ahead(Parser* p) {
             }
             Token close_tok = p_peek(p);
             p_expect(p, RPAREN, "Expected ')'");
+            p.last_call_close = p.pos;
             if (e.kind == EK_IDENT && List_len<*ExprNode>(&c.kids) == 1 && str_eq(e.sval, "dbg") == 1) {
                 c.dbg_text = p_source_span(p, first_arg, close_tok);
             }
@@ -1878,7 +1882,10 @@ int star_paren_is_cast(Parser* p) {
 *ExprNode parse_unary_inner(Parser* p) {
     // A lambda whose return type is a struct, pointer or generic type. Not in a
     // match subject, where `f() {` is the call and the match body.
-    if ((p.no_struct_lit == 0 || is_type_kw(p_at(p)) == 1) && p.failed == 0 && lambda_ahead(p) == 1) {
+    // At the start of a statement that may end in a block, `Name(...) {` is a call with a
+    // block, not a lambda returning `Name` (whose value the statement drops).
+    if ((p.no_struct_lit == 0 || is_type_kw(p_at(p)) == 1) && p.failed == 0 && lambda_ahead(p) == 1 &&
+        !(p.trailing_start == p.pos + 1 && p_at(p) == IDENT)) {
         *ExprNode lam = try_parse_lambda(p);
         if (lam != null) {
             return lam;
@@ -2270,13 +2277,58 @@ string strip_binding_const(string t) {
     if (p_at(p) != SEMICOLON) {
         s.expr = parse_expr(p);
     }
+    p_reject_trailing(p);
     p_expect(p, SEMICOLON, "Expected ';'");
     return s;
 }
 
-*StmtNode parse_expr_stmt(Parser* p) {
+// A `{` right after a call's ')' where no trailing block is allowed: a located error.
+void p_reject_trailing(Parser* p) {
+    if (p_at(p) == LBRACE && p.last_call_close != 0 && p.last_call_close == p.pos) {
+        p_fail(p, "a trailing block is only allowed on a call statement");
+    }
+}
+
+// `trailing`: a call statement may end in a block, passed as its last argument (a
+// `void()` lambda): f(a) { BODY } is f(a, void() { BODY }). Only the statement path
+// allows it, not a `for` header.
+*StmtNode parse_expr_stmt(Parser* p, int trailing) {
     Token st0 = p_peek(p);
+    int saved_start = p.trailing_start;
+    p.trailing_start = trailing == 1 ? p.pos + 1 : 0;
     *ExprNode e = parse_expr(p);
+    p.trailing_start = saved_start;
+    if (p_at(p) == LBRACE) {
+        if (trailing == 0) {
+            p_reject_trailing(p);
+        }
+        Token brace = p_peek(p);
+        int closed = p.last_call_close != 0 && p.last_call_close == p.pos;
+        if (e.kind != EK_CALL && e.kind != EK_TEMPLATECALL) {
+            p_fail(p, "a trailing block must follow a call");
+        } else if (closed == 0) {
+            p_fail(p, "a trailing block must follow the call's own ')', not parentheses around it");
+        } else if (e.kind == EK_CALL && e.a != null && e.a.kind == EK_CALL) {
+            p_fail(p, "a trailing block cannot follow a call of what a call returns");
+        }
+        if (p.failed == 0 && p_at(p) == LBRACE) {
+            *ExprNode lam = p_pos(ast_new_expr(), brace);
+            lam.kind = EK_LAMBDA;
+            lam.sval = lambda_sig("void", ast_new_decl());
+            int lmark = local_mark();
+            lam.stmt = parse_block(p);
+            local_pop(lmark);
+            List_push<*ExprNode>(&e.kids, lam);
+            // One ';' after the block is accepted (lambdas are written `};`).
+            if (p_at(p) == SEMICOLON) {
+                p_adv(p);
+            }
+        }
+        *StmtNode ts = p_spos(ast_new_stmt(), st0);
+        ts.kind = SK_EXPR;
+        ts.expr = e;
+        return ts;
+    }
     p_expect(p, SEMICOLON, "Expected ';'");
     *StmtNode s = p_spos(ast_new_stmt(), st0);
     s.kind = SK_EXPR;
@@ -2557,7 +2609,7 @@ string fresh_name(string base, List<string>* used) {
         }
         else {
             p.pos = save;
-            init = parse_expr_stmt(p);
+            init = parse_expr_stmt(p, 0);
         }
     } else {
         p_expect(p, SEMICOLON, "Expected ';'");
@@ -2649,6 +2701,7 @@ void check_name_not_keyword(Parser* p) {
         if (p_at(p) == EQ) {
             p_adv(p);
             init = parse_expr(p);
+            p_reject_trailing(p);
         }
         if (p_at(p) != SEMICOLON) {
             p_fail(p, "Expected ';' after variable declaration");
@@ -2681,6 +2734,7 @@ void check_name_not_keyword(Parser* p) {
     if (p_at(p) == EQ) {
         p_adv(p);
         *ExprNode init = parse_expr(p);
+        p_reject_trailing(p);
         if (p_at(p) != SEMICOLON) {
             p_fail(p, "Expected ';'");
             return null;
@@ -3014,7 +3068,7 @@ void parse_asm_operands(Parser* p, List<*StmtNode>* items, int kind) {
         p_expect(p, SEMICOLON, "Expected ';'");
         return s;
     }
-    return parse_expr_stmt(p);
+    return parse_expr_stmt(p, 1);
 }
 
 // A block item is a local declaration (let / typed) or a statement. For a decl-
