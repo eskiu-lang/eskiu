@@ -534,6 +534,11 @@ public:
         std::string key = url + "\n" + rev;
         if (auto it = revCache.find(key); it != revCache.end()) return it->second;
         std::string mirror = ensureMirror(name, url);
+        // A branch, a tag or HEAD names whatever the remote has now: resolve it after fetching
+        // (once per run), or a mirror from an earlier run would keep answering with an old
+        // commit. A full commit hash cannot move, so the mirror answers it when it has it.
+        bool hash = rev.size() == 40 && rev.find_first_not_of("0123456789abcdef") == std::string::npos;
+        if (!hash) refresh(name, url, mirror);
         std::string commit;
         if (!lookup(mirror, rev, commit, name)) {
             refresh(name, url, mirror);
