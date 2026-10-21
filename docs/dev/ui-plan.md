@@ -482,8 +482,9 @@ Taken in groups after phase 1, each on every renderer with conformance cases:
 Next, in this order (phase 2 goes last: trailing blocks change no API, as long as a block
 stays the last parameter of everything added meanwhile):
 
-6. Core primitives: absolute positioning, `aspect_ratio`, `on_layout`, timers
-   (`use_interval`, `use_timeout`), hover, `Slider`.
+6. **Done.** Core primitives: absolute positioning and `aspect_ratio` (Style), `ui_on_layout`
+   (the frame after layout), timers (`use_interval`, `use_timeout` over the host's clock),
+   `ui_on_hover`, `Slider` (kind 15, controlled). In the conformance scene on every host.
 7. Core APIs (React Native's APIs list), in `<ui/...>` modules over the native-module
    mechanism: `Platform`, `Appearance` (dark mode, the kit's theme following it), `Keyboard`
    (dismiss, events), storage (the app's directory, `localStorage` on the web), `fetch` on
