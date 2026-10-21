@@ -508,9 +508,11 @@ stays the last parameter of everything added meanwhile):
     process and reloads the page (web, the macOS window) through a long poll, showing a failed
     build's output over the app; on iOS and Android it installs and launches the app again.
 11. Device packages, as Expo's modules, each in its own repository with its `native/` and
-    `ui.toml`. **Done:** `eskiu-lang/ui-location` v0.1.0 (`use_location`; the core's
-    `use_mount` for services that live as long as a component). Next `ui-notifications` and
-    `ui-camera`, then sensors, secure storage and biometrics. Single-platform APIs (Android
+    `ui.toml`. **Done:** `eskiu-lang/ui-location`, `ui-notifications` and `ui-camera` v0.1.0
+    (with `use_mount`, a slot kind for packages' hooks, activity results, intents and receivers
+    on Android, `ui_view_controller()` on iOS, images from files, `Style.cover`), plus
+    `eskiu-lang/ui-package-template` and `eskiu-lang/ui-starter` (GitHub templates). Later:
+    sensors, secure storage, biometrics, push notifications. Single-platform APIs (Android
     toasts and permissions, iOS action sheets) too.
 12. Phase 2 and the 0.13 release.
 
