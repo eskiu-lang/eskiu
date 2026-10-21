@@ -460,12 +460,14 @@ PACKAGES_CATALOG = [
                    "wgpu-native, with shaders in WGSL. It draws glTF and OBJ models with physically "
                    "based shading, runs Llama models from GGUF or safetensors files (Llama 2 7B Q4_0 "
                    "at 45 tokens per second on an M4 Pro; llama.cpp does 58 on the same machine) and "
-                   "trains small networks (97% test accuracy on MNIST).",
+                   "trains small networks (97% test accuracy on MNIST). "
+                   "<a href=\"gpu.html\">What it does, with its benchmarks →</a>",
         "note_es": "Una sola API corre sobre Metal (macOS), Vulkan (Linux) y DirectX 12 (Windows) a "
                    "través de wgpu-native, con shaders en WGSL. Dibuja modelos glTF y OBJ con "
                    "sombreado físico (PBR), corre modelos Llama desde archivos GGUF o safetensors "
                    "(Llama 2 7B Q4_0 a 45 tokens por segundo en un M4 Pro; llama.cpp da 58 en la "
-                   "misma máquina) y entrena redes pequeñas (97% de precisión en MNIST).",
+                   "misma máquina) y entrena redes pequeñas (97% de precisión en MNIST). "
+                   "<a href=\"gpu.html\">Qué hace, con sus mediciones →</a>",
         "needs_en": "The first build downloads wgpu-native 29 for you. Opening a window "
                     "(<code>&lt;gpu/window&gt;</code>) also needs SDL3 from the system: "
                     "<code>brew install sdl3</code> on macOS, then build with "
@@ -954,7 +956,7 @@ NAV = [
          "Todos los paquetes", "Cada uno a un eskiuc add de distancia"),
         ("vision.html", "vision", "Computer vision, bit for bit with C++",
          "vision", "Visión por computadora, bit por bit con C++"),
-        ("packages.html#gpu", "gpu", "WebGPU compute, 3D models and Llama",
+        ("gpu.html", "gpu", "WebGPU compute, 3D models and Llama",
          "gpu", "Cómputo con WebGPU, modelos 3D y Llama"),
         ("packages.html#onnx", "onnx", "ONNX Runtime inference",
          "onnx", "Inferencia con ONNX Runtime"),
@@ -997,7 +999,7 @@ NAV = [
     ]),
 ]
 NAV_CURRENT = {"quickstart.html": "learn", "docs/": "learn", "packages.html": "packages",
-               "vision.html": "packages", "platforms.html": "platforms", "showcase.html": "showcase",
+               "vision.html": "packages", "gpu.html": "packages", "platforms.html": "platforms", "showcase.html": "showcase",
                "case-study-reactvision.html": "showcase", "case-study-3ds.html": "showcase",
                "ui.html": "ui", "ui-components.html": "ui"}
 CHEVRON = ('<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" '

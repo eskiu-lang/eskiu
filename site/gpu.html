@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script>try{if(localStorage.getItem("eskiu-lang")==="es")location.replace("es/gpu.html"+location.hash);}catch(e){}</script>
+  <title>gpu · Eskiu</title>
+  <meta name="description" content="gpu is the Eskiu package for the GPU: compute kernels, rendering, glTF and OBJ models with PBR shading, and LLM inference and training over WebGPU, on Metal, Vulkan and DirectX 12." />
+  <link rel="canonical" href="https://eskiu-lang.org/gpu.html" />
+  <link rel="alternate" hreflang="en" href="https://eskiu-lang.org/gpu.html" />
+  <link rel="alternate" hreflang="es" href="https://eskiu-lang.org/es/gpu.html" />
+  <link rel="alternate" hreflang="x-default" href="https://eskiu-lang.org/gpu.html" />
+  <link rel="icon" type="image/png" href="../assets/logo.png" />
+  <meta name="theme-color" content="#fbf8f3" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&amp;family=DM+Sans:wght@400;500;700&amp;family=DM+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="page.css?v=406c48f622" />
+  <style>
+    .g-hero { display: grid; gap: 36px; padding-block: 56px 24px; align-items: center; }
+    .g-hero .eyebrow { margin-bottom: 18px; }
+    .g-hero h1 { margin: 0 0 20px; font-family: var(--serif); font-weight: 800; font-size: clamp(40px, 6vw, 68px);
+                 line-height: 1.03; letter-spacing: -0.035em; color: var(--ink); }
+    .g-hero .lede { margin: 0 0 28px; }
+    .g-hero img { display: block; width: 100%; height: auto; border-radius: 28px; border: 0; box-shadow: 0 24px 60px rgba(28, 24, 48, 0.25); }
+    .g-cta { display: flex; flex-wrap: wrap; gap: 12px; }
+    .g-cta a { display: inline-flex; align-items: center; height: 52px; padding: 0 24px; border-radius: 14px;
+               font-weight: 700; font-size: 16px; border: 1.5px solid var(--ink); }
+    .g-cta .dark { background: var(--ink); color: var(--paper); }
+    .g-cta .dark:hover { background: var(--purple); border-color: var(--purple); color: #fff; }
+    .g-cta .line { color: var(--ink); background: #fff; }
+    .g-cta .line:hover { background: var(--ink); color: var(--paper); }
+    .g-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding-block: 24px 8px; }
+    .g-stat { background: #fff; border: 1.5px solid var(--ink); border-radius: 16px; padding: 18px; }
+    .g-stat b { display: block; font-family: var(--serif); font-weight: 800; font-size: 34px; color: var(--ink);
+                letter-spacing: -0.02em; line-height: 1.1; }
+    .g-stat span { font-size: 15px; color: var(--muted); }
+    .g-row { display: grid; gap: 28px; padding-block: 64px; border-top: 1px solid var(--rule); align-items: center;
+             scroll-margin-top: 96px; }
+    .g-row h2 { margin: 0 0 14px; font-family: var(--serif); font-weight: 700; font-size: clamp(30px, 3.4vw, 40px);
+                line-height: 1.1; letter-spacing: -0.02em; color: var(--ink); }
+    .g-row p { margin: 0 0 16px; }
+    .g-row ul { margin: 0 0 16px; padding-left: 1.2em; }
+    .g-row li { margin-bottom: 6px; }
+    .g-row pre { margin: 0; }
+    .g-hero > *, .g-row > * { min-width: 0; }
+    .g-row figure { margin: 0; }
+    .g-row figure img { display: block; width: 100%; height: auto; border-radius: 24px; border: 0; box-shadow: none; }
+    .g-row figcaption { margin-top: 8px; font-size: 13px; color: var(--muted); }
+    .g-row .tablewrap { margin: 0 0 12px; }
+    .g-cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); }
+    .g-cards a { display: flex; flex-direction: column; gap: 6px; padding: 18px; background: #fff; color: var(--ink2);
+                 border: 1.5px solid var(--rule); border-radius: 16px; }
+    .g-cards a:hover { border-color: var(--ink); }
+    .g-cards b { color: var(--ink); font-size: 17px; }
+    @media (min-width: 960px) {
+      .g-hero { grid-template-columns: 1.05fr 1fr; gap: 64px; }
+      .g-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .g-row { grid-template-columns: 1fr 1.1fr; gap: 64px; }
+      .g-row.flip > :first-child { order: 2; }
+      .g-row p, .g-row li { font-size: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="bar top-in">
+      <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.12.0</span></a>
+      <nav class="nav" aria-label="Main"><div class="nav-g"><button type="button" class="nav-t">Learn<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="quickstart.html"><b>Get started</b><span>Install it and run a first program</span></a><a href="index.html#playground"><b>Playground</b><span>Run code in the browser</span></a><a href="the-book-of-eskiu.html"><b>The Book of Eskiu</b><span>The language, chapter by chapter</span></a><a href="docs/index.html"><b>Docs</b><span>The specification, the standard library and the compiler</span></a></div></div><div class="nav-g cur"><button type="button" class="nav-t">Packages<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="packages.html"><b>All packages</b><span>Each one is one eskiuc add away</span></a><a href="vision.html"><b>vision</b><span>Computer vision, bit for bit with C++</span></a><a href="gpu.html" aria-current="page"><b>gpu</b><span>WebGPU compute, 3D models and Llama</span></a><a href="packages.html#onnx"><b>onnx</b><span>ONNX Runtime inference</span></a><a href="packages.html#jni"><b>jni</b><span>Java and Android with no C glue</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Platforms<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="platforms.html"><b>Overview</b><span>One compiler, every target</span></a><a href="platforms.html#wasm"><b>WebAssembly</b><span>The browser, through emscripten</span></a><a href="platforms.html#ios"><b>iOS</b><span>Static libraries for Swift and Objective-C</span></a><a href="platforms.html#android"><b>Android</b><span>Shared libraries for Kotlin and Java</span></a><a href="platforms.html#bare-metal"><b>Bare metal</b><span>Kernels and boards with no operating system</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">UI<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="ui.html"><b>Overview</b><span>Native apps for iOS, Android and the web</span></a><a href="ui-components.html"><b>Components and APIs</b><span>Every element, hook and service</span></a><a href="ui.html#dev"><b>Developer loop</b><span>Each change on screen in a third of a second</span></a><a href="ui.html#navigation"><b>Navigation</b><span>Screens on the phone, pages on the web</span></a><a href="ui.html#native"><b>Native code</b><span>Swift, Kotlin, Gradle and Swift packages</span></a><a href="ui.html#start"><b>Get started</b><span>The ui tool and a first app</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Showcase<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="showcase.html"><b>Built with Eskiu</b><span>What runs on it today</span></a><a href="case-study-reactvision.html"><b>ReactVision</b><span>Eskiu across an AR stack, in production</span></a><a href="index.html#labs"><b>Labs</b><span>A UI framework, a Nintendo 3DS and a kernel</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+      <div class="top-right">
+        <span class="lang"><span aria-current="page">EN</span> / <a href="es/gpu.html" onclick="try{localStorage.setItem('eskiu-lang','es')}catch(e){}">ES</a></span>
+        <a class="btn-install" href="index.html#install">Install 0.12.0</a>
+        <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="drawer"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg></button>
+      </div>
+    </div>
+    <nav class="drawer" id="drawer" aria-label="Main"><div class="dr-g"><span class="dr-h">Learn</span><a href="quickstart.html">Get started</a><a href="index.html#playground">Playground</a><a href="the-book-of-eskiu.html">The Book of Eskiu</a><a href="docs/index.html">Docs</a></div><div class="dr-g"><span class="dr-h">Packages</span><a href="packages.html">All packages</a><a href="vision.html">vision</a><a href="gpu.html" aria-current="page">gpu</a><a href="packages.html#onnx">onnx</a><a href="packages.html#jni">jni</a></div><div class="dr-g"><span class="dr-h">Platforms</span><a href="platforms.html">Overview</a><a href="platforms.html#wasm">WebAssembly</a><a href="platforms.html#ios">iOS</a><a href="platforms.html#android">Android</a><a href="platforms.html#bare-metal">Bare metal</a></div><div class="dr-g"><span class="dr-h">UI</span><a href="ui.html">Overview</a><a href="ui-components.html">Components and APIs</a><a href="ui.html#dev">Developer loop</a><a href="ui.html#navigation">Navigation</a><a href="ui.html#native">Native code</a><a href="ui.html#start">Get started</a></div><div class="dr-g"><span class="dr-h">Showcase</span><a href="showcase.html">Built with Eskiu</a><a href="case-study-reactvision.html">ReactVision</a><a href="index.html#labs">Labs</a></div><a class="dr-gh" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+  </header>
+  <main>
+    <div class="bar">
+      <section class="g-hero">
+        <div>
+          <div class="eyebrow">Package · eskiu-lang/gpu · v0.1.0</div>
+          <h1>Compute, graphics and machine learning on the GPU</h1>
+          <p class="lede">Kernels, PBR models, LLM inference and training over WebGPU. One API for Metal, Vulkan and DirectX 12, with shaders in WGSL.</p>
+          <div class="g-cta">
+            <a class="dark" href="https://github.com/eskiu-lang/gpu">View on GitHub</a>
+            <a class="line" href="https://github.com/eskiu-lang/gpu/tree/main/examples">Browse the examples</a>
+          </div>
+        </div>
+        <img src="../assets/gpu-helmet.jpg" alt="The DamagedHelmet glTF model, drawn by Eskiu's gpu package with physically based shading" width="1200" height="1200" />
+      </section>
+      <section class="g-stats"><div class="g-stat"><b>45 tok/s</b><span>Llama 2 7B Q4_0 on an Apple M4 Pro</span></div><div class="g-stat"><b>97%</b><span>MNIST test accuracy in three epochs</span></div><div class="g-stat"><b>3 backends</b><span>Metal, Vulkan and DirectX 12</span></div><div class="g-stat"><b>MIT</b><span>Open source</span></div></section>
+
+      <section class="g-row" id="compute">
+        <div>
+          <h2>A kernel is a string of WGSL</h2>
+          <p>Storage buffers, kernels and dispatches, with the results read back into Eskiu memory. Every call that can fail returns a <code>Result</code> with the message from WebGPU's validation layer, and a WGSL error comes with its line and column.</p><p>Underneath, <code>&lt;gpu/raw&gt;</code> is all of <code>webgpu.h</code> and <code>wgpu.h</code>, generated, with every struct's layout checked against the C compiler.</p>
+        </div>
+        <pre><code>import &lt;io&gt;;
+import &lt;gpu&gt;;
+
+string twice = "@group(0) @binding(0) var&lt;storage, read_write&gt; v: array&lt;f32&gt;;\n"
+    "@compute @workgroup_size(64)\n"
+    "fn main(@builtin(global_invocation_id) id: vec3&lt;u32&gt;) {\n"
+    "    v[id.x] = v[id.x] * 2.0;\n"
+    "}\n";
+
+Result&lt;int, string&gt; run() {
+    float[256] data;
+    for (i in 0..256) data[i] = (float)i;
+    Gpu gpu = gpu_open()?;
+    defer gpu.release();
+    GpuBuffer v = gpu.storage(&amp;data, sizeof(data))?;
+    defer v.release();
+    GpuKernel k = gpu.kernel(twice, "main")?;
+    defer k.release();
+    k.bind(0, &amp;v);
+    k.dispatch(4, 1, 1)?;
+    v.read(&amp;data, sizeof(data))?;
+    printf("%.1f\n", (double)data[255]);   <span class="c">// 510.0</span>
+    return Ok&lt;int, string&gt;(0);
+}</code></pre>
+      </section>
+
+      <section class="g-row flip" id="models">
+        <div>
+          <h2>3D models, the format of AR and VR</h2>
+          <p><code>&lt;gpu/gltf&gt;</code> loads glTF 2.0 (<code>.gltf</code> and <code>.glb</code>) and <code>&lt;gpu/obj&gt;</code> Wavefront OBJ with its MTL materials, and <code>&lt;gpu/model&gt;</code> draws either with physically based shading, normal maps, alpha modes, skinning and animation.</p><p>PNG and JPEG (baseline and progressive) decode in pure Eskiu, and textures can be sRGB and mipmapped. <code>&lt;gpu/window&gt;</code> opens a window over SDL3 with its keyboard and mouse.</p>
+          <pre><code>Gltf data = model_load("helmet.glb")?;   <span class="c">// or a .gltf, or an .obj</span>
+defer data.free();
+GpuModel model = gpu.model(&amp;data, surface.format)?;
+defer model.release();
+
+<span class="c">// every frame</span>
+data.animate(0, seconds);
+model.update(mat4_identity());
+GpuCamera cam = model.camera(aspect);
+GpuPass pass = gpu.pass(frame.view, GpuColor{0.1, 0.1, 0.1, 1.0}, &amp;depth);
+model.draw(&amp;pass, &amp;cam);
+pass.end()?;</code></pre>
+        </div>
+        <figure>
+          <img src="../assets/gpu-helmet-front.jpg" alt="The DamagedHelmet model from the front, with its emissive visor" width="1000" height="1000" loading="lazy" />
+          <figcaption>DamagedHelmet by theblueturtle_ (CC BY 4.0), from the Khronos glTF sample assets.</figcaption>
+        </figure>
+      </section>
+
+      <section class="g-row" id="ml">
+        <div>
+          <h2>Machine learning on the GPU</h2>
+          <p><code>&lt;gpu/nn&gt;</code> runs transformer inference from GGUF, safetensors and llama2.c files. The Llama 2 example records the forward pass once and replays it as one compute pass per token, in f32, f16, Q8_0 and Q4_0.</p>
+        </div>
+        <div>
+          <div class="tablewrap"><table>
+            <tr><th>Model</th><th>Eskiu</th><th>Reference</th></tr><tr><td>stories110M (llama2.c, f16)</td><td>350 tokens/s</td><td>llama2.c on the CPU: 22</td></tr><tr><td>TinyLlama 1.1B Q4_0</td><td>178 tokens/s</td><td>llama.cpp (Metal): 260</td></tr><tr><td>Llama 2 7B Q4_0</td><td>45 tokens/s</td><td>llama.cpp (Metal): 58</td></tr>
+          </table></div>
+          <p class="note">Apple M4 Pro, greedy decoding. The outputs match llama2.c byte for byte, and llama.cpp and Hugging Face transformers token for token, on the prompts tested.</p>
+        </div>
+      </section>
+
+      <section class="g-row flip" id="train">
+        <div>
+          <h2>Training with automatic differentiation</h2>
+          <p><code>&lt;gpu/train&gt;</code> builds a graph of operations and records the gradients of each one. The MNIST example reaches 97% test accuracy in three epochs of about 0.4 seconds, and saves the weights as safetensors that PyTorch loads with the same accuracy.</p>
+        </div>
+        <pre><code>NnGraph g = gpu.nn_graph(100)?;
+NnVar x = g.input(784);
+NnVar labels = g.labels();
+NnVar h = g.relu(g.bias(g.matmul(x, g.param(784, 128, 0.05)), g.param(1, 128, 0.0)));
+NnVar logits = g.bias(g.matmul(h, g.param(128, 10, 0.125)), g.param(1, 10, 0.0));
+NnVar loss = g.cross_entropy(logits, labels);
+g.backward(loss)?;   <span class="c">// the gradients of every operation</span>
+g.adam(0.001);       <span class="c">// and the optimizer step</span></code></pre>
+      </section>
+
+      <section class="g-row" id="platforms">
+        <div>
+          <h2>Where it runs</h2>
+          <p>The GPU modules go through wgpu-native. On phones they need the surface an app draws to, and in a browser the browser's own WebGPU, which cannot block on the GPU: both are planned. The rest is plain Eskiu and runs on every target.</p>
+        </div>
+        <div class="tablewrap"><table>
+          <tr><th>Platform</th><th>Backend</th></tr><tr><td>macOS arm64</td><td>Metal</td></tr><tr><td>Linux x86-64</td><td>Vulkan</td></tr><tr><td>Windows x86-64</td><td>DirectX 12, Vulkan</td></tr><tr><td>iOS, Android, WebAssembly</td><td>The pure Eskiu modules (glTF, OBJ, images, GGUF, safetensors, math) today; the GPU modules are planned</td></tr>
+        </table></div>
+      </section>
+
+      <section class="g-row flip" id="start">
+        <div>
+          <h2>Get started</h2>
+          <p>The package names wgpu-native's release archives in its manifest: the first build downloads the one for your machine, checks its SHA-256 and links it. A window also needs SDL3 (<code>brew install sdl3</code> on macOS).</p>
+          <div class="g-cards"><a href="https://github.com/eskiu-lang/gpu"><b>GitHub</b><span>Source, tests and issues</span></a><a href="https://github.com/eskiu-lang/gpu/tree/main/examples"><b>Examples</b><span>A triangle, a textured cube, a glTF and OBJ viewer, Llama 2, MNIST</span></a><a href="packages.html"><b>All packages</b><span>What else is one eskiuc add away</span></a></div>
+        </div>
+        <pre><code>eskiuc new myapp &amp;&amp; cd myapp
+eskiuc add gpu --git https://github.com/eskiu-lang/gpu --rev v0.1.0
+eskiuc build</code></pre>
+      </section>
+    </div>
+  </main>
+  <section class="cta-band" aria-label="Get started">
+    <div class="bar cta-in">
+      <div class="cta-txt">
+        <h2>Put the GPU to work.</h2>
+        <p>The README has every module, with the platforms and what is not supported yet.</p>
+      </div>
+      <div class="cta-btns">
+        <a class="cta-dark" href="https://github.com/eskiu-lang/gpu">View on GitHub</a>
+        <a class="cta-line" href="https://github.com/eskiu-lang/gpu#readme">Read the README</a>
+      </div>
+    </div>
+  </section>
+  <footer class="foot">
+    <div class="bar foot-in">
+      <span class="brand">eskiu</span>
+      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family · MIT</span>
+      <nav class="foot-links" aria-label="Footer"><a href="docs/index.html">Docs</a><a href="the-book-of-eskiu.html">Book</a><a href="docs/internals.html">Internals</a><a href="changelog.html">Changelog</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a><a href="https://reactvision.xyz">ReactVision</a></nav>
+    </div>
+  </footer>
+  <script>(function(){var t=document.querySelector(".top"),b=document.querySelector(".menu-btn");if(!t||!b)return;b.addEventListener("click",function(){var o=t.classList.toggle("open");b.setAttribute("aria-expanded",o?"true":"false");});})();</script>
+</body>
+</html>
