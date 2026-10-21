@@ -908,6 +908,16 @@ NAV = [
         ("platforms.html#bare-metal", "Bare metal", "Kernels and boards with no operating system",
          "Bare metal", "Kernels y tarjetas sin sistema operativo"),
     ]),
+    ("ui", "UI", "UI", [
+        ("ui.html", "Overview", "Native apps for iOS, Android and the web",
+         "Resumen", "Apps nativas para iOS, Android y la web"),
+        ("ui.html#navigation", "Navigation", "Screens on the phone, pages on the web",
+         "Navegación", "Pantallas en el teléfono, páginas en la web"),
+        ("ui.html#native", "Native code", "Swift, Kotlin, Gradle and Swift packages",
+         "Código nativo", "Swift, Kotlin, Gradle y paquetes de Swift"),
+        ("ui.html#start", "Get started", "The ui tool and a first app",
+         "Empieza", "La herramienta ui y una primera app"),
+    ]),
     ("showcase", "Showcase", "Proyectos", [
         ("showcase.html", "Built with Eskiu", "What runs on it today",
          "Hecho con Eskiu", "Lo que corre con Eskiu hoy"),
@@ -919,7 +929,8 @@ NAV = [
 ]
 NAV_CURRENT = {"quickstart.html": "learn", "docs/": "learn", "packages.html": "packages",
                "vision.html": "packages", "platforms.html": "platforms", "showcase.html": "showcase",
-               "case-study-reactvision.html": "showcase", "case-study-3ds.html": "showcase"}
+               "case-study-reactvision.html": "showcase", "case-study-3ds.html": "showcase",
+               "ui.html": "ui"}
 CHEVRON = ('<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" '
            'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
            '<path d="M2 3.5 5 6.5 8 3.5"/></svg>')

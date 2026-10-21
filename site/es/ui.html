@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UI · Eskiu</title>
+  <meta name="description" content="ui es un framework de interfaces reactivo en Eskiu: un mismo código que dibuja vistas de UIKit en iOS, de android.view en Android y el DOM en la web, con navegación, módulos nativos y un kit de componentes." />
+  <link rel="canonical" href="https://eskiu-lang.org/es/ui.html" />
+  <link rel="alternate" hreflang="en" href="https://eskiu-lang.org/ui.html" />
+  <link rel="alternate" hreflang="es" href="https://eskiu-lang.org/es/ui.html" />
+  <link rel="alternate" hreflang="x-default" href="https://eskiu-lang.org/ui.html" />
+  <link rel="icon" type="image/png" href="../../assets/logo.png" />
+  <meta name="theme-color" content="#fbf8f3" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&amp;family=DM+Sans:wght@400;500;700&amp;family=DM+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../page.css?v=cdc30d8d3b" />
+  <style>
+    .ui-hero { padding-block: 64px 24px; text-align: center; }
+    .ui-hero .eyebrow { margin-bottom: 18px; }
+    .ui-hero h1 { margin: 0 auto 22px; max-width: 900px; font-family: var(--serif); font-weight: 800;
+                  font-size: clamp(42px, 7vw, 76px); line-height: 1.02; letter-spacing: -0.035em; color: var(--ink); }
+    .ui-hero .lede { margin: 0 auto 32px; max-width: 720px; }
+    .ui-cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+    .ui-cta a { display: inline-flex; align-items: center; height: 54px; padding: 0 26px; border-radius: 14px;
+                font-weight: 700; font-size: 16px; border: 1.5px solid var(--ink); }
+    .ui-cta .dark { background: var(--ink); color: var(--paper); }
+    .ui-cta .dark:hover { background: var(--purple); border-color: var(--purple); color: #fff; }
+    .ui-cta .line { color: var(--ink); background: #fff; }
+    .ui-cta .line:hover { background: var(--ink); color: var(--paper); }
+    .ui-shot { max-width: 1100px; margin: 40px auto 0; }
+    .ui-shot img { display: block; width: 100%; height: auto; border: 0; border-radius: 0; box-shadow: none; }
+    .ui-row { display: grid; gap: 28px; padding-block: 64px; border-top: 1px solid var(--rule); align-items: center;
+              max-width: 1180px; margin: 0 auto; scroll-margin-top: 96px; }
+    .ui-row h2 { margin: 0 0 14px; font-family: var(--serif); font-weight: 700; font-size: clamp(30px, 3.4vw, 40px);
+                 line-height: 1.1; letter-spacing: -0.02em; color: var(--ink); }
+    .ui-row p { margin: 0 0 16px; }
+    .ui-row pre { margin: 0; }
+    .ui-row img { display: block; width: 100%; height: auto; border-radius: 20px; }
+    .ui-row ul { margin: 0 0 16px; padding-left: 1.2em; }
+    .ui-row li { margin-bottom: 6px; }
+    .ui-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .ui-stat { background: #fff; border: 1.5px solid var(--ink); border-radius: 16px; padding: 18px; }
+    .ui-stat b { display: block; font-family: var(--serif); font-weight: 800; font-size: 34px; color: var(--ink);
+                 letter-spacing: -0.02em; line-height: 1.1; }
+    .ui-stat span { font-size: 15px; color: var(--muted); }
+    .ui-hosts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 8px; }
+    .ui-hosts div { background: var(--lilac-2); border-radius: 14px; padding: 14px 16px; font-size: 15px; line-height: 1.5; }
+    .ui-hosts b { display: block; color: var(--ink); }
+    .ui-note { max-width: 1180px; margin: 0 auto; }
+    @media (min-width: 960px) {
+      .ui-row { grid-template-columns: 1fr 1.1fr; gap: 64px; }
+      .ui-row.flip > :first-child { order: 2; }
+      .ui-row p, .ui-row li { font-size: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="bar top-in">
+      <a class="brand" href="index.html"><img src="../../assets/logo.png" alt="" />eskiu<span class="v">v0.12.0</span></a>
+      <nav class="nav" aria-label="Main"><div class="nav-g"><button type="button" class="nav-t">Aprende<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="quickstart.html"><b>Empieza</b><span>Instálalo y corre un primer programa</span></a><a href="index.html#playground"><b>Playground</b><span>Corre código en el navegador</span></a><a href="../the-book-of-eskiu.html"><b>El libro de Eskiu</b><span>El lenguaje, capítulo por capítulo</span></a><a href="../docs/index.html"><b>Docs</b><span>La especificación, la biblioteca estándar y el compilador</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Paquetes<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="packages.html"><b>Todos los paquetes</b><span>Cada uno a un eskiuc add de distancia</span></a><a href="vision.html"><b>vision</b><span>Visión por computadora, bit por bit con C++</span></a><a href="packages.html#gpu"><b>gpu</b><span>Cómputo con WebGPU, modelos 3D y Llama</span></a><a href="packages.html#onnx"><b>onnx</b><span>Inferencia con ONNX Runtime</span></a><a href="packages.html#jni"><b>jni</b><span>Java y Android sin código de C de por medio</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Plataformas<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="platforms.html"><b>Resumen</b><span>Un compilador, todas las plataformas</span></a><a href="platforms.html#wasm"><b>WebAssembly</b><span>El navegador, con emscripten</span></a><a href="platforms.html#ios"><b>iOS</b><span>Bibliotecas estáticas para Swift y Objective-C</span></a><a href="platforms.html#android"><b>Android</b><span>Bibliotecas compartidas para Kotlin y Java</span></a><a href="platforms.html#bare-metal"><b>Bare metal</b><span>Kernels y tarjetas sin sistema operativo</span></a></div></div><div class="nav-g cur"><button type="button" class="nav-t">UI<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="ui.html" aria-current="page"><b>Resumen</b><span>Apps nativas para iOS, Android y la web</span></a><a href="ui.html#navigation"><b>Navegación</b><span>Pantallas en el teléfono, páginas en la web</span></a><a href="ui.html#native"><b>Código nativo</b><span>Swift, Kotlin, Gradle y paquetes de Swift</span></a><a href="ui.html#start"><b>Empieza</b><span>La herramienta ui y una primera app</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Proyectos<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="showcase.html"><b>Hecho con Eskiu</b><span>Lo que corre con Eskiu hoy</span></a><a href="case-study-reactvision.html"><b>ReactVision</b><span>Eskiu en todo un stack de AR, en producción</span></a><a href="index.html#labs"><b>Labs</b><span>Un framework de UI, una Nintendo 3DS y un kernel</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+      <div class="top-right">
+        <span class="lang"><a href="../ui.html" onclick="try{localStorage.setItem('eskiu-lang','en')}catch(e){}">EN</a> / <span aria-current="page">ES</span></span>
+        <a class="btn-install" href="index.html#install">Instalar 0.12.0</a>
+        <button class="menu-btn" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="drawer"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg></button>
+      </div>
+    </div>
+    <nav class="drawer" id="drawer" aria-label="Main"><div class="dr-g"><span class="dr-h">Aprende</span><a href="quickstart.html">Empieza</a><a href="index.html#playground">Playground</a><a href="../the-book-of-eskiu.html">El libro de Eskiu</a><a href="../docs/index.html">Docs</a></div><div class="dr-g"><span class="dr-h">Paquetes</span><a href="packages.html">Todos los paquetes</a><a href="vision.html">vision</a><a href="packages.html#gpu">gpu</a><a href="packages.html#onnx">onnx</a><a href="packages.html#jni">jni</a></div><div class="dr-g"><span class="dr-h">Plataformas</span><a href="platforms.html">Resumen</a><a href="platforms.html#wasm">WebAssembly</a><a href="platforms.html#ios">iOS</a><a href="platforms.html#android">Android</a><a href="platforms.html#bare-metal">Bare metal</a></div><div class="dr-g"><span class="dr-h">UI</span><a href="ui.html" aria-current="page">Resumen</a><a href="ui.html#navigation">Navegación</a><a href="ui.html#native">Código nativo</a><a href="ui.html#start">Empieza</a></div><div class="dr-g"><span class="dr-h">Proyectos</span><a href="showcase.html">Hecho con Eskiu</a><a href="case-study-reactvision.html">ReactVision</a><a href="index.html#labs">Labs</a></div><a class="dr-gh" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+  </header>
+  <main>
+    <section class="bar ui-hero">
+      <div class="eyebrow">eskiu-lang/ui · preview</div>
+      <h1>Apps nativas, escritas en Eskiu</h1>
+      <p class="lede">
+        Escribe la interfaz una vez, como funciones de Eskiu. El mismo código dibuja vistas de
+        UIKit en iOS, de <code>android.view</code> en Android y el DOM en la web.
+      </p>
+      <div class="ui-cta">
+        <a class="dark" href="https://github.com/eskiu-lang/ui/blob/main/docs/getting-started.md">Empieza</a>
+        <a class="line" href="https://github.com/eskiu-lang/ui">Ver en GitHub</a>
+      </div>
+      <figure class="ui-shot">
+        <img src="../../assets/ui-platforms.png" alt="La misma app de viajes en Eskiu en iOS, Android y la web: una lista de lugares, la página de Oaxaca y la de Kyoto" width="1187" height="875" />
+      </figure>
+    </section>
+
+    <div class="bar">
+      <section class="ui-row" id="apps">
+        <div>
+          <h2>Crea apps nativas para Android, iOS y la web</h2>
+          <p>
+            Un componente es una función normal de Eskiu. Llama a <code>Column</code>,
+            <code>Text</code> y <code>Button</code> para armar la vista y guarda su estado en
+            signals. La app se compila a código máquina en iOS y Android, y a WebAssembly en la
+            web.
+          </p>
+          <p>
+            Los textos, botones, campos, switches, listas, modales y alertas son los controles de
+            cada plataforma, con su accesibilidad.
+          </p>
+        </div>
+        <pre><code>import &lt;string&gt;;
+import &lt;ui&gt;;
+
+void Counter() {
+    Column(Style{padding: 24, gap: 12}, void() {
+        *Signal&lt;int&gt; count = use_signal&lt;int&gt;(0);
+        String label;
+        defer String_free(&amp;label);
+        String_format(&amp;label, "Pressed %d times", count.get());
+        TextWith(Style{font_size: 28, font_weight: 700}, label.data);
+        Button("Press me", void() {
+            count.set(count.get() + 1);
+        });
+    });
+}</code></pre>
+      </section>
+
+      <section class="ui-row flip" id="how">
+        <div>
+          <h2>Escrito en Eskiu, dibujado por la plataforma</h2>
+          <p>
+            Los componentes, el estado y las reglas de layout son el mismo código de Eskiu en
+            todas partes. En cada frame, el núcleo le manda a la plataforma un buffer con los
+            cambios, y un host delgado los aplica a vistas reales acomodadas por Yoga, el motor
+            que usa React Native.
+          </p>
+          <div class="ui-hosts">
+            <div><b>iOS</b>UIKit, desde Objective-C++</div>
+            <div><b>Android</b>android.view, desde Java y JNI</div>
+            <div><b>Web</b>El DOM, desde WebAssembly</div>
+            <div><b>macOS</b>El host web en una ventana de WKWebView</div>
+          </div>
+        </div>
+        <img src="../../assets/ui-lab.png" alt="Una app de tareas en Eskiu en iOS y Android: una tarjeta de progreso, filtros y una lista de tareas con etiquetas de colores" width="1200" height="1200" loading="lazy" />
+      </section>
+
+      <section class="ui-row" id="fast">
+        <div>
+          <h2>Actualizaciones que tocan solo lo que cambió</h2>
+          <p>
+            Cada bloque registra los signals que lee. Cuando uno cambia, solo ese bloque se vuelve
+            a ejecutar y sus hijos se emparejan por llave, así una lista conserva el estado de
+            cada fila cuando se reordena. Las listas virtuales montan solo las filas cerca de la
+            pantalla, así que un millón de filas cuesta lo mismo que una pantalla llena.
+          </p>
+          <p>
+            Los hooks, las llaves y los memos se revisan mientras la app corre, y un error se
+            detiene diciendo dónde ocurrió: <code>in Column[0] &gt; TodoRow[key 3]</code>.
+          </p>
+        </div>
+        <div class="ui-stats">
+          <div class="ui-stat"><b>8.1 ms</b><span>para montar 10,000 filas</span></div>
+          <div class="ui-stat"><b>5.9 ms</b><span>para invertir las 10,000</span></div>
+          <div class="ui-stat"><b>1.2 ms</b><span>cuando cambia un signal que leen todas las filas</span></div>
+          <div class="ui-stat"><b>0</b><span>asignaciones pendientes tras 10,000 montajes y desmontajes</span></div>
+        </div>
+      </section>
+
+      <section class="ui-row flip" id="navigation">
+        <div>
+          <h2>Pantallas en el teléfono, páginas en la web</h2>
+          <p>
+            Un router guarda una pila de rutas y un navigator la dibuja. En iOS y Android cada
+            ruta es una pantalla que entra deslizándose, con el botón de atrás y el gesto desde el
+            borde. En la web cada ruta es una URL, y los botones de atrás y adelante del navegador
+            mueven la app. Los deep links abren su pantalla en las tres plataformas.
+          </p>
+          <p>Las pantallas de abajo siguen montadas, así que al regresar están como las dejaste.</p>
+        </div>
+        <pre><code>Navigator(router, void(string route) {
+    List&lt;String&gt; params;
+    defer route_params_free(&amp;params);
+    if (route_match("/places/:id", route, &amp;params)) {
+        PlacePage(router, atoi(params.data[0].data));
+    } else {
+        PlaceList(router);
+    }
+});
+
+<span class="c">// en otra parte</span>
+router.push("/places/2");
+router.back();</code></pre>
+      </section>
+
+      <section class="ui-row" id="native">
+        <div>
+          <h2>Código nativo cuando lo necesites</h2>
+          <p>
+            Una app o un paquete trae código por plataforma en <code>native/</code>: Objective-C o
+            Swift en iOS, Java, Kotlin o C en Android, JavaScript en la web. Eskiu lo llama con
+            funciones <code>extern</code>, el código nativo responde con eventos y puede registrar
+            sus propias vistas para <code>NativeView</code>.
+          </p>
+          <p>
+            Las bibliotecas de terceros se declaran en <code>ui.toml</code>: las dependencias de
+            Maven se compilan con Gradle y los paquetes de Swift con Xcode, y un paquete lleva las
+            suyas a cada app que lo usa.
+          </p>
+        </div>
+        <pre><code><span class="c"># ui.toml</span>
+[app]
+name = "Explore"
+scheme = "places"
+
+[ios.spm]
+Collections = { url = "https://github.com/apple/swift-collections", from = "1.1.0" }
+
+[android]
+dependencies = ["com.google.android.material:material:1.12.0"]
+permissions = ["android.permission.CAMERA"]</code></pre>
+      </section>
+
+      <section class="ui-row flip" id="start">
+        <div>
+          <h2>De cero a una app corriendo</h2>
+          <p>
+            La herramienta <code>ui</code> crea un proyecto y lo compila o lo corre en cada
+            plataforma. Necesita emscripten para la web, Xcode para iOS y el SDK de Android para
+            Android.
+          </p>
+          <p>
+            <code>&lt;ui/kit&gt;</code> agrega tarjetas, badges, botones, campos, checkboxes,
+            pestañas, barras y acordeones con tema, hechos con los mismos elementos.
+          </p>
+        </div>
+        <pre><code>git clone https://github.com/eskiu-lang/ui
+eskiuc ui/tools/ui/main.esk -o ~/.eskiu/bin/ui
+
+ui new myapp &amp;&amp; cd myapp
+ui run web        <span class="c"># o macos, ios, android</span></code></pre>
+      </section>
+
+      <p class="note ui-note">
+        ui está en preview. Hoy las vistas usan lambdas explícitas; los trailing blocks,
+        planeados para Eskiu 0.13, permitirán escribir <code>Column(Style{padding: 16}) { ... }</code>
+        para la misma llamada. Los hosts de Windows y Linux llegan después.
+      </p>
+    </div>
+  </main>
+  <section class="cta-band" aria-label="Empieza">
+    <div class="bar cta-in">
+      <div class="cta-txt">
+        <h2>Crea tu primera app.</h2>
+        <p>Las guías cubren el estado, los componentes, la navegación y el código nativo.</p>
+      </div>
+      <div class="cta-btns">
+        <a class="cta-dark" href="https://github.com/eskiu-lang/ui/blob/main/docs/getting-started.md">Empieza</a>
+        <a class="cta-line" href="https://github.com/eskiu-lang/ui/tree/main/docs">Lee la documentación</a>
+      </div>
+    </div>
+  </section>
+  <footer class="foot">
+    <div class="bar foot-in">
+      <span class="brand">eskiu</span>
+      <span>Parte de la familia <a href="https://reactvision.xyz">ReactVision</a> · MIT</span>
+      <nav class="foot-links" aria-label="Pie de página"><a href="../docs/index.html">Docs</a><a href="../the-book-of-eskiu.html">Libro</a><a href="../docs/internals.html">Internals</a><a href="../changelog.html">Cambios</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a><a href="https://reactvision.xyz">ReactVision</a></nav>
+    </div>
+  </footer>
+  <script>(function(){var t=document.querySelector(".top"),b=document.querySelector(".menu-btn");if(!t||!b)return;b.addEventListener("click",function(){var o=t.classList.toggle("open");b.setAttribute("aria-expanded",o?"true":"false");});})();</script>
+</body>
+</html>
