@@ -882,13 +882,13 @@ void cg_collect_idents_e(*ExprNode e, List<string>* out) {
     }
     // Recurse only into the sub-expr fields each kind populates (an unset field is now null,
     // not garbage, but reading a child a kind never sets is still a wrong-subtree bug).
-    if (e.kind == EK_BINARY || e.kind == EK_INDEX) {
+    if (e.kind == EK_BINARY || e.kind == EK_INDEX || e.kind == EK_ALLOCWITH) {   // alloc_with: allocator, count
         cg_collect_idents_e(e.a, out);
         cg_collect_idents_e(e.b, out);
     }
     else if (e.kind == EK_UNARY || e.kind == EK_MEMBER || e.kind == EK_CAST
              || e.kind == EK_QUESTION || e.kind == EK_AWAIT || e.kind == EK_CALL
-             || e.kind == EK_INCDEC) {
+             || e.kind == EK_INCDEC || e.kind == EK_FREECLOSURE || e.kind == EK_THREADCREATE) {
         cg_collect_idents_e(e.a, out);
     }
     if (e.kind == EK_CALL || e.kind == EK_TEMPLATECALL || e.kind == EK_STRUCTINIT
