@@ -1,0 +1,17 @@
+// Names inside a trailing block hover, resolve and complete like those in a lambda.
+// HOVER 13:20 int
+// DEF 13:20 10:9
+// DEF 12:5 8:6
+// REFS 10:9 10:9 13:20
+// COMPLETE 14:21 count
+struct Box { int count; }
+void each(*Box b, fn()->void body) { body(); }
+int main() {
+    int total = 0;
+    Box box = Box{2};
+    each(&box) {
+        int seen = total;
+        int c = box.count + seen;
+    }
+    return 0;
+}
