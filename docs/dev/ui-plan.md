@@ -446,6 +446,21 @@ of its own), accessibility covers names and roles but not reading order or actio
 lifecycle reports foreground state but does not restore state after an Android activity is
 recreated, and there is no Windows or Linux host yet (phase 4).
 
+### Components (React Native's core set)
+
+Taken in groups after phase 1, each on every renderer with conformance cases:
+
+1. **Done.** Visual style props (StyleSheet's role: background, color, font size and weight,
+   border, radius, opacity, align, justify), `Pressable`, `Switch`, `ActivityIndicator`,
+   window size and scale (Dimensions, PixelRatio). Controlled inputs: a refused edit or
+   toggle is sent back.
+2. Lists and overlays: a virtualized `FlatList` (mounts only what is near the viewport) and
+   `SectionList` over it, `RefreshControl`, `Modal`, `Alert`, `StatusBar`, `BackHandler`
+   (Android) and `Linking`.
+3. `Animated`, on the frame scheduler; designed on its own.
+4. Single-platform APIs (Android toasts, drawer, permissions; iOS action sheets) in a
+   separate package.
+
 ### Phase 2: trailing blocks in the compiler (branch `trailing-blocks`)
 
 Lockstep, one layer per commit:
