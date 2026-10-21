@@ -263,7 +263,16 @@ private:
     // (`S() {`, `*S(int k) {`, `Box<int>(T x) {`)? A token scan, no parse.
     bool lambdaAhead() const;
     ExprPtr tryParseLambda();
-    StmtPtr parseExpressionStatement();
+    // `trailing`: a call statement may end in a block, passed as its last argument (a
+    // `void()` lambda). Only the statement path allows it, not a `for` header.
+    StmtPtr parseExpressionStatement(bool trailing = false);
+    // A `{` right after a call's ')' where no trailing block is allowed: a located error.
+    void rejectTrailingBlock();
+    // The index of the ')' that closed the last call parsed, for the trailing block rule.
+    size_t lastCallClose = static_cast<size_t>(-1);
+    // The first token of a statement that may end in a trailing block: there `Name(...) {`
+    // is a call with a block, not a lambda returning `Name` (whose value a statement drops).
+    size_t trailingStart = static_cast<size_t>(-1);
 
     ExprPtr parseStructInit(const std::string& structName);
     ExprPtr parseExpression();

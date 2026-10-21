@@ -164,7 +164,7 @@ StmtPtr Parser::parseStatement() {
         stmt->line = asmTok.line; stmt->col = asmTok.column;
         return stmt;
     }
-    return parseExpressionStatement();
+    return parseExpressionStatement(true);
 }
 
 // A block item: a local declaration, or else a statement.
@@ -367,6 +367,7 @@ StmtPtr Parser::parseReturnStatement() {
     if (!check(TokenType::SEMICOLON)) {
         value = parseExpression();
     }
+    rejectTrailingBlock();
     consume(TokenType::SEMICOLON, "Expected ';'");
     auto stmt = std::make_shared<ReturnStmt>(value);
     stmt->line = retTok.line; stmt->col = retTok.column;
@@ -395,11 +396,48 @@ StmtPtr Parser::parseContinueStatement() {
     return stmt;
 }
 
-StmtPtr Parser::parseExpressionStatement() {
+StmtPtr Parser::parseExpressionStatement(bool trailing) {
     Token startTok = peek();
-    ExprPtr expr = parseExpression();
+    size_t savedStart = trailingStart;
+    trailingStart = trailing ? current : static_cast<size_t>(-1);
+    ExprPtr expr;
+    try {
+        expr = parseExpression();
+    } catch (...) {
+        trailingStart = savedStart;
+        throw;
+    }
+    trailingStart = savedStart;
+    if (check(TokenType::LBRACE)) {
+        if (!trailing) rejectTrailingBlock();
+        Token brace = peek();
+        // f(a) { BODY } is f(a, void() { BODY }): the block follows the call's own ')'.
+        auto* call = dynamic_cast<CallExpr*>(expr.get());
+        auto* tcall = dynamic_cast<TemplateCallExpr*>(expr.get());
+        bool closed = lastCallClose != static_cast<size_t>(-1) && lastCallClose + 1 == current;
+        if (!call && !tcall) fail("a trailing block must follow a call", brace);
+        if (!closed) fail("a trailing block must follow the call's own ')', not parentheses around it", brace);
+        if (call && dynamic_cast<CallExpr*>(call->callee.get()))
+            fail("a trailing block cannot follow a call of what a call returns", brace);
+        StmtPtr body;
+        {
+            LocalScope scope(*this);
+            body = parseBlockStatement();
+        }
+        auto block = std::make_shared<LambdaExpr>(std::vector<std::pair<std::string, std::string>>{}, "void", body);
+        block->line = brace.line; block->col = brace.column;
+        if (call) call->args.push_back(block); else tcall->args.push_back(block);
+        // One ';' after the block is accepted (lambdas are written `};`).
+        match(TokenType::SEMICOLON);
+        return withPos(std::make_shared<ExprStmt>(expr), startTok);
+    }
     consume(TokenType::SEMICOLON, "Expected ';'");
     return withPos(std::make_shared<ExprStmt>(expr), startTok);
+}
+
+void Parser::rejectTrailingBlock() {
+    if (check(TokenType::LBRACE) && lastCallClose != static_cast<size_t>(-1) && lastCallClose + 1 == current)
+        fail("a trailing block is only allowed on a call statement");
 }
 
 // ============================================================================

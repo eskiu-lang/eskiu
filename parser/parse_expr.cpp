@@ -262,7 +262,8 @@ ExprPtr Parser::parseUnary() {
     NestGuard guard(*this);
     // A lambda whose return type is a struct, pointer or generic type. Not in a
     // match subject, where `f() {` is the call and the match body.
-    if ((!noStructLiteral || isPrimitiveTypeToken(peek().type)) && lambdaAhead()) {
+    if ((!noStructLiteral || isPrimitiveTypeToken(peek().type)) && lambdaAhead() &&
+        !(current == trailingStart && check(TokenType::IDENT))) {
         if (ExprPtr l = tryParseLambda()) return l;
     }
     // await E — prefix operator; binds like a unary operator.
@@ -355,6 +356,7 @@ ExprPtr Parser::parsePostfix() {
                                 do { args.push_back(parseExpression()); } while (match(TokenType::COMMA));
                             }
                             consume(TokenType::RPAREN, "Expected ')'");
+                            lastCallClose = current - 1;
                             auto tc = std::make_shared<TemplateCallExpr>(ident->name, typeArgs, std::move(args));
                             tc->line = ident->line; tc->col = ident->col;
                             return tc;
@@ -387,6 +389,7 @@ ExprPtr Parser::parsePostfix() {
             }
             Token closeTok = tokens[current];
             consume(TokenType::RPAREN, "Expected ')'");
+            lastCallClose = current - 1;
             auto call = withPos(std::make_shared<CallExpr>(expr, args), callTok);
             if (auto* id = dynamic_cast<IdentExpr*>(expr.get()); id && id->name == "dbg" && args.size() == 1)
                 call->dbgText = sourceSpan(firstArg, closeTok);

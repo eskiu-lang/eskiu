@@ -239,6 +239,7 @@ DeclPtr Parser::parseDeclaration() {
             ExprPtr init = nullptr;
             if (match(TokenType::EQ)) {
                 init = parseExpression();
+                rejectTrailingBlock();
             }
             consume(TokenType::SEMICOLON, "Expected ';' after variable declaration");
             auto vd = std::make_shared<VarDecl>(name, stored, init);
@@ -283,6 +284,7 @@ DeclPtr Parser::parseDeclaration() {
                     ExprPtr init = nullptr;
                     if (tokens[current - 1].type == TokenType::EQ) {
                         init = parseExpression();
+                        rejectTrailingBlock();
                         consume(TokenType::SEMICOLON, "Expected ';'");
                     }
                     auto vd = std::make_shared<VarDecl>(name, stored, init);
