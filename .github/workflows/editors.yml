@@ -1,8 +1,11 @@
 name: Editor extensions
 
 # Packages the VS Code extension (.vsix) and the IntelliJ plugin (.zip) on every
-# release tag, or on demand, and uploads both as artifacts. Publishing is opt-in per
-# store: it runs only when the store's token is set as a repository secret.
+# release tag, or on demand, and uploads both as artifacts. On a tag it also attaches both
+# to the release, under their versioned names and as eskiu-vscode.vsix and
+# eskiu-intellij.zip, which releases/latest/download/ always serves (the site links there).
+# Publishing to a store is opt-in: it runs only when the store's token is set as a
+# repository secret.
 #   OVSX_PAT     Open VSX (used by VSCodium, Cursor and Antigravity), namespace doranteseduardo
 #   VSCE_PAT     Visual Studio Marketplace, publisher doranteseduardo
 #   JETBRAINS_TOKEN  JetBrains Marketplace (plugin xyz.reactvision.eskiu)
@@ -10,6 +13,9 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   vscode:
@@ -31,6 +37,15 @@ jobs:
         with:
           name: eskiu-vscode
           path: editor/vscode/*.vsix
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # release.yml makes the release: wait for it.
+          for i in $(seq 1 45); do gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 && break; sleep 20; done
+          cp *.vsix /tmp/eskiu-vscode.vsix
+          gh release upload "$GITHUB_REF_NAME" *.vsix /tmp/eskiu-vscode.vsix --clobber
       - name: Publish to Open VSX
         if: ${{ env.OVSX_PAT != '' }}
         run: npx --yes ovsx@0.10.5 publish *.vsix -p "$OVSX_PAT"
@@ -57,6 +72,14 @@ jobs:
         with:
           name: eskiu-intellij
           path: editor/intellij/plugin/build/distributions/*.zip
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 1 45); do gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 && break; sleep 20; done
+          cp build/distributions/*.zip /tmp/eskiu-intellij.zip
+          gh release upload "$GITHUB_REF_NAME" build/distributions/*.zip /tmp/eskiu-intellij.zip --clobber
       - name: Publish to the JetBrains Marketplace
         if: ${{ env.JETBRAINS_TOKEN != '' }}
         run: ./gradlew publishPlugin --no-daemon

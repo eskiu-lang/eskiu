@@ -56,12 +56,22 @@ Marketplace. The `doranteseduardo` namespace must exist on Open VSX first
 
 ## Install
 
-Package the extension and install the `.vsix`:
+Each release has the extension attached; `releases/latest/download/eskiu-vscode.vsix` is
+always the newest:
+
+```bash
+curl -fsSLO https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiu-vscode.vsix
+code --install-extension eskiu-vscode.vsix    # or cursor / antigravity-ide / codium
+```
+
+Or in the editor: the Extensions view's **⋯** menu, **Install from VSIX…**.
+
+To build it from this checkout instead:
 
 ```bash
 cd editor/vscode
 npx @vscode/vsce package
-code --install-extension eskiu-language-*.vsix    # or cursor / antigravity-ide / codium
+code --install-extension eskiu-language-*.vsix
 ```
 
 For development, link the folder into the extensions directory instead, so edits apply
