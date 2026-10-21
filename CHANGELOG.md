@@ -10,6 +10,9 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 ## [Unreleased]
 
 ### Fixed
+- A git dependency on a branch, a tag or `HEAD` that the lock does not pin yet resolves to
+  the remote's commit. The package mirror in `$ESKIU_HOME/pkgs` answered from what it had
+  fetched in an earlier run, so a new project got an old commit until `eskiuc fetch`.
 - A parse error inside a lambda's body is reported where it is. The C++ compiler took the
   failed body as a failed guess at a lambda and backed out, so the error pointed at the
   lambda's return type, or at a lambda around it (`Expected expression, got VOID`); the

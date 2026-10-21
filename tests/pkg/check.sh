@@ -178,6 +178,27 @@ else
 fi
 mv "$work/src.moved" "$work/src"
 
+# ---- a new resolution of HEAD or a branch fetches first ----------------------
+# A mirror left by an earlier run must not answer with the commit it had then.
+mkdir -p "$work/src/solo"
+printf '[package]\nname = "solo"\nversion = "0.1.0"\n' > "$work/src/solo/eskiu.toml"
+printf 'int solo_value() { return 1; }\n' > "$work/src/solo/solo.esk"
+commit_repo "$work/src/solo" ""
+for project in first second; do
+    mkdir -p "$work/$project/src"
+    printf '[package]\nname = "%s"\nversion = "0.1.0"\nmain = "src/main.esk"\n\n[deps]\nsolo = { git = "file://%s/src/solo" }\n' \
+        "$project" "$work" > "$work/$project/eskiu.toml"
+    printf 'import <solo>;\nint main() { return solo_value(); }\n' > "$work/$project/src/main.esk"
+    (cd "$work/$project" && "$ESKIUC" build > /dev/null 2>&1)
+    if [[ $project == first ]]; then
+        printf 'int solo_value() { return 2; }\n' > "$work/src/solo/solo.esk"
+        commit_repo "$work/src/solo" ""
+    fi
+done
+head_solo="$(git -C "$work/src/solo" rev-parse HEAD)"
+got_solo="$(awk -F'\t' '$1 == "solo" { print $5 }' "$work/second/eskiu.lock")"
+if [[ "$got_solo" == "$head_solo" ]]; then ok "resolve/head-fetches"; else bad "resolve/head-fetches" "got $got_solo, want $head_solo"; fi
+
 # ---- errors ------------------------------------------------------------------
 cp eskiu.toml "$work/toml.bak"
 err="$("$ESKIUC" add bogus --git "file://$work/src/leaf" --rev nosuch 2>&1)"; code=$?
