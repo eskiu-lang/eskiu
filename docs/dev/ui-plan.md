@@ -395,7 +395,7 @@ frame on the iOS simulator (0.13 ms) and the Android emulator (1.4 ms), a 48 KB 
 
 The items phase 0 left are listed under phase 1 with their state.
 
-### Phase 1: the core (in progress)
+### Phase 1: the core (done)
 
 - Element tree, keyed diff, mutation buffer, scheduler, signals, memos and effects, as
   specified above.
@@ -420,14 +420,31 @@ self-host, and on web, the iOS simulator, the Android emulator and macOS):
 - **No run arena.** A string is copied only when it changes and retired after the commit,
   which allocates less than an arena per run; freed-memory checks are the ASan gates.
 
-Found on the way: a lambda inside a generic function body always gets a heap environment,
-even when passed to a non-escaping parameter, and nothing frees it, so every `sort<T>` call
-leaks 16 bytes (the escape analysis does not stamp generic bodies, which are checked per
-instance without writing to the shared AST). The core sorts with its own counting sort; the
-compiler fix belongs to the compiler's own work.
+Found on the way, two compiler bugs, worked around in `ui` while the compiler fix is
+under way: a lambda inside a generic function body always got a heap environment, even
+when passed to a non-escaping parameter, and nothing freed it, so every `sort<T>` call
+leaked 16 bytes (the core sorts with its own counting sort); and the self-hosted compiler
+emitted invalid IR for `free_closure` of a variable captured by a lambda (the core frees
+closures through a parameter).
 
-Remaining: text input, focus and IME, accessibility, images, scrolling, mobile lifecycle,
-root insets, and the conformance suite.
+Then, on every host (web, iOS, Android, and the web renderer in macOS WKWebView):
+
+- **Typed events** (press, change with text, focus) through a core queue that copies the
+  text of an event received during a commit.
+- **TextInput** (controlled, `Input{value, placeholder, label, focused}`), **Scroll**,
+  **Image** (bundled file or http(s) URL), and layout props `width`, `height`, `grow`,
+  `wrap`; `label` is the accessible name on every element.
+- **Insets and lifecycle**: hosts report system bars, cutouts and the keyboard
+  (`ui_insets()`) and the foreground state (`ui_is_active()`); by default the root sits in
+  the safe area and above the keyboard, `ui_edge_to_edge` hands the whole screen to the app.
+- **Conformance suite** (`tools/conformance.py`): one scene, its frames (within a point),
+  roles and event log compared on iOS, Android and the web; all three pass. The web
+  renderer sets Yoga's defaults (border-box, no shrink, zero minimum size) for it.
+
+Still basic, for later phases: IME composition is left to the platform controls (no test
+of its own), accessibility covers names and roles but not reading order or actions, the
+lifecycle reports foreground state but does not restore state after an Android activity is
+recreated, and there is no Windows or Linux host yet (phase 4).
 
 ### Phase 2: trailing blocks in the compiler (branch `trailing-blocks`)
 
