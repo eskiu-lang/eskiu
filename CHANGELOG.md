@@ -10,6 +10,13 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 ## [Unreleased]
 
 ### Fixed
+- A lambda in a generic function, passed to a parameter that does not escape, gets its
+  env on the stack as it does elsewhere. It got a heap env that was never freed, so each
+  `sort<T>`, `sort_partial<T>` and `sort_nth<T>` call leaked 16 bytes.
+- The self-hosted compiler gave a stack env to a lambda passed to a generic function that
+  keeps its closure parameter, which then read a dead stack frame; it now decides as the
+  C++ compiler does. It also rejects forwarding a non-`escaping` closure parameter to a
+  generic function, as the C++ compiler does.
 - The self-hosted compiler captures a variable a lambda names only inside `free_closure`,
   `thread_create` or `alloc_with`; it emitted invalid IR for such a lambda.
 
