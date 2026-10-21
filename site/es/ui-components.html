@@ -86,7 +86,7 @@
       <section class="uc-group" id="navigation">
         <h2>Navegación</h2>
         <p>Una pila de rutas: pantallas en el teléfono, URLs e historial en la web. <a href="https://github.com/eskiu-lang/ui/blob/main/docs/navigation.md">La guía &rarr;</a></p>
-        <div class="uc-items"><div><code>router_new(root)</code>Una pila de rutas, del modelo de la app.</div><div><code>Navigator(router, screen)</code>La pila como pantallas; las de abajo siguen montadas.</div><div><code>push, back, replace, reset</code>Cambian la pila.</div><div><code>route_match(pattern, route, params)</code>&quot;/places/:id&quot; contra una ruta.</div><div><code>use_back(handler)</code>Toma el botón o gesto de atrás mientras está montado.</div><div><code>ui_link(), ui_open_url(url)</code>El link con que se abrió la app, y abrir uno.</div></div>
+        <div class="uc-items"><div><code>router_new(root)</code>Una pila de rutas, del modelo de la app.</div><div><code>Navigator(router, screen)</code>La pila como pantallas; las de abajo siguen montadas.</div><div><code>push, back, replace, reset</code>Cambian la pila.</div><div><code>route_param(pattern, route, index)</code>Un parámetro de la ruta para su pantalla, que dura mientras la ruta está en la pila.</div><div><code>route_match(pattern, route, params)</code>&quot;/places/:id&quot; contra una ruta.</div><div><code>use_back(handler)</code>Toma el botón o gesto de atrás mientras está montado.</div><div><code>ui_link(), ui_open_url(url)</code>El link con que se abrió la app, y abrir uno.</div></div>
       </section>
       <section class="uc-group" id="system">
         <h2>El sistema</h2>

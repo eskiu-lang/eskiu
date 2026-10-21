@@ -87,7 +87,7 @@
       <section class="uc-group" id="navigation">
         <h2>Navigation</h2>
         <p>A stack of routes: screens on the phone, URLs and history on the web. <a href="https://github.com/eskiu-lang/ui/blob/main/docs/navigation.md">The guide &rarr;</a></p>
-        <div class="uc-items"><div><code>router_new(root)</code>A stack of routes, owned by the app&#x27;s model.</div><div><code>Navigator(router, screen)</code>The stack as screens; the ones under the top stay mounted.</div><div><code>push, back, replace, reset</code>Change the stack.</div><div><code>route_match(pattern, route, params)</code>&quot;/places/:id&quot; against a route.</div><div><code>use_back(handler)</code>Take the back button or gesture while mounted.</div><div><code>ui_link(), ui_open_url(url)</code>The link the app was opened with, and opening one.</div></div>
+        <div class="uc-items"><div><code>router_new(root)</code>A stack of routes, owned by the app&#x27;s model.</div><div><code>Navigator(router, screen)</code>The stack as screens; the ones under the top stay mounted.</div><div><code>push, back, replace, reset</code>Change the stack.</div><div><code>route_param(pattern, route, index)</code>A route&#x27;s parameter for its screen, kept while the route is on the stack.</div><div><code>route_match(pattern, route, params)</code>&quot;/places/:id&quot; against a route.</div><div><code>use_back(handler)</code>Take the back button or gesture while mounted.</div><div><code>ui_link(), ui_open_url(url)</code>The link the app was opened with, and opening one.</div></div>
       </section>
       <section class="uc-group" id="system">
         <h2>The system</h2>
