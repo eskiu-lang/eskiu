@@ -1,0 +1,49 @@
+// A call statement may end in a block: `f(a) { BODY }` is `f(a, void() { BODY })`.
+import <io>;
+
+struct Box { int n; }
+
+void twice(fn()->void body) { body(); body(); }
+void labeled(string name, fn()->void body) { printf("%s:", name); body(); printf("\n"); }
+void Box_each(*Box self, fn()->void body) { for (i in 0..self.n) { body(); } }
+void repeat<T>(T value, int n, fn()->void body) { for (i in 0..n) { body(); } }
+
+// A callee that keeps the block runs it after the call.
+fn()->void saved;
+void later(escaping fn()->void body) { saved = body; }
+
+int total = 0;
+
+int main() {
+    twice() {
+        printf("hi\n");
+    }
+    labeled("a") { printf(" one"); };
+    Box b = Box{3};
+    b.each() { printf("."); }
+    printf("\n");
+    repeat<int>(5, 2) { printf("generic\n"); }
+
+    // A closure variable as the callee, and a block reading what it captures.
+    fn(fn()->void)->void run = void(fn()->void body) { body(); };
+    int n = 7;
+    run() { printf("n = %d\n", n); }
+
+    // Nested blocks, `defer` and `return;` inside one.
+    twice() {
+        defer printf("  deferred\n");
+        labeled("inner") {
+            total++;
+            if (total > 1) { return; }
+            printf(" first");
+        }
+    }
+    printf("total = %d\n", total);
+
+    later() { printf("later\n"); }
+    saved();
+    free_closure(saved);
+
+    if (n == 7) twice() { printf("unbraced\n"); }
+    return 0;
+}
