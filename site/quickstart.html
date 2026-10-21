@@ -63,6 +63,26 @@ eskiuc --version
       not yet part of the release gate.
     </p>
 
+    <h2 id="editor">Your editor</h2>
+    <p>
+      The Eskiu extension gives VS Code, and the editors built on it (Cursor, VSCodium,
+      Antigravity), syntax highlighting, errors as you type, completion, hover with types,
+      go to definition, rename and formatting. It runs the <code>eskiuc</code> on your
+      <code>PATH</code>. Download it and install it from the command line:
+    </p>
+    <pre><code>curl -fsSLO https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiu-vscode.vsix
+code --install-extension eskiu-vscode.vsix   <span class="o"># or cursor, codium</span></code></pre>
+    <p>
+      Or, in the editor, open the Extensions view and choose <strong>Install from VSIX…</strong>
+      in its <strong>⋯</strong> menu. In JetBrains IDEs (IntelliJ IDEA, CLion and the others), the
+      plugin brings the same highlighting and, with LSP4IJ, the same language features: install
+      it under <strong>Settings → Plugins → ⚙ → Install Plugin from Disk…</strong>.
+    </p>
+    <div class="btns">
+      <a class="btn-w" href="https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiu-vscode.vsix">↓ VS Code extension</a>
+      <a class="btn-w" href="https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiu-intellij.zip">↓ JetBrains plugin</a>
+    </div>
+
     <h2>Hello, Eskiu</h2>
     <p>A file of statements runs as a script. Create <code>hello.esk</code>:</p>
     <pre><code>import &lt;io&gt;;

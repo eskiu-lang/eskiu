@@ -63,6 +63,26 @@ eskiuc --version
       todavía no forma parte del release gate.
     </p>
 
+    <h2 id="editor">Tu editor</h2>
+    <p>
+      La extensión de Eskiu le da a VS Code, y a los editores hechos sobre él (Cursor, VSCodium,
+      Antigravity), resaltado de sintaxis, errores mientras escribes, autocompletado, tipos al
+      pasar el cursor, ir a la definición, renombrar y formato. Usa el <code>eskiuc</code> de tu
+      <code>PATH</code>. Descárgala e instálala desde la terminal:
+    </p>
+    <pre><code>curl -fsSLO https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiu-vscode.vsix
+code --install-extension eskiu-vscode.vsix   <span class="o"># o cursor, codium</span></code></pre>
+    <p>
+      O, en el editor, abre la vista de extensiones y elige <strong>Install from VSIX…</strong> en
+      su menú <strong>⋯</strong>. En los IDE de JetBrains (IntelliJ IDEA, CLion y los demás), el
+      plugin trae el mismo resaltado y, con LSP4IJ, las mismas funciones del lenguaje: instálalo en
+      <strong>Settings → Plugins → ⚙ → Install Plugin from Disk…</strong>.
+    </p>
+    <div class="btns">
+      <a class="btn-w" href="https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiu-vscode.vsix">↓ Extensión de VS Code</a>
+      <a class="btn-w" href="https://github.com/eskiu-lang/eskiu/releases/latest/download/eskiu-intellij.zip">↓ Plugin de JetBrains</a>
+    </div>
+
     <h2>Hola, Eskiu</h2>
     <p>Un archivo de instrucciones corre como script. Crea <code>hello.esk</code>:</p>
     <pre><code>import &lt;io&gt;;
