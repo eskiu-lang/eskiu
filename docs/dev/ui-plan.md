@@ -499,8 +499,11 @@ stays the last parameter of everything added meanwhile):
    the host cannot animate; `ui_on_pan` (a drag taken from a pressable inside past the slop);
    the kit's `SwipeToDelete`; the interactive iOS back swipe. Layout changes are not animated
    yet.
-9. The kit's overlays: `Toast`, `Popover`, `Tooltip`, `DropdownMenu`, `Select`, date and
-   color pickers.
+9. **Done.** The kit's overlays: `Popover` (placed from the trigger's window position, below
+   or above, inside the window), `DropdownMenu`, `Select`, `MenuItem`, `Tooltip`, toasts
+   (`kit_toast`, `ToastHost`), `Calendar`, `DatePicker`, `ColorPicker`; in the core,
+   `Overlay` (an undimmed layer), a tap on a modal's backdrop, window positions in `Frame`
+   and min and max sizes in `Style`.
 10. Device packages, as Expo's modules, each with its `native/` and `ui.toml`: notifications,
     camera and photo picking, location, then sensors, secure storage and biometrics.
     Single-platform APIs (Android toasts and permissions, iOS action sheets) too.
