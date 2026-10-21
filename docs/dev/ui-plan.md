@@ -485,11 +485,14 @@ stays the last parameter of everything added meanwhile):
 6. **Done.** Core primitives: absolute positioning and `aspect_ratio` (Style), `ui_on_layout`
    (the frame after layout), timers (`use_interval`, `use_timeout` over the host's clock),
    `ui_on_hover`, `Slider` (kind 15, controlled). In the conformance scene on every host.
-7. Core APIs (React Native's APIs list), in `<ui/...>` modules over the native-module
-   mechanism: `Platform`, `Appearance` (dark mode, the kit's theme following it), `Keyboard`
-   (dismiss, events), storage (the app's directory, `localStorage` on the web), `fetch` on
-   the web (the browser's, since the page has no sockets), `Share`, `Clipboard`, vibration
-   and haptics, `AccessibilityInfo`, the system language and RTL.
+7. **Done.** Core APIs (React Native's APIs list), in `src/apis/` (part of `<ui>`), through
+   the hosts: the platform; appearance (`ui_color_scheme`, a dark kit theme and
+   `kit_follow_system`; Android no longer recreates the activity on configuration changes);
+   accessibility (screen reader, reduced motion, font scale, `ui_announce`); language and
+   RTL (layout does not mirror yet); keyboard dismiss, share, clipboard, haptics (commands
+   4 to 9); key-value storage and the data directory; `ui_fetch` through `NSURLSession`,
+   `HttpURLConnection` and the browser's `fetch` (the system's TLS). In the conformance scene
+   on every host, the fetch against a local server.
 8. `Animated` and `Easing` on the frame scheduler, then gestures (pan, swipe; the
    interactive iOS back swipe, swipe to delete).
 9. The kit's overlays: `Toast`, `Popover`, `Tooltip`, `DropdownMenu`, `Select`, date and
