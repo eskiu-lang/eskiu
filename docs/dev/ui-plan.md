@@ -161,7 +161,7 @@ an element with no view).
   run replaced its callback, whose captures may differ and cannot be compared), and after a
   commit when a signal or memo it read in its last run changed. Its dependencies are
   re-tracked on every run. It may register a cleanup through `on_cleanup(fn()->void)`, run
-  before its next run and at unmount. Effects run in tree order, parents first. An effect that
+  before its next run and at unmount. Effects run parents before children, and within a depth in the order they were scheduled. An effect that
   should run only when chosen values change compares them itself, or uses a later
   `use_effect_on(deps, fn)`.
 - **Unmount during an effect.** An effect whose write removes its own scope (or an ancestor)
@@ -245,7 +245,7 @@ Test cases, each with its expected mutation list and per-scope run counts:
 | Node | its scope | when the commit that removes it completes |
 | Block closure (heap env) | its scope | when replaced, after the replacing run; at unmount |
 | Event handler closure | the node's handler slot | when replaced, after the commit that installs the new one completes; at unmount |
-| Strings passed to `Text` and props | copied into the run's arena | when the next run of that scope is committed (the diff compares both) |
+| Strings passed to `Text` and props | a copy made only when the text changed | the old copy when the commit that replaces it completes (the diff compares both) |
 | Event payloads (text of an input, key) | the core | when the handler returns |
 | Owned string state (`use_string`) | the slot and explicitly retained snapshots | each reference released on replacement/unmount or by the snapshot owner; storage freed at the last release |
 | Generic `use_signal<T>` values | the slot holds T by value; pointers are borrowed | slot freed at unmount; no implicit recursive destructor for T |
@@ -268,9 +268,8 @@ Checks:
 - Leaks: a counting allocator returns to its baseline after mounting and unmounting the TODO
   app 10 000 times, and after 10 000 renders that replace every handler.
 - Freed memory: the model tests also run under AddressSanitizer (as the stdlib fuzzers do),
-  and debug builds keep freed arenas in a quarantine filled with a pattern for a few frames.
-  A test renders a row whose handler captures a string kept in `use_string`, replaces the row's
-  arena by re-rendering, then invokes the handler: it reads the right text and ASan reports
+  every generated function instrumented. A test renders a row whose handler captures a string
+  kept in `use_string`, replaces the row's strings by re-rendering, then invokes the handler: it reads the right text and ASan reports
   nothing. A second test makes the handler read an event payload kept past its handler without
   a copy; under ASan it must report, which proves the check sees that mistake.
 
@@ -300,10 +299,12 @@ env, slots and subscriptions (counting allocator).
 The desugared lambda carries no source position to the `ui` package, and default parameter
 values are folded where they are declared, so `__LINE__` there would name the declaration.
 For 0.13 the runtime reports a **scope path**: each step is the element kind (a primitive's
-name, or the component name given by `Scope("Name", k)`), its key or sibling index, then the
-slot index and the expected and found kind and tag name, for example
-`TodoApp > Column > Row[key 3] > slot 1: expected use_signal<bool>, found use_signal<int>`.
-Hooks take an optional label for the message. Source positions (call-site defaults such as
+name, or the component name given by `Scope("Name", k, block)`), its key or sibling index;
+a hook error adds the slot index and the expected and found hook, for example
+`hook kind/type changed at slot 0: expected use_signal, found use_memo` /
+`in Column[0] > TodoRow[key 3]`. The type of a hook is compared through its tag but cannot be
+named (there are no type names at run time), so a type change reads "use_signal with another
+type". Source positions (call-site defaults such as
 `__LINE__` evaluated at the call, or the compiler stamping blocks) are a later language
 decision, not part of 0.13.
 
@@ -392,18 +393,41 @@ frame on the iOS simulator (0.13 ms) and the Android emulator (1.4 ms), a 48 KB 
 
 #### Left for phase 1
 
-- An id-to-node map and per-node observer lists: today dispatch, unmount and reordering scan
-  lists, so unmounting a large list is quadratic.
-- The packed mutation buffer: the prototype reuses `Mutation` fields for props.
-- Id reuse with generations (ids only grow today), scope-path diagnostics, the run arena and
-  its quarantine, the release fallback for duplicate keys, text input, focus and IME,
-  accessibility, images, mobile lifecycle, root insets, and the conformance suite.
+The items phase 0 left are listed under phase 1 with their state.
 
-### Phase 1: the core
+### Phase 1: the core (in progress)
 
 - Element tree, keyed diff, mutation buffer, scheduler, signals, memos and effects, as
   specified above.
 - Host tests with the recording renderer; the leak gates in CI.
+
+Done (`eskiu-lang/ui`, checked on the host at `-O0`/`-O2`, under ASan and with the
+self-host, and on web, the iOS simulator, the Android emulator and macOS):
+
+- **Linear core.** An id-to-node table and work lists (dirty scopes, memos, effects), so a
+  frame touches only what changed; unmount walks the node's own slots. Children match
+  through a key table (up to 8 children by scanning, which keeps small lists as fast as
+  before); a reorder moves only the children outside a longest increasing subsequence of
+  their old positions; subscriptions are edges indexed on both sides, removed in O(1). On
+  10,000 rows: unmount 4,133 to 6.8 ms, reverse 256 to 5.9 ms, an event and its frame 230 to
+  5.4 ms, mount 124 to 8.1 ms; a signal read by every row changes in 1.2 ms (was 92).
+- **Packed commits.** One byte buffer per frame (format in `src/ui.esk`), decoded by
+  `hosts/ui_commit.h` on iOS and Android and from wasm memory in one call on the web;
+  properties are generic `prop` records.
+- **Id reuse** after the removing commit completes, with a new generation per reuse.
+- **Diagnostics** with scope paths, and `Scope(name, key, block)` for component names.
+- **Release fallback** for duplicate keys (`ui.lenient`).
+- **No run arena.** A string is copied only when it changes and retired after the commit,
+  which allocates less than an arena per run; freed-memory checks are the ASan gates.
+
+Found on the way: a lambda inside a generic function body always gets a heap environment,
+even when passed to a non-escaping parameter, and nothing frees it, so every `sort<T>` call
+leaks 16 bytes (the escape analysis does not stamp generic bodies, which are checked per
+instance without writing to the shared AST). The core sorts with its own counting sort; the
+compiler fix belongs to the compiler's own work.
+
+Remaining: text input, focus and IME, accessibility, images, scrolling, mobile lifecycle,
+root insets, and the conformance suite.
 
 ### Phase 2: trailing blocks in the compiler (branch `trailing-blocks`)
 
