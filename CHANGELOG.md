@@ -7,6 +7,12 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- The self-hosted compiler captures a variable a lambda names only inside `free_closure`,
+  `thread_create` or `alloc_with`; it emitted invalid IR for such a lambda.
+
 ## [0.12.0] - 2026-10-20
 
 The first public release. Code that compiles with 0.12.0 keeps compiling in every 0.12.x

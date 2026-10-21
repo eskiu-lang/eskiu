@@ -1,0 +1,35 @@
+// A lambda body that names an enclosing variable only inside a builtin (free_closure,
+// thread_create, alloc_with) still captures it.
+import <io>;
+import <alloc>;
+
+void run(fn()->void f) { f(); }
+
+int shared = 0;
+
+int main() {
+    int k = 3;
+    fn(int)->int g = int(int v) { return v + k; };
+    printf("%d\n", g(4));
+    run(void() { free_closure(g); });
+
+    int n = 5;
+    fn()->void work = void() { shared = n * 2; };
+    run(void() {
+        *void t = thread_create(work);
+        thread_join(t);
+    });
+    printf("%d\n", shared);
+
+    uint8[64] buffer;
+    Bump bump;
+    Bump_init(&bump, &buffer[0], 64);
+    *Bump arena = &bump;
+    int count = 4;
+    run(void() {
+        *int xs = alloc_with(arena, int, count);
+        xs[3] = 42;
+        printf("%d\n", xs[3]);
+    });
+    return 0;
+}
