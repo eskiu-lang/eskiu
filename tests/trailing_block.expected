@@ -1,0 +1,15 @@
+hi
+hi
+a: one
+...
+generic
+generic
+n = 7
+inner: first
+  deferred
+inner:
+  deferred
+total = 2
+later
+unbraced
+unbraced
