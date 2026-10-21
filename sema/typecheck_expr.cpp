@@ -396,7 +396,9 @@ void TypeChecker::visit(QuestionExpr* node) {
         bool hasValue = false;
         if (auto st = structs.find(ret); st != structs.end())
             for (const auto& f : st->second.fields) if (f.name == "value") hasValue = true;
-        if (opErr.empty() || opErr != retErr || opOk != retOk || !hasValue)
+        if ((opErr.empty() || opErr != retErr || opOk != retOk || !hasValue) && inTrailingBlock)
+            errorAt(node, "`?` is not allowed in a trailing block (the block is a closure)");
+        else if (opErr.empty() || opErr != retErr || opOk != retOk || !hasValue)
             errorAt(node, "`?` can only be used in a function returning a Result with the same "
                           "error type; this function returns '" + currentFunctionReturnType + "'");
     }
@@ -2155,6 +2157,8 @@ void TypeChecker::visit(LambdaExpr* node) {
     // A lambda is its own (non-async) function: an `await` in its body does not belong to
     // an enclosing async function.
     bool savedAsync = inAsyncFn, savedAwait = awaitSeenInFn, savedVariadic = inVariadicFn;
+    bool savedTrailing = inTrailingBlock;
+    inTrailingBlock = node->trailing;
     int savedFinally = finallyDepth;
     inAsyncFn = false;
     finallyDepth = 0;
@@ -2189,7 +2193,9 @@ void TypeChecker::visit(LambdaExpr* node) {
     inAsyncFn = savedAsync;
     finallyDepth = savedFinally;
     inVariadicFn = savedVariadic;
-    awaitSeenInFn = savedAwait;
+    // An `await` in a trailing block is reported there; the function does not also lack one.
+    awaitSeenInFn = savedAwait || (node->trailing && awaitSeenInFn);
+    inTrailingBlock = savedTrailing;
     narrowedNonNull = savedNarrowed;
     popScope();
 
@@ -2249,7 +2255,8 @@ void TypeChecker::visit(AwaitExpr* node) {
     // The callee may assign any global: a global's narrowing ends after the call.
     struct GlobalNarrowDrop { TypeChecker* t; ~GlobalNarrowDrop() { t->dropGlobalNarrowings(); } } dropAfter{this};
     if (!inAsyncFn)
-        errorAt(node, "await is only allowed inside an async function");
+        errorAt(node, inTrailingBlock ? "await is not allowed in a trailing block (the block is a closure)"
+                                      : "await is only allowed inside an async function");
     awaitSeenInFn = true;
     node->operand->accept(this);
     std::string t = getExpressionType(node->operand.get());

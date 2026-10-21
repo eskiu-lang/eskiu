@@ -425,6 +425,7 @@ StmtPtr Parser::parseExpressionStatement(bool trailing) {
             body = parseBlockStatement();
         }
         auto block = std::make_shared<LambdaExpr>(std::vector<std::pair<std::string, std::string>>{}, "void", body);
+        block->trailing = true;
         block->line = brace.line; block->col = brace.column;
         if (call) call->args.push_back(block); else tcall->args.push_back(block);
         // One ';' after the block is accepted (lambdas are written `};`).

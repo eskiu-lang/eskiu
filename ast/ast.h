@@ -779,6 +779,8 @@ public:
     // Set by analysis: true if this closure may outlive its creating function
     // (escapes) and therefore needs a heap-allocated environment.
     bool escapes = true;   // sound default: heap unless proven non-escaping
+    // A call statement's trailing block (`f(a) { ... }`), parsed into this lambda.
+    bool trailing = false;
 
     LambdaExpr(std::vector<std::pair<std::string, std::string>> params,
                std::string returnType, StmtPtr body)

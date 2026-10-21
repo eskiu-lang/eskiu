@@ -414,7 +414,9 @@ void TypeChecker::visit(ReturnStmt* node) {
         // A returned integer literal that fits the return type stays valid; other
         // narrowing needs an explicit cast (same rule as init / assignment).
         std::string e = assignabilityError(currentFunctionReturnType, valueType, node->value.get());
-        if (!e.empty())
+        if (!e.empty() && inTrailingBlock)
+            errorAt(node, "a trailing block returns nothing: `return` here leaves the block, not the function");
+        else if (!e.empty())
             errorAt(node, "return type mismatch: expected " + currentFunctionReturnType +
                           ", got " + valueType + " (" + e + ")");
     } else if (currentFunctionReturnType != "void") {
@@ -472,7 +474,8 @@ void TypeChecker::visit(BreakStmt* node) {
     // A bare break needs an enclosing loop or switch of the SAME function (a lambda body
     // starts a fresh context); a labeled break must name an enclosing loop label.
     if (node->label.empty() && loopLabelStack.empty() && switchDepth == 0)
-        errorAt(node, "'break' outside of a loop or switch");
+        errorAt(node, inTrailingBlock ? "'break' cannot leave a trailing block (the block is a closure)"
+                                      : "'break' outside of a loop or switch");
     if (!node->label.empty()) {
         bool found = false;
         for (auto& l : loopLabelStack) if (l == node->label) { found = true; break; }
@@ -554,7 +557,8 @@ void TypeChecker::visit(ContinueStmt* node) {
     // Valid inside a loop of the same function. A labeled continue must name an
     // enclosing loop label.
     if (node->label.empty() && loopLabelStack.empty())
-        errorAt(node, "'continue' outside of a loop");
+        errorAt(node, inTrailingBlock ? "'continue' cannot leave a trailing block (the block is a closure)"
+                                      : "'continue' outside of a loop");
     if (!node->label.empty()) {
         bool found = false;
         for (auto& l : loopLabelStack) if (l == node->label) { found = true; break; }

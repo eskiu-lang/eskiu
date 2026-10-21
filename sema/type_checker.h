@@ -443,6 +443,8 @@ private:
     // Set when an `await` is seen in the current function body — an `async fn`
     // with none is rejected (the transform needs at least one suspend point).
     bool awaitSeenInFn = false;
+    // Checking the body of a trailing block (a closure written after a call statement).
+    bool inTrailingBlock = false;
 
     // -Wall function-usage tracking: top-level functions defined vs. referenced
     std::map<std::string, std::pair<int,int>> definedFns; // name -> (line,col)
