@@ -619,6 +619,42 @@ PACKAGES_CATALOG = [
         "setup": ["ui new myapp && cd myapp"],
         "build": ["ui run ios"],
     },
+    {
+        "name": "notifications",
+        "repo": "ui-notifications",
+        "section": None,
+        "tag_es": "Notificaciones locales para apps hechas con eskiu-lang/ui.",
+        "note_en": "The app schedules a notification with a title and a body for a number of seconds "
+                   "from now; the system shows it then, also when the app is closed, and tells the app "
+                   "when the user opens it. UNUserNotificationCenter on iOS, AlarmManager and "
+                   "NotificationManager on Android, the Notification API on the web.",
+        "note_es": "La app programa una notificación con título y texto para dentro de unos segundos; "
+                   "el sistema la muestra entonces, también con la app cerrada, y le avisa a la app cuando "
+                   "el usuario la abre. UNUserNotificationCenter en iOS, AlarmManager y NotificationManager "
+                   "en Android, la API Notification en la web.",
+        "needs_en": "An app made with eskiu-lang/ui (ui new).",
+        "needs_es": "Una app hecha con eskiu-lang/ui (ui new).",
+        "setup": ["ui new myapp && cd myapp"],
+        "build": ["ui run android"],
+    },
+    {
+        "name": "camera",
+        "repo": "ui-camera",
+        "section": None,
+        "tag_es": "Fotos para apps hechas con eskiu-lang/ui: la galería, la cámara y una vista en vivo.",
+        "note_en": "Pick a photo from the library, take one with the system's camera, or show the camera "
+                   "live in a <code>CameraView</code> and capture it. Each photo comes back upright as a "
+                   "JPEG that <code>Image</code> shows. PHPicker and AVFoundation on iOS, the photo picker "
+                   "and Camera2 on Android, a file input and getUserMedia on the web.",
+        "note_es": "Elige una foto de la galería, toma una con la cámara del sistema, o muestra la cámara en "
+                   "vivo en un <code>CameraView</code> y captúrala. Cada foto regresa derecha como un JPEG que "
+                   "<code>Image</code> muestra. PHPicker y AVFoundation en iOS, el selector de fotos y Camera2 "
+                   "en Android, un input de archivo y getUserMedia en la web.",
+        "needs_en": "An app made with eskiu-lang/ui (ui new).",
+        "needs_es": "Una app hecha con eskiu-lang/ui (ui new).",
+        "setup": ["ui new myapp && cd myapp"],
+        "build": ["ui run android"],
+    },
 ]
 
 

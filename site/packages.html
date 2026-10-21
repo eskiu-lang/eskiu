@@ -34,7 +34,7 @@
     <div class="eyebrow">Packages</div>
     <h1>Official packages</h1>
     <p class="lede">Libraries from the <a href="https://github.com/eskiu-lang">eskiu-lang</a> organization on GitHub. Each one is a git repository with an <code>eskiu.toml</code>, added to a project with one command.</p>
-    <nav class="chips" aria-label="Packages"><a href="#gpu">gpu</a><a href="#onnx">onnx</a><a href="#tflite">tflite</a><a href="#compress">compress</a><a href="#audio">audio</a><a href="#font">font</a><a href="#jni">jni</a><a href="#nds">nds</a><a href="#location">location</a><a href="#vision">vision</a></nav>
+    <nav class="chips" aria-label="Packages"><a href="#gpu">gpu</a><a href="#onnx">onnx</a><a href="#tflite">tflite</a><a href="#compress">compress</a><a href="#audio">audio</a><a href="#font">font</a><a href="#jni">jni</a><a href="#nds">nds</a><a href="#location">location</a><a href="#notifications">notifications</a><a href="#camera">camera</a><a href="#vision">vision</a></nav>
     <h2 id="using">Using a package</h2>
     <p><code>eskiuc add</code> writes the dependency into <code>eskiu.toml</code>, fetches it with git and records its commit in <code>eskiu.lock</code>, so later builds reuse it without touching the network. There is no registry: a dependency is a git URL with a rev (a tag, branch or commit) or a local path.</p>
     <pre><code>eskiuc new myapp
@@ -269,6 +269,64 @@ void Here() {
     } else {
         ActivityIndicator(Style{}, true);
     }
+}</code></pre>
+      </details>
+    </section>
+    <section class="pkg" id="notifications">
+      <h2>notifications</h2>
+      <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/ui-notifications/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/ui-notifications/actions/workflows/ci.yml/badge.svg" alt="CI status: notifications" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/ui-notifications">github.com/eskiu-lang/ui-notifications</a></div>
+      <p><strong>Local notifications for apps on eskiu-lang/ui.</strong></p>
+      <p>The app schedules a notification with a title and a body for a number of seconds from now; the system shows it then, also when the app is closed, and tells the app when the user opens it. UNUserNotificationCenter on iOS, AlarmManager and NotificationManager on Android, the Notification API on the web.</p>
+      <p class="note">An app made with eskiu-lang/ui (ui new).</p>
+      <h3>Install</h3>
+      <pre><code>ui new myapp &amp;&amp; cd myapp
+eskiuc add notifications --git https://github.com/eskiu-lang/ui-notifications --rev v0.1.0
+ui run android</code></pre>
+      <details class="pkg-example"><summary>Example from the README</summary>
+      <pre><code>import &lt;ui/kit&gt;;
+import &lt;notifications&gt;;
+
+void Tea() {
+    Column(Style{padding: 20, gap: 12}, void() {
+        int permission = use_notification_permission();
+        use_notification_opened(void(string id) { kit_toast("Your tea is ready"); });
+        if (permission != NotificationsAllowed) {
+            Button("Allow notifications", void() { notifications_ask(); });
+        }
+        Button("Remind me in four minutes", void() {
+            notification_schedule("tea", "Tea is ready", "Take the leaves out.", 240);
+        });
+    });
+}</code></pre>
+      </details>
+    </section>
+    <section class="pkg" id="camera">
+      <h2>camera</h2>
+      <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/ui-camera/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/ui-camera/actions/workflows/ci.yml/badge.svg" alt="CI status: camera" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/ui-camera">github.com/eskiu-lang/ui-camera</a></div>
+      <p><strong>Photos for apps on eskiu-lang/ui: the library, the camera and a live view.</strong></p>
+      <p>Pick a photo from the library, take one with the system's camera, or show the camera live in a <code>CameraView</code> and capture it. Each photo comes back upright as a JPEG that <code>Image</code> shows. PHPicker and AVFoundation on iOS, the photo picker and Camera2 on Android, a file input and getUserMedia on the web.</p>
+      <p class="note">An app made with eskiu-lang/ui (ui new).</p>
+      <h3>Install</h3>
+      <pre><code>ui new myapp &amp;&amp; cd myapp
+eskiuc add camera --git https://github.com/eskiu-lang/ui-camera --rev v0.1.0
+ui run android</code></pre>
+      <details class="pkg-example"><summary>Example from the README</summary>
+      <pre><code>import &lt;camera&gt;;
+
+List&lt;String&gt; photos;
+
+void Shoot() {
+    Column(Style{padding: 20, gap: 12}, void() {
+        use_photos(void(Photo photo) {
+            if (photo.status != PhotoReady) { return; }
+            String path;
+            String_from(&amp;path, photo.path);   <span class="c">// borrowed for the call: keep a copy</span>
+            photos.push(path);
+        });
+        CameraView(Style{height: 360, radius: 20}, false);
+        Button("Take a photo", void() { camera_capture(); });
+        Button("Choose from the library", void() { camera_pick_photo(); });
+    });
 }</code></pre>
       </details>
     </section>
