@@ -1771,7 +1771,9 @@ void sema_expr_k(Sema* s, *ExprNode e) {
         return;
     }
     if (k == EK_AWAIT) {
-        if (s.in_async == 0) {
+        if (s.in_async == 0 && s.in_trailing == 1) {
+            sema_error(s, "await is not allowed in a trailing block (the block is a closure)");
+        } else if (s.in_async == 0) {
             sema_error(s, "await is only allowed inside an async function");
         }
         s.await_seen = 1;
@@ -1954,7 +1956,9 @@ void sema_expr_k(Sema* s, *ExprNode e) {
                 mismatch = 0;
             }
         }
-        if (mismatch == 1) {
+        if (mismatch == 1 && s.in_trailing == 1) {
+            sema_error(s, "`?` is not allowed in a trailing block (the block is a closure)");
+        } else if (mismatch == 1) {
             sema_error(s, "`?` can only be used in a function returning a Result with the same error type");
         }
         return;
@@ -3327,6 +3331,8 @@ void sema_check_lambda(Sema* s, *ExprNode e) {
     string saved_ret = s.cur_ret;
     int saved_async = s.in_async;
     int saved_seen = s.await_seen;
+    int saved_trailing = s.in_trailing;
+    s.in_trailing = e.trailing;
     int saved_fin = s.fin_depth;
     s.fin_depth = 0;
     int saved_sw = s.sw_depth;
@@ -3400,7 +3406,11 @@ void sema_check_lambda(Sema* s, *ExprNode e) {
     s.cur_ret = saved_ret;
     s.cur_ret_raw = saved_ret_raw;
     s.in_async = saved_async;
-    s.await_seen = saved_seen;
+    // An `await` in a trailing block is reported there; the function does not also lack one.
+    if (e.trailing == 0 || s.await_seen == 0) {
+        s.await_seen = saved_seen;
+    }
+    s.in_trailing = saved_trailing;
     s.fin_depth = saved_fin;
     s.sw_depth = saved_sw;
     s.param_depth = saved_pd;

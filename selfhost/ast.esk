@@ -929,6 +929,7 @@ struct ExprNode {
     List<string> ids_memo; // EK_LAMBDA: identifiers of the body, collected once (cg_collect_idents_e)
     int ids_done;          // EK_LAMBDA: ids_memo is filled
     int stack_env;         // EK_LAMBDA: sema proved it does not outlive its creating call, so its env is on the stack
+    int trailing;          // EK_LAMBDA: a call statement's trailing block (`f(a) { ... }`)
     string cg_ety;         // EK_MEMBER: codegen's type of this member, valid while cg_stamp is active
     int cg_stamp;
     string aty;            // in an async function: the type sema inferred (the async lowering types its temporaries by it)

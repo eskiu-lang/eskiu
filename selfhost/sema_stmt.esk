@@ -693,7 +693,9 @@ void sema_stmt_k(Sema* s, *StmtNode st) {
         sema_expr(s, st.expr);
         if (st.expr != null && sema_streq(s.cur_ret, "void") == 1) {
             string rvt = sema_infer_type(s, st.expr);
-            if (rvt[0] != 0 && sema_streq(rvt, "void") == 0) {
+            if (rvt[0] != 0 && sema_streq(rvt, "void") == 0 && s.in_trailing == 1) {
+                sema_error(s, "a trailing block returns nothing: `return` here leaves the block, not the function");
+            } else if (rvt[0] != 0 && sema_streq(rvt, "void") == 0) {
                 s.had_error = 1;
                 dprintf(2, "error: %s:%d:%d: return type mismatch: expected void, got %s\n", s.filename, s.line, s.col, rvt);
             }
@@ -1017,8 +1019,13 @@ void sema_stmt_k(Sema* s, *StmtNode st) {
     }
     if (k == SK_BREAK || k == SK_CONTINUE) {
         if ((st.label == null || st.label[0] == 0) && List_len<string>(&s.loop_lbls) == 0) {
-            if (k == SK_CONTINUE) {
+            if (k == SK_CONTINUE && s.in_trailing == 1) {
+                sema_error(s, "'continue' cannot leave a trailing block (the block is a closure)");
+            } else if (k == SK_CONTINUE) {
                 sema_error(s, "'continue' outside of a loop");
+            }
+            else if (s.sw_depth == 0 && s.in_trailing == 1) {
+                sema_error(s, "'break' cannot leave a trailing block (the block is a closure)");
             }
             else if (s.sw_depth == 0) {
                 sema_error(s, "'break' outside of a loop or switch");

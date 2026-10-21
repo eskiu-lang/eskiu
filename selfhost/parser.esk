@@ -2314,6 +2314,7 @@ void p_reject_trailing(Parser* p) {
         if (p.failed == 0 && p_at(p) == LBRACE) {
             *ExprNode lam = p_pos(ast_new_expr(), brace);
             lam.kind = EK_LAMBDA;
+            lam.trailing = 1;
             lam.sval = lambda_sig("void", ast_new_decl());
             int lmark = local_mark();
             lam.stmt = parse_block(p);

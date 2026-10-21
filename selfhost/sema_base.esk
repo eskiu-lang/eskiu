@@ -83,6 +83,7 @@ struct Sema {
     int fin_depth;          // `finally` blocks enclosing the current point (no `return` inside one)
     int in_variadic;        // the function being checked has a variadic parameter (`...`)?
     int await_seen;         // has an `await` appeared in the current function?
+    int in_trailing;        // checking the body of a trailing block (a closure after a call statement)
     string cur_ret;         // current function's return type (for `?` propagation)
     string cur_ret_raw;     // the same as written (a generic body: in terms of its type params)
     string match_ty;        // subject type of the `match` whose arms are being checked
