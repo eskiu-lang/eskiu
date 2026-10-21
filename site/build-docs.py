@@ -913,8 +913,8 @@ NAV = [
          "Hecho con Eskiu", "Lo que corre con Eskiu hoy"),
         ("case-study-reactvision.html", "ReactVision", "Eskiu across an AR stack, in production",
          "ReactVision", "Eskiu en todo un stack de AR, en producción"),
-        ("index.html#labs", "Labs", "A Nintendo 3DS and a bare-metal kernel",
-         "Labs", "Una Nintendo 3DS y un kernel bare metal"),
+        ("index.html#labs", "Labs", "A UI framework, a Nintendo 3DS and a kernel",
+         "Labs", "Un framework de UI, una Nintendo 3DS y un kernel"),
     ]),
 ]
 NAV_CURRENT = {"quickstart.html": "learn", "docs/": "learn", "packages.html": "packages",
