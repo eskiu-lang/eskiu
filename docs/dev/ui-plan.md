@@ -585,3 +585,8 @@ packages and templates, merged once 0.13 is released, since their CI uses the la
 - WebView2 over COM by hand on Windows.
 - wasm size with exceptions on emscripten's JavaScript runtime; native wasm exceptions are
   already on the 0.13 list.
+
+## Next
+
+Recoverable exceptions (a catch-all in the language, `ErrorBoundary`, `ui_on_error`):
+[ui-error-recovery.md](ui-error-recovery.md).
