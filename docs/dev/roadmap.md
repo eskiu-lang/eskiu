@@ -21,6 +21,11 @@ first-class in the language without giving up general systems use.
   `add` / `build` / `test` for packages, `eskiuc fmt`, and editor support in VS Code-based
   editors and JetBrains IDEs through the same compiler modes.
 
+- **Apps.** [ui](https://github.com/eskiu-lang/ui) draws native views on iOS and Android,
+  the DOM on the web and a webview window on macOS from one Eskiu codebase. `ui serve`
+  shows a change in under a second, `ui open` makes Xcode and Android Studio projects whose
+  Run builds the Eskiu code, and `ui release` builds for the App Store and Google Play.
+  Packages for location, notifications and the camera build on it.
 - **Language.** C-style syntax and C integer semantics, structs with methods, structural
   interfaces, monomorphized generics with constraints, sum types with exhaustive `match`,
   closures with escape analysis, exceptions, `defer`/`errdefer`, slices, checked nullable
@@ -42,7 +47,11 @@ first-class in the language without giving up general systems use.
   oracle checked against clang, a negative-program corpus, and the stdlib parsers under
   AddressSanitizer).
 
-## Next: 0.13
+## Next: 0.14
+
+- **Recoverable exceptions.** A catch-all (`catch (_)`) in the language, so ui can keep an
+  app running when a block, a handler or an effect throws, with `ErrorBoundary` and
+  `ui_on_error`. The plan: [`ui-error-recovery.md`](ui-error-recovery.md).
 
 - **Formatter.** Breaking lines that are too long.
 - **Build times.** Measure a package with several dependencies, then decide whether
@@ -78,6 +87,10 @@ first-class in the language without giving up general systems use.
   for those ABIs. Google Play no longer requires them and few devices still run them.
 - **HTTP/3.** By binding an existing QUIC library over `extern` rather than writing QUIC.
   A reverse proxy in front of an Eskiu HTTP/1.1 or HTTP/2 server covers most uses today.
+- **ui on the web beyond one page.** Prerendering routes to HTML at build time, then
+  server-side rendering with hydration, then server functions the ui tool generates.
+- **More ui hosts.** Windows and Linux, and a desktop renderer on `gpu` and `font` without
+  a webview.
 - **Compile-time `derive`.** Generating code such as serializers from a struct's fields at
   compile time, with no metadata left in the binary. It adds language surface, so it waits
   until after 1.0.

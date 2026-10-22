@@ -205,11 +205,16 @@ first-class in the language without giving up general systems use.</p>
   editors and JetBrains IDEs through the same compiler modes.</p>
 </li>
 <li>
-<p><strong>Language.</strong> C-style syntax and C integer semantics, structs with methods, structural
+<p><strong>Apps.</strong> <a href="https://github.com/eskiu-lang/ui">ui</a> draws native views on iOS and Android,
+  the DOM on the web and a webview window on macOS from one Eskiu codebase. <code>ui serve</code>
+  shows a change in under a second, <code>ui open</code> makes Xcode and Android Studio projects whose
+  Run builds the Eskiu code, and <code>ui release</code> builds for the App Store and Google Play.
+  Packages for location, notifications and the camera build on it.</p>
+</li>
+<li><strong>Language.</strong> C-style syntax and C integer semantics, structs with methods, structural
   interfaces, monomorphized generics with constraints, sum types with exhaustive <code>match</code>,
   closures with escape analysis, exceptions, <code>defer</code>/<code>errdefer</code>, slices, checked nullable
-  pointers, operator overloading, inline assembly, async/await.</p>
-</li>
+  pointers, operator overloading, inline assembly, async/await.</li>
 <li><strong>Standard library.</strong> Collections, strings, JSON, regex, time, random, allocators,
   threads and atomics, an async runtime, and HTTP/1.1, HTTP/2 and TLS servers.</li>
 <li><strong>Targets.</strong> Native on macOS arm64, Linux x86-64 and arm64, and Windows x86-64, with
@@ -227,9 +232,16 @@ first-class in the language without giving up general systems use.</p>
   oracle checked against clang, a negative-program corpus, and the stdlib parsers under
   AddressSanitizer).</li>
 </ul>
-<h2 id="next-013">Next: 0.13</h2>
+<h2 id="next-014">Next: 0.14</h2>
 <ul>
-<li><strong>Formatter.</strong> Breaking lines that are too long.</li>
+<li>
+<p><strong>Recoverable exceptions.</strong> A catch-all (<code>catch (_)</code>) in the language, so ui can keep an
+  app running when a block, a handler or an effect throws, with <code>ErrorBoundary</code> and
+  <code>ui_on_error</code>. The plan: <a href="https://github.com/eskiu-lang/eskiu/blob/main/docs/dev/ui-error-recovery.md"><code>ui-error-recovery.md</code></a>.</p>
+</li>
+<li>
+<p><strong>Formatter.</strong> Breaking lines that are too long.</p>
+</li>
 <li><strong>Build times.</strong> Measure a package with several dependencies, then decide whether
   modules need a cache.</li>
 <li><strong>Native WebAssembly exceptions.</strong> On emscripten, exceptions run through its
@@ -263,6 +275,10 @@ first-class in the language without giving up general systems use.</p>
   for those ABIs. Google Play no longer requires them and few devices still run them.</li>
 <li><strong>HTTP/3.</strong> By binding an existing QUIC library over <code>extern</code> rather than writing QUIC.
   A reverse proxy in front of an Eskiu HTTP/1.1 or HTTP/2 server covers most uses today.</li>
+<li><strong>ui on the web beyond one page.</strong> Prerendering routes to HTML at build time, then
+  server-side rendering with hydration, then server functions the ui tool generates.</li>
+<li><strong>More ui hosts.</strong> Windows and Linux, and a desktop renderer on <code>gpu</code> and <code>font</code> without
+  a webview.</li>
 <li><strong>Compile-time <code>derive</code>.</strong> Generating code such as serializers from a struct's fields at
   compile time, with no metadata left in the binary. It adds language surface, so it waits
   until after 1.0.</li>
@@ -274,7 +290,7 @@ first-class in the language without giving up general systems use.</p>
   covers the same needs.</li>
 </ul>
     </main>
-    <nav class="toc" aria-label="On this page"><span class="grp">On this page</span><a href="#goal">Goal</a><a href="#where-it-is-today">Where it is today</a><a href="#next-013">Next: 0.13</a><a href="#next-10">Next: 1.0</a><a href="#later-not-scheduled">Later, not scheduled</a><a href="#non-goals">Non-goals</a></nav>
+    <nav class="toc" aria-label="On this page"><span class="grp">On this page</span><a href="#goal">Goal</a><a href="#where-it-is-today">Where it is today</a><a href="#next-014">Next: 0.14</a><a href="#next-10">Next: 1.0</a><a href="#later-not-scheduled">Later, not scheduled</a><a href="#non-goals">Non-goals</a></nav>
   </div>
   <footer class="foot">
     <div class="bar foot-in">
