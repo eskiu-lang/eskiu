@@ -990,6 +990,8 @@ NAV = [
          "Navegación", "Pantallas en el teléfono, páginas en la web"),
         ("ui.html#native", "Native code", "Swift, Kotlin, Gradle and Swift packages",
          "Código nativo", "Swift, Kotlin, Gradle y paquetes de Swift"),
+        ("ui.html#ship", "To the stores", "Xcode, Android Studio, the App Store and Google Play",
+         "A las tiendas", "Xcode, Android Studio, el App Store y Google Play"),
         ("ui.html#start", "Get started", "The ui tool and a first app",
          "Empieza", "La herramienta ui y una primera app"),
     ]),
