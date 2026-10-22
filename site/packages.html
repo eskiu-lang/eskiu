@@ -287,16 +287,16 @@ ui run android</code></pre>
 import &lt;notifications&gt;;
 
 void Tea() {
-    Column(Style{padding: 20, gap: 12}, void() {
+    Column(Style{padding: 20, gap: 12}) {
         int permission = use_notification_permission();
         use_notification_opened(void(string id) { kit_toast("Your tea is ready"); });
         if (permission != NotificationsAllowed) {
-            Button("Allow notifications", void() { notifications_ask(); });
+            Button("Allow notifications") { notifications_ask(); }
         }
-        Button("Remind me in four minutes", void() {
+        Button("Remind me in four minutes") {
             notification_schedule("tea", "Tea is ready", "Take the leaves out.", 240);
-        });
-    });
+        }
+    }
 }</code></pre>
       </details>
     </section>
@@ -316,7 +316,7 @@ ui run android</code></pre>
 List&lt;String&gt; photos;
 
 void Shoot() {
-    Column(Style{padding: 20, gap: 12}, void() {
+    Column(Style{padding: 20, gap: 12}) {
         use_photos(void(Photo photo) {
             if (photo.status != PhotoReady) { return; }
             String path;
@@ -324,9 +324,9 @@ void Shoot() {
             photos.push(path);
         });
         CameraView(Style{height: 360, radius: 20}, false);
-        Button("Take a photo", void() { camera_capture(); });
-        Button("Choose from the library", void() { camera_pick_photo(); });
-    });
+        Button("Take a photo") { camera_capture(); }
+        Button("Choose from the library") { camera_pick_photo(); }
+    }
 }</code></pre>
       </details>
     </section>
