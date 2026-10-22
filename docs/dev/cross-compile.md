@@ -200,14 +200,18 @@ eskiuc tracker.esk --target aarch64-linux-android24 -o libtracker.so
 ```
 
 pthread is part of Android's libc, so a program with threads links no `-lpthread`, and one
-that throws links the NDK's `libc++_static` and `libc++abi`. `PLATFORM=android
+that throws links the NDK's `libc++_static` and `libc++abi`. Prebuilt native libraries
+declared under `[native.NAME]` for `android-arm64` or `android-x86_64` in `eskiu.toml` are
+fetched into `~/.eskiu/native/` and linked automatically. `PLATFORM=android
 tests/mobile/check.sh` runs the test corpus on an emulator or device through `adb`.
 
 ## iOS
 
 `arm64-apple-ios15.0` builds for devices and `arm64-apple-ios15.0-simulator` (or
 `x86_64-apple-ios15.0-simulator`) for the simulator. With no `$CC`, `eskiuc` links through
-`xcrun -sdk iphoneos clang` (`iphonesimulator` for a simulator triple). An app embeds a
+`xcrun -sdk iphoneos clang` (`iphonesimulator` for a simulator triple), and prebuilt native
+archives declared under `[native.NAME]` for `ios-arm64`, `ios-arm64-simulator` or
+`ios-x86_64-simulator` are fetched and linked automatically. An app embeds a
 static library, one per slice, which `xcodebuild -create-xcframework` can combine:
 
 ```bash

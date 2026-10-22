@@ -321,13 +321,28 @@ if [[ -n "$plat" && "$plat" != -* ]] && command -v "$cc_prog" > /dev/null 2>&1 &
     else
         bad "native/direct-fetch" "$out"
     fi
+    case "$plat" in
+        macos-arm64)    tt="arm64-apple-macosx13.0" ;;
+        macos-x86_64)   tt="x86_64-apple-macosx13.0" ;;
+        linux-x86_64)   tt="x86_64-unknown-linux-gnu" ;;
+        linux-arm64)    tt="aarch64-unknown-linux-gnu" ;;
+        windows-x86_64) tt="x86_64-w64-mingw32" ;;
+        windows-arm64)  tt="aarch64-w64-mingw32" ;;
+    esac
+    rm -rf "$ESKIU_HOME/native"
+    out="$(cd "$work/nat" && "$ESKIUC" src/main.esk --target "$tt" -o "$work/nat_target" 2>&1 && "$work/nat_target")"
+    if [[ "$out" == *"fetching nat for nat from file://"* && "$out" == *"41" ]]; then
+        ok "native/target-triple"
+    else
+        bad "native/target-triple" "$out"
+    fi
     zeros="0000000000000000000000000000000000000000000000000000000000000000"
     sed "s/$sum/$zeros/" "$work/nat/eskiu.toml" > "$work/nat/toml.new" && mv "$work/nat/toml.new" "$work/nat/eskiu.toml"
     out="$(cd "$work/nat" && "$ESKIUC" build 2>&1)"; code=$?
     if [[ $code -ne 0 && "$out" == *"has sha256 $sum, not $zeros"* ]]; then ok "native/bad-sha256"; else bad "native/bad-sha256" "$out"; fi
     printf '[package]\nname = "nat"\n\n[native.nat]\nmacos = { url = "x", sha256 = "y" }\n' > "$work/nat/eskiu.toml"
     out="$(cd "$work/nat" && "$ESKIUC" build 2>&1)"; code=$?
-    if [[ $code -ne 0 && "$out" == "error: eskiu.toml:5: unknown platform 'macos' in [native.nat] (macos-arm64, macos-x86_64, linux-x86_64, linux-arm64, windows-x86_64, windows-arm64)" ]]; then
+    if [[ $code -ne 0 && "$out" == "error: eskiu.toml:5: unknown platform 'macos' in [native.nat] (macos-arm64, macos-x86_64, linux-x86_64, linux-arm64, windows-x86_64, windows-arm64, ios-arm64, ios-arm64-simulator, ios-x86_64-simulator, android-arm64, android-x86_64)" ]]; then
         ok "native/bad-platform"
     else
         bad "native/bad-platform" "$out"

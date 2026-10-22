@@ -228,8 +228,10 @@ struct Manifest {
     std::vector<NativeLib> natives;
 };
 
-const char* const kNativePlatforms[] = {"macos-arm64",   "macos-x86_64", "linux-x86_64",
-                                        "linux-arm64",   "windows-x86_64", "windows-arm64"};
+const char* const kNativePlatforms[] = {"macos-arm64",         "macos-x86_64",        "linux-x86_64",
+                                        "linux-arm64",         "windows-x86_64",      "windows-arm64",
+                                        "ios-arm64",           "ios-arm64-simulator", "ios-x86_64-simulator",
+                                        "android-arm64",       "android-x86_64"};
 
 // The platform key of the machine eskiuc runs on ("" when no key names it).
 std::string hostPlatform() {
@@ -249,6 +251,29 @@ std::string hostPlatform() {
 #else
     return "";
 #endif
+}
+
+// The platform key of `triple` (or of the machine eskiuc runs on when `triple` is empty;
+// "" when no key names it).
+std::string targetPlatform(const std::string& triple) {
+    if (triple.empty()) return hostPlatform();
+    std::string arch;
+    if (triple.rfind("aarch64", 0) == 0 || triple.rfind("arm64", 0) == 0) arch = "arm64";
+    else if (triple.rfind("x86_64", 0) == 0 || triple.rfind("amd64", 0) == 0) arch = "x86_64";
+    else return "";
+    if (triple.find("-ios") != std::string::npos) {
+        if (triple.find("simulator") != std::string::npos) return "ios-" + arch + "-simulator";
+        return arch == "arm64" ? "ios-arm64" : "";
+    }
+    if (triple.find("android") != std::string::npos) return "android-" + arch;
+    if (triple.find("apple") != std::string::npos || triple.find("darwin") != std::string::npos ||
+        triple.find("macos") != std::string::npos)
+        return "macos-" + arch;
+    if (triple.find("windows") != std::string::npos || triple.find("win32") != std::string::npos ||
+        triple.find("mingw") != std::string::npos)
+        return "windows-" + arch;
+    if (triple.find("linux") != std::string::npos) return "linux-" + arch;
+    return "";
 }
 
 bool validName(const std::string& n) {
@@ -351,7 +376,8 @@ Manifest readManifest(const std::string& dir) {
             if (!known)
                 throw fail(v.line, "unknown platform '" + kv.first + "' in [" + t.first +
                                        "] (macos-arm64, macos-x86_64, linux-x86_64, linux-arm64, "
-                                       "windows-x86_64, windows-arm64)");
+                                       "windows-x86_64, windows-arm64, ios-arm64, ios-arm64-simulator, "
+                                       "ios-x86_64-simulator, android-arm64, android-x86_64)");
             if (!v.isTable)
                 throw fail(v.line, "'" + kv.first + "' in [" + t.first +
                                        "] must be an inline table: { url = \"URL\", sha256 = \"HEX\" }");
@@ -696,6 +722,18 @@ void fetchNative(const std::string& pkg, const std::string& lib, const NativeSou
         fs::remove_all(tmp, ec);
         throw PkgError("the " + what + " has no directory '" + src.lib + "' (lib in its eskiu.toml)");
     }
+#if defined(__APPLE__)
+    // Ensure any .dylib in the archive has an @rpath install name (upstream archives such as
+    // wgpu-native's iOS builds sometimes record the builder's absolute path in LC_ID_DYLIB).
+    for (const auto& ent : fs::directory_iterator(tmp + "/" + src.lib, ec)) {
+        if (ent.is_regular_file(ec) && !ent.is_symlink(ec) && ent.path().extension() == ".dylib") {
+            std::string p = ent.path().generic_string();
+            std::string id = "@rpath/" + ent.path().filename().string();
+            if (runTool("install_name_tool", {"-id", id, p}, nullptr) == 0)
+                runTool("codesign", {"--force", "--sign", "-", p}, nullptr);
+        }
+    }
+#endif
     fs::rename(tmp, dir, ec);
     if (ec) {
         fs::remove_all(tmp, ec);
@@ -708,12 +746,13 @@ struct HostNative {
     NativeSource src;
 };
 
-// The native libraries this host's platform gets from the package at `lockDir` and the
-// dependencies its lock names.
+// The native libraries `triple`'s platform (or this host's when `triple` is empty) gets from
+// the package at `lockDir` and the dependencies its lock names.
 std::vector<HostNative> hostNatives(const std::string& lockDir,
-                                    const std::map<std::string, LockEntry>& lock) {
+                                    const std::map<std::string, LockEntry>& lock,
+                                    const std::string& triple = "") {
     std::vector<HostNative> out;
-    std::string platform = hostPlatform();
+    std::string platform = targetPlatform(triple);
     if (platform.empty()) return out;
     std::set<std::string> seen;
     for (const auto& kv : lock) {
@@ -1062,7 +1101,7 @@ namespace {
 std::vector<HostNative> packageNatives;   // this host's [native.NAME] archives, by pkgLoadRoots
 }
 
-void pkgLoadRoots(const std::string& input) {
+void pkgLoadRoots(const std::string& input, const std::string& triple) {
     packageRoots = PackageRoots();
     packageNatives.clear();
     std::error_code ec;
@@ -1081,7 +1120,7 @@ void pkgLoadRoots(const std::string& input) {
     // The native libraries, fetched only when a build links one (pkgNativeLibDirs). A
     // manifest error leaves them out here; the package commands report it.
     try {
-        packageNatives = hostNatives(root, lock);
+        packageNatives = hostNatives(root, lock, triple);
     } catch (const std::exception&) {
     }
 }

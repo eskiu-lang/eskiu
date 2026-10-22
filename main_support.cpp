@@ -903,7 +903,7 @@ std::shared_ptr<Program> loadProgram(const std::vector<std::string>& inputs, con
     std::vector<DeclPtr> merged;
     std::vector<std::string> linkLibs;       // `#pragma link` libraries of every input
     if (lexFailed) *lexFailed = false;
-    if (!inputs.empty()) pkgLoadRoots(inputs[0]);   // package imports from eskiu.lock
+    if (!inputs.empty()) pkgLoadRoots(inputs[0], triple);   // package imports from eskiu.lock
     for (const auto& fname : inputs) {
         // Register the root file itself, so an import cycle back to it (or an
         // input that an earlier input already imported) is not parsed twice.

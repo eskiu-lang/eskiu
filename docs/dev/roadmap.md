@@ -61,9 +61,9 @@ first-class in the language without giving up general systems use.
   the WebAssembly exception-handling instructions (`-fwasm-exceptions`) would avoid it and
   bring exceptions to WASI. That needs a second lowering of `try` (funclet pads instead of
   `landingpad`) in both compilers.
-- **Native libraries beyond the host.** A package's `[native.NAME]` archives cover a build
-  for the machine eskiuc runs on, with the C++ compiler. Cross builds (an Android `.so`,
-  an iOS xcframework) and the self-hosted compiler still take `-L`.
+- **Native libraries in the self-hosted compiler.** A package's `[native.NAME]` archives
+  cover host and `--target` cross builds (including iOS and Android) with the C++ compiler;
+  the self-hosted compiler still takes `-L`.
 
 ## Next: 1.0
 

@@ -14,12 +14,13 @@ bool pkgCommand(int argc, char** argv, int& rc);
 
 // Fill `packageRoots` (parser.h) for a compile whose first input is `input`: when an
 // eskiu.toml is in its directory or above, the dependencies of that package's
-// eskiu.lock. Nothing is fetched here.
-void pkgLoadRoots(const std::string& input);
+// eskiu.lock, and the [native.NAME] archives matching `triple` (or the host when empty).
+// Nothing is fetched here.
+void pkgLoadRoots(const std::string& input, const std::string& triple = "");
 
 // The directories of the prebuilt native libraries ([native.NAME] in eskiu.toml, NAME the
 // library -lNAME links) that the package of the compile's first input and its dependencies
-// declare for this host, one per name in `linked` that has one. An archive not in
+// declare for the target (or host), one per name in `linked` that has one. An archive not in
 // $ESKIU_HOME/native yet is downloaded and checked first; a failure throws.
 std::vector<std::string> pkgNativeLibDirs(const std::vector<std::string>& linked);
 

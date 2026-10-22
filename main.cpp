@@ -882,12 +882,12 @@ static int compilerMain(int argc, char** argv) {
                     extra.push_back("-mwindows");
                 }
             }
-            // A host build inside a package finds the native libraries it links in the
-            // archives its packages declare (pkg.cpp): -L, an rpath for run time (Windows:
-            // the DLLs are copied next to the program).
-            bool hostBuild = std::string(TargetTriple).empty();
+            // A build inside a package finds the native libraries it links in the archives
+            // its packages declare for the target (or host) platform (pkg.cpp): -L, an rpath
+            // for run time (Windows: the DLLs are copied next to the program).
+            bool winTarget = macros.count("_WIN32") > 0;
             std::vector<std::string> nativeDirs;
-            if (hostBuild) {
+            {
                 std::vector<std::string> linked(LinkLibs.begin(), LinkLibs.end());
                 if (!NoDefaultLibs) linked.insert(linked.end(), pragmaLibs.begin(), pragmaLibs.end());
                 try {
@@ -899,16 +899,13 @@ static int compilerMain(int argc, char** argv) {
                 }
                 for (const auto& d : nativeDirs) {
                     paths.push_back(d);
-#ifndef _WIN32
-                    extra.push_back("-Wl,-rpath," + d);
-#endif
+                    if (!winTarget && !macros.count("__wasm__"))
+                        extra.push_back("-Wl,-rpath," + d);
                 }
             }
             bool ok = linkExecutable(tmpObjPath, outFile, libs, paths, extra, /*sanitized=*/Asan,
                                      std::string(TargetTriple));
-#ifdef _WIN32
-            if (ok && hostBuild) copyNativeDlls(nativeDirs, outFile);
-#endif
+            if (ok && winTarget) copyNativeDlls(nativeDirs, outFile);
             llvm::sys::fs::remove(tmpObjPath);
             if (!ok) { if (g_runMode) llvm::sys::fs::remove(runExePath); return 1; }
 

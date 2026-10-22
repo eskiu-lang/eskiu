@@ -1344,15 +1344,16 @@ linux-x86_64 = { url = "...", sha256 = "...", lib = "onnxruntime-linux-x64-1.31.
 ```
 
 The platforms are `macos-arm64`, `macos-x86_64`, `linux-x86_64`, `linux-arm64`,
-`windows-x86_64` and `windows-arm64`; `lib` defaults to `lib`. The first build for this
-machine that links the library, inside the package or a package that depends on it (by
-`eskiuc build`, `run`, `test` or `eskiuc file.esk`), downloads the archive with `curl`,
-refuses it when its SHA-256 differs, and unpacks it (`tar`, or `unzip` for a `.zip` on
-Linux) into `~/.eskiu/native/SHA256`, once; `eskiuc fetch` downloads every one ahead. The
-build then links against that directory and records it as the program's run-time path; on
-Windows the DLLs are copied next to the program. A program that does not link the library
-downloads nothing, a platform the table leaves out links it from the system as before, and
-a cross build (`--target`) never uses these archives. Only the C++ `eskiuc` reads the table.
+`windows-x86_64`, `windows-arm64`, `ios-arm64`, `ios-arm64-simulator`,
+`ios-x86_64-simulator`, `android-arm64` and `android-x86_64`; `lib` defaults to `lib`. The
+first build for a platform that links the library, inside the package or a package that
+depends on it (by `eskiuc build`, `run`, `test`, `eskiuc file.esk`, or a `--target` cross
+build), downloads the archive with `curl`, refuses it when its SHA-256 differs, and unpacks
+it (`tar`, or `unzip` for a `.zip` on Linux) into `~/.eskiu/native/SHA256`, once;
+`eskiuc fetch` downloads every host one ahead. The build then links against that directory
+and records it as the program's run-time path; on Windows the DLLs are copied next to the
+program. A program that does not link the library downloads nothing, and a platform the
+table leaves out links it from the system as before. Only the C++ `eskiuc` reads the table.
 
 The [eskiu-lang](https://github.com/eskiu-lang) organization publishes packages that are
 added this way: [gpu](https://github.com/eskiu-lang/gpu) (WebGPU compute, 3D and machine learning),
