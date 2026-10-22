@@ -170,10 +170,10 @@ details.cl-full[open] { padding-bottom: 8px; }
 <body>
   <header class="top">
     <div class="bar top-in">
-      <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.12.0</span></a>
+      <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.13.0</span></a>
       <nav class="nav" aria-label="Main"><div class="nav-g"><button type="button" class="nav-t">Learn<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="quickstart.html"><b>Get started</b><span>Install it and run a first program</span></a><a href="index.html#playground"><b>Playground</b><span>Run code in the browser</span></a><a href="the-book-of-eskiu.html"><b>The Book of Eskiu</b><span>The language, chapter by chapter</span></a><a href="docs/index.html"><b>Docs</b><span>The specification, the standard library and the compiler</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Packages<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="packages.html"><b>All packages</b><span>Each one is one eskiuc add away</span></a><a href="vision.html"><b>vision</b><span>Computer vision, bit for bit with C++</span></a><a href="gpu.html"><b>gpu</b><span>WebGPU compute, 3D models and Llama</span></a><a href="packages.html#onnx"><b>onnx</b><span>ONNX Runtime inference</span></a><a href="packages.html#jni"><b>jni</b><span>Java and Android with no C glue</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Platforms<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="platforms.html"><b>Overview</b><span>One compiler, every target</span></a><a href="platforms.html#wasm"><b>WebAssembly</b><span>The browser, through emscripten</span></a><a href="platforms.html#ios"><b>iOS</b><span>Static libraries for Swift and Objective-C</span></a><a href="platforms.html#android"><b>Android</b><span>Shared libraries for Kotlin and Java</span></a><a href="platforms.html#bare-metal"><b>Bare metal</b><span>Kernels and boards with no operating system</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">UI<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="ui.html"><b>Overview</b><span>Native apps for iOS, Android and the web</span></a><a href="ui-components.html"><b>Components and APIs</b><span>Every element, hook and service</span></a><a href="ui.html#dev"><b>Developer loop</b><span>Each change on screen in a third of a second</span></a><a href="ui.html#navigation"><b>Navigation</b><span>Screens on the phone, pages on the web</span></a><a href="ui.html#native"><b>Native code</b><span>Swift, Kotlin, Gradle and Swift packages</span></a><a href="ui.html#start"><b>Get started</b><span>The ui tool and a first app</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Showcase<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="showcase.html"><b>Built with Eskiu</b><span>What runs on it today</span></a><a href="case-study-reactvision.html"><b>ReactVision</b><span>Eskiu across an AR stack, in production</span></a><a href="index.html#labs"><b>Labs</b><span>A UI framework, a Nintendo 3DS and a kernel</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
       <div class="top-right">
-        <a class="btn-install" href="index.html#install">Install 0.12.0</a>
+        <a class="btn-install" href="index.html#install">Install 0.13.0</a>
         <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="drawer">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg>
         </button>
@@ -190,39 +190,10 @@ details.cl-full[open] { padding-bottom: 8px; }
 <p>The format is based on <a href="https://keepachangelog.com/en/1.1.0/">Keep a Changelog</a>, and the
 project follows the compatibility rules in <a href="docs/stability.html">docs/lang/stability.md</a>.</p>
 <hr>
-<h2 id="unreleased">[Unreleased]</h2>
+<h2 id="0130-2026-10-21">[0.13.0] - 2026-10-21</h2>
 <details class="cl-full">
 <summary>Details</summary>
-<h3 id="added">Added</h3>
-<ul>
-<li>Trailing blocks: a call statement may end in a block, passed as its last argument, so
-  <code>f(a) { BODY }</code> is <code>f(a, void() { BODY })</code>. <code>break</code>, <code>continue</code>, <code>await</code>, <code>?</code> and
-  <code>return</code> with a value inside the block are errors that say the block is a closure.</li>
-</ul>
-<h3 id="fixed">Fixed</h3>
-<ul>
-<li>A git dependency on a branch, a tag or <code>HEAD</code> that the lock does not pin yet resolves to
-  the remote's commit. The package mirror in <code>$ESKIU_HOME/pkgs</code> answered from what it had
-  fetched in an earlier run, so a new project got an old commit until <code>eskiuc fetch</code>.</li>
-<li>A parse error inside a lambda's body is reported where it is. The C++ compiler took the
-  failed body as a failed guess at a lambda and backed out, so the error pointed at the
-  lambda's return type, or at a lambda around it (<code>Expected expression, got VOID</code>); the
-  self-hosted compiler already reported it in place.</li>
-<li>A lambda in a generic function, passed to a parameter that does not escape, gets its
-  env on the stack as it does elsewhere. It got a heap env that was never freed, so each
-  <code>sort&lt;T&gt;</code>, <code>sort_partial&lt;T&gt;</code> and <code>sort_nth&lt;T&gt;</code> call leaked 16 bytes.</li>
-<li>The self-hosted compiler gave a stack env to a lambda passed to a generic function that
-  keeps its closure parameter, which then read a dead stack frame; it now decides as the
-  C++ compiler does. It also rejects forwarding a non-<code>escaping</code> closure parameter to a
-  generic function, as the C++ compiler does.</li>
-<li>The self-hosted compiler captures a variable a lambda names only inside <code>free_closure</code>,
-  <code>thread_create</code> or <code>alloc_with</code>; it emitted invalid IR for such a lambda.</li>
-</ul>
-</details>
-<h2 id="0120-2026-10-20">[0.12.0] - 2026-10-20</h2>
-<details class="cl-full">
-<summary>Details</summary>
-<p>The first public release. Code that compiles with 0.12.0 keeps compiling in every 0.12.x
+<p>The first public release. Code that compiles with 0.13.0 keeps compiling in every 0.13.x
 (<a href="docs/stability.html">stability.md</a>).</p>
 <h3 id="the-language">The language</h3>
 <ul>
@@ -237,6 +208,8 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
   constant expressions; type aliases.</li>
 <li>Generics with inferred type arguments and interface bounds (<code>&lt;T: Ord&gt;</code>), generic structs
   with inline methods, and dot calls on generic instances (<code>list.push(8)</code>).</li>
+<li>Trailing blocks: a call statement may end in a block, passed as its last argument, so
+  <code>Column(style) { ... }</code> is <code>Column(style, void() { ... })</code>.</li>
 <li>Structural interfaces as first-class values, sum types with exhaustive <code>match</code>, closures
   with escape analysis, operator overloading, labeled <code>break</code>/<code>continue</code>, <code>?:</code>,
   <code>do</code>/<code>while</code>, <code>static</code> locals and multidimensional arrays.</li>

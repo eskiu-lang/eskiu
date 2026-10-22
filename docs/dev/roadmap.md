@@ -1,6 +1,6 @@
 # Roadmap
 
-Where Eskiu stands and what comes next. 0.12 is the first public release; per-release detail is in
+Where Eskiu stands and what comes next. 0.13 is the first public release; per-release detail is in
 [`CHANGELOG.md`](../../CHANGELOG.md), and what can change between releases is in
 [stability.md](../lang/stability.md).
 

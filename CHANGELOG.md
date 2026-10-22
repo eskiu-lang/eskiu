@@ -7,34 +7,9 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
-## [Unreleased]
+## [0.13.0] - 2026-10-21
 
-### Added
-- Trailing blocks: a call statement may end in a block, passed as its last argument, so
-  `f(a) { BODY }` is `f(a, void() { BODY })`. `break`, `continue`, `await`, `?` and
-  `return` with a value inside the block are errors that say the block is a closure.
-
-### Fixed
-- A git dependency on a branch, a tag or `HEAD` that the lock does not pin yet resolves to
-  the remote's commit. The package mirror in `$ESKIU_HOME/pkgs` answered from what it had
-  fetched in an earlier run, so a new project got an old commit until `eskiuc fetch`.
-- A parse error inside a lambda's body is reported where it is. The C++ compiler took the
-  failed body as a failed guess at a lambda and backed out, so the error pointed at the
-  lambda's return type, or at a lambda around it (`Expected expression, got VOID`); the
-  self-hosted compiler already reported it in place.
-- A lambda in a generic function, passed to a parameter that does not escape, gets its
-  env on the stack as it does elsewhere. It got a heap env that was never freed, so each
-  `sort<T>`, `sort_partial<T>` and `sort_nth<T>` call leaked 16 bytes.
-- The self-hosted compiler gave a stack env to a lambda passed to a generic function that
-  keeps its closure parameter, which then read a dead stack frame; it now decides as the
-  C++ compiler does. It also rejects forwarding a non-`escaping` closure parameter to a
-  generic function, as the C++ compiler does.
-- The self-hosted compiler captures a variable a lambda names only inside `free_closure`,
-  `thread_create` or `alloc_with`; it emitted invalid IR for such a lambda.
-
-## [0.12.0] - 2026-10-20
-
-The first public release. Code that compiles with 0.12.0 keeps compiling in every 0.12.x
+The first public release. Code that compiles with 0.13.0 keeps compiling in every 0.13.x
 ([stability.md](docs/lang/stability.md)).
 
 ### The language
@@ -49,6 +24,8 @@ The first public release. Code that compiles with 0.12.0 keeps compiling in ever
   constant expressions; type aliases.
 - Generics with inferred type arguments and interface bounds (`<T: Ord>`), generic structs
   with inline methods, and dot calls on generic instances (`list.push(8)`).
+- Trailing blocks: a call statement may end in a block, passed as its last argument, so
+  `Column(style) { ... }` is `Column(style, void() { ... })`.
 - Structural interfaces as first-class values, sum types with exhaustive `match`, closures
   with escape analysis, operator overloading, labeled `break`/`continue`, `?:`,
   `do`/`while`, `static` locals and multidimensional arrays.

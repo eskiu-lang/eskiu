@@ -86,7 +86,7 @@ NAVS = {"lang": NAV_LANG, "dev": NAV_DEV}
 GH_BLOB = "https://github.com/eskiu-lang/eskiu/blob/main/"
 
 # Shown in the shared top bar (kept in step with the homepage). Bump per release.
-VERSION = "v0.12.0"
+VERSION = "v0.13.0"
 GH = "https://github.com/eskiu-lang/eskiu"
 
 CSS = r"""
@@ -743,7 +743,7 @@ PKG_TEXT = {
                   "C++. The repository is private for now. "
                   "<a href=\"{p}vision.html\">What it does and how it was checked →</a>",
         "repo": "Repository", "ci": "CI status",
-        "outro": "Every package needs Eskiu 0.12 or newer. Its README has the full module list, "
+        "outro": "Every package needs Eskiu 0.13 or newer. Its README has the full module list, "
                  "more examples and the details for each operating system.",
     },
     "es": {
@@ -775,7 +775,7 @@ PKG_TEXT = {
                   "repositorio es privado por ahora. "
                   "<a href=\"vision.html\">Qué hace y cómo se verificó →</a>",
         "repo": "Repositorio", "ci": "Estado de CI",
-        "outro": "Todos los paquetes necesitan Eskiu 0.12 o más nuevo. En el README de cada uno "
+        "outro": "Todos los paquetes necesitan Eskiu 0.13 o más nuevo. En el README de cada uno "
                  "están la lista completa de módulos, más ejemplos y los detalles para cada sistema "
                  "operativo (en inglés).",
     },

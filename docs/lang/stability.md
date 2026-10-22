@@ -1,6 +1,6 @@
 # Stability
 
-Eskiu is stable since 0.12: code that compiles with 0.12.0 keeps compiling in every 0.12.x
+Eskiu is stable since 0.13: code that compiles with 0.13.0 keeps compiling in every 0.13.x
 release. Before 1.0 a minor release (0.13, 0.14) can still change the language or the
 standard library, but every change that can break a program follows the rules below, so code
 moves forward with warnings instead of failing to compile.
@@ -8,7 +8,7 @@ moves forward with warnings instead of failing to compile.
 ## Standard library names
 
 - A public name (one without a leading `_`) is not renamed or removed in a patch release
-  (0.12.0 to 0.12.1).
+  (0.13.0 to 0.13.1).
 - A rename in a minor release keeps the old name for that release as a wrapper marked
   `deprecated("use NEW")`. Each use prints a warning that names the replacement; the next
   minor release removes it. `-Wno-deprecated` silences the warnings.

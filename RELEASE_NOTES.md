@@ -1,10 +1,10 @@
-# Eskiu 0.12.0
+# Eskiu 0.13.0
 
 The first public release of Eskiu, a systems language with C's control over memory and
 calling conventions. It compiles to native code through LLVM, calls C libraries directly,
 and runs a source file like a script with `eskiuc run file.esk`.
 
-From this release on, code that compiles with 0.12.0 keeps compiling in every 0.12.x, and
+From this release on, code that compiles with 0.13.0 keeps compiling in every 0.13.x, and
 later changes are announced by warnings first ([stability policy](https://eskiu-lang.org/docs/stability.html)).
 
 ## Install
@@ -35,8 +35,8 @@ cd eskiu && cmake -S . -B build && cmake --build build
 ## What is in it
 
 - **The language.** C syntax and C integer rules, with structs and methods, generics,
-  structural interfaces, sum types with exhaustive `match`, closures, operator
-  overloading, `async`/`await`, default parameter values and `dbg(e)`.
+  structural interfaces, sum types with exhaustive `match`, closures and trailing blocks
+  (`Column(style) { ... }`), operator overloading, `async`/`await`, default parameter values and `dbg(e)`.
 - **One way to report errors.** `Result<T, E>` with `?` for expected failures (the
   standard library has `Result` forms of its fallible calls), and exceptions for errors a
   program cannot continue from.
