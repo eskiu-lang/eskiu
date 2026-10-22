@@ -449,7 +449,7 @@ def first_paragraph(md_text):
 # and the Spanish tagline.
 
 PKG_ORG = "eskiu-lang"
-PKG_REV = "v0.1.0"
+PKG_REV = "v0.1.0"   # the release a package is shown at, unless its entry has "rev"
 
 PACKAGES_CATALOG = [
     {
@@ -604,6 +604,7 @@ PACKAGES_CATALOG = [
     {
         "name": "location",
         "repo": "ui-location",
+        "rev": "v0.1.1",
         "section": None,
         "tag_es": "Dónde está el dispositivo, para apps hechas con eskiu-lang/ui.",
         "note_en": "A component calls <code>use_location</code> and gets the latest position while "
@@ -624,6 +625,7 @@ PACKAGES_CATALOG = [
     {
         "name": "notifications",
         "repo": "ui-notifications",
+        "rev": "v0.1.1",
         "section": None,
         "tag_es": "Notificaciones locales para apps hechas con eskiu-lang/ui.",
         "note_en": "The app schedules a notification with a title and a body for a number of seconds "
@@ -642,6 +644,7 @@ PACKAGES_CATALOG = [
     {
         "name": "camera",
         "repo": "ui-camera",
+        "rev": "v0.1.1",
         "section": None,
         "tag_es": "Fotos para apps hechas con eskiu-lang/ui: la galería, la cámara y una vista en vivo.",
         "note_en": "Pick a photo from the library, take one with the system's camera, or show the camera "
@@ -660,9 +663,9 @@ PACKAGES_CATALOG = [
 ]
 
 
-def fetch_readme(name):
+def fetch_readme(name, rev):
     import urllib.request
-    url = f"https://raw.githubusercontent.com/{PKG_ORG}/{name}/{PKG_REV}/README.md"
+    url = f"https://raw.githubusercontent.com/{PKG_ORG}/{name}/{rev}/README.md"
     with urllib.request.urlopen(url, timeout=30) as r:
         return r.read().decode("utf-8")
 
@@ -876,7 +879,7 @@ def render_site_page(lang, page, current, title, desc, body):
 def build_packages():
     data = []
     for pkg in PACKAGES_CATALOG:
-        text = fetch_readme(pkg.get("repo", pkg["name"]))
+        text = fetch_readme(pkg.get("repo", pkg["name"]), pkg.get("rev", PKG_REV))
         data.append((pkg, readme_tagline(text, pkg["name"]),
                      readme_example(text, pkg["name"], pkg["section"])))
     for lang in ("en", "es"):
@@ -902,11 +905,12 @@ def build_packages():
             n = pkg["name"]
             # The repository's name, when it is not the package's (ui-location holds location).
             repo = f"https://github.com/{PKG_ORG}/{pkg.get('repo', n)}"
-            install = pkg["setup"] + [f"eskiuc add {n} --git {repo} --rev {PKG_REV}"] + pkg["build"]
+            rev = pkg.get("rev", PKG_REV)
+            install = pkg["setup"] + [f"eskiuc add {n} --git {repo} --rev {rev}"] + pkg["build"]
             b += [f'    <section class="pkg" id="{n}">',
                   f'      <h2>{n}</h2>',
                   '      <div class="pkg-meta">'
-                  f'<span class="tag">{PKG_REV}</span>'
+                  f'<span class="tag">{rev}</span>'
                   f'<a href="{repo}/actions/workflows/ci.yml"><img src="{repo}/actions/workflows/ci.yml/badge.svg" '
                   f'alt="{T["ci"]}: {n}" width="90" height="20" loading="lazy" /></a>'
                   f'<a href="{repo}">github.com/{PKG_ORG}/{pkg.get("repo", n)}</a></div>',
@@ -929,7 +933,7 @@ def build_packages():
         out = os.path.join(ROOT, "site", "packages.html" if lang == "en" else "es/packages.html")
         with open(out, "w", encoding="utf-8") as f:
             f.write(page)
-        print(f"  READMEs at {PKG_REV}  ->  site/{os.path.relpath(out, os.path.join(ROOT, 'site'))}")
+        print(f"  READMEs at their releases  ->  site/{os.path.relpath(out, os.path.join(ROOT, 'site'))}")
 
 
 # Every page names its stylesheets and scripts with ?v=<hash of the file>, so a browser
