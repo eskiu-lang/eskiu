@@ -1,0 +1,129 @@
+// `catch (_)` catches any exception without binding it, and `exception_text()` inside a
+// `catch` block describes the caught exception (as the uncaught-exception reporter
+// does). Covers primitive and struct payloads, nested handlers (each sees its own
+// exception), rethrow, `finally`, a lambda called from a handler, and `async` functions
+// whose try/catch is split by `await` (the text survives a suspension in the handler).
+import <future>;
+import <timer>;
+import <eventloop>;
+extern int printf(string fmt, ...);
+EventLoop* g;
+
+struct Oops { int code; }
+
+void thrower(int k) {
+    if (k == 0) { throw 42; }
+    if (k == 1) { throw "boom"; }
+    if (k == 2) { throw true; }
+    if (k == 3) { throw 2.5; }
+    if (k == 4) { let o: Oops = Oops{7}; throw o; }
+    if (k == 5) { throw (int64)9; }
+}
+
+void any_of(int k) {
+    try {
+        thrower(k);
+        printf("%d: no throw\n", k);
+    } catch (_) {
+        printf("%d: caught %s\n", k, exception_text());
+    }
+}
+
+// A typed clause first; `catch (_)` takes what it does not match.
+void typed_then_any(int k) {
+    try {
+        thrower(k);
+    } catch (int e) {
+        printf("typed int %d (%s)\n", e, exception_text());
+    } catch (_) {
+        printf("fallback %s\n", exception_text());
+    }
+}
+
+// The inner handler's text is the inner exception; after it, the outer one again.
+void nested() {
+    try {
+        thrower(1);
+    } catch (_) {
+        string outer = exception_text();
+        try {
+            thrower(0);
+        } catch (_) {
+            printf("inner %s\n", exception_text());
+        }
+        printf("outer %s / %s\n", outer, exception_text());
+    }
+}
+
+// Throwing from a `catch (_)` (the outer handler sees the new exception) and finally.
+void rethrow() {
+    try {
+        try {
+            thrower(3);
+        } catch (_) {
+            printf("rethrowing %s\n", exception_text());
+            throw 1.5;
+        } finally {
+            printf("inner finally\n");
+        }
+    } catch (double d) {
+        printf("outer double %g (%s)\n", d, exception_text());
+    }
+}
+
+// The text is a value: a lambda called from the handler can take it.
+void via_lambda() {
+    try {
+        thrower(4);
+    } catch (_) {
+        string t = exception_text();
+        fn(string)->int show = int(string s) { printf("lambda got %s\n", s); return 0; };
+        show(t);
+    }
+}
+
+Future<T>* rdy<T>(T v) { Future<T>* f = future_new<T>(); Future_complete<T>(f, v); return f; }
+
+// An async try split by `await`: thrown after a suspension, the handler awaits before
+// reading the text.
+async int async_any(int k) {
+    int r = 0;
+    try {
+        int t = await timer_after(g, 1);
+        thrower(k + t);
+        printf("async_any(%d): no throw\n", k);
+    } catch (int e) {
+        printf("async_any(%d): int %d %s\n", k, e, exception_text());
+        r = e;
+    } catch (_) {
+        int x = await rdy<int>(5);
+        printf("async_any(%d): any %s after await %d\n", k, exception_text(), x);
+        r = -1;
+    } finally {
+        printf("async_any(%d): finally\n", k);
+    }
+    return r;
+}
+
+int run(Future<int>* f) {
+    if (Future_poll<int>(f, void() { EventLoop_stop(g); }) == 0) { EventLoop_run(g); }
+    int v = f.value;
+    Future_free_polled<int>(f);
+    return v;
+}
+
+int main() {
+    for (int k = 0; k < 7; k = k + 1) { any_of(k); }
+    typed_then_any(0);
+    typed_then_any(1);
+    nested();
+    rethrow();
+    via_lambda();
+    g = el_new(64);
+    printf("= %d\n", run(async_any(0)));
+    printf("= %d\n", run(async_any(1)));
+    printf("= %d\n", run(async_any(5)));
+    printf("= %d\n", run(async_any(6)));
+    EventLoop_free(g);
+    return 0;
+}

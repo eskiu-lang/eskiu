@@ -1268,12 +1268,14 @@ try {
     // body: any function calls here are emitted as LLVM invoke
 } catch (TYPE name) {
     // handler: receives the thrown value as 'name'
+} catch (_) {
+    // catch-all: catches any exception without binding a variable
 } finally {
     // cleanup: always executes
 }
 ```
 
-Multiple `catch` clauses may be chained. The `finally` clause is optional. Either `catch` or `finally` (or both) must follow `try`.
+Multiple `catch` clauses may be chained. A `catch (_)` clause catches any exception without binding a variable; it must be the last `catch` clause. The `finally` clause is optional. Either `catch` or `finally` (or both) must follow `try`.
 
 #### throw
 
@@ -1290,13 +1292,19 @@ int divide(int a, int b) {
 
 #### Catching exceptions
 
-Each `catch` clause names a type and a variable. If the thrown value's static type is the declared type (after aliases are resolved), control transfers to that clause and the variable holds the thrown value. There is no conversion: a thrown `int` is not caught by `catch (int64 e)`.
+Each typed `catch` clause names a type and a variable. If the thrown value's static type is the declared type (after aliases are resolved), control transfers to that clause and the variable holds the thrown value. There is no conversion: a thrown `int` is not caught by `catch (int64 e)`.
+
+A `catch (_)` clause catches any exception without binding a variable. It must be the last `catch` clause; placing a `catch` clause after `catch (_)` is a compile-time error.
+
+Inside any `catch` block (typed or `catch (_)`), the builtin function `exception_text()` is available. It takes no arguments and returns a `string` describing the caught exception (the type, and for primitive types its formatted value, matching the unhandled exception reporter). Calling `exception_text()` outside a `catch` block (or inside a lambda within a `catch` block) is a compile-time error.
 
 ```eskiu
 try {
     int r = divide(10, 0);
-} catch (string e) {
-    printf("caught: %s\n", e);
+} catch (int code) {
+    printf("caught error code %d (%s)\n", code, exception_text());
+} catch (_) {
+    printf("caught unexpected error: %s\n", exception_text());
 }
 ```
 

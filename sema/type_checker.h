@@ -435,6 +435,8 @@ private:
     // `finally` blocks enclosing the current point (a `return` or an `await` may not
     // leave or suspend one).
     int finallyDepth = 0;
+    // `catch` blocks enclosing the current point (`exception_text()` is only allowed inside one).
+    int catchDepth = 0;
     // Whether the function being checked has a variadic parameter (`...`): only there
     // can `va_start` begin reading the variadic arguments.
     bool inVariadicFn = false;

@@ -36,6 +36,7 @@ HANDLED="undefined_var arg_count undefined_type await_outside_async async_no_awa
          main_void redefinition defer_return defer_break div_by_zero incdec_nonlvalue
          labeled_break_unknown labeled_break_defer
          trailing_block_return trailing_block_break trailing_block_continue trailing_block_await trailing_block_question
+         catch_any_not_last exception_text_outside_catch exception_text_in_lambda exception_text_args
          trailing_block_not_call trailing_block_parens trailing_block_call_result trailing_block_initializer trailing_block_return_value
          const_addr_of init_incompatible init_void float_to_int literal_out_of_range
          compare_incompatible compare_struct ternary_incompatible fn_return_mismatch

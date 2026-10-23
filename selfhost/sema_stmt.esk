@@ -1326,8 +1326,14 @@ void sema_stmt_k(Sema* s, *StmtNode st) {
         }
         sema_stmt(s, st.s1);               // body
         int ci = 0;
-        while (ci < List_len<*StmtNode>(&st.items)) {
-            sema_stmt(s, List_get<*StmtNode>(&st.items, ci));
+        int cn = List_len<*StmtNode>(&st.items);
+        while (ci < cn) {
+            *StmtNode cc = List_get<*StmtNode>(&st.items, ci);
+            if (sema_streq(cc.name, "_") == 1 && ci + 1 < cn) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: 'catch (_)' must be the last catch clause\n", s.filename, cc.line, cc.col);
+            }
+            sema_stmt(s, cc);
             ci = ci + 1;
         }
         s.fin_depth = s.fin_depth + 1;     // a `return` may not leave a finally block
@@ -1427,7 +1433,9 @@ void sema_stmt_k(Sema* s, *StmtNode st) {
         if (sp > 0) {
             sema_define_at(s, sema_sub_str(st.name, sp + 1, j), sema_sub_str(st.name, 0, sp), 0, st.line, st.col, 0);
         }
+        s.catch_depth = s.catch_depth + 1;
         sema_stmt(s, st.s1);
+        s.catch_depth = s.catch_depth - 1;
         sema_pop(s);
         return;
     }

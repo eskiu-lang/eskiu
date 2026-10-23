@@ -876,57 +876,78 @@ void cg_stmt(Codegen* g, *StmtNode st) {
                 ci = ci + 1;
                 continue;
             }
-            string ctg = cg_string_global(g, cg_ex_typename(g, ctype));
-            string cmp = cg_tmp(g);
-            cg_emit(g, "  ");
-            cg_emit(g, cmp);
-            cg_emit(g, " = call i32 @strcmp(ptr ");
-            cg_emit(g, extype);
-            cg_emit(g, ", ptr ");
-            cg_emit(g, ctg);
-            cg_emit(g, ")\n");
-            string m = cg_tmp(g);
-            cg_emit(g, "  ");
-            cg_emit(g, m);
-            cg_emit(g, " = icmp eq i32 ");
-            cg_emit(g, cmp);
-            cg_emit(g, ", 0\n");
-            string hbl = cg_lbl(g);
             string nbl = cg_lbl(g);
-            cg_emit(g, "  br i1 ");
-            cg_emit(g, m);
-            cg_emit(g, ", label %");
-            cg_emit(g, hbl);
-            cg_emit(g, ", label %");
-            cg_emit(g, nbl);
-            cg_emit(g, "\n");
-            g.terminated = 1;
-            cg_label(g, hbl);
+            if (ctype[0] != 0) {
+                string ctg = cg_string_global(g, cg_ex_typename(g, ctype));
+                string cmp = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, cmp);
+                cg_emit(g, " = call i32 @strcmp(ptr ");
+                cg_emit(g, extype);
+                cg_emit(g, ", ptr ");
+                cg_emit(g, ctg);
+                cg_emit(g, ")\n");
+                string m = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, m);
+                cg_emit(g, " = icmp eq i32 ");
+                cg_emit(g, cmp);
+                cg_emit(g, ", 0\n");
+                string hbl = cg_lbl(g);
+                cg_emit(g, "  br i1 ");
+                cg_emit(g, m);
+                cg_emit(g, ", label %");
+                cg_emit(g, hbl);
+                cg_emit(g, ", label %");
+                cg_emit(g, nbl);
+                cg_emit(g, "\n");
+                g.terminated = 1;
+                cg_label(g, hbl);
+            }
             int lbase = List_len<CgLocal>(&g.locals);
-            string cty = cg_lltype(g, ctype);
-            string cps = cg_tmp(g);                        // the payload, by the catch type
-            cg_emit(g, "  ");
-            cg_emit(g, cps);
-            cg_emit(g, " = getelementptr i8, ptr ");
-            cg_emit(g, exdata);
-            cg_emit(g, ", i64 16\n");
-            string cv = cg_tmp(g);
-            cg_emit(g, "  ");
-            cg_emit(g, cv);
-            cg_emit(g, " = load ");
-            cg_emit(g, cty);
-            cg_emit(g, ", ptr ");
-            cg_emit(g, cps);
-            cg_emit(g, "\n");
-            string cslot = cg_entry_alloca(g, cty);
-            cg_emit(g, "  store ");
-            cg_emit(g, cty);
-            cg_emit(g, " ");
-            cg_emit(g, cv);
-            cg_emit(g, ", ptr ");
-            cg_emit(g, cslot);
-            cg_emit(g, "\n");
-            cg_add_local(g, cname, cslot, cty, ctype);
+            if (ctype[0] != 0) {
+                string cty = cg_lltype(g, ctype);
+                string cps = cg_tmp(g);                        // the payload, by the catch type
+                cg_emit(g, "  ");
+                cg_emit(g, cps);
+                cg_emit(g, " = getelementptr i8, ptr ");
+                cg_emit(g, exdata);
+                cg_emit(g, ", i64 16\n");
+                string cv = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, cv);
+                cg_emit(g, " = load ");
+                cg_emit(g, cty);
+                cg_emit(g, ", ptr ");
+                cg_emit(g, cps);
+                cg_emit(g, "\n");
+                string cslot = cg_entry_alloca(g, cty);
+                cg_emit(g, "  store ");
+                cg_emit(g, cty);
+                cg_emit(g, " ");
+                cg_emit(g, cv);
+                cg_emit(g, ", ptr ");
+                cg_emit(g, cslot);
+                cg_emit(g, "\n");
+                cg_add_local(g, cname, cslot, cty, ctype);
+            }
+            int has_txt = cg_has_extext_s(c.s1);
+            if (has_txt == 1) {
+                g.uses_ex_text = 1;
+                string etx = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, etx);
+                cg_emit(g, " = call ptr @__eskiu_exception_text(ptr ");
+                cg_emit(g, exdata);
+                cg_emit(g, ")\n");
+                string tslot = cg_entry_alloca(g, "ptr");
+                cg_emit(g, "  store ptr ");
+                cg_emit(g, etx);
+                cg_emit(g, ", ptr ");
+                cg_emit(g, tslot);
+                cg_emit(g, "\n");
+                List_push<string>(&g.catch_text, tslot);
+            }
             cg_emit(g, "  call void @__cxa_end_catch()\n");
             // `finally` also runs when the handler leaves early (return/break/continue).
             int cmark = List_len<*StmtNode>(&g.cleanups);
@@ -936,6 +957,9 @@ void cg_stmt(Codegen* g, *StmtNode st) {
                 cg_defer_pad(g);
             }
             cg_stmt(g, c.s1);                             // handler body
+            if (has_txt == 1) {
+                List_remove<string>(&g.catch_text, List_len<string>(&g.catch_text) - 1);
+            }
             cg_cleanups_trunc(g, cmark);
             cg_br(g, ldone);
             cg_locals_trunc(g, lbase);

@@ -2337,6 +2337,24 @@ void sema_expr_k(Sema* s, *ExprNode e) {
         e.dbg_builtin = 1;
         return;
     }
+    if (k == EK_CALL && e.a != null && e.a.kind == EK_IDENT
+        && sema_streq(e.a.sval, "exception_text") == 1 && sema_lookup(s, "exception_text") == 0 && sema_find_fndecl(s, "exception_text") == null) {
+        int ei = 0;
+        int en = List_len<*ExprNode>(&e.kids);
+        while (ei < en) {
+            sema_expr(s, List_get<*ExprNode>(&e.kids, ei));
+            ei = ei + 1;
+        }
+        if (en != 0) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: 'exception_text' takes no arguments, got %d\n", s.filename, e.line, e.col, en);
+        }
+        if (s.catch_depth == 0) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: 'exception_text' is only allowed inside a 'catch' block\n", s.filename, e.line, e.col);
+        }
+        return;
+    }
     if (k == EK_CALL && e.a != null && e.a.kind == EK_MEMBER) {
         // Method-call syntax `x.m(...)`: `m` is an inline method, a field holding a fn
         // pointer, or a free function `Type_m(self, ...)` (mirrors the C++ method path).
@@ -3335,6 +3353,8 @@ void sema_check_lambda(Sema* s, *ExprNode e) {
     s.in_trailing = e.trailing;
     int saved_fin = s.fin_depth;
     s.fin_depth = 0;
+    int saved_catch = s.catch_depth;
+    s.catch_depth = 0;
     int saved_sw = s.sw_depth;
     int saved_pd = s.param_depth;
     int saved_var = s.in_variadic;
@@ -3412,6 +3432,7 @@ void sema_check_lambda(Sema* s, *ExprNode e) {
     }
     s.in_trailing = saved_trailing;
     s.fin_depth = saved_fin;
+    s.catch_depth = saved_catch;
     s.sw_depth = saved_sw;
     s.param_depth = saved_pd;
     s.in_variadic = saved_var;

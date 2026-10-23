@@ -105,7 +105,7 @@ struct TemplateCapturePass {
         if (auto* th = dynamic_cast<ThrowStmt*>(s)) { walkExpr(th->value.get()); return; }
         if (auto* tr = dynamic_cast<TryStmt*>(s)) {
             walkStmt(tr->body.get());
-            for (auto& cc : tr->catches) { scopes.push_back({}); define(cc.name, cc.type); walkStmt(cc.body.get()); scopes.pop_back(); }
+            for (auto& cc : tr->catches) { scopes.push_back({}); if (!cc.type.empty()) define(cc.name, cc.type); walkStmt(cc.body.get()); scopes.pop_back(); }
             walkStmt(tr->finally.get()); return;
         }
         if (auto* tj = dynamic_cast<ThreadJoinStmt*>(s)) { walkExpr(tj->tid.get()); return; }
@@ -982,7 +982,7 @@ private:
             for (auto& c : t->catches) {
                 s = before;
                 pushScope();
-                declare(c.name, false);
+                if (!c.type.empty()) declare(c.name, false);
                 block(c.body.get());
                 popScope();
                 join(out, s);

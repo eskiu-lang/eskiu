@@ -542,7 +542,7 @@ struct ShadowRenamer {
             scoped(t->body);
             for (auto& c : t->catches) {
                 scopes.emplace_back();
-                if (!c.name.empty()) c.name = declare(c.name);
+                if (!c.type.empty() && !c.name.empty()) c.name = declare(c.name);
                 scoped(c.body);
                 scopes.pop_back();
             }
@@ -1158,9 +1158,65 @@ void AsyncTransform::run(Program* program) {
         // (innermost region first), so an exception thrown before or after a suspension
         // reaches the right handler. `startDepth` is the defer depth of the try (its
         // `finally` frame sits there), `base` the depth where the region's frames begin.
-        struct CatchInfo { std::string type, var; int state; };
+        struct CatchInfo { std::string type, var, txtField; int state; };
         struct Region { int parent; size_t startDepth, base; std::vector<CatchInfo> catches; StmtPtr fin; };
         std::vector<Region> regions;
+        // Rewrite `exception_text()` calls belonging to a split `catch` clause's body
+        // (stopping at nested lambdas and nested `catch` clauses) to a frame field filled
+        // in the synthetic catch handler before leaving the landingpad.
+        auto rewriteCatchExText = [&](StmtPtr& root) -> std::string {
+            std::string tf;
+            std::function<void(ExprPtr&)> rwE = [&](ExprPtr& e) {
+                if (!e || dynamic_cast<LambdaExpr*>(e.get())) return;
+                if (auto* call = dynamic_cast<CallExpr*>(e.get()))
+                    if (auto* id = dynamic_cast<IdentExpr*>(call->callee.get()))
+                        if (id->name == "exception_text" && call->args.empty()) {
+                            if (tf.empty()) {
+                                tf = astwalk::freshName("__extxt", used);
+                                vars.insert(tf);
+                                fields.push_back({"string", tf});
+                            }
+                            e = ident(tf);
+                            return;
+                        }
+                astwalk::forEachChildExprFlat(e.get(), [&](ExprPtr& ch) { rwE(ch); });
+            };
+            std::function<void(StmtPtr&)> rwS = [&](StmtPtr& s) {
+                if (!s) return;
+                auto items = [&](std::vector<BlockItem>& its) {
+                    for (auto& it : its) {
+                        if (std::holds_alternative<StmtPtr>(it)) rwS(std::get<StmtPtr>(it));
+                        else if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get())) rwE(vd->initializer);
+                    }
+                };
+                if (auto* b = dynamic_cast<BlockStmt*>(s.get())) items(b->items);
+                else if (auto* i = dynamic_cast<IfStmt*>(s.get())) { rwE(i->condition); rwS(i->thenBranch); rwS(i->elseBranch); }
+                else if (auto* w = dynamic_cast<WhileStmt*>(s.get())) { rwE(w->condition); rwS(w->body); }
+                else if (auto* dw = dynamic_cast<DoWhileStmt*>(s.get())) { rwS(dw->body); rwE(dw->condition); }
+                else if (auto* f = dynamic_cast<ForStmt*>(s.get())) { rwS(f->init); rwE(f->condition); rwE(f->step); rwS(f->body); }
+                else if (auto* fi = dynamic_cast<ForInStmt*>(s.get())) { rwE(fi->iterable); rwS(fi->body); }
+                else if (auto* sw = dynamic_cast<SwitchStmt*>(s.get())) {
+                    rwE(sw->subject);
+                    for (auto& c : sw->cases) { rwE(c.value); items(c.stmts); }
+                } else if (auto* m = dynamic_cast<MatchStmt*>(s.get())) {
+                    rwE(m->subject);
+                    for (auto& arm : m->arms) rwS(arm.body);
+                } else if (auto* t = dynamic_cast<TryStmt*>(s.get())) {
+                    rwS(t->body);
+                    rwS(t->finally);
+                } else if (auto* d = dynamic_cast<DeferStmt*>(s.get())) rwS(d->body);
+                else if (auto* r = dynamic_cast<ReturnStmt*>(s.get())) rwE(r->value);
+                else if (auto* th = dynamic_cast<ThrowStmt*>(s.get())) rwE(th->value);
+                else if (auto* es = dynamic_cast<ExprStmt*>(s.get())) rwE(es->expr);
+                else if (auto* tj = dynamic_cast<ThreadJoinStmt*>(s.get())) rwE(tj->tid);
+                else if (auto* as = dynamic_cast<AsmStmt*>(s.get())) {
+                    for (auto& o : as->outputs) rwE(o.second);
+                    for (auto& in : as->inputs) rwE(in.second);
+                }
+            };
+            rwS(root);
+            return tf;
+        };
         int curRegion = -1;
         std::vector<int> stateRegion;
         std::vector<std::vector<std::vector<StmtPtr>>> stateFrames;   // defer frames pending in each state
@@ -1712,9 +1768,10 @@ void AsyncTransform::run(Program* program) {
                 curRegion = rh;
                 std::vector<int> centry;
                 for (auto& c : t->catches) {
-                    if (!c.name.empty() && !vars.count(c.name)) { vars.insert(c.name); fields.push_back({c.type, c.name}); }
+                    if (!c.type.empty() && !c.name.empty() && !vars.count(c.name)) { vars.insert(c.name); fields.push_back({c.type, c.name}); }
+                    std::string tf = rewriteCatchExText(c.body);
                     centry.push_back(newState());
-                    regions[rb].catches.push_back({c.type, c.name, centry.back()});
+                    regions[rb].catches.push_back({c.type, c.type.empty() ? "" : c.name, tf, centry.back()});
                 }
                 curRegion = rb;
                 int bodyE = newState();
@@ -1842,6 +1899,9 @@ void AsyncTransform::run(Program* program) {
                 for (auto& c : rg.catches) {
                     std::vector<BlockItem> hb = pend;
                     if (!c.var.empty()) hb.push_back(assign(fr(c.var), ident(cxName)));
+                    if (!c.txtField.empty())
+                        hb.push_back(assign(fr(c.txtField),
+                            std::make_shared<CallExpr>(ident("exception_text"), std::vector<ExprPtr>{})));
                     int target = c.state;
                     if (pendAwaits) {
                         auto se = cleanupStates(stateRegion[c.state], rg.base, rg.base);
@@ -1849,7 +1909,7 @@ void AsyncTransform::run(Program* program) {
                         target = se.first;
                     }
                     hb.push_back(assign(fr(frn.st), intlit(target)));
-                    cs.push_back({c.type, cxName, std::make_shared<BlockStmt>(hb)});
+                    cs.push_back({c.type, c.type.empty() ? "_" : cxName, std::make_shared<BlockStmt>(hb)});
                 }
                 StmtPtr ub = nullptr;
                 if (cleanupAwaits(frames, rg.startDepth, top)) {

@@ -2876,15 +2876,23 @@ void check_name_not_keyword(Parser* p) {
     while (p_at(p) == CATCH) {
         p_adv(p);                          // 'catch'
         p_expect(p, LPAREN, "Expected '('");
-        string cty = parse_type(p);
-        Token cnt = p_expect_ident(p, "Expected variable name in catch");
-        string cnm = tok_text(p.src, cnt);   // exception variable name
+        string clbl = "";
+        Token cnt;
+        if (p_at(p) == IDENT && str_eq(tok_text(p.src, p_peek(p)), "_") == 1 && p_peek2(p).type == RPAREN) {
+            cnt = p_adv(p);
+            clbl = "_";
+        } else {
+            string cty = parse_type(p);
+            cnt = p_expect_ident(p, "Expected variable name in catch");
+            string cnm = tok_text(p.src, cnt);   // exception variable name
+            clbl = str_concat(str_concat(cty, " "), cnm);
+        }
         p_expect(p, RPAREN, "Expected ')'");
         *StmtNode cat = ast_new_stmt();
         cat.kind = SK_CATCH;
         cat.line = cnt.line;
         cat.col = cnt.col;
-        cat.name = str_concat(str_concat(cty, " "), cnm);
+        cat.name = clbl;
         cat.s1 = parse_block(p);
         List_push<*StmtNode>(&s.items, cat);
     }

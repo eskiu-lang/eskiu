@@ -496,6 +496,8 @@ std::string CodeGen::deriveExprEskiuTypeUncached(const ExprPtr& expr) const {
     // access on a temporary (e.g. make().x) can resolve the struct.
     if (auto call = dynamic_cast<CallExpr*>(expr.get())) {
         if (auto id = dynamic_cast<IdentExpr*>(call->callee.get())) {
+            if (id->name == "exception_text" && call->args.empty() && !funcEskiuReturnType.count("exception_text"))
+                return "string";
             auto it = funcEskiuReturnType.find(id->name);
             if (it != funcEskiuReturnType.end()) return expandAlias(it->second);
         } else if (auto m = dynamic_cast<MemberExpr*>(call->callee.get())) {

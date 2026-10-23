@@ -1837,10 +1837,11 @@ void cg_emit_tydecl_body(Codegen* g, *DeclNode d) {
     cg_deftype(g, d.name, cg_cat(op, cg_cat((string)String_cstr(&body), cl)));
 }
 
-// One type of the uncaught-exception report: block `is<k>` (the name matched: load the
-// payload as that type, widen, snprintf) and `not<k>` (try the next). `kind` is 'i'/'u'
-// (signed/unsigned of `bits`), 'f' (float/double), 'b' bool, 'c' char, 's' string.
-void cg_ux_entry(Codegen* g, String* phi, int k, string name, int kind, int bits) {
+// One type of the uncaught-exception report or exception_text(): block `is<k>` (the name
+// matched: load the payload as that type, widen, snprintf) and `not<k>` (try the next).
+// `kind` is 'i'/'u' (signed/unsigned of `bits`), 'f' (float/double), 'b' bool, 'c' char,
+// 's' string. `head` is `"error: uncaught exception: %s"` or `"%s"`, `nl` is `"\n"` or `""`.
+void cg_ux_entry_ex(Codegen* g, String* phi, int k, string name, int kind, int bits, string head, string nl) {
     string ks = cg_itoa(k);
     string nm = cg_string_global_n(g, name, cg_strlen(name));
     cg_emit(g, "  %c");
@@ -1863,7 +1864,6 @@ void cg_ux_entry(Codegen* g, String* phi, int k, string name, int kind, int bits
     cg_emit(g, "is");
     cg_emit(g, ks);
     cg_emit(g, ":\n");
-    string head = "error: uncaught exception: %s";
     string fmt = "";
     string arg = "";
     string aty = "i64";
@@ -1895,9 +1895,9 @@ void cg_ux_entry(Codegen* g, String* phi, int k, string name, int kind, int bits
             arg = w;
         }
         if (kind == 105) {
-            fmt = cg_cat(head, " %lld\n");
+            fmt = cg_cat(head, cg_cat(" %lld", nl));
         } else {
-            fmt = cg_cat(head, " %llu\n");
+            fmt = cg_cat(head, cg_cat(" %llu", nl));
         }
         fmt = cg_string_global_n(g, fmt, cg_strlen(fmt));
     } else if (kind == 102) {
@@ -1918,7 +1918,7 @@ void cg_ux_entry(Codegen* g, String* phi, int k, string name, int kind, int bits
             cg_emit(g, " = load double, ptr %pay\n");
             arg = v;
         }
-        string f0 = cg_cat(head, " %g\n");
+        string f0 = cg_cat(head, cg_cat(" %g", nl));
         fmt = cg_string_global_n(g, f0, cg_strlen(f0));
     } else if (kind == 98) {
         aty = "ptr";
@@ -1942,7 +1942,7 @@ void cg_ux_entry(Codegen* g, String* phi, int k, string name, int kind, int bits
         cg_emit(g, ff);
         cg_emit(g, "\n");
         arg = w;
-        string f0 = cg_cat(head, " %s\n");
+        string f0 = cg_cat(head, cg_cat(" %s", nl));
         fmt = cg_string_global_n(g, f0, cg_strlen(f0));
     } else if (kind == 99) {
         aty = "i32";
@@ -1955,12 +1955,12 @@ void cg_ux_entry(Codegen* g, String* phi, int k, string name, int kind, int bits
         cg_emit(g, v);
         cg_emit(g, " to i32\n");
         arg = w;
-        string f0 = cg_cat(head, " '%c'\n");
+        string f0 = cg_cat(head, cg_cat(" '%c'", nl));
         fmt = cg_string_global_n(g, f0, cg_strlen(f0));
     } else {
         aty = "ptr";
-        string f1 = cg_cat(head, "\n");
-        string f2 = cg_cat(head, " \"%s\"\n");
+        string f1 = cg_cat(head, nl);
+        string f2 = cg_cat(head, cg_cat(" \"%s\"", nl));
         string g1 = cg_string_global_n(g, f1, cg_strlen(f1));
         string g2 = cg_string_global_n(g, f2, cg_strlen(f2));
         cg_emit(g, "  ");
@@ -1997,6 +1997,42 @@ void cg_ux_entry(Codegen* g, String* phi, int k, string name, int kind, int bits
     cg_emit(g, ks);
     cg_emit(g, ":\n");
     String_append(phi, cg_cat(cg_cat(cg_cat(cg_cat("[ %n", ks), ", %is"), ks), " ], "));
+}
+
+void cg_ux_entry(Codegen* g, String* phi, int k, string name, int kind, int bits) {
+    cg_ux_entry_ex(g, phi, k, name, kind, bits, "error: uncaught exception: %s", "\n");
+}
+
+void cg_emit_ex_text_fn(Codegen* g) {
+    string sz = cg_size_ty(g);
+    cg_ensure_extern(g, "snprintf", cg_cat("declare i32 @snprintf(ptr, ", cg_cat(sz, ", ptr, ...)\n")));
+    String_append(&g.globals, "@__eskiu_ex_buf = internal global [8 x [512 x i8]] zeroinitializer\n");
+    String_append(&g.globals, "@__eskiu_ex_idx = internal global i32 0\n");
+    cg_emit(g, "define internal ptr @__eskiu_exception_text(ptr %obj) {\nentry:\n");
+    cg_emit(g, "  %idx = load i32, ptr @__eskiu_ex_idx\n  %idx1 = add i32 %idx, 1\n  %next = and i32 %idx1, 7\n  store i32 %next, ptr @__eskiu_ex_idx\n");
+    cg_emit(g, "  %buf = getelementptr inbounds [8 x [512 x i8]], ptr @__eskiu_ex_buf, i32 0, i32 %idx, i32 0\n");
+    cg_emit(g, "  %tnp = getelementptr i8, ptr %obj, i64 8\n  %tn = load ptr, ptr %tnp\n  %pay = getelementptr i8, ptr %obj, i64 16\n");
+    let phi: String;
+    String_init(&phi, 256);
+    cg_ux_entry_ex(g, &phi, 0, "int", 105, 32, "%s", "");
+    cg_ux_entry_ex(g, &phi, 1, "int8", 105, 8, "%s", "");
+    cg_ux_entry_ex(g, &phi, 2, "int16", 105, 16, "%s", "");
+    cg_ux_entry_ex(g, &phi, 3, "int64", 105, 64, "%s", "");
+    cg_ux_entry_ex(g, &phi, 4, "uint", 117, 32, "%s", "");
+    cg_ux_entry_ex(g, &phi, 5, "uint8", 117, 8, "%s", "");
+    cg_ux_entry_ex(g, &phi, 6, "uint16", 117, 16, "%s", "");
+    cg_ux_entry_ex(g, &phi, 7, "uint64", 117, 64, "%s", "");
+    cg_ux_entry_ex(g, &phi, 8, "double", 102, 64, "%s", "");
+    cg_ux_entry_ex(g, &phi, 9, "float", 102, 32, "%s", "");
+    cg_ux_entry_ex(g, &phi, 10, "bool", 98, 8, "%s", "");
+    cg_ux_entry_ex(g, &phi, 11, "char", 99, 8, "%s", "");
+    cg_ux_entry_ex(g, &phi, 12, "string", 115, 0, "%s", "");
+    string fo = cg_string_global_n(g, "%s", 2);
+    cg_emit(g, cg_cat("  %nz = call i32 (ptr, ", cg_cat(sz, cg_cat(", ptr, ...) @snprintf(ptr %buf, ", cg_cat(sz, " 512, ptr ")))));
+    cg_emit(g, fo);
+    cg_emit(g, ", ptr %tn)\n");
+    cg_emit(g, "  br label %out\n");
+    cg_emit(g, "out:\n  ret ptr %buf\n}\n");
 }
 
 // A program that throws reports an exception nobody catches by type and value
@@ -2663,6 +2699,9 @@ void cg_program(Codegen* g, *Program prog) {
         cg_ensure_extern(g, "strcmp", "declare i32 @strcmp(ptr, ptr)\n");   // catch matching; <mem> may declare it too
         if (g.uses_throw == 1) {
             cg_emit_uncaught(g, prog);
+        }
+        if (g.uses_ex_text == 1) {
+            cg_emit_ex_text_fn(g);
         }
     }
 }

@@ -1164,7 +1164,9 @@ void mu_stmt(Mu* m, *StmtNode st) {
                 }
                 j = j + 1;
             }
-            mu_declare(m, sema_sub_str(c.name, sp + 1, j), 0);
+            if (sp > 0) {
+                mu_declare(m, sema_sub_str(c.name, sp + 1, j), 0);
+            }
             mu_block(m, c.s1);
             mu_pop_scope(m);
             mu_join(out, m.s);

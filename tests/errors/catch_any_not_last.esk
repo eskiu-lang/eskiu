@@ -1,0 +1,2 @@
+// EXPECT-ERROR: 'catch (_)' must be the last catch clause
+int main() { try { throw 1; } catch (_) { return 1; } catch (int e) { return e; } return 0; }

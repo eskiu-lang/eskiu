@@ -1,0 +1,27 @@
+0: caught int 42
+1: caught string "boom"
+2: caught bool true
+3: caught double 2.5
+4: caught Oops
+5: caught int64 9
+6: no throw
+typed int 42 (int 42)
+fallback string "boom"
+inner int 42
+outer string "boom" / string "boom"
+rethrowing double 2.5
+inner finally
+outer double 1.5 (double 1.5)
+lambda got Oops
+async_any(0): int 42 int 42
+async_any(0): finally
+= 42
+async_any(1): any string "boom" after await 5
+async_any(1): finally
+= -1
+async_any(5): any int64 9 after await 5
+async_any(5): finally
+= -1
+async_any(6): no throw
+async_any(6): finally
+= 0

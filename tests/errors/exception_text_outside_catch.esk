@@ -1,0 +1,3 @@
+// EXPECT-ERROR: 'exception_text' is only allowed inside a 'catch' block
+extern int printf(string fmt, ...);
+int main() { try { printf("%s\n", exception_text()); } catch (_) { } return 0; }

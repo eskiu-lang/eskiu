@@ -560,7 +560,7 @@ void ASTPrinter::visit(TryStmt* node) {
     indentLevel++;
     if (node->body) node->body->accept(this);
     for (const auto& c : node->catches) {
-        println("CatchClause: " + c.type + " " + c.name);
+        println("CatchClause: " + (c.type.empty() ? c.name : c.type + " " + c.name));
         indentLevel++;
         if (c.body) c.body->accept(this);
         indentLevel--;

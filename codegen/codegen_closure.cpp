@@ -1,6 +1,7 @@
 #include "codegen.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include "../ast/type_qual.h"
+#include "../ast/ast_walk.h"
 #include "llvm/IR/InlineAsm.h"
 
 // Template type-name utilities (mangleTemplate / splitTemplateType / substType)
@@ -350,6 +351,155 @@ void CodeGen::emitUncaughtReporter() {
     llvm::appendToGlobalCtors(*module, install, 65535);
 }
 
+// `ptr __eskiu_exception_text(ptr %obj)`: formats a caught EskiuEx object into one of 8
+// rotating 512-byte static buffers as `emitUncaughtReporter` does (`"int 42"`, `"Oops"`).
+llvm::Function* CodeGen::ensureExceptionTextFn() {
+    const char* name = "__eskiu_exception_text";
+    if (llvm::Function* f = module->getFunction(name)) return f;
+    llvm::LLVMContext& c = *context;
+    llvm::Type* ptrTy = llvm::PointerType::get(c, 0);
+    llvm::Type* i8Ty  = llvm::Type::getInt8Ty(c);
+    llvm::Type* i32   = llvm::Type::getInt32Ty(c);
+    llvm::Type* i64   = llvm::Type::getInt64Ty(c);
+    auto* fty = llvm::FunctionType::get(ptrTy, {ptrTy}, false);
+    auto* f = llvm::Function::Create(fty, llvm::Function::InternalLinkage, name, module.get());
+
+    llvm::ArrayType* slotTy = llvm::ArrayType::get(i8Ty, 512);
+    llvm::ArrayType* ringTy = llvm::ArrayType::get(slotTy, 8);
+    auto* ringGV = new llvm::GlobalVariable(*module, ringTy, false,
+        llvm::GlobalValue::InternalLinkage, llvm::ConstantAggregateZero::get(ringTy), "__eskiu_ex_buf");
+    auto* idxGV = new llvm::GlobalVariable(*module, i32, false,
+        llvm::GlobalValue::InternalLinkage, llvm::ConstantInt::get(i32, 0), "__eskiu_ex_idx");
+
+    llvm::IRBuilder<> b(c);
+    auto* entry = llvm::BasicBlock::Create(c, "entry", f);
+    b.SetInsertPoint(entry);
+    llvm::Value* obj = f->getArg(0);
+    llvm::Value* curIdx = b.CreateLoad(i32, idxGV, "idx");
+    llvm::Value* nextIdx = b.CreateAnd(b.CreateAdd(curIdx, b.getInt32(1)), b.getInt32(7), "next");
+    b.CreateStore(nextIdx, idxGV);
+    llvm::Value* buf = b.CreateInBoundsGEP(ringTy, ringGV, {b.getInt32(0), curIdx, b.getInt32(0)}, "buf");
+    llvm::Value* tname = b.CreateLoad(ptrTy, b.CreateConstGEP1_64(i8Ty, obj, 8), "tn");
+    llvm::Value* pay = b.CreateConstGEP1_64(i8Ty, obj, 16, "pay");
+    llvm::FunctionCallee strcmpFn = module->getOrInsertFunction("strcmp", i32, ptrTy, ptrTy);
+    llvm::Type* szTy = module->getDataLayout().getIntPtrType(c);
+    llvm::FunctionCallee snprintfFn = module->getOrInsertFunction("snprintf",
+        llvm::FunctionType::get(i32, {ptrTy, szTy, ptrTy}, true));
+    auto isType = [&](const char* nm) {
+        return b.CreateICmpEQ(b.CreateCall(strcmpFn, {tname, b.CreateGlobalString(nm)}), b.getInt32(0));
+    };
+    struct Entry { const char* name; char kind; unsigned bits; };
+    static const Entry entries[] = {
+        {"int", 'i', 32}, {"int8", 'i', 8}, {"int16", 'i', 16}, {"int64", 'i', 64},
+        {"uint", 'u', 32}, {"uint8", 'u', 8}, {"uint16", 'u', 16}, {"uint64", 'u', 64},
+        {"double", 'f', 64}, {"float", 'f', 32}, {"bool", 'b', 8}, {"char", 'c', 8}, {"string", 's', 0}};
+    const std::string head = "%s";
+    auto* bOut = llvm::BasicBlock::Create(c, "out", f);
+    for (const Entry& e : entries) {
+        auto* yes = llvm::BasicBlock::Create(c, std::string("is.") + e.name, f);
+        auto* next = llvm::BasicBlock::Create(c, std::string("not.") + e.name, f);
+        b.CreateCondBr(isType(e.name), yes, next);
+        b.SetInsertPoint(yes);
+        llvm::Value* fmt = nullptr;
+        llvm::Value* arg = nullptr;
+        if (e.kind == 'i' || e.kind == 'u') {
+            llvm::Value* v = b.CreateLoad(b.getIntNTy(e.bits), pay);
+            arg = e.kind == 'i' ? b.CreateSExt(v, i64) : b.CreateZExt(v, i64);
+            if (e.bits == 64) arg = v;
+            fmt = b.CreateGlobalString(head + (e.kind == 'i' ? " %lld" : " %llu"));
+        } else if (e.kind == 'f') {
+            llvm::Value* v = b.CreateLoad(e.bits == 32 ? b.getFloatTy() : b.getDoubleTy(), pay);
+            arg = e.bits == 32 ? b.CreateFPExt(v, b.getDoubleTy()) : v;
+            fmt = b.CreateGlobalString(head + " %g");
+        } else if (e.kind == 'b') {
+            llvm::Value* v = b.CreateICmpNE(b.CreateLoad(i8Ty, pay), b.getInt8(0));
+            arg = b.CreateSelect(v, b.CreateGlobalString("true"), b.CreateGlobalString("false"));
+            fmt = b.CreateGlobalString(head + " %s");
+        } else if (e.kind == 'c') {
+            arg = b.CreateZExt(b.CreateLoad(i8Ty, pay), i32);
+            fmt = b.CreateGlobalString(head + " '%c'");
+        } else {
+            arg = b.CreateLoad(ptrTy, pay);
+            fmt = b.CreateSelect(b.CreateIsNull(arg), b.CreateGlobalString(head),
+                                 b.CreateGlobalString(head + " \"%s\""));
+        }
+        b.CreateCall(snprintfFn, {buf, llvm::ConstantInt::get(szTy, 512), fmt, tname, arg});
+        b.CreateBr(bOut);
+        b.SetInsertPoint(next);
+    }
+    b.CreateCall(snprintfFn, {buf, llvm::ConstantInt::get(szTy, 512), b.CreateGlobalString(head), tname});
+    b.CreateBr(bOut);
+    b.SetInsertPoint(bOut);
+    b.CreateRet(buf);
+    return f;
+}
+
+static bool hasExceptionText(Expr* e);
+static bool hasExceptionText(Stmt* s) {
+    if (!s) return false;
+    if (auto* b = dynamic_cast<BlockStmt*>(s)) {
+        for (auto& st : b->items) {
+            if (std::holds_alternative<StmtPtr>(st)) {
+                if (hasExceptionText(std::get<StmtPtr>(st).get())) return true;
+            } else if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(st).get())) {
+                if (hasExceptionText(vd->initializer.get())) return true;
+            }
+        }
+        return false;
+    }
+    if (auto* i = dynamic_cast<IfStmt*>(s))
+        return hasExceptionText(i->condition.get()) || hasExceptionText(i->thenBranch.get()) || hasExceptionText(i->elseBranch.get());
+    if (auto* w = dynamic_cast<WhileStmt*>(s))
+        return hasExceptionText(w->condition.get()) || hasExceptionText(w->body.get());
+    if (auto* dw = dynamic_cast<DoWhileStmt*>(s))
+        return hasExceptionText(dw->body.get()) || hasExceptionText(dw->condition.get());
+    if (auto* f = dynamic_cast<ForStmt*>(s))
+        return hasExceptionText(f->init.get()) || hasExceptionText(f->condition.get()) || hasExceptionText(f->step.get()) || hasExceptionText(f->body.get());
+    if (auto* fi = dynamic_cast<ForInStmt*>(s))
+        return hasExceptionText(fi->iterable.get()) || hasExceptionText(fi->body.get());
+    if (auto* r = dynamic_cast<ReturnStmt*>(s)) return hasExceptionText(r->value.get());
+    if (auto* sw = dynamic_cast<SwitchStmt*>(s)) {
+        if (hasExceptionText(sw->subject.get())) return true;
+        for (auto& c : sw->cases) {
+            if (hasExceptionText(c.value.get())) return true;
+            for (auto& it : c.stmts) {
+                if (std::holds_alternative<StmtPtr>(it)) {
+                    if (hasExceptionText(std::get<StmtPtr>(it).get())) return true;
+                } else if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get())) {
+                    if (hasExceptionText(vd->initializer.get())) return true;
+                }
+            }
+        }
+        return false;
+    }
+    if (auto* m = dynamic_cast<MatchStmt*>(s)) {
+        if (hasExceptionText(m->subject.get())) return true;
+        for (auto& a : m->arms) if (hasExceptionText(a.body.get())) return true;
+        return false;
+    }
+    if (auto* th = dynamic_cast<ThrowStmt*>(s)) return hasExceptionText(th->value.get());
+    if (auto* tr = dynamic_cast<TryStmt*>(s))
+        return hasExceptionText(tr->body.get()) || hasExceptionText(tr->finally.get());
+    if (auto* d = dynamic_cast<DeferStmt*>(s)) return hasExceptionText(d->body.get());
+    if (auto* tj = dynamic_cast<ThreadJoinStmt*>(s)) return hasExceptionText(tj->tid.get());
+    if (auto* a = dynamic_cast<AsmStmt*>(s)) {
+        for (auto& out : a->outputs) if (hasExceptionText(out.second.get())) return true;
+        for (auto& in : a->inputs) if (hasExceptionText(in.second.get())) return true;
+        return false;
+    }
+    if (auto* es = dynamic_cast<ExprStmt*>(s)) return hasExceptionText(es->expr.get());
+    return false;
+}
+static bool hasExceptionText(Expr* e) {
+    if (!e || dynamic_cast<LambdaExpr*>(e)) return false;
+    if (auto* c = dynamic_cast<CallExpr*>(e))
+        if (auto* id = dynamic_cast<IdentExpr*>(c->callee.get()); id && id->name == "exception_text" && c->args.empty())
+            return true;
+    bool found = false;
+    astwalk::forEachChildExprFlat(e, [&](ExprPtr& ch) { if (!found && hasExceptionText(ch.get())) found = true; });
+    return found;
+}
+
 void CodeGen::ensureEHRuntime() {
     ensureEHDecls(module.get(), *context, ehPersonalityName());
 }
@@ -524,30 +674,39 @@ void CodeGen::visit(TryStmt* node) {
             continue;
         }
         // A generic body's catch type names the type params: match per instance.
-        const std::string cType = typeParamOverride.empty() ? c.type
-                                                             : substType(c.type, typeParamOverride);
-        auto* cTypeStr  = builder->CreateGlobalString(exceptionTypeName(cType), ".catch.t");
-        llvm::Value* cmp   = builder->CreateCall(strcmpFn, {exType, cTypeStr}, "tcmp");
-        llvm::Value* match = builder->CreateICmpEQ(cmp,
-            llvm::ConstantInt::get(i32, 0), "tmatch");
+        const std::string cType = c.type.empty() ? "" : (typeParamOverride.empty() ? c.type : substType(c.type, typeParamOverride));
+        auto* nextBB = llvm::BasicBlock::Create(*context, "catch.next", fn);
+        if (!cType.empty()) {
+            auto* cTypeStr  = builder->CreateGlobalString(exceptionTypeName(cType), ".catch.t");
+            llvm::Value* cmp   = builder->CreateCall(strcmpFn, {exType, cTypeStr}, "tcmp");
+            llvm::Value* match = builder->CreateICmpEQ(cmp,
+                llvm::ConstantInt::get(i32, 0), "tmatch");
 
-        auto* handlerBB = llvm::BasicBlock::Create(*context, "catch." + c.type, fn);
-        auto* nextBB    = llvm::BasicBlock::Create(*context, "catch.next",       fn);
-        builder->CreateCondBr(match, handlerBB, nextBB);
-
-        builder->SetInsertPoint(handlerBB);
+            auto* handlerBB = llvm::BasicBlock::Create(*context, "catch." + c.type, fn);
+            builder->CreateCondBr(match, handlerBB, nextBB);
+            builder->SetInsertPoint(handlerBB);
+        }
         pushScope();
 
-        // Load the payload (offset 16) by the catch type, which the name match made
-        // the thrown value's own type.
-        llvm::Type*  catchTy = getTypeFromString(cType);
-        auto* paySlot = builder->CreateConstGEP1_64(
-            llvm::Type::getInt8Ty(*context), exData, 16, "ex.pay");
-        llvm::Value* catchVal = builder->CreateLoad(catchTy, paySlot, "ex.val");
-        auto* catchAlloca = entryAlloca(catchTy, nullptr, c.name);
-        builder->CreateStore(catchVal, catchAlloca);
-        defineSymbol(c.name, catchAlloca);
-        defineVarType(c.name, cType);
+        if (!cType.empty()) {
+            // Load the payload (offset 16) by the catch type, which the name match made
+            // the thrown value's own type.
+            llvm::Type*  catchTy = getTypeFromString(cType);
+            auto* paySlot = builder->CreateConstGEP1_64(
+                llvm::Type::getInt8Ty(*context), exData, 16, "ex.pay");
+            llvm::Value* catchVal = builder->CreateLoad(catchTy, paySlot, "ex.val");
+            auto* catchAlloca = entryAlloca(catchTy, nullptr, c.name);
+            builder->CreateStore(catchVal, catchAlloca);
+            defineSymbol(c.name, catchAlloca);
+            defineVarType(c.name, cType);
+        }
+        bool hasExText = hasExceptionText(c.body.get());
+        if (hasExText) {
+            llvm::Value* txt = builder->CreateCall(ensureExceptionTextFn(), {exData}, "ex.text");
+            auto* txtSlot = entryAlloca(ptrTy, nullptr, "ex.text.slot");
+            builder->CreateStore(txt, txtSlot);
+            catchTextSlots.push_back(txtSlot);
+        }
         // The payload is copied out, so the exception object can be released before the
         // handler runs; then an early exit (return/break/continue) from the handler has
         // nothing left to end.
@@ -562,6 +721,7 @@ void CodeGen::visit(TryStmt* node) {
             emitDeferPad();
         }
         if (c.body) c.body->accept(this);
+        if (hasExText) catchTextSlots.pop_back();
         popCleanupFrame();
         popScope();
 

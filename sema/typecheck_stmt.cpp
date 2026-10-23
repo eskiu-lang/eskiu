@@ -638,10 +638,15 @@ void TypeChecker::visit(ThrowStmt* node) {
 void TypeChecker::visit(TryStmt* node) {
     if (wasmTarget(targetTriple)) errorAt(node, "exceptions are not supported on WebAssembly targets");
     if (node->body) node->body->accept(this);
-    for (auto& c : node->catches) {
+    for (size_t i = 0; i < node->catches.size(); ++i) {
+        auto& c = node->catches[i];
+        if (c.type.empty() && i + 1 < node->catches.size())
+            error(c.line, c.col, "'catch (_)' must be the last catch clause");
         pushScope();
-        defineSymbol(c.name, c.type, c.line, c.col, false);
+        if (!c.type.empty()) defineSymbol(c.name, c.type, c.line, c.col, false);
+        ++catchDepth;
         if (c.body) c.body->accept(this);
+        --catchDepth;
         popScope();
     }
     // A `finally` runs on every exit, including an exception unwinding through it, so a

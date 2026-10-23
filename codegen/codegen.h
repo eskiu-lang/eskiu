@@ -394,12 +394,15 @@ private:
         llvm::BasicBlock* bt; llvm::BasicBlock* ct; llvm::BasicBlock* unwind;
         std::vector<LoopFrame> loops;
         std::vector<TryCtx> tries;
+        std::vector<llvm::Value*> catchTexts;
         explicit BodyContext(CodeGen* c)
             : cg(c), cleanups(std::move(c->cleanupScopes)),
               bcd(c->breakCleanupDepth), ccd(c->continueCleanupDepth),
               bt(c->breakTarget), ct(c->continueTarget), unwind(c->unwindTarget),
-              loops(std::move(c->loopStack)), tries(std::move(c->tryStack)) {
+              loops(std::move(c->loopStack)), tries(std::move(c->tryStack)),
+              catchTexts(std::move(c->catchTextSlots)) {
             cg->tryStack.clear();
+            cg->catchTextSlots.clear();
             cg->cleanupScopes.clear();
             cg->breakCleanupDepth = cg->continueCleanupDepth = 0;
             cg->breakTarget = cg->continueTarget = nullptr;
@@ -413,6 +416,7 @@ private:
             cg->unwindTarget = unwind;
             cg->loopStack = std::move(loops);
             cg->tryStack = std::move(tries);
+            cg->catchTextSlots = std::move(catchTexts);
         }
     };
     // Emit (in LIFO order) every cleanup body in frames at index >= depth. On a normal
@@ -430,6 +434,9 @@ private:
 
     // Exception handling: set when inside a try body
     llvm::BasicBlock* unwindTarget = nullptr;
+    // Per enclosing `catch` handler: the entry alloca holding `exception_text()`'s string.
+    std::vector<llvm::Value*> catchTextSlots;
+    llvm::Function* ensureExceptionTextFn();
 
     // The C++ EH personality routine to reference for this target. mingw x86-64 unwinds via
     // SEH (`__gxx_personality_seh0`); Linux/macOS use the DWARF/Itanium `__gxx_personality_v0`.

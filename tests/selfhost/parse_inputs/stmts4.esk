@@ -25,6 +25,8 @@ int exc() {
         handle(e);
     } catch (Other o) {
         log(o);
+    } catch (_) {
+        recover();
     } finally {
         cleanup();
     }

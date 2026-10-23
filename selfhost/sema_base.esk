@@ -81,6 +81,7 @@ struct Sema {
     int had_error;
     int in_async;           // currently inside an `async` function body?
     int fin_depth;          // `finally` blocks enclosing the current point (no `return` inside one)
+    int catch_depth;        // `catch` blocks enclosing the current point (`exception_text()` only inside one)
     int in_variadic;        // the function being checked has a variadic parameter (`...`)?
     int await_seen;         // has an `await` appeared in the current function?
     int in_trailing;        // checking the body of a trailing block (a closure after a call statement)
@@ -3109,6 +3110,10 @@ string sema_infer_type_raw(Sema* s, *ExprNode e) {
     if (e.kind == EK_CALL && e.a != null && e.a.kind == EK_IDENT && List_len<*ExprNode>(&e.kids) == 1
         && sema_streq(e.a.sval, "dbg") == 1 && sema_lookup(s, "dbg") == 0 && sema_find_fndecl(s, "dbg") == null) {
         return sema_infer_type(s, List_get<*ExprNode>(&e.kids, 0));
+    }
+    if (e.kind == EK_CALL && e.a != null && e.a.kind == EK_IDENT
+        && sema_streq(e.a.sval, "exception_text") == 1 && sema_lookup(s, "exception_text") == 0 && sema_find_fndecl(s, "exception_text") == null) {
+        return "string";
     }
     if (e.kind == EK_CALL && e.a != null && e.a.kind == EK_IDENT) {   // direct call → callee's return type
         string cvt = sema_lookup_type(s, e.a.sval);

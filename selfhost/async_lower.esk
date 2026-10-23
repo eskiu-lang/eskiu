@@ -919,6 +919,7 @@ struct AlCtx {
     List<int> ci_region;           // the body regions' catch clauses: region, type, variable, state
     List<string> ci_type;
     List<string> ci_var;
+    List<string> ci_txt;           // frame field holding the clause's exception_text() ("" if unused)
     List<int> ci_state;
     int cur_region;                // the region new states belong to (-1: none)
     List<int> st_region;           // each state's region (parallel to states)
@@ -1992,8 +1993,11 @@ string al_generalize(*AlCtx c, string recs, int part) {
     return "";
 }
 
-// A catch label `Type name` → its type / its variable.
+// A catch label `Type name` → its type / its variable (`_`, a catch-all: "" / "").
 string al_catch_type(string lb) {
+    if (str_eq(lb, "_") == 1) {
+        return "";
+    }
     int n = cstr_len(lb);
     int i = n;
     while (i > 0 && (int)lb[i - 1] != 32) {
@@ -2185,6 +2189,54 @@ int al_lower_match(*AlCtx c, *StmtNode m, int cur) {
     return join;
 }
 
+// Rewrite the `exception_text()` calls of a split catch clause's body (nested lambdas
+// and nested catch clauses excluded: they have their own) to the frame field `*tf`,
+// made on first use; the synthetic handler fills it before leaving the landingpad.
+void al_extext_e(*AlCtx c, *ExprNode e, string* tf) {
+    if (e == null) {
+        return;
+    }
+    if (e.kind == EK_CALL && e.a != null && e.a.kind == EK_IDENT && str_eq(e.a.sval, "exception_text") == 1
+        && List_len<*ExprNode>(&e.kids) == 0) {
+        string cur = *tf;
+        if (cur[0] == 0) {
+            cur = fresh_name("__extxt", c.used);
+            al_add_var(c, cur, "string");
+            *tf = cur;
+        }
+        e.kind = EK_IDENT;
+        e.sval = cur;
+        e.a = null;
+        return;
+    }
+    List<*ExprNode> ch;
+    List_init<*ExprNode>(&ch, 4);
+    al_children(e, &ch);
+    int i = 0;
+    while (i < List_len<*ExprNode>(&ch)) {
+        al_extext_e(c, List_get<*ExprNode>(&ch, i), tf);
+        i = i + 1;
+    }
+}
+
+void al_extext_s(*AlCtx c, *StmtNode s, string* tf) {
+    if (s == null) {
+        return;
+    }
+    al_extext_e(c, s.expr, tf);
+    al_extext_e(c, s.expr2, tf);
+    al_extext_s(c, s.s1, tf);
+    al_extext_s(c, s.s2, tf);
+    if (s.kind == SK_TRY) {          // its catch clauses have their own exception
+        return;
+    }
+    int i = 0;
+    while (i < List_len<*StmtNode>(&s.items)) {
+        al_extext_s(c, List_get<*StmtNode>(&s.items, i), tf);
+        i = i + 1;
+    }
+}
+
 // A try split into states: its body's states form one region and its handlers' another;
 // the finally is a defer frame run on every exit, outside both (mirrors the C++).
 int al_lower_try(*AlCtx c, *StmtNode t, int cur) {
@@ -2231,11 +2283,14 @@ int al_lower_try(*AlCtx c, *StmtNode t, int cur) {
         if (cvar[0] != 0) {
             al_add_var(c, cvar, ctype);
         }
+        string tf = "";
+        al_extext_s(c, cl.s1, &tf);
         int e = al_newst(c);
         List_push<int>(&centry, e);
         List_push<int>(&c.ci_region, rb);
         List_push<string>(&c.ci_type, ctype);
         List_push<string>(&c.ci_var, cvar);
+        List_push<string>(&c.ci_txt, tf);
         List_push<int>(&c.ci_state, e);
         k = k + 1;
     }
@@ -2384,6 +2439,12 @@ void al_wrap_state(*AlCtx c, int si, string cx) {
                 if (cvar[0] != 0) {
                     List_push<*StmtNode>(&hb, al_assign(al_fr(cvar), mk_ident(cx)));
                 }
+                string ctxt = List_get<string>(&c.ci_txt, ci);
+                if (ctxt[0] != 0) {
+                    List<*ExprNode> noargs;
+                    List_init<*ExprNode>(&noargs, 1);
+                    List_push<*StmtNode>(&hb, al_assign(al_fr(ctxt), al_call("exception_text", &noargs)));
+                }
                 int target = List_get<int>(&c.ci_state, ci);
                 if (pend_aw == 1) {
                     int s0 = 0;
@@ -2397,7 +2458,12 @@ void al_wrap_state(*AlCtx c, int si, string cx) {
                 List_push<*StmtNode>(&hb, al_assign(al_fr(al_fst), al_int(target)));
                 *StmtNode cn = ast_new_stmt();
                 cn.kind = SK_CATCH;
-                cn.name = str_concat(List_get<string>(&c.ci_type, ci), str_concat(" ", cx));
+                string cty = List_get<string>(&c.ci_type, ci);
+                if (cty[0] == 0) {
+                    cn.name = "_";
+                } else {
+                    cn.name = str_concat(cty, str_concat(" ", cx));
+                }
                 cn.s1 = al_block(&hb);
                 List_push<*StmtNode>(&cs, cn);
             }
@@ -3911,7 +3977,7 @@ void al_ren_stmt(AlRen* r, *StmtNode s) {
             i = i - 1;
         }
         string bn = al_substr(cn, i, n);
-        if (bn[0] != 0) {
+        if (bn[0] != 0 && str_eq(cn, "_") == 0) {
             string nb = al_ren_declare(r, bn);
             if (str_eq(nb, bn) == 0) {
                 s.name = str_concat(al_substr(cn, 0, i), nb);
@@ -4012,6 +4078,7 @@ void al_transform(*Program prog, *DeclNode d, List<*DeclNode>* out) {
     List_init<int>(&c.ci_region, 2);
     List_init<string>(&c.ci_type, 2);
     List_init<string>(&c.ci_var, 2);
+    List_init<string>(&c.ci_txt, 2);
     List_init<int>(&c.ci_state, 2);
     c.cur_region = 0 - 1;
     List_init<int>(&c.st_region, 8);

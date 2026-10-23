@@ -833,6 +833,21 @@ CgVal cg_expr_i(Codegen* g, *ExprNode e) {
             v.ty = "void";
             return v;
         }
+        if (e.a != null && e.a.kind == EK_IDENT && cg_streq(e.a.sval, "exception_text") == 1
+            && List_len<*ExprNode>(&e.kids) == 0 && List_len<string>(&g.catch_text) > 0
+            && cg_find_local(g, "exception_text").slot[0] == 0) {
+            string tslot = List_get<string>(&g.catch_text, List_len<string>(&g.catch_text) - 1);
+            string tx = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, tx);
+            cg_emit(g, " = load ptr, ptr ");
+            cg_emit(g, tslot);
+            cg_emit(g, "\n");
+            v.op = tx;
+            v.ty = "ptr";
+            v.ety = "string";
+            return v;
+        }
         // An ADT variant constructor `Circle(4)` parses as a call with a bare-ident callee;
         // a local or global of that name shadows the variant.
         if (e.a != null && e.a.kind == EK_IDENT && cg_find_local(g, e.a.sval).slot[0] == 0
@@ -3484,6 +3499,69 @@ int cg_has_try_s(*StmtNode s) {
         if (cg_has_try_s(s.s2) == 1) {
             return 1;
         }
+    }
+    return 0;
+}
+
+int cg_has_extext_e(*ExprNode e) {
+    if (e == null || e.kind == EK_LAMBDA) {
+        return 0;
+    }
+    if (e.kind == EK_CALL && e.a != null && e.a.kind == EK_IDENT
+        && cg_streq(e.a.sval, "exception_text") == 1 && List_len<*ExprNode>(&e.kids) == 0) {
+        return 1;
+    }
+    if (cg_has_extext_e(e.a) == 1 || cg_has_extext_e(e.b) == 1) {
+        return 1;
+    }
+    int i = 0;
+    int n = List_len<*ExprNode>(&e.kids);
+    while (i < n) {
+        if (cg_has_extext_e(List_get<*ExprNode>(&e.kids, i)) == 1) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+int cg_has_extext_s(*StmtNode s) {
+    if (s == null) {
+        return 0;
+    }
+    int k = s.kind;
+    if (k == SK_TRY) {
+        return cg_has_extext_s(s.s1) == 1 || cg_has_extext_s(s.s2) == 1 ? 1 : 0;
+    }
+    if (k == SK_VARDECL || k == SK_RETURN || k == SK_THROW || k == SK_EXPR || k == SK_THREADJOIN
+        || k == SK_ASMOUTPUT || k == SK_ASMINPUT) {
+        return cg_has_extext_e(s.expr);
+    }
+    if (k == SK_IF) {
+        return cg_has_extext_e(s.expr) == 1 || cg_has_extext_s(s.s1) == 1 || cg_has_extext_s(s.s2) == 1 ? 1 : 0;
+    }
+    if (k == SK_WHILE || k == SK_DOWHILE || k == SK_FORIN) {
+        return cg_has_extext_e(s.expr) == 1 || cg_has_extext_s(s.s1) == 1 ? 1 : 0;
+    }
+    if (k == SK_FOR) {
+        return cg_has_extext_s(s.s1) == 1 || cg_has_extext_e(s.expr) == 1 || cg_has_extext_e(s.expr2) == 1 || cg_has_extext_s(s.s2) == 1 ? 1 : 0;
+    }
+    if (k == SK_BLOCK || k == SK_SWITCH || k == SK_CASE || k == SK_MATCH || k == SK_ASM) {
+        if (cg_has_extext_e(s.expr) == 1) {
+            return 1;
+        }
+        int i = 0;
+        int n = List_len<*StmtNode>(&s.items);
+        while (i < n) {
+            if (cg_has_extext_s(List_get<*StmtNode>(&s.items, i)) == 1) {
+                return 1;
+            }
+            i = i + 1;
+        }
+        return 0;
+    }
+    if (k == SK_ARM || k == SK_CATCH || k == SK_DEFER) {
+        return cg_has_extext_s(s.s1);
     }
     return 0;
 }

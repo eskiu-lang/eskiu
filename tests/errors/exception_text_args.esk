@@ -1,0 +1,3 @@
+// EXPECT-ERROR: 'exception_text' takes no arguments, got 1
+extern int printf(string fmt, ...);
+int main() { try { throw 1; } catch (_) { printf("%s\n", exception_text(1)); } return 0; }

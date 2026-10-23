@@ -1,0 +1,22 @@
+extern int printf(string fmt, ...);
+
+struct Err { int code; }
+
+void thrower(int k) {
+    if (k == 0) { throw 10; }
+    if (k == 1) { throw "fail"; }
+    if (k == 2) { let e: Err = Err{99}; throw e; }
+}
+
+int main() {
+    for (int k = 0; k < 3; k = k + 1) {
+        try {
+            thrower(k);
+        } catch (int e) {
+            printf("int %d: %s\n", e, exception_text());
+        } catch (_) {
+            printf("any: %s\n", exception_text());
+        }
+    }
+    return 0;
+}

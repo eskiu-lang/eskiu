@@ -1321,6 +1321,9 @@ string cg_etype_raw(Codegen* g, *ExprNode e) {
             if (cg_streq(e.a.sval, "va_start") == 1 || cg_streq(e.a.sval, "va_end") == 1) {
                 return "void";
             }
+            if (cg_streq(e.a.sval, "exception_text") == 1 && List_len<*ExprNode>(&e.kids) == 0 && lf.slot[0] == 0) {
+                return "string";
+            }
             if (e.dbg_builtin == 1) {
                 return cg_etype(g, List_get<*ExprNode>(&e.kids, 0));
             }

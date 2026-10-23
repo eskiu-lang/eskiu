@@ -93,8 +93,15 @@ StmtPtr Parser::parseStatement() {
         while (check(TokenType::CATCH)) {
             advance(); // consume 'catch'
             consume(TokenType::LPAREN, "Expected '(' after catch");
-            std::string ctype = parseType();
-            Token nameTok = consume(TokenType::IDENT, "Expected variable name in catch");
+            std::string ctype;
+            Token nameTok;
+            if (check(TokenType::IDENT) && peek().value == "_" &&
+                peek_ahead(1).type == TokenType::RPAREN) {
+                nameTok = advance();
+            } else {
+                ctype = parseType();
+                nameTok = consume(TokenType::IDENT, "Expected variable name in catch");
+            }
             consume(TokenType::RPAREN, "Expected ')'");
             StmtPtr cbody = parseBlockStatement();
             catches.push_back({ctype, nameTok.value, cbody, nameTok.line, nameTok.column});

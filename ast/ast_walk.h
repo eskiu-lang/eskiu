@@ -121,7 +121,7 @@ inline void collectNames(Stmt* s, std::set<std::string>& out) {
     }
     else if (auto* m = dynamic_cast<MatchStmt*>(s))     { E(m->subject); for (auto& a : m->arms) { for (auto& bn : a.bindings) out.insert(bn); S(a.body); } }
     else if (auto* th = dynamic_cast<ThrowStmt*>(s))    { E(th->value); }
-    else if (auto* t = dynamic_cast<TryStmt*>(s))       { S(t->body); for (auto& c : t->catches) { out.insert(c.name); S(c.body); } S(t->finally); }
+    else if (auto* t = dynamic_cast<TryStmt*>(s))       { S(t->body); for (auto& c : t->catches) { if (!c.type.empty()) out.insert(c.name); S(c.body); } S(t->finally); }
     else if (auto* d = dynamic_cast<DeferStmt*>(s))     { S(d->body); }
     else if (auto* tj = dynamic_cast<ThreadJoinStmt*>(s)) { E(tj->tid); }
     else if (auto* a = dynamic_cast<AsmStmt*>(s))       { for (auto& in : a->inputs) E(in.second); }

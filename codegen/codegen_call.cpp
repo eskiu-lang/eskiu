@@ -325,6 +325,10 @@ void CodeGen::visit(CallExpr* node) {
             exprValueStack.push(builder->CreateCall(fn, {ap}));
             return;
         }
+        if (bid->name == "exception_text" && node->args.empty() && !catchTextSlots.empty() && !lookupSymbol("exception_text")) {
+            exprValueStack.push(builder->CreateLoad(llvm::PointerType::get(*context, 0), catchTextSlots.back(), "ex.text"));
+            return;
+        }
     }
     // Algebraic variant construction: `Circle(2.0)`, `Some(x)`.
     if (auto* vid = dynamic_cast<IdentExpr*>(node->callee.get())) {

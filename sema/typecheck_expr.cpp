@@ -925,6 +925,18 @@ void TypeChecker::visit(CallExpr* node) {
             expressionTypes[node] = t;
             return;
         }
+        // `exception_text()`: inside a `catch` block, yields a string describing the caught
+        // exception (as the uncaught reporter prints it).
+        if (bid->name == "exception_text" && lookupSymbol("exception_text").empty() &&
+            !functionSignatures.count("exception_text") && !funcTemplateDecls.count("exception_text")) {
+            for (auto& a : node->args) a->accept(this);
+            if (!node->args.empty())
+                errorAt(node, "'exception_text' takes no arguments, got " + std::to_string(node->args.size()));
+            if (catchDepth == 0)
+                errorAt(node, "'exception_text' is only allowed inside a 'catch' block");
+            expressionTypes[node] = "string";
+            return;
+        }
     }
     // Algebraic variant construction: `Circle(2.0)`, `Some(x)`. The callee names a
     // variant; the call yields the enum value, checking the payload field types.
@@ -2159,9 +2171,10 @@ void TypeChecker::visit(LambdaExpr* node) {
     bool savedAsync = inAsyncFn, savedAwait = awaitSeenInFn, savedVariadic = inVariadicFn;
     bool savedTrailing = inTrailingBlock;
     inTrailingBlock = node->trailing;
-    int savedFinally = finallyDepth;
+    int savedFinally = finallyDepth, savedCatch = catchDepth;
     inAsyncFn = false;
     finallyDepth = 0;
+    catchDepth = 0;
     inVariadicFn = false;
     // Captures are by value: an assignment to a captured name inside the body changes the
     // lambda's copy, so it must not end a narrowing of the enclosing variable.
@@ -2192,6 +2205,7 @@ void TypeChecker::visit(LambdaExpr* node) {
     switchDepth = savedSwitch;
     inAsyncFn = savedAsync;
     finallyDepth = savedFinally;
+    catchDepth = savedCatch;
     inVariadicFn = savedVariadic;
     // An `await` in a trailing block is reported there; the function does not also lack one.
     awaitSeenInFn = savedAwait || (node->trailing && awaitSeenInFn);

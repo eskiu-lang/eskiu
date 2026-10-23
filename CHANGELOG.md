@@ -7,6 +7,12 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
+## [Unreleased]
+
+### Added
+- `catch (_)` catch-all clause for exception handling, allowing catching any exception without binding a variable (must be the last catch clause).
+- `exception_text()` builtin returning a `string` description of the caught exception inside any `catch` block, matching the uncaught exception reporter format (works in both synchronous functions and state-split `async` functions across `await` suspensions).
+
 ## [0.13.0] - 2026-10-21
 
 The first public release. Code that compiles with 0.13.0 keeps compiling in every 0.13.x
