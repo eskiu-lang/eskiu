@@ -234,3 +234,17 @@ jobs:
           name: eskiuc-windows-x86_64
           path: eskiuc-windows-x86_64.zip
           retention-days: 7
+
+  install-script:
+    # site/install.ps1, the one-line install the site shows, against the latest release.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install.ps1 installs the latest release
+        shell: pwsh
+        run: |
+          $env:ESKIU_PREFIX = "$env:RUNNER_TEMP\eskiu"
+          & ./site/install.ps1
+          $v = & "$env:RUNNER_TEMP\eskiu\bin\eskiuc.exe" --version
+          if ($v -notmatch '^Eskiu ') { throw "unexpected version: $v" }
+          Write-Host "PASS install.ps1: $v"
