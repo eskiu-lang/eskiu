@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script>try{if(localStorage.getItem("eskiu-lang")==="es")location.replace("es/gpu.html"+location.hash);}catch(e){}</script>
   <title>gpu · Eskiu</title>
-  <meta name="description" content="gpu is the Eskiu package for the GPU: compute kernels, rendering, glTF and OBJ models with PBR shading, and LLM inference and training over WebGPU, on Metal, Vulkan and DirectX 12." />
+  <meta name="description" content="gpu is the Eskiu package for the GPU: compute kernels, rendering, glTF and OBJ models with PBR shading, and LLM inference and training over WebGPU, on Metal, Vulkan and DirectX 12, on desktops and phones." />
   <link rel="canonical" href="https://eskiu-lang.org/gpu.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
   <meta property="og:title" content="gpu · Eskiu" />
-  <meta property="og:description" content="gpu is the Eskiu package for the GPU: compute kernels, rendering, glTF and OBJ models with PBR shading, and LLM inference and training over WebGPU, on Metal, Vulkan and DirectX 12." />
+  <meta property="og:description" content="gpu is the Eskiu package for the GPU: compute kernels, rendering, glTF and OBJ models with PBR shading, and LLM inference and training over WebGPU, on Metal, Vulkan and DirectX 12, on desktops and phones." />
   <meta property="og:url" content="https://eskiu-lang.org/gpu.html" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
   <meta property="og:image:width" content="1200" />
@@ -88,9 +88,9 @@
     <div class="bar">
       <section class="g-hero">
         <div>
-          <div class="eyebrow">Package · eskiu-lang/gpu · v0.1.0</div>
+          <div class="eyebrow">Package · eskiu-lang/gpu · v0.2.0</div>
           <h1>Compute, graphics and machine learning on the GPU</h1>
-          <p class="lede">Kernels, PBR models, LLM inference and training over WebGPU. One API for Metal, Vulkan and DirectX 12, with shaders in WGSL.</p>
+          <p class="lede">Kernels, PBR models, LLM inference and training over WebGPU. One API for Metal, Vulkan and DirectX 12, on desktops and phones, with shaders in WGSL.</p>
           <div class="g-cta">
             <a class="dark" href="https://github.com/eskiu-lang/gpu">View on GitHub</a>
             <a class="line" href="https://github.com/eskiu-lang/gpu/tree/main/examples">Browse the examples</a>
@@ -98,7 +98,7 @@
         </div>
         <img src="../assets/gpu-helmet.jpg" alt="The DamagedHelmet glTF model, drawn by Eskiu's gpu package with physically based shading" width="1200" height="1200" />
       </section>
-      <section class="g-stats"><div class="g-stat"><b>45 tok/s</b><span>Llama 2 7B Q4_0 on an Apple M4 Pro</span></div><div class="g-stat"><b>97%</b><span>MNIST test accuracy in three epochs</span></div><div class="g-stat"><b>3 backends</b><span>Metal, Vulkan and DirectX 12</span></div><div class="g-stat"><b>MIT</b><span>Open source</span></div></section>
+      <section class="g-stats"><div class="g-stat"><b>45 tok/s</b><span>Llama 2 7B Q4_0 on an Apple M4 Pro</span></div><div class="g-stat"><b>97%</b><span>MNIST test accuracy in three epochs</span></div><div class="g-stat"><b>5 platforms</b><span>macOS, Linux, Windows, iOS and Android</span></div><div class="g-stat"><b>MIT</b><span>Open source</span></div></section>
 
       <section class="g-row" id="compute">
         <div>
@@ -185,21 +185,21 @@ g.adam(0.001);       <span class="c">// and the optimizer step</span></code></pr
       <section class="g-row" id="platforms">
         <div>
           <h2>Where it runs</h2>
-          <p>The GPU modules go through wgpu-native. On phones they need the surface an app draws to, and in a browser the browser's own WebGPU, which cannot block on the GPU: both are planned. The rest is plain Eskiu and runs on every target.</p>
+          <p>The GPU modules go through wgpu-native, on desktops and phones. In an <a href="ui.html">eskiu-lang/ui</a> app, <code>&lt;gpu/ui&gt;</code> mounts a <code>GpuView</code> to draw into (a <code>CAMetalLayer</code> on iOS, a <code>SurfaceView</code> on Android). In a browser WebGPU is the browser's own, which cannot block on the GPU, so the GPU modules are planned there. The rest is plain Eskiu and runs on every target.</p>
         </div>
         <div class="tablewrap"><table>
-          <tr><th>Platform</th><th>Backend</th></tr><tr><td>macOS arm64</td><td>Metal</td></tr><tr><td>Linux x86-64</td><td>Vulkan</td></tr><tr><td>Windows x86-64</td><td>DirectX 12, Vulkan</td></tr><tr><td>iOS, Android, WebAssembly</td><td>The pure Eskiu modules (glTF, OBJ, images, GGUF, safetensors, math) today; the GPU modules are planned</td></tr>
+          <tr><th>Platform</th><th>Backend</th></tr><tr><td>macOS arm64</td><td>Metal</td></tr><tr><td>Linux x86-64</td><td>Vulkan</td></tr><tr><td>Windows x86-64</td><td>DirectX 12, Vulkan</td></tr><tr><td>iOS (arm64, simulator)</td><td>Metal</td></tr><tr><td>Android (arm64, x86-64)</td><td>Vulkan</td></tr><tr><td>WebAssembly</td><td>The pure Eskiu modules (glTF, OBJ, images, GGUF, safetensors, math) today; the GPU modules are planned</td></tr>
         </table></div>
       </section>
 
       <section class="g-row flip" id="start">
         <div>
           <h2>Get started</h2>
-          <p>The package names wgpu-native's release archives in its manifest: the first build downloads the one for your machine, checks its SHA-256 and links it. A window also needs SDL3 (<code>brew install sdl3</code> on macOS).</p>
+          <p>The package names wgpu-native's release archives in its manifest: the first build downloads the one for your machine, checks its SHA-256 and links it. A desktop window also needs SDL3 (<code>brew install sdl3</code> on macOS). It needs Eskiu 0.14 or newer.</p>
           <div class="g-cards"><a href="https://github.com/eskiu-lang/gpu"><b>GitHub</b><span>Source, tests and issues</span></a><a href="https://github.com/eskiu-lang/gpu/tree/main/examples"><b>Examples</b><span>A triangle, a textured cube, a glTF and OBJ viewer, Llama 2, MNIST</span></a><a href="packages.html"><b>All packages</b><span>What else is one eskiuc add away</span></a></div>
         </div>
         <pre><code>eskiuc new myapp &amp;&amp; cd myapp
-eskiuc add gpu --git https://github.com/eskiu-lang/gpu --rev v0.1.0
+eskiuc add gpu --git https://github.com/eskiu-lang/gpu --rev v0.2.0
 eskiuc build</code></pre>
       </section>
     </div>

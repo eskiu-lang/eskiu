@@ -466,14 +466,14 @@ PACKAGES_CATALOG = [
         "rev": "v0.2.0",
         "section": "Models",
         "tag_es": "Cómputo en GPU, renderizado, modelos 3D y machine learning para Eskiu, sobre WebGPU.",
-        "note_en": "One API runs on Metal (macOS), Vulkan (Linux) and DirectX 12 (Windows) through "
+        "note_en": "One API runs on Metal (macOS, iOS), Vulkan (Linux, Android) and DirectX 12 (Windows) through "
                    "wgpu-native, with shaders in WGSL. It draws glTF and OBJ models with physically "
                    "based shading, runs Llama models from GGUF or safetensors files (Llama 2 7B Q4_0 "
                    "at 45 tokens per second on an M4 Pro; llama.cpp does 58 on the same machine) and "
                    "trains small networks (97% test accuracy on MNIST). On iOS and Android it draws into a "
                    "<code>GpuView</code> of a ui app (Eskiu 0.14). "
                    "<a href=\"gpu.html\">What it does, with its benchmarks →</a>",
-        "note_es": "Una sola API corre sobre Metal (macOS), Vulkan (Linux) y DirectX 12 (Windows) a "
+        "note_es": "Una sola API corre sobre Metal (macOS, iOS), Vulkan (Linux, Android) y DirectX 12 (Windows) a "
                    "través de wgpu-native, con shaders en WGSL. Dibuja modelos glTF y OBJ con "
                    "sombreado físico (PBR), corre modelos Llama desde archivos GGUF o safetensors "
                    "(Llama 2 7B Q4_0 a 45 tokens por segundo en un M4 Pro; llama.cpp da 58 en la "
