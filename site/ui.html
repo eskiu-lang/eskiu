@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script>try{if(localStorage.getItem("eskiu-lang")==="es")location.replace("es/ui.html"+location.hash);}catch(e){}</script>
   <title>UI · Eskiu</title>
-  <meta name="description" content="ui is a reactive UI framework in Eskiu: one codebase that draws UIKit views on iOS, android.view views on Android and the DOM on the web, with navigation, native modules and a component kit." />
+  <meta name="description" content="ui is a reactive UI framework in Eskiu: one codebase that draws UIKit views on iOS, android.view views on Android, the DOM on the web and a webview on macOS, Linux and Windows, with navigation, native modules and a component kit." />
   <link rel="canonical" href="https://eskiu-lang.org/ui.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
   <meta property="og:title" content="UI · Eskiu" />
-  <meta property="og:description" content="ui is a reactive UI framework in Eskiu: one codebase that draws UIKit views on iOS, android.view views on Android and the DOM on the web, with navigation, native modules and a component kit." />
+  <meta property="og:description" content="ui is a reactive UI framework in Eskiu: one codebase that draws UIKit views on iOS, android.view views on Android, the DOM on the web and a webview on macOS, Linux and Windows, with navigation, native modules and a component kit." />
   <meta property="og:url" content="https://eskiu-lang.org/ui.html" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
   <meta property="og:image:width" content="1200" />
@@ -93,11 +93,12 @@
   </header>
   <main>
     <section class="bar ui-hero">
-      <div class="eyebrow">eskiu-lang/ui · preview</div>
+      <div class="eyebrow">eskiu-lang/ui · v0.2.0 · preview</div>
       <h1>Native apps, written in Eskiu</h1>
       <p class="lede">
         Write the interface once as Eskiu functions. It draws UIKit views on iOS,
-        <code>android.view</code> views on Android and the DOM on the web, from the same code.
+        <code>android.view</code> views on Android and the DOM on the web, and runs in a webview
+        on macOS, Linux and Windows, from the same code.
       </p>
       <div class="ui-cta">
         <a class="dark" href="https://github.com/eskiu-lang/ui/blob/main/docs/getting-started.md">Get started</a>
@@ -153,6 +154,8 @@ void Counter() {
             <div><b>Android</b>android.view, from Java and JNI</div>
             <div><b>Web</b>The DOM, from WebAssembly</div>
             <div><b>macOS</b>The web host in a WKWebView window</div>
+            <div><b>Linux</b>The web host in WebKitGTK</div>
+            <div><b>Windows</b>The web host in WebView2</div>
           </div>
         </div>
         <img src="../assets/ui-lab.png" alt="An Eskiu task app on iOS and Android: a progress card, filters and a list of tasks with colored tags" width="1200" height="1200" loading="lazy" />
@@ -346,7 +349,10 @@ permissions = ["android.permission.CAMERA"]</code></pre>
             <code>ui release</code> builds for the App Store and Google Play: an IPA signed for
             your team, and an App Bundle signed with an upload key it makes and keeps for you.
             It checks the icon and the app's id before building, takes the build number from the
-            clock, and with <code>--upload</code> sends the iOS build to TestFlight.
+            clock, and with <code>--upload</code> sends the iOS build to TestFlight. For the
+            desktop and the web it makes a signed <code>.app</code>, a Linux binary and a Windows
+            <code>.exe</code>, each with an archive to distribute, and a zip of the web build to
+            deploy.
           </p>
         </div>
         <pre><code><span class="c"># ui.toml</span>
@@ -370,7 +376,8 @@ android: build/ui/android/release/Explore.aab</code></pre>
           <h2>From nothing to a running app</h2>
           <p>
             The <code>ui</code> tool makes a project and builds or runs it on each platform. It
-            needs emscripten for the web, Xcode for iOS and the Android SDK for Android.
+            needs emscripten for the web, Xcode for iOS and the Android SDK for Android, and on
+            the desktop a C compiler with WebKitGTK on Linux or MinGW-w64 or MSVC on Windows.
           </p>
           <p>
             Every element, hook and service is listed in
@@ -392,7 +399,7 @@ ui serve          <span class="c"># or ui serve ios, android, macos</span></code
 
       <p class="note ui-note">
         ui is in preview. Views are written with trailing blocks: <code>Column(Style{padding: 16}) { ... }</code>
-        passes the block as the call's last argument. Windows and Linux hosts come later.
+        passes the block as the call's last argument. It needs Eskiu 0.14 or newer.
       </p>
     </div>
   </main>

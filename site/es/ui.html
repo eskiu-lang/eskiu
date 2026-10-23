@@ -4,12 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>UI · Eskiu</title>
-  <meta name="description" content="ui es un framework de interfaces reactivo en Eskiu: un mismo código que dibuja vistas de UIKit en iOS, de android.view en Android y el DOM en la web, con navegación, módulos nativos y un kit de componentes." />
+  <meta name="description" content="ui es un framework de interfaces reactivo en Eskiu: un mismo código que dibuja vistas de UIKit en iOS, de android.view en Android, el DOM en la web y un webview en macOS, Linux y Windows, con navegación, módulos nativos y un kit de componentes." />
   <link rel="canonical" href="https://eskiu-lang.org/es/ui.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
   <meta property="og:title" content="UI · Eskiu" />
-  <meta property="og:description" content="ui es un framework de interfaces reactivo en Eskiu: un mismo código que dibuja vistas de UIKit en iOS, de android.view en Android y el DOM en la web, con navegación, módulos nativos y un kit de componentes." />
+  <meta property="og:description" content="ui es un framework de interfaces reactivo en Eskiu: un mismo código que dibuja vistas de UIKit en iOS, de android.view en Android, el DOM en la web y un webview en macOS, Linux y Windows, con navegación, módulos nativos y un kit de componentes." />
   <meta property="og:url" content="https://eskiu-lang.org/es/ui.html" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
   <meta property="og:image:width" content="1200" />
@@ -92,11 +92,12 @@
   </header>
   <main>
     <section class="bar ui-hero">
-      <div class="eyebrow">eskiu-lang/ui · preview</div>
+      <div class="eyebrow">eskiu-lang/ui · v0.2.0 · preview</div>
       <h1>Apps nativas, escritas en Eskiu</h1>
       <p class="lede">
         Escribe la interfaz una vez, como funciones de Eskiu. El mismo código dibuja vistas de
-        UIKit en iOS, de <code>android.view</code> en Android y el DOM en la web.
+        UIKit en iOS, de <code>android.view</code> en Android y el DOM en la web, y corre en un
+        webview en macOS, Linux y Windows.
       </p>
       <div class="ui-cta">
         <a class="dark" href="https://github.com/eskiu-lang/ui/blob/main/docs/getting-started.md">Empieza</a>
@@ -153,6 +154,8 @@ void Counter() {
             <div><b>Android</b>android.view, desde Java y JNI</div>
             <div><b>Web</b>El DOM, desde WebAssembly</div>
             <div><b>macOS</b>El host web en una ventana de WKWebView</div>
+            <div><b>Linux</b>El host web en WebKitGTK</div>
+            <div><b>Windows</b>El host web en WebView2</div>
           </div>
         </div>
         <img src="../../assets/ui-lab.png" alt="Una app de tareas en Eskiu en iOS y Android: una tarjeta de progreso, filtros y una lista de tareas con etiquetas de colores" width="1200" height="1200" loading="lazy" />
@@ -348,7 +351,10 @@ permissions = ["android.permission.CAMERA"]</code></pre>
             <code>ui release</code> compila para el App Store y Google Play: un IPA firmado para tu
             equipo y un App Bundle firmado con una llave de subida que crea y guarda por ti. Revisa
             el ícono y el id de la app antes de compilar, toma el número de build del reloj y con
-            <code>--upload</code> manda el build de iOS a TestFlight.
+            <code>--upload</code> manda el build de iOS a TestFlight. Para el escritorio y la web
+            hace un <code>.app</code> firmado, un binario de Linux y un <code>.exe</code> de
+            Windows, cada uno con un archivo para distribuir, y un zip del build web para
+            desplegar.
           </p>
         </div>
         <pre><code><span class="c"># ui.toml</span>
@@ -373,7 +379,8 @@ android: build/ui/android/release/Explore.aab</code></pre>
           <p>
             La herramienta <code>ui</code> crea un proyecto y lo compila o lo corre en cada
             plataforma. Necesita emscripten para la web, Xcode para iOS y el SDK de Android para
-            Android.
+            Android, y en el escritorio un compilador de C con WebKitGTK en Linux o MinGW-w64 o
+            MSVC en Windows.
           </p>
           <p>
             Cada elemento, hook y servicio está en
@@ -395,7 +402,7 @@ ui serve          <span class="c"># o ui serve ios, android, macos</span></code>
 
       <p class="note ui-note">
         ui está en preview. Las vistas se escriben con trailing blocks: <code>Column(Style{padding: 16}) { ... }</code>
-        pasa el bloque como último argumento de la llamada. Los hosts de Windows y Linux llegan después.
+        pasa el bloque como último argumento de la llamada. Requiere Eskiu 0.14 o más nuevo.
       </p>
     </div>
   </main>
