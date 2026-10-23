@@ -330,11 +330,11 @@ if [[ -n "$plat" && "$plat" != -* ]] && command -v "$cc_prog" > /dev/null 2>&1 &
         windows-arm64)  tt="aarch64-w64-mingw32" ;;
     esac
     rm -rf "$ESKIU_HOME/native"
-    out="$(cd "$work/nat" && "$ESKIUC" src/main.esk --target "$tt" -o "$work/nat_target" 2>&1 && "$work/nat_target")"
-    if [[ "$out" == *"fetching nat for nat from file://"* && "$out" == *"41" ]]; then
+    out="$(cd "$work/nat" && "$ESKIUC" src/main.esk --target "$tt" -o "$work/nat_target" 2>&1 && "$work/nat_target" 2>&1)"; code=$?
+    if [[ $code -eq 0 && "$out" == *"fetching nat for nat from file://"* && "$out" == *"41" ]]; then
         ok "native/target-triple"
     else
-        bad "native/target-triple" "$out"
+        bad "native/target-triple" "exit $code: $out ($(ls "$work" | tr '\n' ' '))"
     fi
     zeros="0000000000000000000000000000000000000000000000000000000000000000"
     sed "s/$sum/$zeros/" "$work/nat/eskiu.toml" > "$work/nat/toml.new" && mv "$work/nat/toml.new" "$work/nat/eskiu.toml"
