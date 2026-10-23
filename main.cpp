@@ -899,7 +899,10 @@ static int compilerMain(int argc, char** argv) {
                 }
                 for (const auto& d : nativeDirs) {
                     paths.push_back(d);
-                    if (!winTarget && !macros.count("__wasm__"))
+                    // An rpath to this machine's cache helps a program run here; an app for a
+                    // phone carries its libraries in its package, so it gets none.
+                    if (!winTarget && !macros.count("__wasm__") && !macros.count("__ANDROID__") &&
+                        !macros.count("TARGET_OS_IPHONE"))
                         extra.push_back("-Wl,-rpath," + d);
                 }
             }
