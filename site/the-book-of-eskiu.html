@@ -1562,6 +1562,15 @@ pre.code-block {
        }
        return 0;
  }</pre>
+<p>A catch names the type it takes. To take any exception, end the chain with <code>catch (_)</code>, which binds no variable; <code>exception_text()</code>, inside any <code>catch</code>, describes what was caught as the uncaught-exception report does:</p>
+<pre class="code-block"> try {
+       load_config(path);
+ } catch (string e) {
+       printf(&quot;bad config: %s\n&quot;, e);
+ } catch (_) {
+       printf(&quot;unexpected: %s\n&quot;, exception_text());   // int 7, string &quot;...&quot;
+ }</pre>
+<p>The text belongs to the catch block, so copy it (<code>String_from</code>) to keep it after the block ends.</p>
 <p>A <code>finally</code> block cannot itself <code>return</code> or use <code>?</code>. Either would discard the exit already in progress, including an exception on its way to a handler, so both are compile errors (&quot;'return' is not allowed inside a finally block&quot;). A <code>break</code> or <code>continue</code> inside a <code>finally</code> that sits in a loop still works, and a lambda written inside a <code>finally</code> is a separate function that may return normally.</p>
 <p>No link flag is needed: when a program uses exceptions, eskiuc links the C++ runtime for the target (-lc++ on macOS, -lstdc++ on Linux and on Windows, where mingw also supplies the SEH unwinder).</p>
 <h2 class="section" id="sec-10-3">10.3 The ? operator</h2>

@@ -1296,7 +1296,7 @@ Each typed `catch` clause names a type and a variable. If the thrown value's sta
 
 A `catch (_)` clause catches any exception without binding a variable. It must be the last `catch` clause; placing a `catch` clause after `catch (_)` is a compile-time error.
 
-Inside any `catch` block (typed or `catch (_)`), the builtin function `exception_text()` is available. It takes no arguments and returns a `string` describing the caught exception (the type, and for primitive types its formatted value, matching the unhandled exception reporter). Calling `exception_text()` outside a `catch` block (or inside a lambda within a `catch` block) is a compile-time error.
+Inside any `catch` block (typed or `catch (_)`), the builtin function `exception_text()` is available. It takes no arguments and returns a `string` describing the caught exception (the type, and for primitive types its formatted value, matching the unhandled exception reporter). Calling `exception_text()` outside a `catch` block (or inside a lambda within a `catch` block) is a compile-time error. The text belongs to its `catch` block: it is valid until the block ends, also across an `await` in an `async` function, and each catch has its own (a nested handler does not overwrite the outer one's). Copy it (`String_from`) to keep it longer. It holds up to 511 bytes; a longer `string` payload is cut. A function or variable of the program's own named `exception_text` hides the builtin.
 
 ```eskiu
 try {
