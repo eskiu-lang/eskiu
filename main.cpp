@@ -470,6 +470,9 @@ static int compilerMain(int argc, char** argv) {
         llvm::cl::HideUnrelatedOptions(EskiuCat);
         llvm::cl::ParseCommandLineOptions(argc, argv, OVERVIEW);
     }
+    // One spelling per target from here on: `x86_64-w64-mingw32` is `x86_64-w64-windows-gnu`,
+    // which every check below (the C ABI, the predefined macros, the linker) recognizes.
+    if (!TargetTriple.empty()) TargetTriple.setValue(llvm::Triple::normalize(TargetTriple));
 
     // Resolve stdlib root once — used by all parsers for import <name>
     stdlibRoot = resolveStdlibPath();
