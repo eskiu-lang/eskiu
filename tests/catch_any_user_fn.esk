@@ -1,0 +1,9 @@
+// A function of the program's own named exception_text is called as written inside a catch.
+import <io>;
+
+int exception_text() { return 42; }
+
+int main() {
+    try { throw "boom"; } catch (_) { printf("%d\n", exception_text()); }
+    return 0;
+}

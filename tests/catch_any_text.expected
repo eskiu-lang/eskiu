@@ -1,0 +1,12 @@
+inner: string "inner"
+outer: int 1
+other: int 0
+other: int 1
+other: int 2
+other: int 3
+other: int 4
+other: int 5
+other: int 6
+other: int 7
+other: int 8
+after the awaits: string "first"

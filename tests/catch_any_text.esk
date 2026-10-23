@@ -1,0 +1,48 @@
+// exception_text()'s text belongs to its catch block: nested handlers each keep their own,
+// an async handler keeps its text across awaits while other handlers run, and a function
+// of the program's own named exception_text is called as written.
+import <io>;
+import <mem>;
+import <future>;
+import <eventloop>;
+import <timer>;
+
+EventLoop* g;
+
+void nested_texts() {
+    try { throw 1; } catch (_) {
+        string outer = exception_text();
+        try { throw "inner"; } catch (_) { printf("inner: %s\n", exception_text()); }
+        printf("outer: %s\n", outer);
+    }
+}
+
+async int other(int n) {
+    try { throw n; } catch (_) { printf("other: %s\n", exception_text()); }
+    int t = await timer_after(g, 1);
+    return t;
+}
+
+async int keeps_text() {
+    try { throw "first"; } catch (_) {
+        string t = exception_text();
+        for (int i = 0; i < 9; i = i + 1) { int r = await other(i); }
+        printf("after the awaits: %s\n", t);
+    }
+    return 0;
+}
+
+int run(Future<int>* f) {
+    if (Future_poll<int>(f, void() { EventLoop_stop(g); }) == 0) { EventLoop_run(g); }
+    int v = f.value;
+    Future_free_polled<int>(f);
+    return v;
+}
+
+int main() {
+    nested_texts();
+    g = el_new(64);
+    run(keeps_text());
+    EventLoop_free(g);
+    return 0;
+}
