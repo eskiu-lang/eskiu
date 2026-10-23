@@ -1,6 +1,23 @@
 # Plan: recoverable exceptions in ui
 
-Phase 1 shipped in 0.14.0 (`catch (_)`, `exception_text()`). Phases 2 to 4 are next.
+Phase 1 shipped in Eskiu 0.14.0 (`catch (_)`, `exception_text()`), phases 2 to 4 in ui 0.2.0
+(`ErrorBoundary`, `ui_on_error`, `ui_set_fallback`; the guide is `docs/state.md` in the ui
+repository). What the plan below did not foresee:
+
+- The root's implicit boundary is the root node itself (its block runs the app in a `try`), so
+  no node is added and ids do not change.
+- A render the frame runs on its own (a node deep inside a boundary whose signal changed) is
+  caught in `ui_frame` and handed to the nearest boundary above it, which runs again with its
+  fallback; a boundary's content is caught in its own block.
+- Cutting the commit back needs every removal the cut took to be sent again: the runtime
+  records the nodes unmounted during a frame's renders (`pass_unmounted`) and, at a
+  rollback, sends the removal of each one the host knows. A node knows where its creation is
+  in the commit (`born`, `born_seq`).
+- On the web a loop that runs inside a `try` is slow under emscripten's exception runtime, so
+  the commit's cleanup loops run unguarded and only the app's cleanups (an effect's, a
+  `use_mount`'s) get a guard. Native and wasm speed stay within noise of 0.1.1; the test wasm
+  module grew 27 KB (the C++ exception runtime and the rollback), after the runtime stopped
+  the libc++abi demangler from being linked.
 
 ## Goal
 
