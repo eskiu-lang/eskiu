@@ -2355,6 +2355,13 @@ void sema_expr_k(Sema* s, *ExprNode e) {
         }
         return;
     }
+    // `__exception_text_into(buf)`: the async lowering's copy of the text into a frame field
+    // of 512 chars, in the catch handler it synthesizes.
+    if (k == EK_CALL && e.a != null && e.a.kind == EK_IDENT && sema_streq(e.a.sval, "__exception_text_into") == 1
+        && List_len<*ExprNode>(&e.kids) == 1 && s.catch_depth > 0) {
+        sema_expr(s, List_get<*ExprNode>(&e.kids, 0));
+        return;
+    }
     if (k == EK_CALL && e.a != null && e.a.kind == EK_MEMBER) {
         // Method-call syntax `x.m(...)`: `m` is an inline method, a field holding a fn
         // pointer, or a free function `Type_m(self, ...)` (mirrors the C++ method path).

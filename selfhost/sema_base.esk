@@ -3115,6 +3115,9 @@ string sema_infer_type_raw(Sema* s, *ExprNode e) {
         && sema_streq(e.a.sval, "exception_text") == 1 && sema_lookup(s, "exception_text") == 0 && sema_find_fndecl(s, "exception_text") == null) {
         return "string";
     }
+    if (e.kind == EK_CALL && e.a != null && e.a.kind == EK_IDENT && sema_streq(e.a.sval, "__exception_text_into") == 1) {
+        return "void";
+    }
     if (e.kind == EK_CALL && e.a != null && e.a.kind == EK_IDENT) {   // direct call → callee's return type
         string cvt = sema_lookup_type(s, e.a.sval);
         if (sema_local_bound(s, e.a.sval) == 1 || (cvt[0] != 0 && sema_find_fndecl(s, e.a.sval) == null)) {

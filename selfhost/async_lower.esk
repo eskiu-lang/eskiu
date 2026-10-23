@@ -2201,12 +2201,14 @@ void al_extext_e(*AlCtx c, *ExprNode e, string* tf) {
         string cur = *tf;
         if (cur[0] == 0) {
             cur = fresh_name("__extxt", c.used);
-            al_add_var(c, cur, "string");
+            al_add_var(c, cur, "char[512]");   // the handler's buffer is gone at a suspension
             *tf = cur;
         }
-        e.kind = EK_IDENT;
-        e.sval = cur;
-        e.a = null;
+        // (string)&field[0]: the frame's copy of the text.
+        e.kind = EK_CAST;
+        e.sval = "string";
+        e.a = mk_un("&", al_index(mk_ident(cur), al_int(0)));
+        List_init<*ExprNode>(&e.kids, 1);
         return;
     }
     List<*ExprNode> ch;
@@ -2441,9 +2443,10 @@ void al_wrap_state(*AlCtx c, int si, string cx) {
                 }
                 string ctxt = List_get<string>(&c.ci_txt, ci);
                 if (ctxt[0] != 0) {
-                    List<*ExprNode> noargs;
-                    List_init<*ExprNode>(&noargs, 1);
-                    List_push<*StmtNode>(&hb, al_assign(al_fr(ctxt), al_call("exception_text", &noargs)));
+                    List<*ExprNode> into;
+                    List_init<*ExprNode>(&into, 1);
+                    List_push<*ExprNode>(&into, mk_un("&", al_index(al_fr(ctxt), al_int(0))));
+                    List_push<*StmtNode>(&hb, al_exprstmt(al_call("__exception_text_into", &into)));
                 }
                 int target = List_get<int>(&c.ci_state, ci);
                 if (pend_aw == 1) {

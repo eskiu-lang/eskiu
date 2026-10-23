@@ -934,11 +934,15 @@ void cg_stmt(Codegen* g, *StmtNode st) {
             int has_txt = cg_has_extext_s(c.s1);
             if (has_txt == 1) {
                 g.uses_ex_text = 1;
+                // The text lives in this handler's own buffer, valid until the catch block ends.
+                string tbuf = cg_entry_alloca(g, "[512 x i8]");
                 string etx = cg_tmp(g);
                 cg_emit(g, "  ");
                 cg_emit(g, etx);
                 cg_emit(g, " = call ptr @__eskiu_exception_text(ptr ");
                 cg_emit(g, exdata);
+                cg_emit(g, ", ptr ");
+                cg_emit(g, tbuf);
                 cg_emit(g, ")\n");
                 string tslot = cg_entry_alloca(g, "ptr");
                 cg_emit(g, "  store ptr ");

@@ -2006,11 +2006,8 @@ void cg_ux_entry(Codegen* g, String* phi, int k, string name, int kind, int bits
 void cg_emit_ex_text_fn(Codegen* g) {
     string sz = cg_size_ty(g);
     cg_ensure_extern(g, "snprintf", cg_cat("declare i32 @snprintf(ptr, ", cg_cat(sz, ", ptr, ...)\n")));
-    String_append(&g.globals, "@__eskiu_ex_buf = internal global [8 x [512 x i8]] zeroinitializer\n");
-    String_append(&g.globals, "@__eskiu_ex_idx = internal global i32 0\n");
-    cg_emit(g, "define internal ptr @__eskiu_exception_text(ptr %obj) {\nentry:\n");
-    cg_emit(g, "  %idx = load i32, ptr @__eskiu_ex_idx\n  %idx1 = add i32 %idx, 1\n  %next = and i32 %idx1, 7\n  store i32 %next, ptr @__eskiu_ex_idx\n");
-    cg_emit(g, "  %buf = getelementptr inbounds [8 x [512 x i8]], ptr @__eskiu_ex_buf, i32 0, i32 %idx, i32 0\n");
+    // Into the catch handler's own 512-byte buffer (`%buf`), which it returns.
+    cg_emit(g, "define internal ptr @__eskiu_exception_text(ptr %obj, ptr %buf) {\nentry:\n");
     cg_emit(g, "  %tnp = getelementptr i8, ptr %obj, i64 8\n  %tn = load ptr, ptr %tnp\n  %pay = getelementptr i8, ptr %obj, i64 16\n");
     let phi: String;
     String_init(&phi, 256);

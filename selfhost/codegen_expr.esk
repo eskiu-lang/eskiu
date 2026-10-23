@@ -833,9 +833,32 @@ CgVal cg_expr_i(Codegen* g, *ExprNode e) {
             v.ty = "void";
             return v;
         }
+        // `__exception_text_into(buf)`, from the async lowering only: the text copied (512
+        // bytes with its NUL) into a frame field that outlives the handler's stack.
+        if (e.a != null && e.a.kind == EK_IDENT && cg_streq(e.a.sval, "__exception_text_into") == 1
+            && List_len<*ExprNode>(&e.kids) == 1 && List_len<string>(&g.catch_text) > 0) {
+            string dst = cg_expr(g, List_get<*ExprNode>(&e.kids, 0)).op;
+            string tslot = List_get<string>(&g.catch_text, List_len<string>(&g.catch_text) - 1);
+            string src = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, src);
+            cg_emit(g, " = load ptr, ptr ");
+            cg_emit(g, tslot);
+            cg_emit(g, "\n");
+            // llvm.memcpy is declared with the exception runtime, which a catch implies.
+            cg_emit(g, "  call void @llvm.memcpy.p0.p0.i64(ptr ");
+            cg_emit(g, dst);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, src);
+            cg_emit(g, ", i64 512, i1 false)\n");
+            v.op = "";
+            v.ty = "void";
+            return v;
+        }
+        // The builtin, unless the program defines a function or variable of that name.
         if (e.a != null && e.a.kind == EK_IDENT && cg_streq(e.a.sval, "exception_text") == 1
             && List_len<*ExprNode>(&e.kids) == 0 && List_len<string>(&g.catch_text) > 0
-            && cg_find_local(g, "exception_text").slot[0] == 0) {
+            && cg_find_local(g, "exception_text").slot[0] == 0 && cg_is_fn(g, "exception_text") == 0) {
             string tslot = List_get<string>(&g.catch_text, List_len<string>(&g.catch_text) - 1);
             string tx = cg_tmp(g);
             cg_emit(g, "  ");
@@ -3508,7 +3531,8 @@ int cg_has_extext_e(*ExprNode e) {
         return 0;
     }
     if (e.kind == EK_CALL && e.a != null && e.a.kind == EK_IDENT
-        && cg_streq(e.a.sval, "exception_text") == 1 && List_len<*ExprNode>(&e.kids) == 0) {
+        && ((cg_streq(e.a.sval, "exception_text") == 1 && List_len<*ExprNode>(&e.kids) == 0)
+            || (cg_streq(e.a.sval, "__exception_text_into") == 1 && List_len<*ExprNode>(&e.kids) == 1))) {
         return 1;
     }
     if (cg_has_extext_e(e.a) == 1 || cg_has_extext_e(e.b) == 1) {
