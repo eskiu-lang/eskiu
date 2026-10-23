@@ -937,6 +937,13 @@ void TypeChecker::visit(CallExpr* node) {
             expressionTypes[node] = "string";
             return;
         }
+        // `__exception_text_into(buf)`: the async lowering's copy of the text into a frame field
+        // of 512 chars, in the catch handler it synthesizes.
+        if (bid->name == "__exception_text_into" && node->args.size() == 1 && catchDepth > 0) {
+            node->args[0]->accept(this);
+            expressionTypes[node] = "void";
+            return;
+        }
     }
     // Algebraic variant construction: `Circle(2.0)`, `Some(x)`. The callee names a
     // variant; the call yields the enum value, checking the payload field types.

@@ -351,8 +351,9 @@ void CodeGen::emitUncaughtReporter() {
     llvm::appendToGlobalCtors(*module, install, 65535);
 }
 
-// `ptr __eskiu_exception_text(ptr %obj)`: formats a caught EskiuEx object into one of 8
-// rotating 512-byte static buffers as `emitUncaughtReporter` does (`"int 42"`, `"Oops"`).
+// `ptr __eskiu_exception_text(ptr %obj, ptr %buf)`: formats a caught EskiuEx object into
+// `buf` (512 bytes, the catch handler's own) as `emitUncaughtReporter` does (`"int 42"`,
+// `"Oops"`), and returns `buf`.
 llvm::Function* CodeGen::ensureExceptionTextFn() {
     const char* name = "__eskiu_exception_text";
     if (llvm::Function* f = module->getFunction(name)) return f;
@@ -361,24 +362,14 @@ llvm::Function* CodeGen::ensureExceptionTextFn() {
     llvm::Type* i8Ty  = llvm::Type::getInt8Ty(c);
     llvm::Type* i32   = llvm::Type::getInt32Ty(c);
     llvm::Type* i64   = llvm::Type::getInt64Ty(c);
-    auto* fty = llvm::FunctionType::get(ptrTy, {ptrTy}, false);
+    auto* fty = llvm::FunctionType::get(ptrTy, {ptrTy, ptrTy}, false);
     auto* f = llvm::Function::Create(fty, llvm::Function::InternalLinkage, name, module.get());
-
-    llvm::ArrayType* slotTy = llvm::ArrayType::get(i8Ty, 512);
-    llvm::ArrayType* ringTy = llvm::ArrayType::get(slotTy, 8);
-    auto* ringGV = new llvm::GlobalVariable(*module, ringTy, false,
-        llvm::GlobalValue::InternalLinkage, llvm::ConstantAggregateZero::get(ringTy), "__eskiu_ex_buf");
-    auto* idxGV = new llvm::GlobalVariable(*module, i32, false,
-        llvm::GlobalValue::InternalLinkage, llvm::ConstantInt::get(i32, 0), "__eskiu_ex_idx");
 
     llvm::IRBuilder<> b(c);
     auto* entry = llvm::BasicBlock::Create(c, "entry", f);
     b.SetInsertPoint(entry);
     llvm::Value* obj = f->getArg(0);
-    llvm::Value* curIdx = b.CreateLoad(i32, idxGV, "idx");
-    llvm::Value* nextIdx = b.CreateAnd(b.CreateAdd(curIdx, b.getInt32(1)), b.getInt32(7), "next");
-    b.CreateStore(nextIdx, idxGV);
-    llvm::Value* buf = b.CreateInBoundsGEP(ringTy, ringGV, {b.getInt32(0), curIdx, b.getInt32(0)}, "buf");
+    llvm::Value* buf = f->getArg(1);
     llvm::Value* tname = b.CreateLoad(ptrTy, b.CreateConstGEP1_64(i8Ty, obj, 8), "tn");
     llvm::Value* pay = b.CreateConstGEP1_64(i8Ty, obj, 16, "pay");
     llvm::FunctionCallee strcmpFn = module->getOrInsertFunction("strcmp", i32, ptrTy, ptrTy);
@@ -493,7 +484,8 @@ static bool hasExceptionText(Stmt* s) {
 static bool hasExceptionText(Expr* e) {
     if (!e || dynamic_cast<LambdaExpr*>(e)) return false;
     if (auto* c = dynamic_cast<CallExpr*>(e))
-        if (auto* id = dynamic_cast<IdentExpr*>(c->callee.get()); id && id->name == "exception_text" && c->args.empty())
+        if (auto* id = dynamic_cast<IdentExpr*>(c->callee.get());
+            id && ((id->name == "exception_text" && c->args.empty()) || (id->name == "__exception_text_into" && c->args.size() == 1)))
             return true;
     bool found = false;
     astwalk::forEachChildExprFlat(e, [&](ExprPtr& ch) { if (!found && hasExceptionText(ch.get())) found = true; });
@@ -702,7 +694,9 @@ void CodeGen::visit(TryStmt* node) {
         }
         bool hasExText = hasExceptionText(c.body.get());
         if (hasExText) {
-            llvm::Value* txt = builder->CreateCall(ensureExceptionTextFn(), {exData}, "ex.text");
+            // The text lives in this handler's own buffer, valid until the catch block ends.
+            auto* textBuf = entryAlloca(llvm::ArrayType::get(llvm::Type::getInt8Ty(*context), 512), nullptr, "ex.text.buf");
+            llvm::Value* txt = builder->CreateCall(ensureExceptionTextFn(), {exData, textBuf}, "ex.text");
             auto* txtSlot = entryAlloca(ptrTy, nullptr, "ex.text.slot");
             builder->CreateStore(txt, txtSlot);
             catchTextSlots.push_back(txtSlot);

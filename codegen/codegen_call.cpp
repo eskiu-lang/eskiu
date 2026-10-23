@@ -325,8 +325,18 @@ void CodeGen::visit(CallExpr* node) {
             exprValueStack.push(builder->CreateCall(fn, {ap}));
             return;
         }
-        if (bid->name == "exception_text" && node->args.empty() && !catchTextSlots.empty() && !lookupSymbol("exception_text")) {
+        // The builtin, unless the program defines a function or variable of that name.
+        if (bid->name == "exception_text" && node->args.empty() && !catchTextSlots.empty() &&
+            !lookupSymbol("exception_text") && !funcEskiuReturnType.count("exception_text")) {
             exprValueStack.push(builder->CreateLoad(llvm::PointerType::get(*context, 0), catchTextSlots.back(), "ex.text"));
+            return;
+        }
+        // `__exception_text_into(buf)`, emitted by the async lowering only: copies the text
+        // (512 bytes with its NUL) into a frame field that outlives the handler's stack.
+        if (bid->name == "__exception_text_into" && node->args.size() == 1 && !catchTextSlots.empty()) {
+            llvm::Value* dst = evaluateExpr(node->args[0]);
+            llvm::Value* src = builder->CreateLoad(llvm::PointerType::get(*context, 0), catchTextSlots.back(), "ex.text");
+            exprValueStack.push(builder->CreateMemCpy(dst, llvm::MaybeAlign(1), src, llvm::MaybeAlign(1), 512));
             return;
         }
     }

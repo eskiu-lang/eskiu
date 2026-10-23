@@ -1162,8 +1162,9 @@ void AsyncTransform::run(Program* program) {
         struct Region { int parent; size_t startDepth, base; std::vector<CatchInfo> catches; StmtPtr fin; };
         std::vector<Region> regions;
         // Rewrite `exception_text()` calls belonging to a split `catch` clause's body
-        // (stopping at nested lambdas and nested `catch` clauses) to a frame field filled
-        // in the synthetic catch handler before leaving the landingpad.
+        // (stopping at nested lambdas and nested `catch` clauses) to a frame field of 512
+        // chars, which the synthetic catch handler fills before leaving the landingpad: the
+        // handler's own buffer is on the resume function's stack, gone at a suspension.
         auto rewriteCatchExText = [&](StmtPtr& root) -> std::string {
             std::string tf;
             std::function<void(ExprPtr&)> rwE = [&](ExprPtr& e) {
@@ -1174,9 +1175,10 @@ void AsyncTransform::run(Program* program) {
                             if (tf.empty()) {
                                 tf = astwalk::freshName("__extxt", used);
                                 vars.insert(tf);
-                                fields.push_back({"string", tf});
+                                fields.push_back({"char[512]", tf});
                             }
-                            e = ident(tf);
+                            e = std::make_shared<CastExpr>("string",
+                                std::make_shared<UnaryExpr>("&", std::make_shared<IndexExpr>(ident(tf), intlit(0))));
                             return;
                         }
                 astwalk::forEachChildExprFlat(e.get(), [&](ExprPtr& ch) { rwE(ch); });
@@ -1900,8 +1902,9 @@ void AsyncTransform::run(Program* program) {
                     std::vector<BlockItem> hb = pend;
                     if (!c.var.empty()) hb.push_back(assign(fr(c.var), ident(cxName)));
                     if (!c.txtField.empty())
-                        hb.push_back(assign(fr(c.txtField),
-                            std::make_shared<CallExpr>(ident("exception_text"), std::vector<ExprPtr>{})));
+                        hb.push_back(exprStmt(std::make_shared<CallExpr>(ident("__exception_text_into"),
+                            std::vector<ExprPtr>{std::make_shared<UnaryExpr>("&",
+                                std::make_shared<IndexExpr>(fr(c.txtField), intlit(0)))})));
                     int target = c.state;
                     if (pendAwaits) {
                         auto se = cleanupStates(stateRegion[c.state], rg.base, rg.base);
