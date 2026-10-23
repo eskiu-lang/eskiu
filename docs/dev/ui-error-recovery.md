@@ -1,5 +1,7 @@
 # Plan: recoverable exceptions in ui
 
+Phase 1 shipped in 0.14.0 (`catch (_)`, `exception_text()`). Phases 2 to 4 are next.
+
 ## Goal
 
 An error in a block, a handler or an effect must not close the app. The runtime always stays

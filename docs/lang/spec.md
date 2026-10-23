@@ -1,6 +1,6 @@
 # Eskiu Language Specification
 
-**Version:** v0.13.0
+**Version:** v0.14.0
 
 ---
 
@@ -3005,7 +3005,7 @@ up by name in any case, `Response_text` returns the body as a NUL-terminated str
 `method` (`"GET"`), `timeout_ms` (30000, for the whole call including redirects; 0 for
 none; the host name lookup is not bounded by it), `follow_redirects` (1),
 `max_redirects` (10), `max_body` (64 MiB; a longer body is `FETCH_ERR_TOO_LARGE`),
-`user_agent` (`"eskiu/0.13.0"`; empty sends none), `verify_tls` (1) and `ca_file` (a PEM
+`user_agent` (`"eskiu/0.14.0"`; empty sends none), `verify_tls` (1) and `ca_file` (a PEM
 bundle trusted besides the system store). `FetchOptions_header(&o, name, value)` returns
 0 and adds nothing when the name is not a token or the value holds a CR or LF; the
 request then fails with `FETCH_ERR_REQUEST`, so a header can never be split into an

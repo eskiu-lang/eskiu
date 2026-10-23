@@ -1,11 +1,32 @@
-# Eskiu 0.13.0
+# Eskiu 0.14.0
 
-The first public release of Eskiu, a systems language with C's control over memory and
-calling conventions. It compiles to native code through LLVM, calls C libraries directly,
-and runs a source file like a script with `eskiuc run file.esk`.
+Eskiu 0.14 catches any exception and fetches native libraries for phones and cross builds.
 
-From this release on, code that compiles with 0.13.0 keeps compiling in every 0.13.x, and
-later changes are announced by warnings first ([stability policy](https://eskiu-lang.org/docs/stability.html)).
+## What is new
+
+- **`catch (_)`** catches any exception without binding it, as the last catch of a `try`.
+  Inside a catch, **`exception_text()`** describes what was caught (`int 7`,
+  `string "boom"`), also across an `await`:
+
+  ```eskiu
+  try {
+      load_config(path);
+  } catch (string e) {
+      printf("bad config: %s\n", e);
+  } catch (_) {
+      printf("unexpected: %s\n", exception_text());
+  }
+  ```
+
+- **`[native.NAME]` for iOS, Android and `--target` builds.** A package's prebuilt
+  libraries now have keys for `ios-arm64`, `ios-arm64-simulator`, `ios-x86_64-simulator`,
+  `android-arm64` and `android-x86_64`, and a cross build fetches and links the archive of
+  its target, as a host build does. The `gpu` package uses it for WebGPU on phones.
+- **Fixed:** `--target x86_64-w64-mingw32` passed structs to C functions with the wrong
+  convention, so a call into a DLL could crash; every target triple is now normalized.
+
+Code that compiles with 0.13 compiles with 0.14. The full list is in the
+[changelog](https://eskiu-lang.org/changelog.html).
 
 ## Install
 
@@ -31,30 +52,6 @@ Or build from source (LLVM 21 or newer, LLVM 22 recommended, and CMake 3.20+):
 git clone https://github.com/eskiu-lang/eskiu
 cd eskiu && cmake -S . -B build && cmake --build build
 ```
-
-## What is in it
-
-- **The language.** C syntax and C integer rules, with structs and methods, generics,
-  structural interfaces, sum types with exhaustive `match`, closures and trailing blocks
-  (`Column(style) { ... }`), operator overloading, `async`/`await`, default parameter values and `dbg(e)`.
-- **One way to report errors.** `Result<T, E>` with `?` for expected failures (the
-  standard library has `Result` forms of its fallible calls), and exceptions for errors a
-  program cannot continue from.
-- **Memory with guard rails.** No garbage collector: `alloc`/`free` and explicit
-  allocators, `defer`, slices, checked nullable pointers, and opt-in run-time checks
-  (`--safe`, or `--safe=bounds,overflow,null` one by one).
-- **C interop.** `extern` functions and variables, structs passed by value in each
-  target's C ABI, inline assembly, and cross-compilation to ARM and x86 targets and bare
-  metal.
-- **A standard library for real programs.** Collections, strings, regex, JSON, CSV,
-  hashes, files and processes, an HTTP client with HTTPS, and HTTP/1.1, HTTP/2 and TLS
-  servers on an async runtime.
-- **Scripts.** Statements may sit at the top level of a file, with no `main`, and run in
-  order; `#!/usr/bin/env -S eskiuc run` makes the file executable.
-- **Tools.** A REPL, a package manager with git and path dependencies, `eskiuc fmt`, and
-  editor support for VS Code-based editors and JetBrains IDEs (completion, hover,
-  definitions, references, rename, quick fixes).
-- **Self-hosted.** The compiler is also written in Eskiu and builds itself.
 
 ## Known issues
 

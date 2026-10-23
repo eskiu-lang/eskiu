@@ -7,11 +7,24 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
-## [Unreleased]
+## [0.14.0] - 2026-10-23
 
 ### Added
-- `catch (_)` catch-all clause for exception handling, allowing catching any exception without binding a variable (must be the last catch clause).
-- `exception_text()` builtin returning a `string` description of the caught exception inside any `catch` block, matching the uncaught exception reporter format (works in both synchronous functions and state-split `async` functions across `await` suspensions).
+- `catch (_)` catches any exception without binding a variable; it is the last catch of a
+  `try`. `exception_text()`, inside any catch, describes what was caught as the
+  uncaught-exception report does (`int 7`, `string "boom"`). The text belongs to its catch
+  block, also across an `await` in an `async` function, and a function of the program's own
+  named `exception_text` hides the builtin.
+- `[native.NAME]` packages for iOS (`ios-arm64`, `ios-arm64-simulator`,
+  `ios-x86_64-simulator`) and Android (`android-arm64`, `android-x86_64`), and for any
+  `--target` build: the archive for the target's platform is fetched and linked as for the
+  host.
+
+### Fixed
+- `--target x86_64-w64-mingw32` passed structs to C functions with the System V convention
+  instead of the Windows x64 one, so a call into a DLL could crash. Every `--target` is now
+  normalized first (`x86_64-w64-windows-gnu`).
+- A build for iOS or Android no longer embeds an rpath to this machine's package cache.
 
 ## [0.13.0] - 2026-10-21
 

@@ -86,7 +86,7 @@ NAVS = {"lang": NAV_LANG, "dev": NAV_DEV}
 GH_BLOB = "https://github.com/eskiu-lang/eskiu/blob/main/"
 
 # Shown in the shared top bar (kept in step with the homepage). Bump per release.
-VERSION = "v0.13.0"
+VERSION = "v0.14.0"
 GH = "https://github.com/eskiu-lang/eskiu"
 
 CSS = r"""
@@ -454,19 +454,22 @@ PKG_REV = "v0.1.0"   # the release a package is shown at, unless its entry has "
 PACKAGES_CATALOG = [
     {
         "name": "gpu",
+        "rev": "v0.2.0",
         "section": "Models",
         "tag_es": "Cómputo en GPU, renderizado, modelos 3D y machine learning para Eskiu, sobre WebGPU.",
         "note_en": "One API runs on Metal (macOS), Vulkan (Linux) and DirectX 12 (Windows) through "
                    "wgpu-native, with shaders in WGSL. It draws glTF and OBJ models with physically "
                    "based shading, runs Llama models from GGUF or safetensors files (Llama 2 7B Q4_0 "
                    "at 45 tokens per second on an M4 Pro; llama.cpp does 58 on the same machine) and "
-                   "trains small networks (97% test accuracy on MNIST). "
+                   "trains small networks (97% test accuracy on MNIST). On iOS and Android it draws into a "
+                   "<code>GpuView</code> of a ui app (Eskiu 0.14). "
                    "<a href=\"gpu.html\">What it does, with its benchmarks →</a>",
         "note_es": "Una sola API corre sobre Metal (macOS), Vulkan (Linux) y DirectX 12 (Windows) a "
                    "través de wgpu-native, con shaders en WGSL. Dibuja modelos glTF y OBJ con "
                    "sombreado físico (PBR), corre modelos Llama desde archivos GGUF o safetensors "
                    "(Llama 2 7B Q4_0 a 45 tokens por segundo en un M4 Pro; llama.cpp da 58 en la "
-                   "misma máquina) y entrena redes pequeñas (97% de precisión en MNIST). "
+                   "misma máquina) y entrena redes pequeñas (97% de precisión en MNIST). En iOS y Android "
+                   "dibuja en un <code>GpuView</code> de una app de ui (Eskiu 0.14). "
                    "<a href=\"gpu.html\">Qué hace, con sus mediciones →</a>",
         "needs_en": "The first build downloads wgpu-native 29 for you. Opening a window "
                     "(<code>&lt;gpu/window&gt;</code>) also needs SDL3 from the system: "

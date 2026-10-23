@@ -47,11 +47,12 @@ first-class in the language without giving up general systems use.
   oracle checked against clang, a negative-program corpus, and the stdlib parsers under
   AddressSanitizer).
 
-## Next: 0.14
+## Next: 0.15
 
-- **Recoverable exceptions.** A catch-all (`catch (_)`) in the language, so ui can keep an
-  app running when a block, a handler or an effect throws, with `ErrorBoundary` and
-  `ui_on_error`. The plan: [`ui-error-recovery.md`](ui-error-recovery.md).
+- **Recoverable exceptions in ui.** 0.14 brought the language's part (`catch (_)` and
+  `exception_text()`); next, ui keeps an app running when a block, a handler or an effect
+  throws, with `ErrorBoundary` and `ui_on_error`. The plan:
+  [`ui-error-recovery.md`](ui-error-recovery.md).
 
 - **Formatter.** Breaking lines that are too long.
 - **Build times.** Measure a package with several dependencies, then decide whether

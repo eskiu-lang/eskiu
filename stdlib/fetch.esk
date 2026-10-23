@@ -27,7 +27,7 @@
 // themselves, so free it with Response_free in either case.
 //
 // The client sends one request per connection ("Connection: close"), with Host,
-// User-Agent ("eskiu/0.13.0" unless set), Accept ("*/*" unless set) and, when
+// User-Agent ("eskiu/0.14.0" unless set), Accept ("*/*" unless set) and, when
 // there is a body (or the method is POST, PUT or PATCH), Content-Length. A
 // Host, Content-Length, Connection or Transfer-Encoding header in the options
 // is not sent: the client frames the request itself. The response body is
@@ -166,7 +166,7 @@ string fetch_last_error() {
 const int64 FETCH_DEFAULT_TIMEOUT_MS = 30000;
 const int64 FETCH_DEFAULT_MAX_BODY = 67108864;
 const int FETCH_DEFAULT_REDIRECTS = 10;
-const string FETCH_USER_AGENT = "eskiu/0.13.0";
+const string FETCH_USER_AGENT = "eskiu/0.14.0";
 
 struct FetchOptions {
     String method;            // "GET"

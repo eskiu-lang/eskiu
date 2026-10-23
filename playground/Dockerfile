@@ -5,7 +5,7 @@
 # unpacks it under /opt/eskiu (bin/eskiuc, lib/deps, lib/eskiu/stdlib).
 #
 #   docker build -t eskiu-playground .
-#   docker build --build-arg ESKIU_VERSION=0.13.0 -t eskiu-playground .
+#   docker build --build-arg ESKIU_VERSION=0.14.0 -t eskiu-playground .
 #
 # The release binary statically links LLVM, so runtime only needs a few shared
 # libs plus a C linker driver (gcc): `eskiuc run` links the emitted object into a
@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libstdc++6 zlib1g libz3-4 libzstd1 libgcc-s1 \
     && rm -rf /var/lib/apt/lists/*
 
-ARG ESKIU_VERSION=0.13.0
+ARG ESKIU_VERSION=0.14.0
 RUN set -eu; \
     base="https://github.com/eskiu-lang/eskiu/releases/download/v${ESKIU_VERSION}"; \
     asset="eskiuc-linux-x86_64.tar.gz"; \
