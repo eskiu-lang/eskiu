@@ -171,6 +171,11 @@ void Counter() {
             Hooks, keys and memos are checked as the app runs, and a mistake stops with where
             it happened: <code>in Column[0] &gt; TodoRow[key 3]</code>.
           </p>
+          <p>
+            An exception does not close the app. A render that throws shows the nearest
+            <code>ErrorBoundary</code>&rsquo;s fallback, and nothing of that render reaches the
+            screen. A handler or an effect that throws is reported, and the app goes on.
+          </p>
         </div>
         <div class="ui-stats">
           <div class="ui-stat"><b>8.1 ms</b><span>to mount 10,000 rows</span></div>

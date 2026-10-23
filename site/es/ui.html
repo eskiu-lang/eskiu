@@ -171,6 +171,11 @@ void Counter() {
             Los hooks, las llaves y los memos se revisan mientras la app corre, y un error se
             detiene diciendo dónde ocurrió: <code>in Column[0] &gt; TodoRow[key 3]</code>.
           </p>
+          <p>
+            Una excepción no cierra la app. Un render que lanza una muestra el fallback del
+            <code>ErrorBoundary</code> más cercano, y nada de ese render llega a la pantalla. Un
+            handler o un efecto que lanza una se reporta, y la app sigue.
+          </p>
         </div>
         <div class="ui-stats">
           <div class="ui-stat"><b>8.1 ms</b><span>para montar 10,000 filas</span></div>

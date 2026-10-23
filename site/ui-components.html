@@ -91,7 +91,7 @@
       <section class="uc-group" id="state">
         <h2>State</h2>
         <p>A block records the signals it reads and runs again when one changes. <a href="https://github.com/eskiu-lang/ui/blob/main/docs/state.md">The guide &rarr;</a></p>
-        <div class="uc-items"><div><code>use_signal&lt;T&gt;(initial)</code>State kept by the scope while it is mounted.</div><div><code>use_memo&lt;T&gt;(compute)</code>A derived value, computed when read.</div><div><code>use_effect(callback), on_cleanup</code>Work after a commit, with its cleanup.</div><div><code>use_string(initial)</code>Text state, reference counted.</div><div><code>signal_new&lt;T&gt;(initial)</code>A model signal that no scope owns.</div><div><code>use_interval, use_timeout</code>Timers kept by the platform&#x27;s clock.</div></div>
+        <div class="uc-items"><div><code>use_signal&lt;T&gt;(initial)</code>State kept by the scope while it is mounted.</div><div><code>use_memo&lt;T&gt;(compute)</code>A derived value, computed when read.</div><div><code>use_effect(callback), on_cleanup</code>Work after a commit, with its cleanup.</div><div><code>use_string(initial)</code>Text state, reference counted.</div><div><code>signal_new&lt;T&gt;(initial)</code>A model signal that no scope owns.</div><div><code>use_interval, use_timeout</code>Timers kept by the platform&#x27;s clock.</div><div><code>ErrorBoundary(fallback, block)</code>When a render inside it throws, shows the fallback instead, until <code>ui_boundary_reset</code>.</div><div><code>ui_on_error(handler)</code>Told every error the runtime catches: renders, handlers, effects.</div></div>
       </section>
       <section class="uc-group" id="navigation">
         <h2>Navigation</h2>
