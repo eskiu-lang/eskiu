@@ -14,7 +14,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,800;1,9..144,400&amp;family=DM+Sans:wght@400;500;700&amp;family=DM+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="home.css?v=b43122612b" />
+    <link rel="stylesheet" href="home.css?v=dbd24246dc" />
   </head>
   <body>
     <header class="top">
@@ -50,6 +50,20 @@
           <p class="downloads">Homebrew: <code>brew install eskiu-lang/eskiu/eskiu</code> · <a href="https://github.com/eskiu-lang/eskiu/releases/latest">Windows and release archives</a> · <a href="quickstart.html#editor">VS Code extension</a></p>
         </div>
         <div class="hero-fig"><div class="disc"><img src="../assets/eskiu_round.jpg" alt="The Eskiu mascot, a grey tabby kitten with a ball of yarn" /></div></div>
+      </section>
+
+      <section class="wrap showcase" aria-labelledby="show-h">
+        <div class="show-head"><span class="eyebrow" id="show-h">What it builds</span><a href="showcase.html">Everything built with Eskiu <span aria-hidden="true">→</span></a></div>
+        <div class="bento">
+          <a class="tile t-apps" href="ui.html"><img src="../assets/ui-lab.png" alt="The Tasks app built with ui, on iPhone and Android" width="1200" height="1200" /><span class="cap"><span class="eyebrow">ui</span><b>Native apps for iOS, Android and the web</b></span></a>
+          <a class="tile t-gpu" href="gpu.html"><img src="../assets/gpu-helmet.jpg" alt="A sci-fi helmet rendered with the gpu package" width="1200" height="1200" /><span class="cap"><span class="eyebrow">gpu</span><b>Physically based rendering on WebGPU</b></span></a>
+          <a class="tile stat t-llama" href="gpu.html"><span class="eyebrow">gpu · Metal</span><b class="num">45</b><span class="unit">tokens per second</span><span class="txt">Llama 2 7B on an M4 Pro, in WGSL</span></a>
+          <a class="tile stat alt t-vision" href="vision.html"><span class="eyebrow">In production</span><b class="num">217,582</b><span class="unit">cases, bit for bit with C++</span><span class="txt">AR tracking in ViroReact, on WebAssembly</span></a>
+          <a class="tile t-3ds" href="case-study-3ds.html"><img src="../assets/case-study-3ds.jpg" alt="An Eskiu program running on a Nintendo 3DS" width="1400" height="1050" loading="lazy" /><span class="cap"><span class="eyebrow">32-bit ARM</span><b>Nintendo 3DS homebrew</b></span></a>
+          <a class="tile t-kernel" href="https://github.com/eskiu-lang/eskiu/tree/main/kernel"><img src="../assets/kernel.png" alt="The Eskiu kernel's shell running in QEMU" width="888" height="948" loading="lazy" /><span class="cap"><span class="eyebrow">Bare metal</span><b>An ARM64 kernel in QEMU</b></span></a>
+          <a class="tile t-pkgs" href="packages.html"><span class="eyebrow">Packages</span><b>One eskiuc add away</b><span class="chips"><span>ui</span><span>gpu</span><span>onnx</span><span>tflite</span><span>compress</span><span>audio</span><span>font</span><span>jni</span><span>nds</span><span>location</span><span>camera</span><span>notifications</span></span></a>
+        </div>
+        <p class="targets"><span class="eyebrow">Targets</span>macOS · Linux · Windows · iOS · Android · WebAssembly · 32-bit ARM · bare metal</p>
       </section>
 
       <section class="why" aria-labelledby="why-h">
