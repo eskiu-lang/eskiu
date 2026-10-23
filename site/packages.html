@@ -44,12 +44,12 @@ eskiuc run</code></pre>
     <p>A package's modules are imported by the package name and the file name, as in <code>import &lt;gpu/model&gt;;</code>. Chapter 13 of the <a href="the-book-of-eskiu.html#sec-13-5">Book</a> covers manifests, locks and <code>eskiuc test</code>.</p>
     <section class="pkg" id="gpu">
       <h2>gpu</h2>
-      <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/gpu/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/gpu/actions/workflows/ci.yml/badge.svg" alt="CI status: gpu" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/gpu">github.com/eskiu-lang/gpu</a></div>
+      <div class="pkg-meta"><span class="tag">v0.2.0</span><a href="https://github.com/eskiu-lang/gpu/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/gpu/actions/workflows/ci.yml/badge.svg" alt="CI status: gpu" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/gpu">github.com/eskiu-lang/gpu</a></div>
       <p><strong>GPU compute, rendering, 3D models and machine learning for Eskiu, over WebGPU.</strong></p>
-      <p>One API runs on Metal (macOS), Vulkan (Linux) and DirectX 12 (Windows) through wgpu-native, with shaders in WGSL. It draws glTF and OBJ models with physically based shading, runs Llama models from GGUF or safetensors files (Llama 2 7B Q4_0 at 45 tokens per second on an M4 Pro; llama.cpp does 58 on the same machine) and trains small networks (97% test accuracy on MNIST). <a href="gpu.html">What it does, with its benchmarks →</a></p>
+      <p>One API runs on Metal (macOS), Vulkan (Linux) and DirectX 12 (Windows) through wgpu-native, with shaders in WGSL. It draws glTF and OBJ models with physically based shading, runs Llama models from GGUF or safetensors files (Llama 2 7B Q4_0 at 45 tokens per second on an M4 Pro; llama.cpp does 58 on the same machine) and trains small networks (97% test accuracy on MNIST). On iOS and Android it draws into a <code>GpuView</code> of a ui app (Eskiu 0.14). <a href="gpu.html">What it does, with its benchmarks →</a></p>
       <p class="note">The first build downloads wgpu-native 29 for you. Opening a window (<code>&lt;gpu/window&gt;</code>) also needs SDL3 from the system: <code>brew install sdl3</code> on macOS, then build with <code>-L/opt/homebrew/lib</code>.</p>
       <h3>Install</h3>
-      <pre><code>eskiuc add gpu --git https://github.com/eskiu-lang/gpu --rev v0.1.0
+      <pre><code>eskiuc add gpu --git https://github.com/eskiu-lang/gpu --rev v0.2.0
 eskiuc build</code></pre>
       <details class="pkg-example"><summary>Example from the README</summary>
       <pre><code>Gltf data = model_load("helmet.glb")?;   <span class="c">// or a .gltf, or an .obj</span>
