@@ -8,13 +8,22 @@
     <meta name="theme-color" content="#fbf8f3" />
     <link rel="icon" type="image/png" href="../../assets/logo.png" />
     <link rel="canonical" href="https://eskiu-lang.org/es/index.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Eskiu" />
+  <meta property="og:title" content="Eskiu: un lenguaje de sistemas auto-hospedado" />
+  <meta property="og:description" content="Eskiu es un lenguaje de sistemas que se compila a sí mismo, con backend LLVM, memoria explícita e interoperabilidad directa con C. Un solo compilador genera programas para macOS, Linux, Windows, WebAssembly, Android e iOS, y hay paquetes para cómputo en GPU, machine learning y más." />
+  <meta property="og:url" content="https://eskiu-lang.org/es/index.html" />
+  <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
     <link rel="alternate" hreflang="en" href="https://eskiu-lang.org/index.html" />
     <link rel="alternate" hreflang="es" href="https://eskiu-lang.org/es/index.html" />
     <link rel="alternate" hreflang="x-default" href="https://eskiu-lang.org/index.html" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,800;1,9..144,400&amp;family=DM+Sans:wght@400;500;700&amp;family=DM+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="../home.css?v=dbd24246dc" />
+    <link rel="stylesheet" href="../home.css?v=5fb53a3827" />
   </head>
   <body>
     <header class="top">
@@ -35,13 +44,14 @@
     <main>
       <section class="wrap hero">
         <div class="hero-txt">
-          <span class="eyebrow">v0.14.0 · código abierto · MIT</span>
+          <div class="hero-meta"><span class="eyebrow">v0.14.0 · código abierto · MIT</span><a class="gh-star" href="https://github.com/eskiu-lang/eskiu"><span aria-hidden="true">★</span> Estrella en GitHub</a></div>
           <h1>Escríbelo como un script. <em>Compílalo como&nbsp;C.</em></h1>
           <p class="lede">Un lenguaje de sistemas sobre LLVM que se compila a sí mismo, con memoria explícita e interoperabilidad directa con C. Un solo compilador para escritorio, la web y celulares.</p>
           <div class="cta">
             <a class="btn btn-dark" href="#start">Empieza</a>
             <a class="btn btn-line" href="#playground"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 1.5v11l9-5.5z"/></svg>Pruébalo en el navegador</a>
           </div>
+          <div class="os-tabs" data-os-tabs role="tablist" aria-label="Instalar"><button type="button" role="tab" aria-selected="true" data-lbl="Instalar en macOS o Linux" data-cmd="curl -fsSL https://eskiu-lang.org/install.sh | sh">macOS · Linux</button><button type="button" role="tab" aria-selected="false" data-lbl="Instalar en Windows (PowerShell)" data-cmd="powershell -c &quot;irm https://eskiu-lang.org/install.ps1 | iex&quot;">Windows</button></div>
           <div class="install-box" id="install">
             <span class="lbl">Instálalo en macOS o Linux</span>
             <span class="cmd">curl -fsSL https://eskiu-lang.org/install.sh | sh</span>
@@ -49,7 +59,28 @@
           </div>
           <p class="downloads">Homebrew: <code>brew install eskiu-lang/eskiu/eskiu</code> · <a href="https://github.com/eskiu-lang/eskiu/releases/latest">Windows y archivos de cada release</a> · <a href="quickstart.html#editor">Extensión de VS Code</a></p>
         </div>
-        <div class="hero-fig"><div class="disc"><img src="../../assets/eskiu_round.jpg" alt="La mascota de Eskiu, un gatito atigrado gris con una bola de estambre" /></div></div>
+        <div class="hero-fig hero-code-fig">
+          <figure class="hero-code">
+            <img class="hc-cat" src="../../assets/eskiu_round.jpg" alt="La mascota de Eskiu, un gatito atigrado gris" width="315" height="316" />
+            <div class="hc-bar"><span></span><span></span><span></span><b>stars.esk</b></div>
+<pre class="hc-src"><span class="cm">#!/usr/bin/env -S eskiuc run</span>
+<span class="kw">import</span> &lt;io&gt;;
+<span class="kw">import</span> &lt;fetch&gt;;
+<span class="kw">import</span> &lt;json&gt;;
+
+<span class="kw">let</span> r: <span class="ty">Response</span>;
+fetch(<span class="st">"https://api.github.com/repos/llvm/llvm-project"</span>, &amp;r);
+*<span class="ty">JsonValue</span> repo = Response_json(&amp;r);
+printf(<span class="st">"%s has %lld stars\n"</span>,
+       JsonValue_as_cstr(json_get(repo, <span class="st">"full_name"</span>)),
+       JsonValue_as_int(json_get(repo, <span class="st">"stargazers_count"</span>)));</pre>
+<pre class="hc-term"><span class="cm">$</span> ./stars.esk
+llvm/llvm-project has 41179 stars
+<span class="cm">$</span> eskiuc stars.esk -O2 -o stars &amp;&amp; ls -lh stars
+-rwxr-xr-x  194K  stars</pre>
+            <figcaption>El archivo corre como script, y el mismo archivo compila a un programa nativo de 194 KB.</figcaption>
+          </figure>
+        </div>
       </section>
 
       <section class="wrap showcase" aria-labelledby="show-h">
@@ -58,7 +89,7 @@
           <a class="tile t-apps" href="ui.html"><img src="../../assets/ui-lab.png" alt="La app Tasks hecha con ui, en iPhone y Android" width="1200" height="1200" /><span class="cap"><span class="eyebrow">ui</span><b>Apps nativas para iOS, Android y la web</b></span></a>
           <a class="tile t-gpu" href="gpu.html"><img src="../../assets/gpu-helmet.jpg" alt="Un casco de ciencia ficción renderizado con el paquete gpu" width="1200" height="1200" /><span class="cap"><span class="eyebrow">gpu</span><b>Render físico (PBR) sobre WebGPU</b></span></a>
           <a class="tile stat t-llama" href="gpu.html"><span class="eyebrow">gpu · Metal</span><b class="num">45</b><span class="unit">tokens por segundo</span><span class="txt">Llama 2 7B en un M4 Pro, en WGSL</span></a>
-          <a class="tile stat alt t-vision" href="vision.html"><span class="eyebrow">En producción</span><b class="num">217,582</b><span class="unit">casos, bit a bit con C++</span><span class="txt">Tracking de AR en ViroReact, en WebAssembly</span></a>
+          <a class="tile stat alt t-vision" href="../docs/self-hosting.html"><span class="eyebrow">Autohospedado</span><b class="num">574</b><span class="unit">programas, iguales en los dos compiladores</span><span class="txt">El compilador también está escrito en Eskiu y se compila a sí mismo</span></a>
           <a class="tile t-3ds" href="case-study-3ds.html"><img src="../../assets/case-study-3ds.jpg" alt="Un programa de Eskiu corriendo en un Nintendo 3DS" width="1400" height="1050" loading="lazy" /><span class="cap"><span class="eyebrow">ARM de 32 bits</span><b>Homebrew para Nintendo 3DS</b></span></a>
           <a class="tile t-kernel" href="https://github.com/eskiu-lang/eskiu/tree/main/kernel"><img src="../../assets/kernel.png" alt="El shell del kernel de Eskiu corriendo en QEMU" width="888" height="948" loading="lazy" /><span class="cap"><span class="eyebrow">Bare metal</span><b>Un kernel ARM64 en QEMU</b></span></a>
           <a class="tile t-pkgs" href="packages.html"><span class="eyebrow">Paquetes</span><b>A un eskiuc add de distancia</b><span class="chips"><span>ui</span><span>gpu</span><span>onnx</span><span>tflite</span><span>compress</span><span>audio</span><span>font</span><span>jni</span><span>nds</span><span>location</span><span>camera</span><span>notifications</span></span></a>
@@ -106,12 +137,6 @@
             <h3>Un núcleo de detección para iOS y Android</h3>
             <p>La detección de objetos de ViroReact es un solo núcleo en Eskiu sobre ONNX Runtime en las dos plataformas. En Android, sus puntos de entrada JNI también son Eskiu.</p>
             <span class="more">Caso de estudio de ReactVision →</span>
-          </a>
-          <a class="pcard" href="gpu.html">
-            <span class="tag">gpu</span>
-            <h3>Llama 2 sobre Metal</h3>
-            <p>Llama 2 7B a 45 tokens por segundo en un M4 Pro, en WGSL sobre wgpu-native. llama.cpp da 58 en la misma máquina.</p>
-            <span class="more">El paquete gpu →</span>
           </a>
         </div>
         <div class="users">
@@ -204,6 +229,15 @@ println(JsonValue_as_cstr(json_get(
           </div>
         </div>
         <p class="aside">El compilador también está escrito en Eskiu: todo el pipeline se recompila a sí mismo hasta la misma salida en un bootstrap de tres etapas. <a href="../docs/self-hosting.html">Cómo hace bootstrap →</a></p>
+      </section>
+
+      <section class="wrap sec" id="compare">
+        <div class="sec-head">
+          <span class="eyebrow">Cómo se compara</span>
+          <h2>Cerca de C, con lo que a C le falta.</h2>
+          <p>Eskiu conserva el modelo de memoria y de llamadas de C, y suma lo que la gente va a buscar a otros lenguajes. Es más joven que todos estos, y lo dice.</p>
+        </div>
+        <div class="compare-scroll"><table class="compare"><thead><tr><th scope="col"></th><th scope="col">Eskiu</th><th scope="col">C</th><th scope="col">Zig</th><th scope="col">Rust</th><th scope="col">Go</th></tr></thead><tbody><tr><th scope="row">Memoria</th><td>Manual, con <code>defer</code></td><td>Manual</td><td>Manual, con <code>defer</code></td><td>Ownership, verificado</td><td>Recolector de basura</td></tr><tr><th scope="row">Llamar a C</th><td><code>extern</code>, structs por valor en la ABI de cada plataforma</td><td>Nativo</td><td><code>@cImport</code></td><td><code>extern "C"</code>, bindgen</td><td>cgo</td></tr><tr><th scope="row">Genéricos</th><td>Monomorfizados, con interfaces como límite</td><td>Macros</td><td><code>comptime</code></td><td>Traits</td><td>Parámetros de tipo</td></tr><tr><th scope="row">Tipos suma, <code>match</code> exhaustivo</th><td>Sí</td><td>No</td><td>Uniones etiquetadas</td><td>Sí</td><td>No</td></tr><tr><th scope="row">Seguridad ante null</th><td>Opcional, <code>?*T</code></td><td>No</td><td>Opcionales</td><td><code>Option</code></td><td>No</td></tr><tr><th scope="row">Correr un archivo como script</th><td><code>eskiuc run</code>, shebang</td><td>No</td><td><code>zig run</code></td><td>Con Cargo</td><td><code>go run</code></td></tr><tr><th scope="row">async / await</th><td>Sí</td><td>No</td><td>Con <code>std.Io</code>, sin palabras clave</td><td>Sí</td><td>Goroutines</td></tr><tr><th scope="row">Madurez</th><td>0.14, joven</td><td>Décadas</td><td>Antes de 1.0</td><td>Estable desde 2015</td><td>Estable desde 2012</td></tr></tbody></table></div>
       </section>
 
       <section class="pkgs" id="packages">
@@ -363,6 +397,6 @@ Hello, Eskiu!</pre>
     </footer>
 
     <script>try { localStorage.setItem('eskiu-lang', 'es'); } catch (e) {}</script>
-    <script src="../home.js?v=da76ebdd05"></script>
+    <script src="../home.js?v=5a287e135e"></script>
   </body>
 </html>

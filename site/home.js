@@ -160,6 +160,21 @@ int main() {
   }
 
   /* Copy buttons */
+  // The install box's tabs: the command for each system, Windows first on Windows.
+  document.querySelectorAll("[data-os-tabs]").forEach(function (tabs) {
+    var box = document.getElementById("install");
+    if (!box) return;
+    var buttons = tabs.querySelectorAll("button");
+    function pick(t) {
+      buttons.forEach(function (o) { o.setAttribute("aria-selected", o === t ? "true" : "false"); });
+      box.querySelector(".cmd").textContent = t.getAttribute("data-cmd");
+      box.querySelector(".lbl").textContent = t.getAttribute("data-lbl");
+      box.querySelector("[data-copy]").setAttribute("data-copy", t.getAttribute("data-cmd"));
+    }
+    buttons.forEach(function (t) { t.addEventListener("click", function () { pick(t); }); });
+    if (/Windows/.test(navigator.userAgent) && buttons.length > 1) pick(buttons[1]);
+  });
+
   document.querySelectorAll("[data-copy]").forEach(function (b) {
     b.addEventListener("click", function () {
       var label = b.textContent;

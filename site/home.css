@@ -67,7 +67,7 @@ section[id], span[id] { scroll-margin-top: 88px; }
 .btn:disabled { opacity: 0.65; cursor: progress; }
 
 /* Hero */
-.hero { display: grid; gap: 36px; padding-block: 40px 88px; align-items: center; }
+.hero { display: grid; grid-template-columns: minmax(0, 1fr); gap: 36px; padding-block: 40px 88px; align-items: center; }
 .hero-fig { display: flex; justify-content: center; order: -1; }
 .hero-fig .disc { width: 272px; height: 272px; border-radius: 50%; background: var(--lilac); display: flex; align-items: center; justify-content: center; }
 .hero-fig img { width: 92%; height: 92%; border-radius: 50%; }
@@ -146,7 +146,7 @@ a:hover .more { color: var(--ink); }
 .pstat strong { display: block; font-family: var(--serif); font-weight: 800; font-size: 34px; letter-spacing: -0.02em; color: #fff; line-height: 1.1; }
 @media (min-width: 900px) {
   .sec { padding-block: 104px 8px; gap: 48px; }
-  .prod-grid { grid-template-columns: 1.4fr 1fr 1fr; gap: 24px; }
+  .prod-grid { grid-template-columns: 1.3fr 1fr; gap: 24px; }
   .pcard-lead { grid-row: span 1; padding: 36px; }
 }
 
@@ -387,3 +387,36 @@ pre.term .cm { color: #8f88a8; }
   .t-pkgs .chips { margin-top: 10px; }
 }
 @media (min-width: 900px) { .showcase { margin-top: -40px; } }
+
+/* The hero's code: a script, what it prints, and the program it builds. */
+.hero-code-fig { order: 0; min-width: 0; }
+.hero-code { position: relative; margin: 0; width: 100%; max-width: 620px; background: #12101f; color: #e9e4f5; border: 1.5px solid var(--ink);
+  border-radius: 22px; box-shadow: 10px 10px 0 var(--lilac); overflow: visible; }
+.hc-bar { display: flex; align-items: center; gap: 7px; padding: 14px 18px; border-bottom: 1px solid rgba(251, 248, 243, 0.12); }
+.hc-bar span { width: 11px; height: 11px; border-radius: 50%; background: #3a3550; }
+.hc-bar b { margin-left: 10px; font-family: var(--mono); font-weight: 500; font-size: 13px; color: #b8b0d0; }
+.hero-code pre { margin: 0; padding: 18px 20px; font-family: var(--mono); font-size: 12.5px; line-height: 1.75; overflow-x: auto; white-space: pre; }
+.hc-src .kw { color: #b6a6ff; } .hc-src .ty { color: #f0a868; } .hc-src .st { color: #9ad38e; } .hc-src .cm, .hc-term .cm { color: #8f88a8; }
+.hc-term { background: #0b0915; border-top: 1px solid rgba(251, 248, 243, 0.12); color: #d8d2e6; }
+.hero-code figcaption { padding: 12px 20px 16px; font-size: 14px; color: #b8b0d0; background: #0b0915; border-radius: 0 0 20px 20px; }
+.hero-fig .hc-cat { position: absolute; top: -34px; right: -18px; width: 86px; height: 86px; border-radius: 50%; border: 5px solid var(--lilac); background: #fff; }
+@media (max-width: 899px) { .hero-fig .hc-cat { width: 64px; height: 64px; top: -26px; right: -6px; } .hero-code pre { font-size: 11.5px; } }
+
+/* How it compares. */
+.compare-scroll { overflow-x: auto; border: 1.5px solid var(--ink); border-radius: 20px; background: #fff; box-shadow: 8px 8px 0 var(--lilac); }
+.compare { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 15px; }
+.compare th, .compare td { padding: 14px 16px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule); }
+.compare thead th { font-family: var(--mono); font-size: 13px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.compare tbody th { font-weight: 700; color: var(--ink); width: 19%; }
+.compare tr:last-child th, .compare tr:last-child td { border-bottom: 0; }
+.compare td:nth-child(2), .compare thead th:nth-child(2) { background: var(--lilac-2); color: var(--ink); font-weight: 600; }
+.compare thead th:nth-child(2) { color: var(--purple); }
+
+/* Install tabs and the star link. */
+.os-tabs { display: flex; gap: 6px; margin-bottom: -12px; }
+.os-tabs button { font: 600 14px var(--sans); padding: 7px 14px; border-radius: 10px 10px 0 0; border: 1.5px solid transparent; border-bottom: 0;
+  background: transparent; color: var(--ink2); cursor: pointer; }
+.os-tabs button[aria-selected="true"] { background: #fff; border-color: var(--ink); color: var(--ink); }
+.hero-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; }
+.gh-star { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: 1.5px solid var(--ink); border-radius: 999px; font: 600 12px var(--sans); color: var(--ink); text-decoration: none; }
+.gh-star:hover { border-color: currentColor; }
