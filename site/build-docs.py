@@ -256,6 +256,15 @@ SHELL = """<!doctype html>
   <meta name="description" content="{desc}" />
   <meta name="theme-color" content="#fbf8f3" />
   <link rel="canonical" href="https://eskiu-lang.org/{canon}" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Eskiu" />
+  <meta property="og:title" content="{title}" />
+  <meta property="og:description" content="{desc}" />
+  <meta property="og:url" content="https://eskiu-lang.org/{canon}" />
+  <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
   <link rel="icon" type="image/png" href="{a}logo.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -808,6 +817,15 @@ PAGE_SHELL = """<!doctype html>
 {redirect}  <title>{title}</title>
   <meta name="description" content="{desc}" />
   <link rel="canonical" href="https://eskiu-lang.org/{canon}" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Eskiu" />
+  <meta property="og:title" content="{title}" />
+  <meta property="og:description" content="{desc}" />
+  <meta property="og:url" content="https://eskiu-lang.org/{canon}" />
+  <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
   <link rel="alternate" hreflang="en" href="https://eskiu-lang.org/{page}" />
   <link rel="alternate" hreflang="es" href="https://eskiu-lang.org/es/{page}" />
   <link rel="alternate" hreflang="x-default" href="https://eskiu-lang.org/{page}" />
