@@ -109,6 +109,20 @@ private:
 
     TypePtr getExprEirType(const ExprPtr& expr);
     TypePtr getExprEirType(const Expr* expr);
+
+    struct AdtVariantInfo {
+        std::string enumName;
+        int variantIndex = 0;
+        std::vector<TypePtr> payloadTypes;
+    };
+    std::unordered_map<std::string, AdtVariantInfo> adtVariants;
+    std::unordered_map<std::string, EnumDecl*> plainEnums;
+    std::unordered_map<std::string, EnumDecl*> adtEnums;
+    std::unordered_map<std::string, int64_t> enumConstants;
+
+    int nextLambdaId = 0;
+    int64_t foldConstInt(const ExprPtr& expr);
+    void emitArrayInitInto(Operand dest, ArrayLitExpr* lit, TypePtr arrTy);
 };
 
 } // namespace eir

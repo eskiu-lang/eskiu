@@ -29,11 +29,15 @@ void VM::writeMemory(void* ptr, TypePtr type, const VMValue& val) {
         }
     } else if (type->isPointer()) {
         *reinterpret_cast<void**>(ptr) = val.asPtr();
-    } else if (type->isStruct()) {
+    } else if (type->isStruct() || type->isArray()) {
         size_t sz = currentModule ? currentModule->getStructSize(type->nominalName()) : 0;
         if (sz == 0) sz = getTypeSize(type);
         if (sz > 0 && val.asPtr()) {
             std::memcpy(ptr, val.asPtr(), sz);
+        }
+    } else if (type->isClosure() || type->isInterface() || type->isSlice()) {
+        if (val.asPtr()) {
+            std::memcpy(ptr, val.asPtr(), 16);
         }
     } else {
         *reinterpret_cast<uint64_t*>(ptr) = static_cast<uint64_t>(val.asInt());
@@ -72,7 +76,7 @@ VMValue VM::readMemory(void* ptr, TypePtr type) {
     if (type->isPointer()) {
         return VMValue(*reinterpret_cast<void**>(ptr));
     }
-    if (type->isStruct()) {
+    if (type->isStruct() || type->isArray() || type->isClosure() || type->isInterface() || type->isSlice()) {
         return VMValue(ptr);
     }
     return VMValue(*reinterpret_cast<int64_t*>(ptr));
@@ -335,12 +339,14 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
         for (const auto& inst : curBB->instructions) {
             switch (inst->op) {
                 case Opcode::Alloca: {
-                    size_t sz = getTypeSize(inst->type);
-                    if (sz == 0 && inst->type->isStruct() && currentModule) {
+                    size_t sz = 0;
+                    if (inst->type->isStruct() && currentModule) {
                         sz = currentModule->getStructSize(inst->type->nominalName());
                     }
+                    if (sz == 0) sz = getTypeSize(inst->type);
                     if (sz == 0) sz = 8;
                     size_t al = inst->operands.empty() ? 8 : static_cast<size_t>(inst->operands[0].intVal);
+                    if (inst->type->isStruct() && al < 8) al = 8;
                     void* slot = frame.allocStack(sz, al);
                     frame.registers[inst->resultVar] = VMValue(slot);
                     break;
@@ -353,13 +359,21 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                 case Opcode::Store: {
                     VMValue val = getOperand(inst->operands[0], frame);
                     void* ptr = getOperand(inst->operands[1], frame).asPtr();
-                    writeMemory(ptr, inst->operands[0].type, val);
+                    TypePtr destType = (inst->operands[1].type && inst->operands[1].type->pointee)
+                                       ? inst->operands[1].type->pointee
+                                       : inst->operands[0].type;
+                    writeMemory(ptr, destType, val);
                     break;
                 }
                 case Opcode::Gep: {
                     void* base = getOperand(inst->operands[0], frame).asPtr();
                     int64_t idx = getOperand(inst->operands[1], frame).asInt();
-                    size_t elemSize = getTypeSize(inst->operands[0].type->elemType ? inst->operands[0].type->elemType : inst->operands[0].type);
+                    TypePtr elemType = inst->type->pointee ? inst->type->pointee : (inst->type->elemType ? inst->type->elemType : inst->type);
+                    size_t elemSize = getTypeSize(elemType);
+                    if (elemSize == 0 && elemType->isStruct() && currentModule) {
+                        elemSize = currentModule->getStructSize(elemType->nominalName());
+                    }
+                    if (elemSize == 0) elemSize = 8;
                     void* res = static_cast<uint8_t*>(base) + idx * elemSize;
                     frame.registers[inst->resultVar] = VMValue(res);
                     break;
@@ -567,6 +581,23 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                     }
                     break;
                 }
+                case Opcode::Switch: {
+                    int64_t val = getOperand(inst->operands[0], frame).asInt();
+                    std::string targetLabel = inst->defaultLabel;
+                    for (const auto& sc : inst->switchCases) {
+                        if (sc.first == val) {
+                            targetLabel = sc.second;
+                            break;
+                        }
+                    }
+                    for (const auto& b : fn->blocks) {
+                        if (b->name == targetLabel) {
+                            nextBB = b.get();
+                            break;
+                        }
+                    }
+                    break;
+                }
                 case Opcode::Ret: {
                     if (inst->operands.empty() || inst->operands[0].type->isVoid()) {
                         return VMValue(0);
@@ -575,6 +606,63 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                 }
                 case Opcode::Unreachable:
                     return VMValue(0);
+
+                case Opcode::MakeClosure:
+                case Opcode::MakeInterface:
+                case Opcode::MakeSlice: {
+                    void* p0 = getOperand(inst->operands[0], frame).asPtr();
+                    void* p1 = inst->operands[1].type && inst->operands[1].type->isPointer()
+                               ? getOperand(inst->operands[1], frame).asPtr()
+                               : reinterpret_cast<void*>(static_cast<uintptr_t>(getOperand(inst->operands[1], frame).asInt()));
+                    void* slot = frame.allocStack(16, 8);
+                    *reinterpret_cast<void**>(static_cast<uint8_t*>(slot) + 0) = p0;
+                    *reinterpret_cast<void**>(static_cast<uint8_t*>(slot) + 8) = p1;
+                    frame.registers[inst->resultVar] = VMValue(slot);
+                    break;
+                }
+                case Opcode::ExtractFat: {
+                    void* fat = getOperand(inst->operands[0], frame).asPtr();
+                    int64_t idx = getOperand(inst->operands[1], frame).asInt();
+                    if (fat) {
+                        if (idx == 0) {
+                            void* p0 = *reinterpret_cast<void**>(static_cast<uint8_t*>(fat) + 0);
+                            frame.registers[inst->resultVar] = VMValue(p0);
+                        } else {
+                            if (inst->type && inst->type->isPointer()) {
+                                void* p1 = *reinterpret_cast<void**>(static_cast<uint8_t*>(fat) + 8);
+                                frame.registers[inst->resultVar] = VMValue(p1);
+                            } else {
+                                int64_t len = *reinterpret_cast<int64_t*>(static_cast<uint8_t*>(fat) + 8);
+                                frame.registers[inst->resultVar] = VMValue(len);
+                            }
+                        }
+                    } else {
+                        frame.registers[inst->resultVar] = VMValue(0);
+                    }
+                    break;
+                }
+                case Opcode::CallIndirect: {
+                    void* fat = getOperand(inst->operands[0], frame).asPtr();
+                    if (!fat) {
+                        std::cerr << "error: null closure / indirect call" << std::endl;
+                        return VMValue(0);
+                    }
+                    void* fnPtr = *reinterpret_cast<void**>(static_cast<uint8_t*>(fat) + 0);
+                    void* envPtr = *reinterpret_cast<void**>(static_cast<uint8_t*>(fat) + 8);
+
+                    Function* callee = static_cast<Function*>(fnPtr);
+                    std::vector<VMValue> callArgs;
+                    callArgs.push_back(VMValue(envPtr)); // env is arg 0
+                    for (size_t i = 1; i < inst->operands.size(); ++i) {
+                        callArgs.push_back(getOperand(inst->operands[i], frame));
+                    }
+
+                    VMValue retVal = executeFunction(callee, callArgs);
+                    if (!inst->resultVar.empty()) {
+                        frame.registers[inst->resultVar] = retVal;
+                    }
+                    break;
+                }
 
                 case Opcode::Call: {
                     std::string targetFnName = inst->operands[0].text;
@@ -622,6 +710,11 @@ int VM::run(Module* module, const std::string& entryFn, const std::vector<std::s
         size_t sz = getTypeSize(g.type);
         if (sz < 1) sz = 8;
         globalStorage[g.name].resize(sz, 0);
+        if (g.init.kind != OperandKind::ConstantNull) {
+            StackFrame dummy;
+            VMValue val = getOperand(g.init, dummy);
+            writeMemory(globalStorage[g.name].data(), g.type, val);
+        }
     }
 
     Function* mainFn = module->getFunction(entryFn);

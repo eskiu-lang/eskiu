@@ -6,6 +6,7 @@
 #include <string>
 #include <memory>
 #include <cstdint>
+#include <cstring>
 
 namespace eir {
 
@@ -67,6 +68,7 @@ struct StackFrame {
         if (stackOffset > stackMemory.size()) {
             stackMemory.resize(std::max(stackMemory.size() * 2, stackOffset + 4096));
         }
+        std::memset(&stackMemory[aligned], 0, bytes);
         return &stackMemory[aligned];
     }
 };
