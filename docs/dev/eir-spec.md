@@ -1,0 +1,256 @@
+# EIR (Eskiu Intermediate Representation) Specification
+
+This document defines the architecture, type system, instruction set, and textual representation of **EIR** (Eskiu Intermediate Representation). EIR is Eskiu's intermediate compiler representation, designed to decouple the frontend from LLVM and enable custom backends (native machine code emitters, C transpilers, and bytecode VMs).
+
+---
+
+## 1. Motivation and Design Goals
+
+Today, the Eskiu compiler compiles through LLVM:
+- The C++ compiler (`eskiuc`) uses the LLVM C++ API (`llvm::IRBuilder`, `llvm::Module`).
+- The self-hosted compiler (`selfhost/`, `eskiuc-esk`) emits LLVM IR text and invokes `clang` to produce native binaries.
+
+While LLVM provides world-class optimization for release binaries, relying exclusively on it introduces major drawbacks:
+1. **Heavyweight dependency:** LLVM is millions of lines of code, slow to build, and massive in binary distribution size.
+2. **Slow debug iterations:** Generating LLVM IR, running LLVM's internal passes, and emitting code through LLVM takes seconds for medium programs, whereas development workflows benefit from instant (<50ms) compilation.
+3. **Self-hosting dependency:** The self-hosted compiler cannot ship as a standalone binary without requiring `clang` preinstalled on user machines.
+
+### Goals of EIR
+- **Backend agnostic:** Serve as the unified lowering target from Eskiu's frontend. Backends (LLVM, custom AArch64/x86-64 machine code emitter, C99 transpiler, or bytecode VM) consume EIR.
+- **Explicit semantics:** High-level Eskiu features—such as structural interfaces (`{data, vtable}` fat pointers), closures (`{fn_ptr, env_ptr}` fat pointers), slices (`{ptr, len}`), bitfields, and `defer` cleanup sequences—are lowered into explicit, simple EIR operations.
+- **SSA-friendly with explicit stack frames:** Functions use explicit `alloca` for mutable variables, matching the AST's scoping. A straightforward Linear Scan or stack-spill register allocator can generate native assembly directly without complex Phi analysis, while an SSA transformation (mem2reg) remains straightforward.
+- **Readable text representation:** EIR has a standard textual syntax (`.eir`) for debugging, diff testing (`--test-eir`), and tooling.
+
+---
+
+## 2. Pipeline Placement
+
+EIR sits immediately after the frontend semantic passes and before backend code generation:
+
+```
+Source (.esk) ──► Lexer/Preproc ──► Parser ──► TypeChecker (1st pass)
+                                                    │
+                                                    ▼
+                                              AsyncTransform
+                                                    │
+                                                    ▼
+                                          TypeChecker (Single Resolver / post-TC)
+                                                    │
+                                                    ▼
+                                         [ EIRBuilder (AST -> EIR) ]
+                                                    │
+                                                    ▼
+                                              EIR Module
+                                 ┌──────────────────┼──────────────────┐
+                                 ▼                  ▼                  ▼
+                           [ Native Backend ]  [ C Backend ]   [ LLVM Backend ]
+                             (x86_64/ARM64)       (C99)         (via EIR/AST)
+```
+
+### Invariants Guaranteed to EIR
+1. **Fully Typed AST:** Every expression's type is known via `postTc.expressionTypeMap()`.
+2. **Monomorphized Generics:** Templates (`Result<int, string>`, `sort<T>`) and generic methods are already instantiated under unique names (e.g. `Result_int_string`).
+3. **Desugared Async/Await:** `AsyncTransform` has already rewritten `async` functions into state-machine structs and step functions.
+4. **Resolved Symbols:** Operator overloading functions (`__op_add_*`), implicit receiver methods (`T_method(self, ...)`), and constructors are resolved into concrete function calls.
+
+---
+
+## 3. Type System
+
+EIR types are strictly defined and map directly from Eskiu's `ty::Type`:
+
+### 3.1 Primitives
+| EIR Type | Description | Bit Width / Representation |
+|---|---|---|
+| `void` | Absence of value | 0 bits |
+| `i1` | Boolean | 1 bit (stored as 8-bit in memory) |
+| `i8`, `u8` | Signed / Unsigned 8-bit integer | 8 bits |
+| `i16`, `u16` | Signed / Unsigned 16-bit integer | 16 bits |
+| `i32`, `u32` | Signed / Unsigned 32-bit integer | 32 bits |
+| `i64`, `u64` | Signed / Unsigned 64-bit integer | 64 bits |
+| `f32` | IEEE-754 single precision float | 32 bits |
+| `f64` | IEEE-754 double precision float | 64 bits |
+| `ptr` | Memory pointer | Target word size (32 or 64 bits) |
+
+### 3.2 Aggregates and Composites
+- **Struct:** `struct Name { T1, T2, ... }`
+  Contains ordered fields with defined byte offsets and alignments.
+- **Array:** `[N x T]`
+  Fixed-size contiguous buffer of $N$ elements of type $T$.
+- **Function Prototype:** `fn(P1, P2, ...) -> R`
+  Signature representing a direct or indirect function pointer.
+
+### 3.3 Fat Pointers (First-Class Aggregates)
+Eskiu uses fat pointers extensively. In EIR, these are modeled either as built-in compound types or canonical two-word structs:
+- **Interface Fat Pointer:** `{ ptr data, ptr vtable }`
+- **Closure Fat Pointer:** `{ ptr fn_ptr, ptr env_ptr }`
+- **Slice Fat Pointer:** `{ ptr data_ptr, i64 len }`
+
+---
+
+## 4. Program Structure
+
+An EIR translation unit is an `eir::Module`:
+
+```
+Module
+ ├── Target Metadata (Triple, DataLayout)
+ ├── Type Definitions (Structs, Unions, Interfaces)
+ ├── Global Variables & Constants
+ ├── External Function Declarations (extern C)
+ └── Function Definitions
+      └── Basic Blocks
+           └── Instructions (terminating in Br, BrCond, Ret, etc.)
+```
+
+### 4.1 Identifiers and Values
+- **Globals & Functions:** Prefixed with `@` (e.g. `@printf`, `@main`, `@global_table`).
+- **Virtual Registers (SSA temporaries / locals):** Prefixed with `%` (e.g. `%0`, `%x`, `%ptr`).
+- **Basic Block Labels:** Prefixed with `$` or plain label name (e.g. `entry:`, `then:`, `loop.body:`).
+- **Constants:** Literals formatted directly (e.g. `42`, `-10`, `3.14159`, `"Hello\n"`, `null`, `true`, `false`).
+
+---
+
+## 5. Instruction Set
+
+EIR instructions are 3-address operations. Every value-producing instruction assigns to a virtual register `%dst`.
+
+### 5.1 Memory & Storage
+* `alloca %dst, <type>, align <N>`
+  Allocates space on the current function's stack frame. Returns a `ptr`.
+* `load %dst, <type>, %ptr`
+  Loads a value of type `<type>` from memory address `%ptr`.
+* `store <type> %val, %ptr`
+  Stores `%val` into memory address `%ptr`.
+* `gep %dst, <elem_type>, %ptr, %idx`
+  Calculates pointer offset for array/pointer indexing: `%ptr + %idx * sizeof(elem_type)`.
+* `field_ptr %dst, <struct_name>, %ptr, <field_idx>`
+  Calculates pointer to field `<field_idx>` of struct `<struct_name>` at address `%ptr`.
+
+### 5.2 Arithmetic & Bitwise
+Operates on integer and floating point registers:
+* Integer binary: `add`, `sub`, `mul`, `sdiv`, `udiv`, `srem`, `urem`
+* Floating-point binary: `fadd`, `fsub`, `fmul`, `fdiv`
+* Bitwise binary: `and`, `or`, `xor`, `shl`, `lshr` (logical shift right), `ashr` (arithmetic shift right)
+* Unary: `neg`, `not`
+
+Syntax:
+```eir
+%2 = add i32 %0, %1
+%3 = fmul f64 %fa, %fb
+%4 = and u32 %a, 0xFF
+```
+
+### 5.3 Comparisons & Conditionals
+* `icmp <cond> <type> %a, %b`
+  Integer comparison. Condition `<cond>`:
+  `eq`, `ne`, `slt`, `sle`, `sgt`, `sge` (signed), `ult`, `ule`, `ugt`, `uge` (unsigned).
+  Returns `i1`.
+* `fcmp <cond> <type> %a, %b`
+  Float comparison: `oeq`, `one`, `olt`, `ole`, `ogt`, `oge`, etc.
+  Returns `i1`.
+
+### 5.4 Conversions & Casts
+* `trunc <from_ty> %val to <to_ty>`: Integer truncation.
+* `zext <from_ty> %val to <to_ty>`: Zero extension.
+* `sext <from_ty> %val to <to_ty>`: Sign extension.
+* `fptrunc <from_ty> %val to <to_ty>`: Float double -> float.
+* `fpext <from_ty> %val to <to_ty>`: Float float -> double.
+* `fptosi <from_ty> %val to <to_ty>`: Float to signed integer.
+* `sitofp <from_ty> %val to <to_ty>`: Signed integer to float.
+* `bitcast <from_ty> %val to <to_ty>`: Reinterpret bits (e.g. pointer to pointer).
+* `ptrtoint %val to i64`: Pointer to integer address.
+* `inttoptr %val to ptr`: Integer address to pointer.
+
+### 5.5 Control Flow & Terminators
+Every basic block MUST end in exactly one terminator:
+* `ret <type> %val` / `ret void`: Return from current function.
+* `br $target`: Unconditional jump to basic block `$target`.
+* `br_cond i1 %cond, $then_bb, $else_bb`: Conditional jump.
+* `switch <type> %val, $default_bb [ <c1>: $bb1, <c2>: $bb2, ... ]`: Multi-way jump.
+* `unreachable`: Declares unreachable state (used after traps or infinite loops).
+
+### 5.6 Calls and Fat Pointers
+* `call %dst, <ret_ty> @fn_name( <arg_ty> %a1, ... )`
+  Direct function call.
+* `call_indirect %dst, <ret_ty> %fn_ptr( <arg_ty> %a1, ... )`
+  Indirect call through function pointer.
+* `make_interface %dst, ptr %data, ptr %vtable`
+  Constructs an interface fat pointer.
+* `make_closure %dst, ptr %fn_ptr, ptr %env_ptr`
+  Constructs a closure fat pointer.
+* `make_slice %dst, ptr %data_ptr, i64 %len`
+  Constructs a slice fat pointer.
+* `extract_fat %dst, <fat_val>, <index>`
+  Extracts field 0 (data/fn_ptr) or field 1 (vtable/env_ptr/len) from a fat pointer.
+
+### 5.7 Exceptions & Unwinding
+* `throw ptr %exception_obj`
+* `invoke %dst, <ret_ty> @fn_name( <args> ) to $ok_bb unwind $catch_bb`
+* `landingpad %dst`: Extracts exception info in the landing block.
+
+---
+
+## 6. Textual Syntax Example
+
+Consider this Eskiu program:
+
+```eskiu
+fn add(int a, int b) -> int {
+    let sum = a + b;
+    if (sum > 10) {
+        return sum * 2;
+    }
+    return sum;
+}
+```
+
+The lowered **EIR** (`.eir`) representation:
+
+```eir
+module "example"
+
+fn @add(i32 %a, i32 %b) -> i32 {
+entry:
+    %a.addr = alloca i32, align 4
+    %b.addr = alloca i32, align 4
+    %sum.addr = alloca i32, align 4
+    store i32 %a, ptr %a.addr
+    store i32 %b, ptr %b.addr
+
+    %0 = load i32, ptr %a.addr
+    %1 = load i32, ptr %b.addr
+    %2 = add i32 %0, %1
+    store i32 %2, ptr %sum.addr
+
+    %3 = load i32, ptr %sum.addr
+    %4 = icmp sgt i32 %3, 10
+    br_cond i1 %4, $then, $else
+
+then:
+    %5 = load i32, ptr %sum.addr
+    %6 = mul i32 %5, 2
+    ret i32 %6
+
+else:
+    br $merge
+
+merge:
+    %7 = load i32, ptr %sum.addr
+    ret i32 %7
+}
+```
+
+---
+
+## 7. Implementation Roadmap
+
+1. **EIR Data Structures (`eir/eir.h`, `eir/eir.cpp`)**:
+   Implement `Type`, `Value`, `Instruction`, `BasicBlock`, `Function`, and `Module`, with a textual serializer (`dump()`).
+2. **EIR Builder (`eir/eir_builder.h`, `eir/eir_builder.cpp`)**:
+   An `ASTVisitor` that traverses the resolved AST and builds an `eir::Module`.
+3. **Compiler CLI flag (`--test-eir`)**:
+   Hook up `main.cpp` to support `./build/eskiuc file.esk --test-eir` to print the emitted EIR.
+4. **Backend Integrations**:
+   - Native x86-64 / AArch64 code generator consuming EIR.
+   - Self-hosted parity: `selfhost/eir.esk` for the Eskiu-written compiler.

@@ -27,6 +27,7 @@
 #include "sema/type_checker.h"
 #include "sema/async_transform.h"
 #include "codegen/codegen.h"
+#include "eir/eir_builder.h"
 #include "main_support.h"
 #include "repl.h"
 #include "pkg.h"
@@ -66,6 +67,10 @@ static llvm::cl::opt<bool> TestParser("test-parser",
 
 static llvm::cl::opt<bool> TestCodegen("test-codegen",
                                        llvm::cl::desc("Generate LLVM IR and print it"),
+    llvm::cl::cat(EskiuCat));
+
+static llvm::cl::opt<bool> TestEir("test-eir",
+                                   llvm::cl::desc("Generate EIR (Eskiu Intermediate Representation) and print it"),
     llvm::cl::cat(EskiuCat));
 
 static llvm::cl::opt<bool> TestTypeChecker("test-typechecker",
@@ -372,6 +377,47 @@ static int testCodegen(const std::string& filename) {
 
         std::cout << "========================================================" << std::endl;
         std::cout << "Code generation succeeded!" << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
+    }
+    return 0;
+}
+
+// Test EIR: tokenize, parse, typecheck, async-transform, and emit EIR
+static int testEir(const std::string& filename) {
+    auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding);
+    if (!program) {
+        std::cerr << "Parse failed!" << std::endl;
+        return 1;
+    }
+
+    try {
+        TypeChecker tc; tc.targetTriple = std::string(TargetTriple); tc.warnDeprecated = !WnoDeprecated;
+        tc.sourceFile = filename; applyWarningFlags(tc);
+        if (!tc.check(program.get())) {
+            std::cerr << "Type checking failed!" << std::endl;
+            return 1;
+        }
+        AsyncTransform(&tc.expressionTypeMap(), &tc.instanceArgsMap(), &tc.instanceExprTypeMap()).run(program.get());
+        TypeChecker postTc; postTc.targetTriple = std::string(TargetTriple); postTc.warnDeprecated = false; postTc.warnDefaults = false; postTc.sourceFile = filename;
+        if (!postTc.check(program.get())) {
+            std::cerr << "error: internal: the async lowering produced a program that does not type-check" << std::endl;
+            return 1;
+        }
+
+        eir::EIRBuilder builder;
+        builder.resolvedExprTypes = &postTc.expressionTypeMap();
+        builder.semaInstanceArgs = &postTc.instanceArgsMap();
+        if (!TargetTriple.empty()) builder.targetTriple = std::string(TargetTriple);
+
+        auto eirModule = builder.build(program.get());
+        if (!eirModule) {
+            std::cerr << "EIR generation failed!" << std::endl;
+            return 1;
+        }
+
+        eirModule->dump(std::cout);
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
@@ -740,6 +786,11 @@ static int compilerMain(int argc, char** argv) {
     // Handle --test-codegen
     if (TestCodegen) {
         return testCodegen(InputFilename);
+    }
+
+    // Handle --test-eir
+    if (TestEir) {
+        return testEir(InputFilename);
     }
 
     // Full compilation pipeline — parse every input file and merge their

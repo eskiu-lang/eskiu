@@ -49,6 +49,8 @@ set(SOURCES
     codegen/codegen_adt.cpp
     codegen/codegen_cabi.cpp
     codegen/codegen_repl.cpp
+    eir/eir.cpp
+    eir/eir_builder.cpp
 )
 
 add_executable(eskiuc ${SOURCES})
