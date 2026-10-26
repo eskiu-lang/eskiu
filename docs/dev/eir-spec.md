@@ -118,12 +118,16 @@ EIR instructions are 3-address operations. Every value-producing instruction ass
 ### 5.1 Memory & Storage
 * `alloca %dst, <type>, align <N>`
   Allocates space on the current function's stack frame. Returns a `ptr`.
-* `load %dst, <type>, %ptr`
+* `load %dst, <type>, %ptr` / `load volatile %dst, <type>, %ptr`
   Loads a value of type `<type>` from memory address `%ptr`.
-* `store <type> %val, %ptr`
+  When qualified with `volatile` (`isVolatile == true`), backends and optimization passes must never reorder, elide, cache in registers, or merge this memory access. Critical for MMIO (freestanding/bare-metal kernel and vision hardware buffers).
+* `store <type> %val, %ptr` / `store volatile <type> %val, %ptr`
   Stores `%val` into memory address `%ptr`.
+  When qualified with `volatile`, guarantees an exact store to memory that cannot be eliminated as dead code or reordered across sequence points.
 * `gep %dst, <elem_type>, %ptr, %idx`
   Calculates pointer offset for array/pointer indexing: `%ptr + %idx * sizeof(elem_type)`.
+* `offset_ptr %dst, ptr %ptr, <byte_offset>`
+  Calculates byte-addressed pointer offset `%ptr + <byte_offset>`. Used for struct field and bitfield storage access.
 * `field_ptr %dst, <struct_name>, %ptr, <field_idx>`
   Calculates pointer to field `<field_idx>` of struct `<struct_name>` at address `%ptr`.
 
@@ -188,6 +192,95 @@ Every basic block MUST end in exactly one terminator:
 * `throw ptr %exception_obj`
 * `invoke %dst, <ret_ty> @fn_name( <args> ) to $ok_bb unwind $catch_bb`
 * `landingpad %dst`: Extracts exception info in the landing block.
+
+### 5.8 Inline Assembly
+* `inline_asm "<template>", "<constraints>", [<operands>...] ~[<clobbers>...]`
+  Direct inline assembly instruction for low-level architecture control, bare metal ARM64/x86 kernel development, and SIMD/MMIO operations.
+  - Template: String containing raw assembly instructions (e.g. `"svc #0"`, `"mrs %0, vbar_el1"`, `"dsb sy"`).
+  - Constraints: GCC/LLVM-style operand constraints (e.g. `"=r"`, `"r"`, `"+r"`, `"m"`).
+  - Operands: Virtual registers passed as inputs/outputs.
+  - Clobbers: List of clobbered registers or memory barriers (e.g. `"memory"`, `"cc"`).
+  - Example:
+    ```eir
+    inline_asm "str %1, [%0]", "r,r", ptr %addr, i32 %val ~["memory"]
+    ```
+
+### 5.9 Explicit Lowering for Bitfields
+EIR does not contain high-level bitfield types or instructions. Instead, struct bitfields are packed into primitive storage units (`u8`, `u16`, `u32`, `u64`) following target C ABI rules (AAPCS/SysV/MSVC) and lowered into explicit elementary memory and bitwise operations.
+
+#### Bitfield Read Lowering:
+1. **Locate storage unit:**
+   ```eir
+   %unit_ptr = offset_ptr ptr %base_ptr, <storage_byte_offset>
+   ```
+2. **Load unit (inheriting volatile if base pointer or member is volatile):**
+   ```eir
+   %raw = load [volatile] <storage_type>, ptr %unit_ptr
+   ```
+3. **Shift out lower bits:**
+   ```eir
+   %shifted = lshr <storage_type> %raw, <bit_offset>
+   ```
+4. **Mask field width:**
+   ```eir
+   %masked = and <storage_type> %shifted, <(1 << bit_width) - 1>
+   ```
+5. **Sign extension (for signed bitfields):**
+   If the bitfield is signed, the field is shifted left by `(storage_bits - bit_width)` and arithmetic-shifted right by the same amount:
+   ```eir
+   %tmp = shl <storage_type> %masked, <storage_bits - bit_width>
+   %val = ashr <storage_type> %tmp, <storage_bits - bit_width>
+   ```
+6. **Promote to expression type:**
+   C promotion rules apply (`zext` or `sext` to `i32`/`i64`).
+
+#### Bitfield Write Lowering:
+1. **Locate storage unit:**
+   ```eir
+   %unit_ptr = offset_ptr ptr %base_ptr, <storage_byte_offset>
+   ```
+2. **Load existing storage unit:**
+   ```eir
+   %orig = load [volatile] <storage_type>, ptr %unit_ptr
+   ```
+3. **Clear field bits:**
+   Compute mask $M = \sim(((1 \ll \text{bit\_width}) - 1) \ll \text{bit\_offset})$:
+   ```eir
+   %cleared = and <storage_type> %orig, <M>
+   ```
+4. **Truncate & mask new value, then shift into position:**
+   ```eir
+   %val_trunc = trunc <val_type> %new_val to <storage_type>
+   %val_masked = and <storage_type> %val_trunc, <(1 << bit_width) - 1>
+   %val_shifted = shl <storage_type> %val_masked, <bit_offset>
+   ```
+5. **Merge and store back:**
+   ```eir
+   %merged = or <storage_type> %cleared, %val_shifted
+   store [volatile] <storage_type> %merged, ptr %unit_ptr
+   ```
+
+### 5.10 Explicit Lowering for `defer` and Scope Cleanup Sequences
+EIR lowers `defer` statements and scope-exit cleanup actions into explicit control flow blocks with zero overhead for successful paths:
+
+#### 1. Synchronous & Structured Control Flow (Inlined LIFO):
+* Each lexical block (`BlockStmt`, `WhileStmt`, `ForStmt`, `TryStmt`) maintains a compile-time cleanup stack.
+* When a `defer` statement is encountered, its body is parsed and registered in the current scope's cleanup stack.
+* **Normal block exit (fallthrough):**
+  Cleanups registered in that lexical scope are emitted sequentially in strict LIFO order before transitioning or jumping to the successor basic block.
+* **Early exits (`return`, `break`, `continue`):**
+  Before emitting `ret` or `br`, EIRBuilder iterates and inlines all pending cleanups from the current inner scope up to the target scope (e.g. up to the function root for `return`, or up to the loop scope for `break`/`continue`).
+
+#### 2. Exceptional Control Flow (Landing Pads & Unwinding):
+* Calls capable of throwing exceptions inside a scope with active cleanups or `catch`/`finally` handlers are emitted as `invoke ... to $normal_bb unwind $cleanup_bb`.
+* `$cleanup_bb` begins with:
+  ```eir
+  %ex = landingpad ptr
+  ```
+* Pending cleanups for the scope are executed in LIFO order inside the landingpad block.
+* If an enclosing `catch` handler matches, control branches to the handler basic block.
+* If no handler matches in the function, control terminates in `throw ptr %ex` (or backend rethrow / `_Unwind_Resume`) to propagate the exception up the call stack.
+* Functions without `defer`, `finally`, or non-trivial destructors emit standard `call` instructions without landing pad overhead.
 
 ---
 

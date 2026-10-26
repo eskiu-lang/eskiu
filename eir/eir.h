@@ -157,7 +157,10 @@ enum class Opcode {
     // Exceptions
     Throw,
     Invoke,
-    LandingPad
+    LandingPad,
+
+    // Inline Assembly
+    InlineAsm
 };
 
 enum class ICmpCond {
@@ -178,6 +181,14 @@ struct Instruction {
     std::vector<Operand> operands;
     ICmpCond icmpCond = ICmpCond::Eq;
     FCmpCond fcmpCond = FCmpCond::Oeq;
+
+    // Volatile memory access flag
+    bool isVolatile = false;
+
+    // Inline assembly details
+    std::string asmString;
+    std::string asmConstraints;
+    std::vector<std::string> clobbers;
 
     std::vector<std::pair<int64_t, std::string>> switchCases;
     std::string defaultLabel;
@@ -236,6 +247,14 @@ struct StructFieldInfo {
     TypePtr type;
     size_t offset = 0;
     size_t size = 0;
+
+    // Bitfield layout information
+    bool isBitfield = false;
+    unsigned bitOffset = 0;
+    unsigned bitWidth = 0;
+    bool isSigned = false;
+    TypePtr storageType = nullptr;
+    size_t storageOffset = 0;
 };
 
 struct StructInfo {
@@ -249,6 +268,13 @@ struct StructInfo {
             if (f.name == fieldName) return f.offset;
         }
         return 0;
+    }
+
+    const StructFieldInfo* getFieldInfo(const std::string& fieldName) const {
+        for (const auto& f : fields) {
+            if (f.name == fieldName) return &f;
+        }
+        return nullptr;
     }
 };
 

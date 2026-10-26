@@ -258,10 +258,10 @@ std::string Instruction::str() const {
             if (!operands.empty()) ss << ", align " << operands[0].str();
             break;
         case Opcode::Load:
-            ss << "load " << (type ? type->str() : "void") << ", ptr " << operands[0].str();
+            ss << (isVolatile ? "load volatile " : "load ") << (type ? type->str() : "void") << ", ptr " << operands[0].str();
             break;
         case Opcode::Store:
-            ss << "store " << operands[0].type->str() << " " << operands[0].str() << ", ptr " << operands[1].str();
+            ss << (isVolatile ? "store volatile " : "store ") << operands[0].type->str() << " " << operands[0].str() << ", ptr " << operands[1].str();
             break;
         case Opcode::Gep:
             ss << "gep " << operands[0].type->str() << ", ptr " << operands[0].str() << ", "
@@ -379,6 +379,21 @@ std::string Instruction::str() const {
         case Opcode::LandingPad:
             ss << "landingpad";
             break;
+        case Opcode::InlineAsm: {
+            ss << "inline_asm \"" << asmString << "\", \"" << asmConstraints << "\"";
+            for (size_t i = 0; i < operands.size(); ++i) {
+                ss << ", " << operands[i].type->str() << " " << operands[i].str();
+            }
+            if (!clobbers.empty()) {
+                ss << " ~[";
+                for (size_t i = 0; i < clobbers.size(); ++i) {
+                    if (i > 0) ss << ", ";
+                    ss << "\"" << clobbers[i] << "\"";
+                }
+                ss << "]";
+            }
+            break;
+        }
     }
     return ss.str();
 }

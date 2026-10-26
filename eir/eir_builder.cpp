@@ -210,7 +210,194 @@ void EIRBuilder::emitArrayInitInto(Operand dest, ArrayLitExpr* lit, TypePtr arrT
     }
 }
 
+bool EIRBuilder::volatileRooted(const Expr* e) const {
+    if (volatileVars.empty()) return false;
+    while (e) {
+        if (auto* id = dynamic_cast<const IdentExpr*>(e)) {
+            return volatileVars.count(id->name) > 0;
+        }
+        if (auto* u = dynamic_cast<const UnaryExpr*>(e)) {
+            if (u->op != "*" || !u->opFunc.empty()) break;
+            e = u->operand.get();
+        } else if (auto* ix = dynamic_cast<const IndexExpr*>(e)) {
+            if (!ix->opFunc.empty()) break;
+            e = ix->base.get();
+        } else if (auto* m = dynamic_cast<const MemberExpr*>(e)) {
+            e = m->base.get();
+        } else {
+            break;
+        }
+    }
+    return false;
+}
+
+void EIRBuilder::runCleanupsToDepth(size_t depth, bool errorPath) {
+    for (size_t i = cleanupScopes.size(); i-- > depth; ) {
+        auto frame = cleanupScopes[i];
+        for (size_t j = frame.size(); j-- > 0; ) {
+            if (currentBlock && currentBlock->hasTerminator()) return;
+            if (frame[j].isErr && !errorPath) continue;
+            frame[j].body->accept(this);
+        }
+    }
+}
+
+void EIRBuilder::layoutBitfieldsForStruct(StructDecl* s, StructInfo& sinfo, std::vector<TypePtr>& fields) {
+    uint64_t bitpos = 0;
+    size_t structAlign = 1;
+    for (const auto& f : s->fields) {
+        TypePtr ty = toEirType(f.type);
+        fields.push_back(ty);
+        size_t size = getTypeSize(ty);
+        if (size < 1) size = 1;
+        size_t align = getTypeAlign(ty);
+        if (align < 1) align = 1;
+        if (align > structAlign) structAlign = align;
+
+        if (f.bitWidth > 0) {
+            uint64_t w = static_cast<uint64_t>(f.bitWidth);
+            uint64_t unitBits = size * 8;
+            if (bitpos / unitBits != (bitpos + w - 1) / unitBits) {
+                bitpos = (bitpos + unitBits - 1) / unitBits * unitBits;
+            }
+            size_t byteOffset = (bitpos / unitBits) * size;
+            unsigned bitOffset = static_cast<unsigned>(bitpos - byteOffset * 8);
+            StructFieldInfo sfield;
+            sfield.name = f.name;
+            sfield.type = ty;
+            sfield.offset = byteOffset;
+            sfield.size = size;
+            sfield.isBitfield = true;
+            sfield.bitOffset = bitOffset;
+            sfield.bitWidth = static_cast<unsigned>(w);
+            sfield.isSigned = ty->isSigned;
+            sfield.storageType = ty;
+            sfield.storageOffset = byteOffset;
+            sinfo.fields.push_back(sfield);
+            bitpos += w;
+        } else {
+            size_t off = ((bitpos + 7) / 8 + align - 1) / align * align;
+            StructFieldInfo sfield;
+            sfield.name = f.name;
+            sfield.type = ty;
+            sfield.offset = off;
+            sfield.size = size;
+            sfield.isBitfield = false;
+            sinfo.fields.push_back(sfield);
+            bitpos = (off + size) * 8;
+        }
+    }
+    sinfo.totalSize = ((bitpos + 7) / 8 + structAlign - 1) / structAlign * structAlign;
+    sinfo.alignment = structAlign;
+}
+
+Operand EIRBuilder::loadBitfield(MemberExpr* m, bool isVolatile) {
+    std::string baseType = getExprEirType(m->base)->nominalName();
+    auto it = module->structLayouts.find(baseType);
+    if (it == module->structLayouts.end()) return Operand::constInt(0, Type::getI32());
+    const StructFieldInfo* fi = it->second.getFieldInfo(m->member);
+    if (!fi || !fi->isBitfield) return Operand::constInt(0, Type::getI32());
+
+    Operand basePtr;
+    TypePtr baseTy = getExprEirType(m->base);
+    if (baseTy->isPointer()) {
+        basePtr = evaluateExpr(m->base);
+    } else {
+        basePtr = evaluateLValue(m->base);
+    }
+
+    std::string wordPtr = newVar();
+    emit(Instruction{Opcode::OffsetPtr, wordPtr, Type::getPtr(fi->storageType),
+                     {basePtr, Operand::constInt(static_cast<int64_t>(fi->storageOffset), Type::getI64())}});
+
+    std::string wordVal = newVar();
+    Instruction ld{Opcode::Load, wordVal, fi->storageType, {Operand::var(wordPtr, Type::getPtr(fi->storageType))}};
+    ld.isVolatile = isVolatile;
+    emit(ld);
+
+    Operand cur = Operand::var(wordVal, fi->storageType);
+    if (fi->bitOffset > 0) {
+        std::string shifted = newVar();
+        emit(Instruction{Opcode::LShr, shifted, fi->storageType, {cur, Operand::constInt(static_cast<int64_t>(fi->bitOffset), fi->storageType)}});
+        cur = Operand::var(shifted, fi->storageType);
+    }
+    uint64_t mask = (fi->bitWidth >= 64) ? ~0ULL : ((1ULL << fi->bitWidth) - 1);
+    std::string masked = newVar();
+    emit(Instruction{Opcode::And, masked, fi->storageType, {cur, Operand::constInt(static_cast<int64_t>(mask), fi->storageType)}});
+    cur = Operand::var(masked, fi->storageType);
+
+    if (fi->isSigned && fi->bitWidth < static_cast<unsigned>(fi->storageType->bitWidth)) {
+        unsigned sh = static_cast<unsigned>(fi->storageType->bitWidth) - fi->bitWidth;
+        std::string shl = newVar();
+        emit(Instruction{Opcode::Shl, shl, fi->storageType, {cur, Operand::constInt(static_cast<int64_t>(sh), fi->storageType)}});
+        std::string ashr = newVar();
+        emit(Instruction{Opcode::AShr, ashr, fi->storageType, {Operand::var(shl, fi->storageType), Operand::constInt(static_cast<int64_t>(sh), fi->storageType)}});
+        cur = Operand::var(ashr, fi->storageType);
+    }
+    return cur;
+}
+
+void EIRBuilder::storeBitfield(MemberExpr* m, Operand val, bool isVolatile) {
+    std::string baseType = getExprEirType(m->base)->nominalName();
+    auto it = module->structLayouts.find(baseType);
+    if (it == module->structLayouts.end()) return;
+    const StructFieldInfo* fi = it->second.getFieldInfo(m->member);
+    if (!fi || !fi->isBitfield) return;
+
+    Operand basePtr;
+    TypePtr baseTy = getExprEirType(m->base);
+    if (baseTy->isPointer()) {
+        basePtr = evaluateExpr(m->base);
+    } else {
+        basePtr = evaluateLValue(m->base);
+    }
+
+    std::string wordPtr = newVar();
+    emit(Instruction{Opcode::OffsetPtr, wordPtr, Type::getPtr(fi->storageType),
+                     {basePtr, Operand::constInt(static_cast<int64_t>(fi->storageOffset), Type::getI64())}});
+
+    std::string wordVal = newVar();
+    Instruction ld{Opcode::Load, wordVal, fi->storageType, {Operand::var(wordPtr, Type::getPtr(fi->storageType))}};
+    ld.isVolatile = isVolatile;
+    emit(ld);
+
+    uint64_t mask = (fi->bitWidth >= 64) ? ~0ULL : ((1ULL << fi->bitWidth) - 1);
+    uint64_t fieldMask = mask << fi->bitOffset;
+    std::string cleared = newVar();
+    emit(Instruction{Opcode::And, cleared, fi->storageType, {Operand::var(wordVal, fi->storageType), Operand::constInt(static_cast<int64_t>(~fieldMask), fi->storageType)}});
+
+    Operand valToStore = val;
+    if (val.type->bitWidth != fi->storageType->bitWidth) {
+        std::string conv = newVar();
+        if (val.type->bitWidth > fi->storageType->bitWidth) {
+            emit(Instruction{Opcode::Trunc, conv, fi->storageType, {val}});
+        } else {
+            emit(Instruction{fi->isSigned ? Opcode::SExt : Opcode::ZExt, conv, fi->storageType, {val}});
+        }
+        valToStore = Operand::var(conv, fi->storageType);
+    }
+
+    std::string vMasked = newVar();
+    emit(Instruction{Opcode::And, vMasked, fi->storageType, {valToStore, Operand::constInt(static_cast<int64_t>(mask), fi->storageType)}});
+    Operand vShifted = Operand::var(vMasked, fi->storageType);
+    if (fi->bitOffset > 0) {
+        std::string s = newVar();
+        emit(Instruction{Opcode::Shl, s, fi->storageType, {vShifted, Operand::constInt(static_cast<int64_t>(fi->bitOffset), fi->storageType)}});
+        vShifted = Operand::var(s, fi->storageType);
+    }
+
+    std::string newWord = newVar();
+    emit(Instruction{Opcode::Or, newWord, fi->storageType, {Operand::var(cleared, fi->storageType), vShifted}});
+
+    Instruction st{Opcode::Store, "", Type::getVoid(), {Operand::var(newWord, fi->storageType), Operand::var(wordPtr, Type::getPtr(fi->storageType))}};
+    st.isVolatile = isVolatile;
+    emit(st);
+}
+
 std::unique_ptr<Module> EIRBuilder::build(Program* program) {
+    volatileVars.clear();
+    cleanupScopes.clear();
+    loopContextStack.clear();
     module = std::make_unique<Module>();
     module->name = "main";
     module->targetTriple = targetTriple;
@@ -267,23 +454,34 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
             std::vector<TypePtr> fields;
             StructInfo sinfo;
             sinfo.name = s->name;
-            size_t currentOffset = 0;
-            size_t maxAlign = 1;
+            bool hasBitfield = false;
             for (const auto& f : s->fields) {
-                TypePtr ft = toEirType(f.type);
-                fields.push_back(ft);
-                size_t sz = getTypeSize(ft);
-                size_t al = getTypeAlign(ft);
-                if (al > maxAlign) maxAlign = al;
-                currentOffset = (currentOffset + al - 1) & ~(al - 1);
-                sinfo.fields.push_back({f.name, ft, currentOffset, sz});
-                currentOffset += sz;
+                if (f.bitWidth > 0) { hasBitfield = true; break; }
             }
-            sinfo.totalSize = (currentOffset + maxAlign - 1) & ~(maxAlign - 1);
-            sinfo.alignment = maxAlign;
+            if (hasBitfield) {
+                layoutBitfieldsForStruct(s, sinfo, fields);
+            } else {
+                size_t currentOffset = 0;
+                size_t maxAlign = 1;
+                for (const auto& f : s->fields) {
+                    TypePtr ft = toEirType(f.type);
+                    fields.push_back(ft);
+                    size_t sz = getTypeSize(ft);
+                    size_t al = getTypeAlign(ft);
+                    if (al > maxAlign) maxAlign = al;
+                    currentOffset = (currentOffset + al - 1) & ~(al - 1);
+                    sinfo.fields.push_back({f.name, ft, currentOffset, sz});
+                    currentOffset += sz;
+                }
+                sinfo.totalSize = (currentOffset + maxAlign - 1) & ~(maxAlign - 1);
+                sinfo.alignment = maxAlign;
+            }
             module->structLayouts[s->name] = sinfo;
             module->structTypes.push_back(Type::getStruct(s->name, fields));
         } else if (auto v = dynamic_cast<VarDecl*>(decl.get())) {
+            if (v->isVolatile) {
+                volatileVars.insert(v->name);
+            }
             TypePtr type = toEirType(v->type);
             Operand initOp = Operand::constInt(0, type);
             if (v->initializer) {
@@ -370,6 +568,9 @@ void EIRBuilder::visit(FunctionDecl* node) {
     BasicBlock* entryBB = currentFunction->createBlock("entry");
     setBlock(entryBB);
 
+    cleanupScopes.clear();
+    cleanupScopes.emplace_back(); // root function cleanup frame
+
     pushScope();
 
     // Allocate stack slots for each parameter
@@ -383,15 +584,19 @@ void EIRBuilder::visit(FunctionDecl* node) {
 
     node->body->accept(this);
 
-    // Ensure terminator
+    // Ensure terminator and run any remaining cleanups
     if (!currentBlock->hasTerminator()) {
-        if (currentFunction->returnType->isVoid()) {
-            emit(Instruction{Opcode::Ret, "", Type::getVoid(), {}});
-        } else {
-            emit(Instruction{Opcode::Unreachable, "", Type::getVoid(), {}});
+        runCleanupsToDepth(0, false);
+        if (!currentBlock->hasTerminator()) {
+            if (currentFunction->returnType->isVoid()) {
+                emit(Instruction{Opcode::Ret, "", Type::getVoid(), {}});
+            } else {
+                emit(Instruction{Opcode::Unreachable, "", Type::getVoid(), {}});
+            }
         }
     }
 
+    cleanupScopes.clear();
     popScope();
     currentFunction = nullptr;
     currentBlock = nullptr;
@@ -400,6 +605,9 @@ void EIRBuilder::visit(FunctionDecl* node) {
 void EIRBuilder::visit(VarDecl* node) {
     if (!currentFunction) {
         return; // Globals are processed in Phase 1 of build
+    }
+    if (node->isVolatile) {
+        volatileVars.insert(node->name);
     }
     TypePtr type = toEirType(node->type);
     size_t al = getTypeAlign(type);
@@ -413,34 +621,45 @@ void EIRBuilder::visit(VarDecl* node) {
             emitArrayInitInto(Operand::var(slotName, Type::getPtr(type)), arrLit, type);
         } else {
             Operand val = evaluateExpr(node->initializer);
-            if (type->isStruct() || type->isArray()) {
-                emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::var(val.str(), type), Operand::var(slotName, Type::getPtr(type))}});
-            } else {
-                emit(Instruction{Opcode::Store, "", Type::getVoid(), {val, Operand::var(slotName, Type::getPtr(type))}});
-            }
+            Instruction st{Opcode::Store, "", Type::getVoid(),
+                {(type->isStruct() || type->isArray()) ? Operand::var(val.str(), type) : val,
+                 Operand::var(slotName, Type::getPtr(type))}};
+            st.isVolatile = node->isVolatile;
+            emit(st);
         }
     }
 }
 
 void EIRBuilder::visit(BlockStmt* node) {
     pushScope();
+    cleanupScopes.emplace_back();
     for (auto& item : node->items) {
-        if (currentBlock->hasTerminator()) break;
+        if (currentBlock && currentBlock->hasTerminator()) break;
         if (std::holds_alternative<DeclPtr>(item)) {
             std::get<DeclPtr>(item)->accept(this);
         } else if (std::holds_alternative<StmtPtr>(item)) {
             std::get<StmtPtr>(item)->accept(this);
         }
     }
+    if (currentBlock && !currentBlock->hasTerminator()) {
+        runCleanupsToDepth(cleanupScopes.size() - 1, false);
+    }
+    cleanupScopes.pop_back();
     popScope();
 }
 
 void EIRBuilder::visit(ReturnStmt* node) {
     if (node->value) {
         Operand val = evaluateExpr(node->value);
-        emit(Instruction{Opcode::Ret, "", val.type, {val}});
+        runCleanupsToDepth(0, false);
+        if (currentBlock && !currentBlock->hasTerminator()) {
+            emit(Instruction{Opcode::Ret, "", val.type, {val}});
+        }
     } else {
-        emit(Instruction{Opcode::Ret, "", Type::getVoid(), {}});
+        runCleanupsToDepth(0, false);
+        if (currentBlock && !currentBlock->hasTerminator()) {
+            emit(Instruction{Opcode::Ret, "", Type::getVoid(), {}});
+        }
     }
 }
 
@@ -497,12 +716,14 @@ void EIRBuilder::visit(WhileStmt* node) {
     setBlock(bodyBB);
     breakStack.push_back(exitBB);
     continueStack.push_back(condBB);
+    loopContextStack.push_back({exitBB, condBB, cleanupScopes.size()});
 
     node->body->accept(this);
     if (!currentBlock->hasTerminator()) {
         emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(condBB->name)}});
     }
 
+    loopContextStack.pop_back();
     breakStack.pop_back();
     continueStack.pop_back();
 
@@ -543,12 +764,14 @@ void EIRBuilder::visit(ForStmt* node) {
     setBlock(bodyBB);
     breakStack.push_back(exitBB);
     continueStack.push_back(stepBB);
+    loopContextStack.push_back({exitBB, stepBB, cleanupScopes.size()});
 
     node->body->accept(this);
     if (!currentBlock->hasTerminator()) {
         emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(stepBB->name)}});
     }
 
+    loopContextStack.pop_back();
     breakStack.pop_back();
     continueStack.pop_back();
 
@@ -561,13 +784,23 @@ void EIRBuilder::visit(ForStmt* node) {
 }
 
 void EIRBuilder::visit(BreakStmt*) {
-    if (!breakStack.empty()) {
+    if (!loopContextStack.empty()) {
+        runCleanupsToDepth(loopContextStack.back().cleanupDepth, false);
+        if (currentBlock && !currentBlock->hasTerminator()) {
+            emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(loopContextStack.back().breakTarget->name)}});
+        }
+    } else if (!breakStack.empty()) {
         emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(breakStack.back()->name)}});
     }
 }
 
 void EIRBuilder::visit(ContinueStmt*) {
-    if (!continueStack.empty()) {
+    if (!loopContextStack.empty()) {
+        runCleanupsToDepth(loopContextStack.back().cleanupDepth, false);
+        if (currentBlock && !currentBlock->hasTerminator()) {
+            emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(loopContextStack.back().continueTarget->name)}});
+        }
+    } else if (!continueStack.empty()) {
         emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(continueStack.back()->name)}});
     }
 }
@@ -579,9 +812,24 @@ void EIRBuilder::visit(ExprStmt* node) {
 void EIRBuilder::visit(BinaryExpr* node) {
     // Assignment: =
     if (node->op == "=") {
+        if (auto* mem = dynamic_cast<MemberExpr*>(node->left.get())) {
+            std::string baseType = getExprEirType(mem->base)->nominalName();
+            auto it = module->structLayouts.find(baseType);
+            if (it != module->structLayouts.end()) {
+                const StructFieldInfo* fi = it->second.getFieldInfo(mem->member);
+                if (fi && fi->isBitfield) {
+                    Operand rhs = evaluateExpr(node->right);
+                    storeBitfield(mem, rhs, volatileRooted(mem));
+                    lastValue = rhs;
+                    return;
+                }
+            }
+        }
         Operand rhs = evaluateExpr(node->right);
         Operand lhsAddr = evaluateLValue(node->left);
-        emit(Instruction{Opcode::Store, "", Type::getVoid(), {rhs, lhsAddr}});
+        Instruction st{Opcode::Store, "", Type::getVoid(), {rhs, lhsAddr}};
+        st.isVolatile = volatileRooted(node->left.get());
+        emit(st);
         lastValue = rhs;
         return;
     }
@@ -591,11 +839,43 @@ void EIRBuilder::visit(BinaryExpr* node) {
         node->op == "/=" || node->op == "%=" || node->op == "&=" ||
         node->op == "|=" || node->op == "^=" || node->op == "<<=" || node->op == ">>=") {
         std::string baseOp = node->op.substr(0, node->op.find('='));
+
+        if (auto* mem = dynamic_cast<MemberExpr*>(node->left.get())) {
+            std::string baseType = getExprEirType(mem->base)->nominalName();
+            auto it = module->structLayouts.find(baseType);
+            if (it != module->structLayouts.end()) {
+                const StructFieldInfo* fi = it->second.getFieldInfo(mem->member);
+                if (fi && fi->isBitfield) {
+                    Operand cur = loadBitfield(mem, volatileRooted(mem));
+                    Operand rhs = evaluateExpr(node->right);
+                    std::string resVar = newVar();
+
+                    Opcode binOp = Opcode::Add;
+                    if (baseOp == "-") binOp = Opcode::Sub;
+                    else if (baseOp == "*") binOp = Opcode::Mul;
+                    else if (baseOp == "/") binOp = cur.type->isFloat() ? Opcode::FDiv : (cur.type->isSigned ? Opcode::SDiv : Opcode::UDiv);
+                    else if (baseOp == "%") binOp = cur.type->isSigned ? Opcode::SRem : Opcode::URem;
+                    else if (baseOp == "&") binOp = Opcode::And;
+                    else if (baseOp == "|") binOp = Opcode::Or;
+                    else if (baseOp == "^") binOp = Opcode::Xor;
+                    else if (baseOp == "<<") binOp = Opcode::Shl;
+                    else if (baseOp == ">>") binOp = cur.type->isSigned ? Opcode::AShr : Opcode::LShr;
+
+                    emit(Instruction{binOp, resVar, cur.type, {cur, rhs}});
+                    storeBitfield(mem, Operand::var(resVar, cur.type), volatileRooted(mem));
+                    lastValue = Operand::var(resVar, cur.type);
+                    return;
+                }
+            }
+        }
+
         Operand lhsAddr = evaluateLValue(node->left);
         TypePtr ty = getExprEirType(node->left);
 
         std::string curVal = newVar();
-        emit(Instruction{Opcode::Load, curVal, ty, {lhsAddr}});
+        Instruction ld{Opcode::Load, curVal, ty, {lhsAddr}};
+        ld.isVolatile = volatileRooted(node->left.get());
+        emit(ld);
 
         Operand rhs = evaluateExpr(node->right);
         std::string resVar = newVar();
@@ -612,7 +892,9 @@ void EIRBuilder::visit(BinaryExpr* node) {
         else if (baseOp == ">>") binOp = ty->isSigned ? Opcode::AShr : Opcode::LShr;
 
         emit(Instruction{binOp, resVar, ty, {Operand::var(curVal, ty), rhs}});
-        emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::var(resVar, ty), lhsAddr}});
+        Instruction st{Opcode::Store, "", Type::getVoid(), {Operand::var(resVar, ty), lhsAddr}};
+        st.isVolatile = volatileRooted(node->left.get());
+        emit(st);
         lastValue = Operand::var(resVar, ty);
         return;
     }
@@ -683,7 +965,9 @@ void EIRBuilder::visit(UnaryExpr* node) {
         Operand ptr = evaluateExpr(node->operand);
         TypePtr elemTy = getExprEirType(node);
         std::string dst = newVar();
-        emit(Instruction{Opcode::Load, dst, elemTy, {ptr}});
+        Instruction ld{Opcode::Load, dst, elemTy, {ptr}};
+        ld.isVolatile = volatileRooted(node);
+        emit(ld);
         lastValue = Operand::var(dst, elemTy);
         lastLValue = ptr;
         return;
@@ -706,15 +990,35 @@ void EIRBuilder::visit(UnaryExpr* node) {
 }
 
 void EIRBuilder::visit(IncDecExpr* node) {
+    if (auto* mem = dynamic_cast<MemberExpr*>(node->operand.get())) {
+        std::string baseType = getExprEirType(mem->base)->nominalName();
+        auto it = module->structLayouts.find(baseType);
+        if (it != module->structLayouts.end()) {
+            const StructFieldInfo* fi = it->second.getFieldInfo(mem->member);
+            if (fi && fi->isBitfield) {
+                Operand cur = loadBitfield(mem, volatileRooted(mem));
+                std::string next = newVar();
+                emit(Instruction{node->decrement ? Opcode::Sub : Opcode::Add, next, cur.type, {cur, Operand::constInt(1, cur.type)}});
+                storeBitfield(mem, Operand::var(next, cur.type), volatileRooted(mem));
+                lastValue = node->prefix ? Operand::var(next, cur.type) : cur;
+                return;
+            }
+        }
+    }
+
     Operand addr = evaluateLValue(node->operand);
     TypePtr ty = getExprEirType(node->operand);
 
     std::string cur = newVar();
-    emit(Instruction{Opcode::Load, cur, ty, {addr}});
+    Instruction ld{Opcode::Load, cur, ty, {addr}};
+    ld.isVolatile = volatileRooted(node->operand.get());
+    emit(ld);
 
     std::string next = newVar();
     emit(Instruction{node->decrement ? Opcode::Sub : Opcode::Add, next, ty, {Operand::var(cur, ty), Operand::constInt(1, ty)}});
-    emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::var(next, ty), addr}});
+    Instruction st{Opcode::Store, "", Type::getVoid(), {Operand::var(next, ty), addr}};
+    st.isVolatile = volatileRooted(node->operand.get());
+    emit(st);
 
     lastValue = node->prefix ? Operand::var(next, ty) : Operand::var(cur, ty);
 }
@@ -749,7 +1053,9 @@ void EIRBuilder::visit(IdentExpr* node) {
     }
     TypePtr ty = lookupVarType(node->name);
     std::string dst = newVar();
-    emit(Instruction{Opcode::Load, dst, ty, {*slot}});
+    Instruction ld{Opcode::Load, dst, ty, {*slot}};
+    ld.isVolatile = volatileVars.count(node->name) > 0;
+    emit(ld);
     lastValue = Operand::var(dst, ty);
     lastLValue = *slot;
 }
@@ -975,6 +1281,18 @@ void EIRBuilder::visit(MemberExpr* node) {
         }
     }
 
+    if (module && !structName.empty()) {
+        auto it = module->structLayouts.find(structName);
+        if (it != module->structLayouts.end()) {
+            const StructFieldInfo* fi = it->second.getFieldInfo(node->member);
+            if (fi && fi->isBitfield) {
+                lastValue = loadBitfield(node, volatileRooted(node));
+                lastLValue = lastValue;
+                return;
+            }
+        }
+    }
+
     Operand basePtr;
     if (objTy && objTy->isPointer()) {
         basePtr = evaluateExpr(node->base);
@@ -1000,7 +1318,9 @@ void EIRBuilder::visit(MemberExpr* node) {
     emit(Instruction{Opcode::FieldPtr, fptr, Type::getPtr(memberTy), {Operand::var(structName, nullptr), basePtr, Operand::constString(node->member)}});
 
     std::string loaded = newVar();
-    emit(Instruction{Opcode::Load, loaded, memberTy, {Operand::var(fptr, Type::getPtr(memberTy))}});
+    Instruction ld{Opcode::Load, loaded, memberTy, {Operand::var(fptr, Type::getPtr(memberTy))}};
+    ld.isVolatile = volatileRooted(node);
+    emit(ld);
     lastValue = Operand::var(loaded, memberTy);
     lastLValue = Operand::var(fptr, Type::getPtr(memberTy));
 }
@@ -1014,7 +1334,9 @@ void EIRBuilder::visit(IndexExpr* node) {
     emit(Instruction{Opcode::Gep, gepDst, Type::getPtr(elemTy), {basePtr, idx}});
 
     std::string loaded = newVar();
-    emit(Instruction{Opcode::Load, loaded, elemTy, {Operand::var(gepDst, Type::getPtr(elemTy))}});
+    Instruction ld{Opcode::Load, loaded, elemTy, {Operand::var(gepDst, Type::getPtr(elemTy))}};
+    ld.isVolatile = volatileRooted(node);
+    emit(ld);
     lastValue = Operand::var(loaded, elemTy);
     lastLValue = Operand::var(gepDst, Type::getPtr(elemTy));
 }
@@ -1168,12 +1490,14 @@ void EIRBuilder::visit(DoWhileStmt* node) {
     setBlock(bodyBB);
     breakStack.push_back(exitBB);
     continueStack.push_back(condBB);
+    loopContextStack.push_back({exitBB, condBB, cleanupScopes.size()});
 
     node->body->accept(this);
     if (!currentBlock->hasTerminator()) {
         emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(condBB->name)}});
     }
 
+    loopContextStack.pop_back();
     breakStack.pop_back();
     continueStack.pop_back();
 
@@ -1220,6 +1544,7 @@ void EIRBuilder::visit(SwitchStmt* node) {
     emit(std::move(swInst));
 
     breakStack.push_back(endBB);
+    loopContextStack.push_back({endBB, nullptr, cleanupScopes.size()});
     pushScope();
 
     for (size_t i = 0; i < node->cases.size(); ++i) {
@@ -1236,6 +1561,7 @@ void EIRBuilder::visit(SwitchStmt* node) {
     }
 
     popScope();
+    loopContextStack.pop_back();
     breakStack.pop_back();
 
     setBlock(endBB);
@@ -1415,6 +1741,7 @@ void EIRBuilder::visit(StructInitExpr* node) {
         ExprPtr fval = node->fieldInits[i].second;
         if (!fval) continue;
 
+        const StructFieldInfo* fi = nullptr;
         TypePtr ftype = nullptr;
         if (module) {
             auto it = module->structLayouts.find(sname);
@@ -1422,15 +1749,50 @@ void EIRBuilder::visit(StructInitExpr* node) {
                 if (fname.empty() && i < it->second.fields.size()) {
                     fname = it->second.fields[i].name;
                 }
-                for (const auto& f : it->second.fields) {
-                    if (f.name == fname) {
-                        ftype = f.type;
-                        break;
-                    }
-                }
+                fi = it->second.getFieldInfo(fname);
+                if (fi) ftype = fi->type;
             }
         }
         if (!ftype) ftype = getExprEirType(fval);
+
+        if (fi && fi->isBitfield) {
+            Operand val = evaluateExpr(fval);
+            std::string wordPtr = newVar();
+            emit(Instruction{Opcode::OffsetPtr, wordPtr, Type::getPtr(fi->storageType),
+                             {Operand::var(tempSlot, Type::getPtr(stype)), Operand::constInt(static_cast<int64_t>(fi->storageOffset), Type::getI64())}});
+            std::string wordVal = newVar();
+            emit(Instruction{Opcode::Load, wordVal, fi->storageType, {Operand::var(wordPtr, Type::getPtr(fi->storageType))}});
+
+            uint64_t mask = (fi->bitWidth >= 64) ? ~0ULL : ((1ULL << fi->bitWidth) - 1);
+            uint64_t fieldMask = mask << fi->bitOffset;
+            std::string cleared = newVar();
+            emit(Instruction{Opcode::And, cleared, fi->storageType, {Operand::var(wordVal, fi->storageType), Operand::constInt(static_cast<int64_t>(~fieldMask), fi->storageType)}});
+
+            Operand valToStore = val;
+            if (val.type->bitWidth != fi->storageType->bitWidth) {
+                std::string conv = newVar();
+                if (val.type->bitWidth > fi->storageType->bitWidth) {
+                    emit(Instruction{Opcode::Trunc, conv, fi->storageType, {val}});
+                } else {
+                    emit(Instruction{fi->isSigned ? Opcode::SExt : Opcode::ZExt, conv, fi->storageType, {val}});
+                }
+                valToStore = Operand::var(conv, fi->storageType);
+            }
+
+            std::string vMasked = newVar();
+            emit(Instruction{Opcode::And, vMasked, fi->storageType, {valToStore, Operand::constInt(static_cast<int64_t>(mask), fi->storageType)}});
+            Operand vShifted = Operand::var(vMasked, fi->storageType);
+            if (fi->bitOffset > 0) {
+                std::string s = newVar();
+                emit(Instruction{Opcode::Shl, s, fi->storageType, {vShifted, Operand::constInt(static_cast<int64_t>(fi->bitOffset), fi->storageType)}});
+                vShifted = Operand::var(s, fi->storageType);
+            }
+
+            std::string newWord = newVar();
+            emit(Instruction{Opcode::Or, newWord, fi->storageType, {Operand::var(cleared, fi->storageType), vShifted}});
+            emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::var(newWord, fi->storageType), Operand::var(wordPtr, Type::getPtr(fi->storageType))}});
+            continue;
+        }
 
         std::string fptr = newVar();
         emit(Instruction{Opcode::FieldPtr, fptr, Type::getPtr(ftype), {
@@ -1582,7 +1944,89 @@ void EIRBuilder::visit(LambdaExpr* node) {
     lastLValue = callerClosure;
 }
 
-void EIRBuilder::visit(AsmStmt*) {}
+void EIRBuilder::visit(AsmStmt* node) {
+    std::vector<Operand> operands;
+    std::string constraints;
+    auto addConstraint = [&](const std::string& c) {
+        if (!constraints.empty()) constraints += ",";
+        constraints += c;
+    };
+
+    struct RegOut { Operand addr; TypePtr ty; bool vol; };
+    std::vector<RegOut> regOuts;
+    struct Tied { std::string constraint; Operand val; };
+    std::vector<Tied> tied;
+
+    for (size_t i = 0; i < node->outputs.size(); ++i) {
+        const std::string& c = node->outputs[i].first;
+        const ExprPtr& e = node->outputs[i].second;
+        bool rw = !c.empty() && c[0] == '+';
+        std::string body = c.substr(1);
+        TypePtr ty = getExprEirType(e);
+        Operand addr = evaluateLValue(e);
+        bool vol = volatileRooted(e.get());
+        if (body == "m") {
+            addConstraint("=*m");
+            operands.push_back(addr);
+            if (rw) tied.push_back({"*m", addr});
+        } else {
+            addConstraint("=" + body);
+            regOuts.push_back({addr, ty, vol});
+            if (rw) {
+                std::string cur = newVar();
+                Instruction ld{Opcode::Load, cur, ty, {addr}};
+                ld.isVolatile = vol;
+                emit(ld);
+                tied.push_back({std::to_string(i), Operand::var(cur, ty)});
+            }
+        }
+    }
+
+    for (auto& [constraint, expr] : node->inputs) {
+        operands.push_back(evaluateExpr(expr));
+        addConstraint(constraint);
+    }
+    for (auto& t : tied) {
+        operands.push_back(t.val);
+        addConstraint(t.constraint);
+    }
+    for (const auto& clob : node->clobbers) {
+        addConstraint("~{" + clob + "}");
+    }
+
+    Instruction inst;
+    inst.op = Opcode::InlineAsm;
+    inst.asmString = node->asmString;
+    inst.asmConstraints = constraints;
+    inst.clobbers = node->clobbers;
+    inst.operands = operands;
+
+    if (regOuts.size() == 1) {
+        inst.type = regOuts[0].ty;
+        inst.resultVar = newVar();
+        emit(inst);
+        Instruction st{Opcode::Store, "", Type::getVoid(), {Operand::var(inst.resultVar, inst.type), regOuts[0].addr}};
+        st.isVolatile = regOuts[0].vol;
+        emit(st);
+    } else if (regOuts.size() > 1) {
+        std::vector<TypePtr> retFields;
+        for (auto& r : regOuts) retFields.push_back(r.ty);
+        inst.type = Type::getStruct("asm_out", retFields);
+        inst.resultVar = newVar();
+        emit(inst);
+        for (size_t i = 0; i < regOuts.size(); ++i) {
+            std::string ev = newVar();
+            emit(Instruction{Opcode::ExtractFat, ev, regOuts[i].ty, {Operand::var(inst.resultVar, inst.type), Operand::constInt((int64_t)i, Type::getI32())}});
+            Instruction st{Opcode::Store, "", Type::getVoid(), {Operand::var(ev, regOuts[i].ty), regOuts[i].addr}};
+            st.isVolatile = regOuts[i].vol;
+            emit(st);
+        }
+    } else {
+        inst.type = Type::getVoid();
+        emit(inst);
+    }
+}
+
 void EIRBuilder::visit(UnionDecl*) {}
 
 void EIRBuilder::visit(SizeofExpr* node) {
@@ -1617,7 +2061,26 @@ void EIRBuilder::visit(FreeClosureExpr* node) {
 void EIRBuilder::visit(AwaitExpr*) {}
 void EIRBuilder::visit(ThreadJoinStmt*) {}
 void EIRBuilder::visit(ThrowStmt*) {}
-void EIRBuilder::visit(TryStmt*) {}
-void EIRBuilder::visit(DeferStmt*) {}
+void EIRBuilder::visit(TryStmt* node) {
+    if (node->finally) {
+        cleanupScopes.emplace_back();
+        cleanupScopes.back().push_back({node->finally, false});
+    }
+    if (node->body) {
+        node->body->accept(this);
+    }
+    if (node->finally) {
+        if (currentBlock && !currentBlock->hasTerminator()) {
+            runCleanupsToDepth(cleanupScopes.size() - 1, false);
+        }
+        cleanupScopes.pop_back();
+    }
+}
+
+void EIRBuilder::visit(DeferStmt* node) {
+    if (node->body && !cleanupScopes.empty()) {
+        cleanupScopes.back().push_back({node->body, node->isErr});
+    }
+}
 
 } // namespace eir

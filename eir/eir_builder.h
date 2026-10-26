@@ -120,6 +120,31 @@ private:
     std::unordered_map<std::string, EnumDecl*> adtEnums;
     std::unordered_map<std::string, int64_t> enumConstants;
 
+    // Volatile tracking
+    std::set<std::string> volatileVars;
+    bool volatileRooted(const Expr* e) const;
+
+    // Defer & cleanup stack
+    struct DeferEntry {
+        StmtPtr body;
+        bool isErr = false;
+    };
+    std::vector<std::vector<DeferEntry>> cleanupScopes;
+    void runCleanupsToDepth(size_t depth, bool errorPath = false);
+
+    // Loop context with cleanup depth
+    struct LoopContext {
+        BasicBlock* breakTarget = nullptr;
+        BasicBlock* continueTarget = nullptr;
+        size_t cleanupDepth = 0;
+    };
+    std::vector<LoopContext> loopContextStack;
+
+    // Bitfield helpers
+    void storeBitfield(MemberExpr* m, Operand val, bool isVolatile);
+    Operand loadBitfield(MemberExpr* m, bool isVolatile);
+    void layoutBitfieldsForStruct(StructDecl* s, StructInfo& sinfo, std::vector<TypePtr>& fields);
+
     int nextLambdaId = 0;
     int64_t foldConstInt(const ExprPtr& expr);
     void emitArrayInitInto(Operand dest, ArrayLitExpr* lit, TypePtr arrTy);

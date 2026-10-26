@@ -486,7 +486,18 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                 case Opcode::Shl: {
                     int64_t a = getOperand(inst->operands[0], frame).asInt();
                     int64_t b = getOperand(inst->operands[1], frame).asInt();
-                    frame.registers[inst->resultVar] = VMValue(a << b);
+                    if (inst->type && inst->type->bitWidth == 8) {
+                        uint8_t ua = static_cast<uint8_t>(a);
+                        frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(static_cast<uint8_t>(ua << b)));
+                    } else if (inst->type && inst->type->bitWidth == 16) {
+                        uint16_t ua = static_cast<uint16_t>(a);
+                        frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(static_cast<uint16_t>(ua << b)));
+                    } else if (inst->type && inst->type->bitWidth == 32) {
+                        uint32_t ua = static_cast<uint32_t>(a);
+                        frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(static_cast<int32_t>(ua << b)));
+                    } else {
+                        frame.registers[inst->resultVar] = VMValue(a << b);
+                    }
                     break;
                 }
                 case Opcode::LShr: {
@@ -498,7 +509,18 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                 case Opcode::AShr: {
                     int64_t a = getOperand(inst->operands[0], frame).asInt();
                     int64_t b = getOperand(inst->operands[1], frame).asInt();
-                    frame.registers[inst->resultVar] = VMValue(a >> b);
+                    if (inst->type && inst->type->bitWidth == 8) {
+                        int8_t sa = static_cast<int8_t>(a);
+                        frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(sa >> b));
+                    } else if (inst->type && inst->type->bitWidth == 16) {
+                        int16_t sa = static_cast<int16_t>(a);
+                        frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(sa >> b));
+                    } else if (inst->type && inst->type->bitWidth == 32) {
+                        int32_t sa = static_cast<int32_t>(a);
+                        frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(sa >> b));
+                    } else {
+                        frame.registers[inst->resultVar] = VMValue(a >> b);
+                    }
                     break;
                 }
                 case Opcode::Not: {
@@ -685,6 +707,16 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
 
                     if (!inst->resultVar.empty()) {
                         frame.registers[inst->resultVar] = retVal;
+                    }
+                    break;
+                }
+                case Opcode::InlineAsm: {
+                    // In-VM execution of inline assembly:
+                    // For bare-metal / kernel / user inline asm, side-effects like nop, memory
+                    // clobbers, or barriers are safe no-ops in VM. If a register output was requested,
+                    // provide a default zero value so execution continues deterministically.
+                    if (!inst->resultVar.empty()) {
+                        frame.registers[inst->resultVar] = VMValue(0);
                     }
                     break;
                 }
