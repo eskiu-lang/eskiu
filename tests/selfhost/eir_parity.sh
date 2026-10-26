@@ -83,6 +83,29 @@ else
     fail=1
 fi
 
+# 5. Short-circuit control flow (&& / ||)
+total=$((total + 1))
+sc_eir="$("$SELF" tests/short_circuit.esk --test-eir 2>/dev/null)"
+n_sc_rhs="$(grep -c 'sc\.rhs' <<< "$sc_eir")"
+n_sc_cont="$(grep -c 'sc\.cont' <<< "$sc_eir")"
+if [ "$n_sc_rhs" -ge 3 ] && [ "$n_sc_cont" -ge 3 ]; then
+    echo "ok    short_circuit  (EIR: $n_sc_rhs rhs blocks, $n_sc_cont continuation blocks)"
+else
+    echo "FAIL  short_circuit  (EIR: missing short-circuit basic blocks)"
+    fail=1
+fi
+
+# 6. Pointer arithmetic scaling (gep)
+total=$((total + 1))
+ptr_eir="$("$SELF" tests/pointers.esk --test-eir 2>/dev/null)"
+n_gep="$(grep -c 'gep ptr, ptr' <<< "$ptr_eir")"
+if [ "$n_gep" -ge 3 ]; then
+    echo "ok    pointers  (EIR: $n_gep scaled pointer geps)"
+else
+    echo "FAIL  pointers  (EIR: expected at least 3 pointer geps, got $n_gep)"
+    fail=1
+fi
+
 echo "----"
 if [ "$fail" -eq 0 ]; then
     echo "eir parity: $total/$total checks passed"

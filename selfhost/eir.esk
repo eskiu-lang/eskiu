@@ -791,11 +791,25 @@ EirVal eir_lval(EirBuilder* b, *ExprNode e) {
         return res;
     }
     if (e.kind == EK_INDEX) {
-        EirVal base = eir_lval(b, e.a);
+        int is_arr = 0;
+        if (e.a.kind == EK_IDENT) {
+            *EirLocal loc = eir_find_local(b, e.a.sval);
+            if (loc != null && loc.ty != null && loc.ty.kind == EIR_TY_ARRAY) {
+                is_arr = 1;
+            }
+        }
+        let base: EirVal;
+        if (is_arr == 1) {
+            base = eir_lval(b, e.a);
+        } else {
+            base = eir_expr(b, e.a);
+        }
         EirVal idx = eir_expr(b, e.b);
         string ptr_val = eir_temp(b);
         *EirType elem_ty = eir_ty_int(32, 1);
-        if (base.ty != null && base.ty.elem != null) {
+        if (base.ty != null && base.ty.pointee != null) {
+            elem_ty = base.ty.pointee;
+        } else if (base.ty != null && base.ty.elem != null) {
             elem_ty = base.ty.elem;
         }
         string line = cg_cat(ptr_val, " = gep ptr, ptr ");
@@ -1298,14 +1312,140 @@ EirVal eir_expr(EirBuilder* b, *ExprNode e) {
             return nval;
         }
 
+        if (cg_streq(e.sval, "&&") == 1 || cg_streq(e.sval, "||") == 1) {
+            int is_or = cg_streq(e.sval, "||");
+            EirVal l = eir_expr(b, e.a);
+            string l_cond = l.op;
+            if (l.ty == null || l.ty.kind != EIR_TY_INT || l.ty.bit_width != 1) {
+                l_cond = eir_temp(b);
+                string cmp_line = cg_cat(l_cond, " = icmp ne ");
+                if (l.ty != null && l.ty.kind == EIR_TY_PTR) {
+                    cmp_line = cg_cat(cmp_line, "ptr ");
+                    cmp_line = cg_cat(cmp_line, l.op);
+                    cmp_line = cg_cat(cmp_line, ", null");
+                } else {
+                    *EirType cty = l.ty != null ? l.ty : eir_ty_int(32, 1);
+                    cmp_line = cg_cat(cmp_line, eir_type_str(cty));
+                    cmp_line = cg_cat(cmp_line, " ");
+                    cmp_line = cg_cat(cmp_line, l.op);
+                    cmp_line = cg_cat(cmp_line, ", 0");
+                }
+                eir_emit(b, cmp_line);
+            }
+
+            string res_slot = eir_temp(b);
+            eir_emit(b, cg_cat(res_slot, " = alloca ptr"));
+            string init_st = cg_cat("store i1 ", is_or == 1 ? "true" : "false");
+            init_st = cg_cat(init_st, ", ptr ");
+            init_st = cg_cat(init_st, res_slot);
+            eir_emit(b, init_st);
+
+            string l_rhs = eir_lbl(b, "sc.rhs");
+            string l_cont = eir_lbl(b, "sc.cont");
+
+            if (is_or == 1) {
+                eir_br_cond(b, l_cond, l_cont, l_rhs);
+            } else {
+                eir_br_cond(b, l_cond, l_rhs, l_cont);
+            }
+
+            eir_label(b, l_rhs);
+            EirVal r = eir_expr(b, e.b);
+            string r_cond = r.op;
+            if (r.ty == null || r.ty.kind != EIR_TY_INT || r.ty.bit_width != 1) {
+                r_cond = eir_temp(b);
+                string cmp_line = cg_cat(r_cond, " = icmp ne ");
+                if (r.ty != null && r.ty.kind == EIR_TY_PTR) {
+                    cmp_line = cg_cat(cmp_line, "ptr ");
+                    cmp_line = cg_cat(cmp_line, r.op);
+                    cmp_line = cg_cat(cmp_line, ", null");
+                } else {
+                    *EirType cty = r.ty != null ? r.ty : eir_ty_int(32, 1);
+                    cmp_line = cg_cat(cmp_line, eir_type_str(cty));
+                    cmp_line = cg_cat(cmp_line, " ");
+                    cmp_line = cg_cat(cmp_line, r.op);
+                    cmp_line = cg_cat(cmp_line, ", 0");
+                }
+                eir_emit(b, cmp_line);
+            }
+            string r_st = cg_cat("store i1 ", r_cond);
+            r_st = cg_cat(r_st, ", ptr ");
+            r_st = cg_cat(r_st, res_slot);
+            eir_emit(b, r_st);
+            eir_br(b, l_cont);
+
+            eir_label(b, l_cont);
+            string fin = eir_temp(b);
+            string ld = cg_cat(fin, " = load i1, ptr ");
+            ld = cg_cat(ld, res_slot);
+            eir_emit(b, ld);
+
+            res.op = fin;
+            res.ty = eir_ty_i1();
+            res.ety = "bool";
+            return res;
+        }
+
         EirVal lhs = eir_expr(b, e.a);
         EirVal rhs = eir_expr(b, e.b);
         string op_name = "add";
         int is_cmp = 0;
         string cmp_cond = "eq";
 
-        if (cg_streq(e.sval, "+") == 1) op_name = "add";
-        else if (cg_streq(e.sval, "-") == 1) op_name = "sub";
+        if (cg_streq(e.sval, "+") == 1) {
+            if (lhs.ty != null && lhs.ty.kind == EIR_TY_PTR) {
+                string tmp = eir_temp(b);
+                string line = cg_cat(tmp, " = gep ptr, ptr ");
+                line = cg_cat(line, lhs.op);
+                line = cg_cat(line, ", ");
+                line = cg_cat(line, eir_type_str(rhs.ty));
+                line = cg_cat(line, " ");
+                line = cg_cat(line, rhs.op);
+                eir_emit(b, line);
+                res.op = tmp;
+                res.ty = lhs.ty;
+                res.ety = lhs.ety;
+                return res;
+            } else if (rhs.ty != null && rhs.ty.kind == EIR_TY_PTR) {
+                string tmp = eir_temp(b);
+                string line = cg_cat(tmp, " = gep ptr, ptr ");
+                line = cg_cat(line, rhs.op);
+                line = cg_cat(line, ", ");
+                line = cg_cat(line, eir_type_str(lhs.ty));
+                line = cg_cat(line, " ");
+                line = cg_cat(line, lhs.op);
+                eir_emit(b, line);
+                res.op = tmp;
+                res.ty = rhs.ty;
+                res.ety = rhs.ety;
+                return res;
+            }
+            op_name = "add";
+        }
+        else if (cg_streq(e.sval, "-") == 1) {
+            if (lhs.ty != null && lhs.ty.kind == EIR_TY_PTR && (rhs.ty == null || rhs.ty.kind != EIR_TY_PTR)) {
+                string neg = eir_temp(b);
+                string nline = cg_cat(neg, " = sub ");
+                nline = cg_cat(nline, eir_type_str(rhs.ty));
+                nline = cg_cat(nline, " 0, ");
+                nline = cg_cat(nline, rhs.op);
+                eir_emit(b, nline);
+
+                string tmp = eir_temp(b);
+                string line = cg_cat(tmp, " = gep ptr, ptr ");
+                line = cg_cat(line, lhs.op);
+                line = cg_cat(line, ", ");
+                line = cg_cat(line, eir_type_str(rhs.ty));
+                line = cg_cat(line, " ");
+                line = cg_cat(line, neg);
+                eir_emit(b, line);
+                res.op = tmp;
+                res.ty = lhs.ty;
+                res.ety = lhs.ety;
+                return res;
+            }
+            op_name = "sub";
+        }
         else if (cg_streq(e.sval, "*") == 1) op_name = "mul";
         else if (cg_streq(e.sval, "/") == 1) op_name = "sdiv";
         else if (cg_streq(e.sval, "%") == 1) op_name = "srem";
