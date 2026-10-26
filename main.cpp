@@ -28,6 +28,7 @@
 #include "sema/async_transform.h"
 #include "codegen/codegen.h"
 #include "eir/eir_builder.h"
+#include "eir/eir_vm.h"
 #include "main_support.h"
 #include "repl.h"
 #include "pkg.h"
@@ -71,6 +72,10 @@ static llvm::cl::opt<bool> TestCodegen("test-codegen",
 
 static llvm::cl::opt<bool> TestEir("test-eir",
                                    llvm::cl::desc("Generate EIR (Eskiu Intermediate Representation) and print it"),
+    llvm::cl::cat(EskiuCat));
+
+static llvm::cl::opt<bool> RunEir("run-eir",
+                                  llvm::cl::desc("Execute program using the EIR Virtual Machine"),
     llvm::cl::cat(EskiuCat));
 
 static llvm::cl::opt<bool> TestTypeChecker("test-typechecker",
@@ -423,6 +428,47 @@ static int testEir(const std::string& filename) {
         return 1;
     }
     return 0;
+}
+
+// Run EIR: tokenize, parse, typecheck, lower to EIR, and execute directly with EIR Virtual Machine
+static int runEir(const std::string& filename) {
+    auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding);
+    if (!program) {
+        std::cerr << "Parse failed!" << std::endl;
+        return 1;
+    }
+
+    try {
+        TypeChecker tc; tc.targetTriple = std::string(TargetTriple); tc.warnDeprecated = !WnoDeprecated;
+        tc.sourceFile = filename; applyWarningFlags(tc);
+        if (!tc.check(program.get())) {
+            std::cerr << "Type checking failed!" << std::endl;
+            return 1;
+        }
+        AsyncTransform(&tc.expressionTypeMap(), &tc.instanceArgsMap(), &tc.instanceExprTypeMap()).run(program.get());
+        TypeChecker postTc; postTc.targetTriple = std::string(TargetTriple); postTc.warnDeprecated = false; postTc.warnDefaults = false; postTc.sourceFile = filename;
+        if (!postTc.check(program.get())) {
+            std::cerr << "error: internal: the async lowering produced a program that does not type-check" << std::endl;
+            return 1;
+        }
+
+        eir::EIRBuilder builder;
+        builder.resolvedExprTypes = &postTc.expressionTypeMap();
+        builder.semaInstanceArgs = &postTc.instanceArgsMap();
+        if (!TargetTriple.empty()) builder.targetTriple = std::string(TargetTriple);
+
+        auto eirModule = builder.build(program.get());
+        if (!eirModule) {
+            std::cerr << "EIR generation failed!" << std::endl;
+            return 1;
+        }
+
+        eir::VM vm;
+        return vm.run(eirModule.get(), "main");
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
+    }
 }
 
 // Test parser: tokenize, parse, and print AST
@@ -791,6 +837,11 @@ static int compilerMain(int argc, char** argv) {
     // Handle --test-eir
     if (TestEir) {
         return testEir(InputFilename);
+    }
+
+    // Handle --run-eir
+    if (RunEir) {
+        return runEir(InputFilename);
     }
 
     // Full compilation pipeline — parse every input file and merge their

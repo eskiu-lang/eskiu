@@ -498,4 +498,60 @@ std::string Module::str() const {
     return ss.str();
 }
 
+size_t getTypeSize(TypePtr t) {
+    if (!t) return 0;
+    switch (t->kind) {
+        case TypeKind::Void: return 0;
+        case TypeKind::Int: {
+            if (t->bitWidth == 1) return 1;
+            return (t->bitWidth + 7) / 8;
+        }
+        case TypeKind::Float: return (t->bitWidth == 32) ? 4 : 8;
+        case TypeKind::Pointer: return 8;
+        case TypeKind::Array: return t->arraySize * getTypeSize(t->elemType);
+        case TypeKind::Slice:
+        case TypeKind::Interface:
+        case TypeKind::Closure: return 16;
+        case TypeKind::Struct: {
+            size_t total = 0;
+            for (const auto& m : t->members) {
+                size_t al = getTypeAlign(m);
+                total = (total + al - 1) & ~(al - 1);
+                total += getTypeSize(m);
+            }
+            size_t maxAl = getTypeAlign(t);
+            return (total + maxAl - 1) & ~(maxAl - 1);
+        }
+        case TypeKind::Function: return 8;
+    }
+    return 8;
+}
+
+size_t getTypeAlign(TypePtr t) {
+    if (!t) return 1;
+    switch (t->kind) {
+        case TypeKind::Void: return 1;
+        case TypeKind::Int: {
+            size_t sz = getTypeSize(t);
+            return sz > 8 ? 8 : (sz == 0 ? 1 : sz);
+        }
+        case TypeKind::Float: return (t->bitWidth == 32) ? 4 : 8;
+        case TypeKind::Pointer: return 8;
+        case TypeKind::Array: return getTypeAlign(t->elemType);
+        case TypeKind::Slice:
+        case TypeKind::Interface:
+        case TypeKind::Closure: return 8;
+        case TypeKind::Struct: {
+            size_t maxAl = 1;
+            for (const auto& m : t->members) {
+                size_t al = getTypeAlign(m);
+                if (al > maxAl) maxAl = al;
+            }
+            return maxAl;
+        }
+        case TypeKind::Function: return 8;
+    }
+    return 8;
+}
+
 } // namespace eir

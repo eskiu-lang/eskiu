@@ -229,15 +229,50 @@ struct GlobalVar {
     bool isConst = false;
 };
 
+struct StructFieldInfo {
+    std::string name;
+    TypePtr type;
+    size_t offset = 0;
+    size_t size = 0;
+};
+
+struct StructInfo {
+    std::string name;
+    std::vector<StructFieldInfo> fields;
+    size_t totalSize = 0;
+    size_t alignment = 1;
+
+    size_t getFieldOffset(const std::string& fieldName) const {
+        for (const auto& f : fields) {
+            if (f.name == fieldName) return f.offset;
+        }
+        return 0;
+    }
+};
+
+size_t getTypeSize(TypePtr t);
+size_t getTypeAlign(TypePtr t);
+
 struct Module {
     std::string name;
     std::string targetTriple;
     std::vector<TypePtr> structTypes;
+    std::unordered_map<std::string, StructInfo> structLayouts;
     std::vector<GlobalVar> globals;
     std::vector<std::unique_ptr<Function>> functions;
 
     Function* getFunction(const std::string& name) const;
     Function* createFunction(const std::string& name, TypePtr ret, const std::vector<std::pair<std::string, TypePtr>>& params);
+    size_t getFieldOffset(const std::string& structName, const std::string& fieldName) const {
+        auto it = structLayouts.find(structName);
+        if (it != structLayouts.end()) return it->second.getFieldOffset(fieldName);
+        return 0;
+    }
+    size_t getStructSize(const std::string& structName) const {
+        auto it = structLayouts.find(structName);
+        if (it != structLayouts.end()) return it->second.totalSize;
+        return 0;
+    }
     void dump(std::ostream& os) const;
     std::string str() const;
 };

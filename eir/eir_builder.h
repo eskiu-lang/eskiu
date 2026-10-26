@@ -108,6 +108,7 @@ private:
     Operand lastLValue;
 
     TypePtr getExprEirType(const ExprPtr& expr);
+    TypePtr getExprEirType(const Expr* expr);
 };
 
 } // namespace eir

@@ -91,8 +91,20 @@ TypePtr EIRBuilder::toEirType(const std::string& typeStr) {
             }
             return Type::getArray(t.elem ? toEirType(t.elem->str()) : Type::getI32(), n);
         }
-        case ty::Type::Kind::Struct:
-            return Type::getStruct(t.nominalName(), {});
+        case ty::Type::Kind::Named:
+        case ty::Type::Kind::Struct: {
+            std::string sname = t.nominalName();
+            if (sname.empty()) sname = t.name;
+            if (module) {
+                auto it = module->structLayouts.find(sname);
+                if (it != module->structLayouts.end()) {
+                    std::vector<TypePtr> flds;
+                    for (const auto& f : it->second.fields) flds.push_back(f.type);
+                    return Type::getStruct(sname, flds);
+                }
+            }
+            return Type::getStruct(sname, {});
+        }
         case ty::Type::Kind::Interface:
             return Type::getInterface();
         case ty::Type::Kind::Fn:
@@ -102,15 +114,19 @@ TypePtr EIRBuilder::toEirType(const std::string& typeStr) {
     }
 }
 
-TypePtr EIRBuilder::getExprEirType(const ExprPtr& expr) {
+TypePtr EIRBuilder::getExprEirType(const Expr* expr) {
     if (!expr) return Type::getI32();
     if (resolvedExprTypes) {
-        auto it = resolvedExprTypes->find(expr.get());
+        auto it = resolvedExprTypes->find(const_cast<Expr*>(expr));
         if (it != resolvedExprTypes->end()) {
             return toEirType(it->second);
         }
     }
     return Type::getI32();
+}
+
+TypePtr EIRBuilder::getExprEirType(const ExprPtr& expr) {
+    return getExprEirType(expr.get());
 }
 
 Operand EIRBuilder::evaluateExpr(const ExprPtr& expr) {
@@ -136,9 +152,23 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
     for (auto& decl : program->declarations) {
         if (auto s = dynamic_cast<StructDecl*>(decl.get())) {
             std::vector<TypePtr> fields;
+            StructInfo sinfo;
+            sinfo.name = s->name;
+            size_t currentOffset = 0;
+            size_t maxAlign = 1;
             for (const auto& f : s->fields) {
-                fields.push_back(toEirType(f.type));
+                TypePtr ft = toEirType(f.type);
+                fields.push_back(ft);
+                size_t sz = getTypeSize(ft);
+                size_t al = getTypeAlign(ft);
+                if (al > maxAlign) maxAlign = al;
+                currentOffset = (currentOffset + al - 1) & ~(al - 1);
+                sinfo.fields.push_back({f.name, ft, currentOffset, sz});
+                currentOffset += sz;
             }
+            sinfo.totalSize = (currentOffset + maxAlign - 1) & ~(maxAlign - 1);
+            sinfo.alignment = maxAlign;
+            module->structLayouts[s->name] = sinfo;
             module->structTypes.push_back(Type::getStruct(s->name, fields));
         }
     }
@@ -164,6 +194,17 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
             auto fn = module->createFunction(ext->name, toEirType(ext->returnType), params);
             fn->isExtern = true;
             fn->isVariadic = hasVarargs;
+        } else if (auto s = dynamic_cast<StructDecl*>(decl.get())) {
+            for (const auto& m : s->methods) {
+                if (auto mf = dynamic_cast<FunctionDecl*>(m.get())) {
+                    std::vector<std::pair<std::string, TypePtr>> params;
+                    params.emplace_back("self", Type::getPtr(Type::getStruct(s->name, {})));
+                    for (const auto& p : mf->params) {
+                        params.emplace_back(p.second, toEirType(p.first));
+                    }
+                    module->createFunction(s->name + "_" + mf->name, toEirType(mf->returnType), params);
+                }
+            }
         }
     }
 
@@ -197,6 +238,8 @@ void EIRBuilder::visit(FunctionDecl* node) {
         currentFunction->isExtern = true;
         return;
     }
+
+    currentFunction->isExtern = false;
 
     nextVarId = 0;
     nextBlockId = 0;
@@ -238,7 +281,11 @@ void EIRBuilder::visit(VarDecl* node) {
 
     if (node->initializer) {
         Operand val = evaluateExpr(node->initializer);
-        emit(Instruction{Opcode::Store, "", Type::getVoid(), {val, Operand::var(slotName, Type::getPtr(type))}});
+        if (type->isStruct()) {
+            emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::var(val.str(), type), Operand::var(slotName, Type::getPtr(type))}});
+        } else {
+            emit(Instruction{Opcode::Store, "", Type::getVoid(), {val, Operand::var(slotName, Type::getPtr(type))}});
+        }
     }
 }
 
@@ -439,7 +486,10 @@ void EIRBuilder::visit(BinaryExpr* node) {
 
     Operand lhs = evaluateExpr(node->left);
     Operand rhs = evaluateExpr(node->right);
-    TypePtr resTy = getExprEirType(std::make_shared<BinaryExpr>(*node));
+    TypePtr resTy = getExprEirType(node);
+    if (!resTy || (resTy->isInt() && (lhs.type->isFloat() || rhs.type->isFloat()))) {
+        resTy = lhs.type->isFloat() ? lhs.type : rhs.type;
+    }
 
     std::string dst = newVar();
 
@@ -498,7 +548,7 @@ void EIRBuilder::visit(UnaryExpr* node) {
 
     if (node->op == "*") {
         Operand ptr = evaluateExpr(node->operand);
-        TypePtr elemTy = getExprEirType(std::make_shared<UnaryExpr>(*node));
+        TypePtr elemTy = getExprEirType(node);
         std::string dst = newVar();
         emit(Instruction{Opcode::Load, dst, elemTy, {ptr}});
         lastValue = Operand::var(dst, elemTy);
@@ -551,7 +601,10 @@ void EIRBuilder::visit(IdentExpr* node) {
 }
 
 void EIRBuilder::visit(LiteralExpr* node) {
-    TypePtr ty = getExprEirType(std::make_shared<LiteralExpr>(*node));
+    TypePtr ty = getExprEirType(node);
+    if (node->kind == LiteralExpr::Kind::FLOAT && ty->isInt()) {
+        ty = Type::getF32();
+    }
     switch (node->kind) {
         case LiteralExpr::Kind::INT: {
             int64_t v = 0;
@@ -584,18 +637,50 @@ void EIRBuilder::visit(LiteralExpr* node) {
 
 void EIRBuilder::visit(CallExpr* node) {
     std::string fnName;
+    std::vector<Operand> args;
+
     if (auto id = dynamic_cast<IdentExpr*>(node->callee.get())) {
         fnName = id->name;
+        args.push_back(Operand::global(fnName, Type::getPtr()));
+        for (const auto& arg : node->args) {
+            args.push_back(evaluateExpr(arg));
+        }
+    } else if (auto mem = dynamic_cast<MemberExpr*>(node->callee.get())) {
+        std::string baseTypeName;
+        TypePtr baseTy = getExprEirType(mem->base);
+        if (baseTy && baseTy->isStruct()) {
+            baseTypeName = baseTy->nominalName();
+        } else if (baseTy && baseTy->isPointer() && baseTy->elemType && baseTy->elemType->isStruct()) {
+            baseTypeName = baseTy->elemType->nominalName();
+        } else if (resolvedExprTypes) {
+            auto it = resolvedExprTypes->find(mem->base.get());
+            if (it != resolvedExprTypes->end()) {
+                baseTypeName = ty::Type::parse(tyq::strip(it->second)).nominalName();
+            }
+        }
+        fnName = baseTypeName + "_" + mem->member;
+        args.push_back(Operand::global(fnName, Type::getPtr()));
+
+        // Receiver argument (self)
+        if (baseTy && baseTy->isPointer()) {
+            args.push_back(evaluateExpr(mem->base));
+        } else {
+            args.push_back(evaluateLValue(mem->base));
+        }
+
+        for (const auto& arg : node->args) {
+            args.push_back(evaluateExpr(arg));
+        }
+    } else {
+        Operand calleeOp = evaluateExpr(node->callee);
+        fnName = calleeOp.str();
+        args.push_back(calleeOp);
+        for (const auto& arg : node->args) {
+            args.push_back(evaluateExpr(arg));
+        }
     }
 
-    std::vector<Operand> args;
-    args.push_back(Operand::global(fnName, Type::getPtr()));
-
-    for (const auto& arg : node->args) {
-        args.push_back(evaluateExpr(arg));
-    }
-
-    TypePtr retTy = getExprEirType(std::make_shared<CallExpr>(*node));
+    TypePtr retTy = getExprEirType(node);
     std::string dst = retTy->isVoid() ? "" : newVar();
 
     emit(Instruction{Opcode::Call, dst, retTy, args});
@@ -634,7 +719,7 @@ void EIRBuilder::visit(TernaryExpr* node) {
     BasicBlock* elseBB = createBlock("ternary.else");
     BasicBlock* mergeBB = createBlock("ternary.merge");
 
-    TypePtr resTy = getExprEirType(std::make_shared<TernaryExpr>(*node));
+    TypePtr resTy = getExprEirType(node);
     std::string resultSlot = newVar() + ".ternary";
     emit(Instruction{Opcode::Alloca, resultSlot, resTy, {Operand::constInt(resTy->bitWidth <= 32 ? 4 : 8, Type::getI32())}});
 
@@ -657,12 +742,42 @@ void EIRBuilder::visit(TernaryExpr* node) {
 }
 
 void EIRBuilder::visit(MemberExpr* node) {
-    Operand basePtr = evaluateLValue(node->base);
     TypePtr objTy = getExprEirType(node->base);
-    TypePtr memberTy = getExprEirType(std::make_shared<MemberExpr>(*node));
+    std::string structName;
+    if (objTy && objTy->isStruct()) {
+        structName = objTy->nominalName();
+    } else if (objTy && objTy->isPointer() && objTy->elemType && objTy->elemType->isStruct()) {
+        structName = objTy->elemType->nominalName();
+    } else if (resolvedExprTypes) {
+        auto it = resolvedExprTypes->find(node->base.get());
+        if (it != resolvedExprTypes->end()) {
+            structName = ty::Type::parse(tyq::strip(it->second)).nominalName();
+        }
+    }
+
+    Operand basePtr;
+    if (objTy && objTy->isPointer()) {
+        basePtr = evaluateExpr(node->base);
+    } else {
+        basePtr = evaluateLValue(node->base);
+    }
+
+    TypePtr memberTy = nullptr;
+    if (module && !structName.empty()) {
+        auto it = module->structLayouts.find(structName);
+        if (it != module->structLayouts.end()) {
+            for (const auto& f : it->second.fields) {
+                if (f.name == node->member) {
+                    memberTy = f.type;
+                    break;
+                }
+            }
+        }
+    }
+    if (!memberTy) memberTy = getExprEirType(node);
 
     std::string fptr = newVar();
-    emit(Instruction{Opcode::FieldPtr, fptr, Type::getPtr(memberTy), {Operand::var(objTy->nominalName(), nullptr), basePtr, Operand::constString(node->member)}});
+    emit(Instruction{Opcode::FieldPtr, fptr, Type::getPtr(memberTy), {Operand::var(structName, nullptr), basePtr, Operand::constString(node->member)}});
 
     std::string loaded = newVar();
     emit(Instruction{Opcode::Load, loaded, memberTy, {Operand::var(fptr, Type::getPtr(memberTy))}});
@@ -673,7 +788,7 @@ void EIRBuilder::visit(MemberExpr* node) {
 void EIRBuilder::visit(IndexExpr* node) {
     Operand basePtr = evaluateLValue(node->base);
     Operand idx = evaluateExpr(node->index);
-    TypePtr elemTy = getExprEirType(std::make_shared<IndexExpr>(*node));
+    TypePtr elemTy = getExprEirType(node);
 
     std::string gepDst = newVar();
     emit(Instruction{Opcode::Gep, gepDst, Type::getPtr(elemTy), {basePtr, idx}});
@@ -684,8 +799,19 @@ void EIRBuilder::visit(IndexExpr* node) {
     lastLValue = Operand::var(gepDst, Type::getPtr(elemTy));
 }
 
-// Stubs for remaining nodes to satisfy ASTVisitor interface
-void EIRBuilder::visit(StructDecl*) {}
+void EIRBuilder::visit(StructDecl* node) {
+    for (const auto& m : node->methods) {
+        if (auto mf = dynamic_cast<FunctionDecl*>(m.get())) {
+            std::vector<std::pair<std::string, std::string>> params;
+            params.push_back({"*" + node->name, "self"});
+            for (const auto& p : mf->params) params.push_back(p);
+            auto mangled = std::make_shared<FunctionDecl>(
+                node->name + "_" + mf->name,
+                mf->returnType, params, mf->body);
+            mangled->accept(this);
+        }
+    }
+}
 void EIRBuilder::visit(ExternDecl*) {}
 void EIRBuilder::visit(IntrinsicDecl*) {}
 void EIRBuilder::visit(InterfaceDecl*) {}
@@ -696,7 +822,52 @@ void EIRBuilder::visit(DoWhileStmt*) {}
 void EIRBuilder::visit(SwitchStmt*) {}
 void EIRBuilder::visit(MatchStmt*) {}
 void EIRBuilder::visit(QuestionExpr*) {}
-void EIRBuilder::visit(StructInitExpr*) {}
+
+void EIRBuilder::visit(StructInitExpr* node) {
+    std::string sname = node->structName;
+    TypePtr stype = Type::getStruct(sname, {});
+    std::string tempSlot = newVar();
+    emit(Instruction{Opcode::Alloca, tempSlot, stype, {Operand::constInt(8, Type::getI32())}});
+
+    for (size_t i = 0; i < node->fieldInits.size(); ++i) {
+        std::string fname = node->fieldInits[i].first;
+        ExprPtr fval = node->fieldInits[i].second;
+        if (!fval) continue;
+
+        TypePtr ftype = nullptr;
+        if (module) {
+            auto it = module->structLayouts.find(sname);
+            if (it != module->structLayouts.end()) {
+                if (fname.empty() && i < it->second.fields.size()) {
+                    fname = it->second.fields[i].name;
+                }
+                for (const auto& f : it->second.fields) {
+                    if (f.name == fname) {
+                        ftype = f.type;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!ftype) ftype = getExprEirType(fval);
+
+        std::string fptr = newVar();
+        emit(Instruction{Opcode::FieldPtr, fptr, Type::getPtr(ftype), {
+            Operand::var(sname, nullptr),
+            Operand::var(tempSlot, Type::getPtr(stype)),
+            Operand::constString(fname)
+        }});
+
+        Operand val = evaluateExpr(fval);
+        if (ftype->isFloat() && val.type->isFloat() && val.type->bitWidth != ftype->bitWidth) {
+            val.type = ftype;
+        }
+        emit(Instruction{Opcode::Store, "", Type::getVoid(), {val, Operand::var(fptr, Type::getPtr(ftype))}});
+    }
+
+    lastLValue = Operand::var(tempSlot, Type::getPtr(stype));
+    lastValue = lastLValue;
+}
 void EIRBuilder::visit(ArrayLitExpr*) {}
 void EIRBuilder::visit(AllocWithExpr*) {}
 void EIRBuilder::visit(TemplateCallExpr*) {}
