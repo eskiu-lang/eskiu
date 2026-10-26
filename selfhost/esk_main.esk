@@ -19,6 +19,7 @@ import "parser.esk";
 import "sema.esk";
 import "async_lower.esk";
 import "codegen.esk";
+import "eir.esk";
 import "fmt.esk";
 import "bigstack.esk";
 
@@ -1417,7 +1418,8 @@ int esk_main(int argc, string* argv) {
                 || cg_streq(a, "--test-lexer") == 1
                 || cg_streq(a, "--test-parser") == 1
                 || cg_streq(a, "--test-typechecker") == 1
-                || cg_streq(a, "--test-codegen") == 1) {
+                || cg_streq(a, "--test-codegen") == 1
+                || cg_streq(a, "--test-eir") == 1) {
             mode = a;
         }
         else if (is_value_opt(opt) == 1) {
@@ -1598,7 +1600,7 @@ int esk_main(int argc, string* argv) {
         sm.no_depr = no_depr;
         sm.werror = werror;
         sm.wnone = wnone;
-        if (cg_streq(mode, "--test-codegen") == 0) {   // as the C++ driver
+        if (cg_streq(mode, "--test-codegen") == 0 && cg_streq(mode, "--test-eir") == 0) {   // as the C++ driver
             sm.wall = wall;
             sm.wextra = wextra;
         }
@@ -1616,7 +1618,7 @@ int esk_main(int argc, string* argv) {
             printf("Type checking failed!\n");
             return 1;
         }
-        if (ok == 0 && cg_streq(mode, "--test-codegen") == 1) {
+        if (ok == 0 && (cg_streq(mode, "--test-codegen") == 1 || cg_streq(mode, "--test-eir") == 1)) {
             eprint("Type checking failed!\n");
             return 1;
         }
@@ -1629,6 +1631,14 @@ int esk_main(int argc, string* argv) {
     }
 
     async_lower(prog);                 // lower async fns → frame + resume + ctor (after sema)
+
+    if (cg_streq(mode, "--test-eir") == 1) {
+        let eb: EirBuilder;
+        eir_init(&eb);
+        eir_program(&eb, prog);
+        printf("%s%s", (string)String_cstr(&eb.globals), (string)String_cstr(&eb.out));
+        return 0;
+    }
 
     let g: Codegen;
     cg_init(&g);
