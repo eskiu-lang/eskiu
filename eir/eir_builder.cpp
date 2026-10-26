@@ -1,5 +1,6 @@
 #include "eir_builder.h"
 #include "../ast/type_qual.h"
+#include "../template_utils.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -485,11 +486,20 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
             TypePtr type = toEirType(v->type);
             Operand initOp = Operand::constInt(0, type);
             if (v->initializer) {
-                int64_t cv = foldConstInt(v->initializer);
-                if (v->isConst) {
-                    enumConstants[v->name] = cv;
+                if (auto u = dynamic_cast<UnaryExpr*>(v->initializer.get())) {
+                    if (u->op == "&") {
+                        if (auto id = dynamic_cast<IdentExpr*>(u->operand.get())) {
+                            initOp = Operand::global(id->name, type);
+                        }
+                    }
                 }
-                initOp = Operand::constInt(cv, type);
+                if (initOp.kind != OperandKind::GlobalRef) {
+                    int64_t cv = foldConstInt(v->initializer);
+                    if (v->isConst) {
+                        enumConstants[v->name] = cv;
+                    }
+                    initOp = Operand::constInt(cv, type);
+                }
             }
             module->globals.push_back(GlobalVar{v->name, type, initOp, v->isConst});
         }
@@ -899,6 +909,57 @@ void EIRBuilder::visit(BinaryExpr* node) {
         return;
     }
 
+    if (node->op == "&&" || node->op == "||") {
+        Operand l = evaluateExpr(node->left);
+        Operand lVal = l;
+        if (!l.type || !l.type->isInt() || l.type->bitWidth != 1) {
+            std::string lCond = newVar();
+            if (l.type && l.type->isPointer()) {
+                emit(Instruction{Opcode::ICmp, lCond, Type::getI1(), {l, Operand::constNull()}, ICmpCond::Ne});
+            } else {
+                TypePtr cmpTy = l.type ? l.type : Type::getI32();
+                emit(Instruction{Opcode::ICmp, lCond, Type::getI1(), {l, Operand::constInt(0, cmpTy)}, ICmpCond::Ne});
+            }
+            lVal = Operand::var(lCond, Type::getI1());
+        }
+
+        std::string resVar = newVar();
+        emit(Instruction{Opcode::Alloca, resVar, Type::getPtr(Type::getI1()), {}});
+        int scVal = (node->op == "||") ? 1 : 0;
+        emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::constInt(scVal, Type::getI1()), Operand::var(resVar, Type::getPtr(Type::getI1()))}});
+
+        BasicBlock* rhsBB = createBlock("sc.rhs");
+        BasicBlock* contBB = createBlock("sc.cont");
+
+        if (node->op == "&&") {
+            emit(Instruction{Opcode::BrCond, "", Type::getVoid(), {lVal, Operand::block(rhsBB->name), Operand::block(contBB->name)}});
+        } else {
+            emit(Instruction{Opcode::BrCond, "", Type::getVoid(), {lVal, Operand::block(contBB->name), Operand::block(rhsBB->name)}});
+        }
+
+        setBlock(rhsBB);
+        Operand r = evaluateExpr(node->right);
+        Operand rVal = r;
+        if (!r.type || !r.type->isInt() || r.type->bitWidth != 1) {
+            std::string rCond = newVar();
+            if (r.type && r.type->isPointer()) {
+                emit(Instruction{Opcode::ICmp, rCond, Type::getI1(), {r, Operand::constNull()}, ICmpCond::Ne});
+            } else {
+                TypePtr cmpTy = r.type ? r.type : Type::getI32();
+                emit(Instruction{Opcode::ICmp, rCond, Type::getI1(), {r, Operand::constInt(0, cmpTy)}, ICmpCond::Ne});
+            }
+            rVal = Operand::var(rCond, Type::getI1());
+        }
+        emit(Instruction{Opcode::Store, "", Type::getVoid(), {rVal, Operand::var(resVar, Type::getPtr(Type::getI1()))}});
+        emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(contBB->name)}});
+
+        setBlock(contBB);
+        std::string finalVal = newVar();
+        emit(Instruction{Opcode::Load, finalVal, Type::getI1(), {Operand::var(resVar, Type::getPtr(Type::getI1()))}});
+        lastValue = Operand::var(finalVal, Type::getI1());
+        return;
+    }
+
     Operand lhs = evaluateExpr(node->left);
     Operand rhs = evaluateExpr(node->right);
     TypePtr resTy = getExprEirType(node);
@@ -910,9 +971,23 @@ void EIRBuilder::visit(BinaryExpr* node) {
 
     // Arithmetic
     if (node->op == "+") {
-        emit(Instruction{resTy->isFloat() ? Opcode::FAdd : Opcode::Add, dst, resTy, {lhs, rhs}});
+        if (resTy->isPointer()) {
+            if (lhs.type->isPointer()) {
+                emit(Instruction{Opcode::Gep, dst, resTy, {lhs, rhs}});
+            } else {
+                emit(Instruction{Opcode::Gep, dst, resTy, {rhs, lhs}});
+            }
+        } else {
+            emit(Instruction{resTy->isFloat() ? Opcode::FAdd : Opcode::Add, dst, resTy, {lhs, rhs}});
+        }
     } else if (node->op == "-") {
-        emit(Instruction{resTy->isFloat() ? Opcode::FSub : Opcode::Sub, dst, resTy, {lhs, rhs}});
+        if (resTy->isPointer() && lhs.type->isPointer() && !rhs.type->isPointer()) {
+            std::string negIdx = newVar();
+            emit(Instruction{Opcode::Sub, negIdx, rhs.type, {Operand::constInt(0, rhs.type), rhs}});
+            emit(Instruction{Opcode::Gep, dst, resTy, {lhs, Operand::var(negIdx, rhs.type)}});
+        } else {
+            emit(Instruction{resTy->isFloat() ? Opcode::FSub : Opcode::Sub, dst, resTy, {lhs, rhs}});
+        }
     } else if (node->op == "*") {
         emit(Instruction{resTy->isFloat() ? Opcode::FMul : Opcode::Mul, dst, resTy, {lhs, rhs}});
     } else if (node->op == "/") {
@@ -1047,8 +1122,17 @@ void EIRBuilder::visit(IdentExpr* node) {
 
     Operand* slot = lookupVar(node->name);
     if (!slot) {
-        lastValue = Operand::global(node->name, Type::getPtr());
-        lastLValue = lastValue;
+        lastLValue = Operand::global(node->name, Type::getPtr());
+        TypePtr ty = getExprEirType(node);
+        if (ty && !ty->isArray() && !ty->isFunction()) {
+            std::string dst = newVar();
+            Instruction ld{Opcode::Load, dst, ty, {lastLValue}};
+            ld.isVolatile = volatileVars.count(node->name) > 0;
+            emit(ld);
+            lastValue = Operand::var(dst, ty);
+        } else {
+            lastValue = lastLValue;
+        }
         return;
     }
     TypePtr ty = lookupVarType(node->name);
@@ -1326,7 +1410,13 @@ void EIRBuilder::visit(MemberExpr* node) {
 }
 
 void EIRBuilder::visit(IndexExpr* node) {
-    Operand basePtr = evaluateLValue(node->base);
+    TypePtr baseTy = getExprEirType(node->base);
+    Operand basePtr;
+    if (baseTy && baseTy->isPointer()) {
+        basePtr = evaluateExpr(node->base);
+    } else {
+        basePtr = evaluateLValue(node->base);
+    }
     Operand idx = evaluateExpr(node->index);
     TypePtr elemTy = getExprEirType(node);
 
@@ -1824,7 +1914,61 @@ void EIRBuilder::visit(ArrayLitExpr* node) {
 }
 
 void EIRBuilder::visit(AllocWithExpr*) {}
-void EIRBuilder::visit(TemplateCallExpr*) {}
+
+void EIRBuilder::visit(TemplateCallExpr* node) {
+    std::string fnName = node->templateName;
+    if (module && !module->getFunction(fnName)) {
+        std::string mangled = node->templateName;
+        for (const auto& t : node->typeArgs) {
+            mangled += "_" + mangleTemplate(t);
+        }
+        if (module->getFunction(mangled)) {
+            fnName = mangled;
+        }
+    }
+
+    // Check if callee is an ADT variant constructor
+    auto it = adtVariants.find(node->templateName);
+    if (it != adtVariants.end()) {
+        auto& vinfo = it->second;
+        TypePtr enumTy = Type::getStruct(vinfo.enumName, {});
+        std::string slot = newVar() + ".adt";
+        emit(Instruction{Opcode::Alloca, slot, enumTy, {Operand::constInt(8, Type::getI32())}});
+        emit(Instruction{Opcode::Store, "", Type::getVoid(), {
+            Operand::constInt(vinfo.variantIndex, Type::getI32()),
+            Operand::var(slot, Type::getPtr(Type::getI32()))
+        }});
+
+        size_t payOffset = 8;
+        for (size_t p = 0; p < node->args.size() && p < vinfo.payloadTypes.size(); ++p) {
+            TypePtr pt = vinfo.payloadTypes[p];
+            size_t pAlign = getTypeAlign(pt);
+            payOffset = (payOffset + pAlign - 1) & ~(pAlign - 1);
+            std::string payPtr = newVar() + ".pay";
+            emit(Instruction{Opcode::OffsetPtr, payPtr, Type::getPtr(pt), {
+                Operand::var(slot, Type::getPtr()), Operand::constInt(static_cast<int64_t>(payOffset), Type::getI64())
+            }});
+            Operand argVal = evaluateExpr(node->args[p]);
+            emit(Instruction{Opcode::Store, "", Type::getVoid(), {argVal, Operand::var(payPtr, Type::getPtr(pt))}});
+            payOffset += getTypeSize(pt);
+        }
+        lastLValue = Operand::var(slot, Type::getPtr(enumTy));
+        lastValue = lastLValue;
+        return;
+    }
+
+    std::vector<Operand> args;
+    args.push_back(Operand::global(fnName, Type::getPtr()));
+    for (const auto& arg : node->args) {
+        args.push_back(evaluateExpr(arg));
+    }
+
+    TypePtr retTy = getExprEirType(node);
+    std::string dst = retTy->isVoid() ? "" : newVar();
+
+    emit(Instruction{Opcode::Call, dst, retTy, args});
+    lastValue = dst.empty() ? Operand::var("", Type::getVoid()) : Operand::var(dst, retTy);
+}
 
 void EIRBuilder::visit(LambdaExpr* node) {
     std::string lambdaName = "__lambda_" + std::to_string(nextLambdaId++);

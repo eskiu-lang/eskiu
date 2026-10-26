@@ -737,11 +737,15 @@ int VM::run(Module* module, const std::string& entryFn, const std::vector<std::s
     if (!module) return 1;
     currentModule = module;
 
-    // Allocate global variables
+    // Allocate global variables first
     for (const auto& g : module->globals) {
         size_t sz = getTypeSize(g.type);
         if (sz < 1) sz = 8;
         globalStorage[g.name].resize(sz, 0);
+    }
+
+    // Initialize global variables in second pass (so address-of globals point to allocated storage)
+    for (const auto& g : module->globals) {
         if (g.init.kind != OperandKind::ConstantNull) {
             StackFrame dummy;
             VMValue val = getOperand(g.init, dummy);

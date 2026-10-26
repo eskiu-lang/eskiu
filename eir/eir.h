@@ -53,6 +53,7 @@ struct Type {
     bool isSlice() const { return kind == TypeKind::Slice; }
     bool isClosure() const { return kind == TypeKind::Closure; }
     bool isInterface() const { return kind == TypeKind::Interface; }
+    bool isFunction() const { return kind == TypeKind::Function; }
 
     std::string nominalName() const {
         if (kind == TypeKind::Pointer && pointee) return pointee->nominalName();
