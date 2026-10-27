@@ -3385,7 +3385,13 @@ void EIRBuilder::visit(SizeofExpr* node) {
     lastLValue = lastValue;
 }
 
-void EIRBuilder::visit(ThreadCreateExpr*) {}
+void EIRBuilder::visit(ThreadCreateExpr* node) {
+    Operand worker = evaluateExpr(node->worker);
+    std::string handleVar = newVar() + ".thr_handle";
+    emit(Instruction{Opcode::Call, handleVar, Type::getPtr(), {Operand::global("__eir_thread_create", Type::getPtr()), worker}});
+    lastValue = Operand::var(handleVar, Type::getPtr());
+    lastLValue = lastValue;
+}
 
 void EIRBuilder::visit(FreeClosureExpr* node) {
     Operand closureOp = evaluateExpr(node->closure);
@@ -3396,7 +3402,11 @@ void EIRBuilder::visit(FreeClosureExpr* node) {
 }
 
 void EIRBuilder::visit(AwaitExpr*) {}
-void EIRBuilder::visit(ThreadJoinStmt*) {}
+
+void EIRBuilder::visit(ThreadJoinStmt* node) {
+    Operand tid = evaluateExpr(node->tid);
+    emit(Instruction{Opcode::Call, "", Type::getVoid(), {Operand::global("__eir_thread_join", Type::getVoid()), tid}});
+}
 void EIRBuilder::visit(ThrowStmt*) {}
 void EIRBuilder::visit(TryStmt* node) {
     if (node->finally) {

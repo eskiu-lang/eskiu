@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <cmath>
 #include <dlfcn.h>
+#include <thread>
+#include <mutex>
 #ifndef _WIN32
 #include <fcntl.h>
 #include <unistd.h>
@@ -101,6 +103,8 @@ VMValue VM::getOperand(const Operand& op, StackFrame& frame) {
         case OperandKind::ConstantFloat:
             return VMValue(op.floatVal);
         case OperandKind::ConstantString: {
+            static std::mutex internMutex;
+            std::lock_guard<std::mutex> lock(internMutex);
             auto it = internedStrings.find(op.text);
             if (it == internedStrings.end()) {
                 internedStrings[op.text] = op.text;
@@ -616,6 +620,46 @@ VMValue VM::callExtern(const std::string& name, const std::vector<VMValue>& args
         return VMValue(-1);
     }
 #endif
+    if (name == "__eir_thread_create") {
+        void* target = args.empty() ? nullptr : args[0].asPtr();
+        if (!target) return VMValue(static_cast<void*>(nullptr));
+
+        void* fnPtr = *reinterpret_cast<void**>(static_cast<uint8_t*>(target) + 0);
+        void* envPtr = *reinterpret_cast<void**>(static_cast<uint8_t*>(target) + 8);
+
+        Function* callee = nullptr;
+        if (currentModule) {
+            for (const auto& f : currentModule->functions) {
+                if (f.get() == static_cast<Function*>(fnPtr)) {
+                    callee = f.get();
+                    break;
+                }
+            }
+        }
+        if (!callee) callee = static_cast<Function*>(fnPtr);
+
+        std::vector<VMValue> callArgs;
+        if (callee && !callee->params.empty() && callee->params[0].first == "env") {
+            callArgs.push_back(VMValue(envPtr));
+        }
+
+        auto th = new std::thread([this, callee, callArgs]() {
+            if (callee) {
+                this->executeFunction(callee, callArgs);
+            }
+        });
+        return VMValue(static_cast<void*>(th));
+    }
+    if (name == "__eir_thread_join") {
+        if (!args.empty() && args[0].asPtr()) {
+            auto th = static_cast<std::thread*>(args[0].asPtr());
+            if (th->joinable()) {
+                th->join();
+            }
+            delete th;
+        }
+        return VMValue(0);
+    }
 
     // Fallback: dynamic lookup via dlsym
     void* sym = dlsym(RTLD_DEFAULT, name.c_str());
@@ -1024,13 +1068,14 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                             sz = getTypeSize(retTy, currentModule);
                         }
                         if (sz == 0) sz = 16;
-                        returnBuffer.resize(sz);
+                        thread_local static std::vector<uint8_t> threadReturnBuffer;
+                        threadReturnBuffer.resize(sz);
                         if (retVal.asPtr()) {
-                            std::memcpy(returnBuffer.data(), retVal.asPtr(), sz);
+                            std::memcpy(threadReturnBuffer.data(), retVal.asPtr(), sz);
                         } else {
-                            std::memset(returnBuffer.data(), 0, sz);
+                            std::memset(threadReturnBuffer.data(), 0, sz);
                         }
-                        return VMValue(returnBuffer.data());
+                        return VMValue(threadReturnBuffer.data());
                     }
                     return retVal;
                 }
