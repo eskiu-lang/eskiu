@@ -31,6 +31,7 @@
 #include "eir/eir_vm.h"
 #include "eir/eir_asm.h"
 #include "eir/eir_c.h"
+#include "eir/eir_obj.h"
 #include "main_support.h"
 #include "repl.h"
 #include "pkg.h"
@@ -86,6 +87,23 @@ static llvm::cl::opt<bool> EmitAsm("emit-asm",
 
 static llvm::cl::opt<bool> EmitC("emit-c",
                                  llvm::cl::desc("Emit portable C99 code (.c) via EIR without LLVM"),
+    llvm::cl::cat(EskiuCat));
+
+static llvm::cl::opt<bool> EmitObj("emit-obj",
+                                   llvm::cl::desc("Emit native object file (.o) via EIR without LLVM"),
+    llvm::cl::cat(EskiuCat));
+
+enum class BackendKind {
+    LLVM,
+    EIR
+};
+static llvm::cl::opt<BackendKind> Backend("backend",
+    llvm::cl::desc("Choose compiler backend (llvm or eir)"),
+    llvm::cl::values(
+        clEnumValN(BackendKind::LLVM, "llvm", "Use LLVM backend (default)"),
+        clEnumValN(BackendKind::EIR, "eir", "Use EIR backend (alternative to LLVM)")
+    ),
+    llvm::cl::init(BackendKind::LLVM),
     llvm::cl::cat(EskiuCat));
 
 static llvm::cl::opt<bool> TestTypeChecker("test-typechecker",
@@ -567,6 +585,95 @@ static int emitC(const std::string& filename) {
     }
 }
 
+// Compile program via EIR backend (alternative to LLVM)
+static int compileEir(const std::string& filename) {
+    auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding);
+    if (!program) return 1;
+
+    try {
+        TypeChecker tc; tc.targetTriple = std::string(TargetTriple); tc.warnDeprecated = !WnoDeprecated;
+        tc.sourceFile = filename; applyWarningFlags(tc);
+        if (!tc.check(program.get())) return 1;
+
+        AsyncTransform(&tc.expressionTypeMap(), &tc.instanceArgsMap(), &tc.instanceExprTypeMap()).run(program.get());
+        TypeChecker postTc; postTc.targetTriple = std::string(TargetTriple); postTc.warnDeprecated = false; postTc.warnDefaults = false; postTc.sourceFile = filename;
+        if (!postTc.check(program.get())) return 1;
+
+        eir::EIRBuilder builder;
+        builder.resolvedExprTypes = &postTc.expressionTypeMap();
+        builder.semaInstanceArgs = &postTc.instanceArgsMap();
+        if (!TargetTriple.empty()) builder.targetTriple = std::string(TargetTriple);
+
+        auto eirModule = builder.build(program.get());
+        if (!eirModule) {
+            std::cerr << "EIR generation failed!" << std::endl;
+            return 1;
+        }
+
+        // `eskiuc run`: link into a temporary executable, then run it.
+        std::string runExePath;
+        if (g_runMode) {
+            llvm::SmallString<128> tmpExe;
+#ifdef _WIN32
+            const char* runSuffix = "exe";
+#else
+            const char* runSuffix = "";
+#endif
+            if (llvm::sys::fs::createTemporaryFile("eskiu-run", runSuffix, tmpExe)) {
+                std::cerr << "error: could not create a temporary executable" << std::endl;
+                return 1;
+            }
+            runExePath = std::string(tmpExe.str());
+        }
+
+        std::string outFile = !runExePath.empty() ? runExePath
+            : OutputFilename.empty() ? (CompileOnly || EmitObj ? std::string(filename) + ".o" : "a.out")
+            : std::string(OutputFilename);
+
+        if (EmitObj || CompileOnly || endsWith(outFile, ".o") || endsWith(outFile, ".obj")) {
+            if (!eir::emitEirObject(eirModule.get(), outFile, std::string(TargetTriple))) {
+                return 1;
+            }
+            return 0;
+        }
+
+        // Link into an executable
+        llvm::SmallString<128> tmpObj;
+        if (llvm::sys::fs::createTemporaryFile("eskiu_eir", "o", tmpObj)) {
+            std::cerr << "error: could not create a temporary object file" << std::endl;
+            return 1;
+        }
+        std::string tmpObjPath(tmpObj.str());
+        if (!eir::emitEirObject(eirModule.get(), tmpObjPath, std::string(TargetTriple))) {
+            llvm::sys::fs::remove(tmpObjPath);
+            return 1;
+        }
+
+        std::vector<std::string> libs(LinkLibs.begin(), LinkLibs.end());
+        std::vector<std::string> paths(LinkPaths.begin(), LinkPaths.end());
+        std::vector<std::string> extra(LinkArgs.begin(), LinkArgs.end());
+        if (Asan) extra.push_back("-fsanitize=address");
+
+        bool ok = linkExecutable(tmpObjPath, outFile, libs, paths, extra, /*sanitized=*/Asan,
+                                 std::string(TargetTriple));
+        llvm::sys::fs::remove(tmpObjPath);
+        if (!ok) {
+            if (g_runMode) llvm::sys::fs::remove(runExePath);
+            return 1;
+        }
+
+        if (g_runMode) {
+            int rc = runExecutable(runExePath, g_runArgs);
+            llvm::sys::fs::remove(runExePath);
+            return rc;
+        }
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
 // Test parser: tokenize, parse, and print AST
 static int testParser(const std::string& filename) {
     auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding);
@@ -948,6 +1055,11 @@ static int compilerMain(int argc, char** argv) {
     // Handle --emit-c
     if (EmitC) {
         return emitC(InputFilename);
+    }
+
+    // Handle EIR backend compilation or --emit-obj
+    if (EmitObj || Backend == BackendKind::EIR) {
+        return compileEir(InputFilename);
     }
 
     // Full compilation pipeline — parse every input file and merge their
