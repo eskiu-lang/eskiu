@@ -37,7 +37,8 @@ EVM is validated against the Eskiu test suite and compared directly with native 
 - **Core Standard Library:** JSON parsing and emission, regex engine, associative maps, dynamic lists, sorting algorithms, cryptography/hashing, and datetime utilities.
 - **Compiler Parity Gates:** Full validation across `tests/selfhost/eir_parity.sh` and `tests/selfhost/cg_parity.sh`.
 
-## 4. Current Limitations & Ongoing Work
+## 4. Scope and Design Boundaries
 
-- **Process Execution:** Subprocess spawning with timeout signalling (`tests/process_grandchild.esk`) is currently undergoing synchronization adjustments under VM emulation.
-- **Asynchronous I/O:** Integration of async event loops directly within EIR interpreter loop contexts.
+EVM serves as an immediate, in-memory semantic validator for EIR during compiler development and differential testing. Its scope is intentionally bounded:
+- **In Scope:** Full execution of core EIR instructions (arithmetic, branches, calls, memory, alloca, slices, interfaces, closures, bitfields, exception unwinding) and standard C library FFI via `dlsym`.
+- **Out of Scope (Non-Goals):** EVM does not attempt to be a full operating system or runtime emulator. Complex OS-level facilities (such as kernel-level asynchronous I/O event loops, signal-driven process supervisor trees, and high-performance server runtimes) are target domains for native compilation (`eskiuc -o prog` via native backends / LLVM).
