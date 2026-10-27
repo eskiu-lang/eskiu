@@ -516,7 +516,7 @@ std::string Module::str() const {
     return ss.str();
 }
 
-size_t getTypeSize(TypePtr t) {
+size_t getTypeSize(TypePtr t, const Module* mod) {
     if (!t) return 0;
     switch (t->kind) {
         case TypeKind::Void: return 0;
@@ -526,18 +526,22 @@ size_t getTypeSize(TypePtr t) {
         }
         case TypeKind::Float: return (t->bitWidth == 32) ? 4 : 8;
         case TypeKind::Pointer: return 8;
-        case TypeKind::Array: return t->arraySize * getTypeSize(t->elemType);
+        case TypeKind::Array: return t->arraySize * getTypeSize(t->elemType, mod);
         case TypeKind::Slice:
         case TypeKind::Interface:
         case TypeKind::Closure: return 16;
         case TypeKind::Struct: {
+            if (mod) {
+                size_t sz = mod->getStructSize(t->nominalName());
+                if (sz > 0) return sz;
+            }
             size_t total = 0;
             for (const auto& m : t->members) {
-                size_t al = getTypeAlign(m);
+                size_t al = getTypeAlign(m, mod);
                 total = (total + al - 1) & ~(al - 1);
-                total += getTypeSize(m);
+                total += getTypeSize(m, mod);
             }
-            size_t maxAl = getTypeAlign(t);
+            size_t maxAl = getTypeAlign(t, mod);
             return (total + maxAl - 1) & ~(maxAl - 1);
         }
         case TypeKind::Function: return 8;
@@ -545,24 +549,30 @@ size_t getTypeSize(TypePtr t) {
     return 8;
 }
 
-size_t getTypeAlign(TypePtr t) {
+size_t getTypeAlign(TypePtr t, const Module* mod) {
     if (!t) return 1;
     switch (t->kind) {
         case TypeKind::Void: return 1;
         case TypeKind::Int: {
-            size_t sz = getTypeSize(t);
+            size_t sz = getTypeSize(t, mod);
             return sz > 8 ? 8 : (sz == 0 ? 1 : sz);
         }
         case TypeKind::Float: return (t->bitWidth == 32) ? 4 : 8;
         case TypeKind::Pointer: return 8;
-        case TypeKind::Array: return getTypeAlign(t->elemType);
+        case TypeKind::Array: return getTypeAlign(t->elemType, mod);
         case TypeKind::Slice:
         case TypeKind::Interface:
         case TypeKind::Closure: return 8;
         case TypeKind::Struct: {
+            if (mod) {
+                auto it = mod->structLayouts.find(t->nominalName());
+                if (it != mod->structLayouts.end() && it->second.alignment > 0) {
+                    return it->second.alignment;
+                }
+            }
             size_t maxAl = 1;
             for (const auto& m : t->members) {
-                size_t al = getTypeAlign(m);
+                size_t al = getTypeAlign(m, mod);
                 if (al > maxAl) maxAl = al;
             }
             return maxAl;

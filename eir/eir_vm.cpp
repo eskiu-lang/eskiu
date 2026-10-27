@@ -284,6 +284,86 @@ VMValue VM::callExtern(const std::string& name, const std::vector<VMValue>& args
         }
         return VMValue(0.0);
     }
+    if (name == "sqrt") {
+        if (!args.empty()) return VMValue(std::sqrt(args[0].asFloat()));
+        return VMValue(0.0);
+    }
+    if (name == "fabs") {
+        if (!args.empty()) return VMValue(std::fabs(args[0].asFloat()));
+        return VMValue(0.0);
+    }
+    if (name == "pow") {
+        if (args.size() >= 2) return VMValue(std::pow(args[0].asFloat(), args[1].asFloat()));
+        return VMValue(0.0);
+    }
+    if (name == "floor") {
+        if (!args.empty()) return VMValue(std::floor(args[0].asFloat()));
+        return VMValue(0.0);
+    }
+    if (name == "ceil") {
+        if (!args.empty()) return VMValue(std::ceil(args[0].asFloat()));
+        return VMValue(0.0);
+    }
+    if (name == "round") {
+        if (!args.empty()) return VMValue(std::round(args[0].asFloat()));
+        return VMValue(0.0);
+    }
+    if (name == "trunc") {
+        if (!args.empty()) return VMValue(std::trunc(args[0].asFloat()));
+        return VMValue(0.0);
+    }
+    if (name == "fmod") {
+        if (args.size() >= 2) return VMValue(std::fmod(args[0].asFloat(), args[1].asFloat()));
+        return VMValue(0.0);
+    }
+    if (name == "sin") {
+        if (!args.empty()) return VMValue(std::sin(args[0].asFloat()));
+        return VMValue(0.0);
+    }
+    if (name == "cos") {
+        if (!args.empty()) return VMValue(std::cos(args[0].asFloat()));
+        return VMValue(0.0);
+    }
+    if (name == "tan") {
+        if (!args.empty()) return VMValue(std::tan(args[0].asFloat()));
+        return VMValue(0.0);
+    }
+    if (name == "asin") {
+        if (!args.empty()) return VMValue(std::asin(args[0].asFloat()));
+        return VMValue(0.0);
+    }
+    if (name == "acos") {
+        if (!args.empty()) return VMValue(std::acos(args[0].asFloat()));
+        return VMValue(0.0);
+    }
+    if (name == "atan") {
+        if (!args.empty()) return VMValue(std::atan(args[0].asFloat()));
+        return VMValue(0.0);
+    }
+    if (name == "atan2") {
+        if (args.size() >= 2) return VMValue(std::atan2(args[0].asFloat(), args[1].asFloat()));
+        return VMValue(0.0);
+    }
+    if (name == "log") {
+        if (!args.empty()) return VMValue(std::log(args[0].asFloat()));
+        return VMValue(0.0);
+    }
+    if (name == "log2") {
+        if (!args.empty()) return VMValue(std::log2(args[0].asFloat()));
+        return VMValue(0.0);
+    }
+    if (name == "log10") {
+        if (!args.empty()) return VMValue(std::log10(args[0].asFloat()));
+        return VMValue(0.0);
+    }
+    if (name == "exp") {
+        if (!args.empty()) return VMValue(std::exp(args[0].asFloat()));
+        return VMValue(0.0);
+    }
+    if (name == "abs") {
+        if (!args.empty()) return VMValue(std::abs(args[0].asInt()));
+        return VMValue(0);
+    }
     if (name == "bsearch") {
         if (args.size() >= 5) {
             void* key = args[0].asPtr();
@@ -490,6 +570,7 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                         elemSize = currentModule->getStructSize(elemType->nominalName());
                     }
                     if (elemSize == 0) elemSize = 8;
+
                     void* res = static_cast<uint8_t*>(base) + idx * elemSize;
                     frame.registers[inst->resultVar] = VMValue(res);
                     break;

@@ -274,7 +274,13 @@ int64_t EIRBuilder::foldConstInt(const ExprPtr& expr) {
     if (!expr) return 0;
     if (auto lit = dynamic_cast<LiteralExpr*>(expr.get())) {
         if (lit->kind == LiteralExpr::Kind::INT) {
-            try { return std::stoll(lit->value, nullptr, 0); } catch (...) { return 0; }
+            try {
+                if (!lit->value.empty() && lit->value[0] == '-') {
+                    return std::stoll(lit->value, nullptr, 0);
+                } else {
+                    return static_cast<int64_t>(std::stoull(lit->value, nullptr, 0));
+                }
+            } catch (...) { return 0; }
         }
         if (lit->kind == LiteralExpr::Kind::CHAR) {
             return (!lit->value.empty()) ? static_cast<int64_t>(static_cast<unsigned char>(lit->value[0])) : 0;
@@ -374,9 +380,9 @@ void EIRBuilder::layoutBitfieldsForStruct(StructDecl* s, StructInfo& sinfo, std:
     for (const auto& f : s->fields) {
         TypePtr ty = toEirType(f.type);
         fields.push_back(ty);
-        size_t size = getTypeSize(ty);
+        size_t size = getTypeSize(ty, module.get());
         if (size < 1) size = 1;
-        size_t align = getTypeAlign(ty);
+        size_t align = getTypeAlign(ty, module.get());
         if (align < 1) align = 1;
         if (align > structAlign) structAlign = align;
 
@@ -570,6 +576,7 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
     }
 
     // Phase 1: Structs, Enums, and Interfaces
+    std::unordered_map<std::string, StructDecl*> plainStructDecls;
     for (auto& decl : program->declarations) {
         if (auto iface = dynamic_cast<InterfaceDecl*>(decl.get())) {
             InterfaceInfo info;
@@ -630,39 +637,12 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
         } else if (auto s = dynamic_cast<StructDecl*>(decl.get())) {
             if (!s->typeParams.empty()) {
                 templateDecls[s->name] = s;
-                continue;
-            }
-            std::vector<TypePtr> fields;
-            StructInfo sinfo;
-            sinfo.name = s->name;
-            bool hasBitfield = false;
-            for (const auto& f : s->fields) {
-                if (f.bitWidth > 0) { hasBitfield = true; break; }
-            }
-            if (hasBitfield) {
-                layoutBitfieldsForStruct(s, sinfo, fields);
             } else {
-                size_t currentOffset = 0;
-                size_t maxAlign = 1;
-                for (const auto& f : s->fields) {
-                    TypePtr ft = toEirType(f.type);
-                    fields.push_back(ft);
-                    size_t sz = getTypeSize(ft);
-                    size_t al = getTypeAlign(ft);
-                    if (al > maxAlign) maxAlign = al;
-                    currentOffset = (currentOffset + al - 1) & ~(al - 1);
-                    sinfo.fields.push_back({f.name, ft, currentOffset, sz});
-                    currentOffset += sz;
-                }
-                sinfo.totalSize = (currentOffset + maxAlign - 1) & ~(maxAlign - 1);
-                sinfo.alignment = maxAlign;
+                plainStructDecls[s->name] = s;
             }
-            module->structLayouts[s->name] = sinfo;
-            module->structTypes.push_back(Type::getStruct(s->name, fields));
         } else if (auto f = dynamic_cast<FunctionDecl*>(decl.get())) {
             if (!f->typeParams.empty()) {
                 funcTemplateDecls[f->name] = f;
-                continue;
             }
         } else if (auto v = dynamic_cast<VarDecl*>(decl.get())) {
             if (v->isVolatile) {
@@ -704,41 +684,85 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
         }
     }
 
-    // Monomorphized template struct layouts
+    std::function<void(const std::string&)> ensureStructLayout = [&](const std::string& name) {
+        if (name.empty() || module->structLayouts.count(name)) return;
+
+        auto tit = templateInstanceArgs.find(name);
+        if (tit != templateInstanceArgs.end()) {
+            const std::string& tname = tit->second.first;
+            const std::vector<std::string>& targs = tit->second.second;
+            auto tdIt = templateDecls.find(tname);
+            if (tdIt != templateDecls.end()) {
+                StructDecl* td = tdIt->second;
+                std::map<std::string, std::string> subs;
+                for (size_t i = 0; i < td->typeParams.size() && i < targs.size(); ++i) {
+                    subs[td->typeParams[i]] = targs[i];
+                }
+                std::vector<TypePtr> fields;
+                StructInfo sinfo;
+                sinfo.name = name;
+                size_t currentOffset = 0;
+                size_t maxAlign = 1;
+                for (const auto& f : td->fields) {
+                    std::string subType = substType(f.type, subs);
+                    TypePtr ft = toEirType(subType);
+                    fields.push_back(ft);
+                    if (ft && ft->isStruct()) ensureStructLayout(ft->nominalName());
+                    size_t sz = getTypeSize(ft, module.get());
+                    size_t al = getTypeAlign(ft, module.get());
+                    if (al > maxAlign) maxAlign = al;
+                    currentOffset = (currentOffset + al - 1) & ~(al - 1);
+                    sinfo.fields.push_back({f.name, ft, currentOffset, sz});
+                    currentOffset += sz;
+                }
+                sinfo.totalSize = (currentOffset + maxAlign - 1) & ~(maxAlign - 1);
+                sinfo.alignment = maxAlign;
+                module->structLayouts[name] = sinfo;
+                module->structTypes.push_back(Type::getStruct(name, fields));
+                return;
+            }
+        }
+
+        auto sit = plainStructDecls.find(name);
+        if (sit != plainStructDecls.end()) {
+            StructDecl* s = sit->second;
+            std::vector<TypePtr> fields;
+            StructInfo sinfo;
+            sinfo.name = s->name;
+            bool hasBitfield = false;
+            for (const auto& f : s->fields) {
+                if (f.bitWidth > 0) { hasBitfield = true; break; }
+            }
+            if (hasBitfield) {
+                layoutBitfieldsForStruct(s, sinfo, fields);
+            } else {
+                size_t currentOffset = 0;
+                size_t maxAlign = 1;
+                for (const auto& f : s->fields) {
+                    TypePtr ft = toEirType(f.type);
+                    fields.push_back(ft);
+                    if (ft && ft->isStruct()) ensureStructLayout(ft->nominalName());
+                    size_t sz = getTypeSize(ft, module.get());
+                    size_t al = getTypeAlign(ft, module.get());
+                    if (al > maxAlign) maxAlign = al;
+                    currentOffset = (currentOffset + al - 1) & ~(al - 1);
+                    sinfo.fields.push_back({f.name, ft, currentOffset, sz});
+                    currentOffset += sz;
+                }
+                sinfo.totalSize = (currentOffset + maxAlign - 1) & ~(maxAlign - 1);
+                sinfo.alignment = maxAlign;
+            }
+            module->structLayouts[s->name] = sinfo;
+            module->structTypes.push_back(Type::getStruct(s->name, fields));
+            return;
+        }
+    };
+
+    for (const auto& kv : plainStructDecls) {
+        ensureStructLayout(kv.first);
+    }
     for (const auto& kv : templateInstanceArgs) {
-        const std::string& mangled = kv.first;
-        const std::string& tname = kv.second.first;
-        const std::vector<std::string>& targs = kv.second.second;
-        auto tdIt = templateDecls.find(tname);
-        if (tdIt == templateDecls.end()) continue;
-        if (module->structLayouts.count(mangled)) continue;
-
-        StructDecl* td = tdIt->second;
-        std::map<std::string, std::string> subs;
-        for (size_t i = 0; i < td->typeParams.size() && i < targs.size(); ++i) {
-            subs[td->typeParams[i]] = targs[i];
-        }
-
-        std::vector<TypePtr> fields;
-        StructInfo sinfo;
-        sinfo.name = mangled;
-        size_t currentOffset = 0;
-        size_t maxAlign = 1;
-        for (const auto& f : td->fields) {
-            std::string subType = substType(f.type, subs);
-            TypePtr ft = toEirType(subType);
-            fields.push_back(ft);
-            size_t sz = getTypeSize(ft);
-            size_t al = getTypeAlign(ft);
-            if (al > maxAlign) maxAlign = al;
-            currentOffset = (currentOffset + al - 1) & ~(al - 1);
-            sinfo.fields.push_back({f.name, ft, currentOffset, sz});
-            currentOffset += sz;
-        }
-        sinfo.totalSize = (currentOffset + maxAlign - 1) & ~(maxAlign - 1);
-        sinfo.alignment = maxAlign;
-        module->structLayouts[mangled] = sinfo;
-        module->structTypes.push_back(Type::getStruct(mangled, fields));
+        ensureStructLayout(kv.first);
     }
 
     // Phase 2: Function prototypes
@@ -1564,7 +1588,13 @@ void EIRBuilder::visit(LiteralExpr* node) {
     switch (node->kind) {
         case LiteralExpr::Kind::INT: {
             int64_t v = 0;
-            try { v = std::stoll(node->value, nullptr, 0); } catch (...) { v = 0; }
+            try {
+                if (!node->value.empty() && node->value[0] == '-') {
+                    v = std::stoll(node->value, nullptr, 0);
+                } else {
+                    v = static_cast<int64_t>(std::stoull(node->value, nullptr, 0));
+                }
+            } catch (...) { v = 0; }
             lastValue = Operand::constInt(v, ty);
             break;
         }

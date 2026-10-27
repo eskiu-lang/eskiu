@@ -280,8 +280,9 @@ struct StructInfo {
     }
 };
 
-size_t getTypeSize(TypePtr t);
-size_t getTypeAlign(TypePtr t);
+struct Module;
+size_t getTypeSize(TypePtr t, const Module* mod = nullptr);
+size_t getTypeAlign(TypePtr t, const Module* mod = nullptr);
 
 struct Module {
     std::string name;
