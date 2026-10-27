@@ -31,7 +31,7 @@ void VM::writeMemory(void* ptr, TypePtr type, const VMValue& val) {
         *reinterpret_cast<void**>(ptr) = val.asPtr();
     } else if (type->isStruct() || type->isArray()) {
         size_t sz = currentModule ? currentModule->getStructSize(type->nominalName()) : 0;
-        if (sz == 0) sz = getTypeSize(type);
+        if (sz == 0) sz = getTypeSize(type, currentModule);
         if (sz > 0 && val.asPtr()) {
             std::memcpy(ptr, val.asPtr(), sz);
         }
@@ -967,9 +967,9 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                         size_t sz = 16;
                         if (retTy->isStruct()) {
                             sz = currentModule ? currentModule->getStructSize(retTy->nominalName()) : 0;
-                            if (sz == 0) sz = getTypeSize(retTy);
+                            if (sz == 0) sz = getTypeSize(retTy, currentModule);
                         } else if (retTy->isArray()) {
-                            sz = getTypeSize(retTy);
+                            sz = getTypeSize(retTy, currentModule);
                         }
                         if (sz == 0) sz = 16;
                         returnBuffer.resize(sz);
@@ -1069,9 +1069,9 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                         size_t sz = 16;
                         if (inst->type->isStruct()) {
                             sz = currentModule ? currentModule->getStructSize(inst->type->nominalName()) : 0;
-                            if (sz == 0) sz = getTypeSize(inst->type);
+                            if (sz == 0) sz = getTypeSize(inst->type, currentModule);
                         } else if (inst->type->isArray()) {
-                            sz = getTypeSize(inst->type);
+                            sz = getTypeSize(inst->type, currentModule);
                         }
                         if (sz == 0) sz = 16;
                         void* callerSlot = frame.allocStack(sz, 8);
@@ -1155,9 +1155,9 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                         size_t sz = 16;
                         if (inst->type->isStruct()) {
                             sz = currentModule ? currentModule->getStructSize(inst->type->nominalName()) : 0;
-                            if (sz == 0) sz = getTypeSize(inst->type);
+                            if (sz == 0) sz = getTypeSize(inst->type, currentModule);
                         } else if (inst->type->isArray()) {
-                            sz = getTypeSize(inst->type);
+                            sz = getTypeSize(inst->type, currentModule);
                         }
                         if (sz == 0) sz = 16;
                         void* callerSlot = frame.allocStack(sz, 8);
@@ -1201,7 +1201,11 @@ int VM::run(Module* module, const std::string& entryFn, const std::vector<std::s
 
     // Allocate global variables first
     for (const auto& g : module->globals) {
-        size_t sz = getTypeSize(g.type);
+        size_t sz = 0;
+        if (g.type && g.type->isStruct()) {
+            sz = module->getStructSize(g.type->nominalName());
+        }
+        if (sz == 0) sz = getTypeSize(g.type, module);
         if (sz < 1) sz = 8;
         globalStorage[g.name].resize(sz, 0);
     }
@@ -1214,7 +1218,11 @@ int VM::run(Module* module, const std::string& entryFn, const std::vector<std::s
             for (const auto& elem : g.elements) {
                 VMValue val = getOperand(elem, dummy);
                 TypePtr elemTy = elem.type ? elem.type : Type::getPtr();
-                size_t elemSz = getTypeSize(elemTy);
+                size_t elemSz = 0;
+                if (elemTy && elemTy->isStruct()) {
+                    elemSz = module->getStructSize(elemTy->nominalName());
+                }
+                if (elemSz == 0) elemSz = getTypeSize(elemTy, module);
                 if (offset + elemSz <= globalStorage[g.name].size()) {
                     writeMemory(globalStorage[g.name].data() + offset, elemTy, val);
                 }
