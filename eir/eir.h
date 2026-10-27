@@ -159,6 +159,8 @@ enum class Opcode {
     Throw,
     Invoke,
     LandingPad,
+    PushHandler,
+    PopHandler,
 
     // Inline Assembly
     InlineAsm

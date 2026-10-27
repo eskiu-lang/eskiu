@@ -382,6 +382,12 @@ std::string Instruction::str() const {
         case Opcode::LandingPad:
             ss << "landingpad";
             break;
+        case Opcode::PushHandler:
+            ss << "push_handler " << operands[0].str();
+            break;
+        case Opcode::PopHandler:
+            ss << "pop_handler";
+            break;
         case Opcode::InlineAsm: {
             ss << "inline_asm \"" << asmString << "\", \"" << asmConstraints << "\"";
             for (size_t i = 0; i < operands.size(); ++i) {

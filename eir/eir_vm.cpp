@@ -665,6 +665,10 @@ VMValue VM::callExtern(const std::string& name, const std::vector<VMValue>& args
         auto th = new std::thread([this, callee, callArgs, owned, envPtr]() {
             if (callee) {
                 this->executeFunction(callee, callArgs);
+                if (this->hasException()) {
+                    std::cerr << "error: uncaught exception: " << this->formatException(this->currentException) << std::endl;
+                    std::exit(1);
+                }
             }
             if (owned && envPtr) {
                 free(envPtr);
@@ -680,6 +684,136 @@ VMValue VM::callExtern(const std::string& name, const std::vector<VMValue>& args
             }
             delete th;
         }
+        return VMValue(0);
+    }
+    if (name == "__eir_alloc_exception") {
+        int64_t sz = args.size() > 0 ? args[0].asInt() : 16;
+        void* typeNamePtr = args.size() > 1 ? args[1].asPtr() : nullptr;
+        void* ex = malloc(static_cast<size_t>(sz));
+        std::memset(ex, 0, static_cast<size_t>(sz));
+        *reinterpret_cast<int64_t*>(ex) = sz;
+        *reinterpret_cast<void**>(static_cast<char*>(ex) + 8) = typeNamePtr;
+        return VMValue(ex);
+    }
+    if (name == "__eir_push_caught") {
+        if (!args.empty()) {
+            caughtExceptionStack.push_back(args[0].asPtr());
+        }
+        return VMValue(0);
+    }
+    if (name == "__eir_pop_caught") {
+        if (!caughtExceptionStack.empty()) {
+            caughtExceptionStack.pop_back();
+        }
+        return VMValue(0);
+    }
+    if (name == "__eir_clear_exception") {
+        currentException = nullptr;
+        return VMValue(0);
+    }
+    if (name == "__eir_exception_text") {
+        void* ex = nullptr;
+        if (!caughtExceptionStack.empty()) {
+            ex = caughtExceptionStack.back();
+        } else if (currentException) {
+            ex = currentException;
+        }
+        if (ex) {
+            activeExceptionText = formatException(ex);
+        } else {
+            activeExceptionText = "";
+        }
+        return VMValue(const_cast<char*>(activeExceptionText.c_str()));
+    }
+    if (name == "__exception_text_into") {
+        if (!args.empty() && args[0].asPtr()) {
+            char* dst = reinterpret_cast<char*>(args[0].asPtr());
+            void* ex = nullptr;
+            if (!caughtExceptionStack.empty()) {
+                ex = caughtExceptionStack.back();
+            } else if (currentException) {
+                ex = currentException;
+            }
+            std::string text = ex ? formatException(ex) : "";
+            size_t copyLen = std::min(text.size(), static_cast<size_t>(511));
+            std::memcpy(dst, text.data(), copyLen);
+            dst[copyLen] = '\0';
+        }
+        return VMValue(0);
+    }
+    if (name == "atomic_cas" || name == "atomic_cas_relaxed") {
+        if (args.size() >= 3 && args[0].asPtr()) {
+            int32_t* cell = reinterpret_cast<int32_t*>(args[0].asPtr());
+            int32_t expected = static_cast<int32_t>(args[1].asInt());
+            int32_t desired = static_cast<int32_t>(args[2].asInt());
+            if (*cell == expected) {
+                *cell = desired;
+                return VMValue(static_cast<uint64_t>(1));
+            } else {
+                return VMValue(static_cast<uint64_t>(0));
+            }
+        }
+        return VMValue(0);
+    }
+    if (name == "atomic_cas64" || name == "atomic_cas64_relaxed" || name == "atomic_cas_ptr" || name == "atomic_cas_ptr_relaxed") {
+        if (args.size() >= 3 && args[0].asPtr()) {
+            uint64_t* cell = reinterpret_cast<uint64_t*>(args[0].asPtr());
+            uint64_t expected = args[1].asInt();
+            uint64_t desired = args[2].asInt();
+            if (*cell == expected) {
+                *cell = desired;
+                return VMValue(static_cast<uint64_t>(1));
+            } else {
+                return VMValue(static_cast<uint64_t>(0));
+            }
+        }
+        return VMValue(0);
+    }
+    if (name == "atomic_swap" || name == "atomic_swap_relaxed") {
+        if (args.size() >= 2 && args[0].asPtr()) {
+            int32_t* cell = reinterpret_cast<int32_t*>(args[0].asPtr());
+            int32_t desired = static_cast<int32_t>(args[1].asInt());
+            int32_t old = *cell;
+            *cell = desired;
+            return VMValue(static_cast<int64_t>(old));
+        }
+        return VMValue(0);
+    }
+    if (name == "atomic_swap64" || name == "atomic_swap64_relaxed" || name == "atomic_swap_ptr" || name == "atomic_swap_ptr_relaxed") {
+        if (args.size() >= 2 && args[0].asPtr()) {
+            uint64_t* cell = reinterpret_cast<uint64_t*>(args[0].asPtr());
+            uint64_t desired = args[1].asInt();
+            uint64_t old = *cell;
+            *cell = desired;
+            return VMValue(old);
+        }
+        return VMValue(0);
+    }
+    if (name == "atomic_load" || name == "atomic_load_relaxed") {
+        if (!args.empty() && args[0].asPtr()) {
+            return VMValue(static_cast<int64_t>(*reinterpret_cast<int32_t*>(args[0].asPtr())));
+        }
+        return VMValue(0);
+    }
+    if (name == "atomic_load64" || name == "atomic_load64_relaxed" || name == "atomic_load_ptr" || name == "atomic_load_ptr_relaxed") {
+        if (!args.empty() && args[0].asPtr()) {
+            return VMValue(*reinterpret_cast<uint64_t*>(args[0].asPtr()));
+        }
+        return VMValue(0);
+    }
+    if (name == "atomic_store" || name == "atomic_store_relaxed") {
+        if (args.size() >= 2 && args[0].asPtr()) {
+            *reinterpret_cast<int32_t*>(args[0].asPtr()) = static_cast<int32_t>(args[1].asInt());
+        }
+        return VMValue(0);
+    }
+    if (name == "atomic_store64" || name == "atomic_store64_relaxed" || name == "atomic_store_ptr" || name == "atomic_store_ptr_relaxed") {
+        if (args.size() >= 2 && args[0].asPtr()) {
+            *reinterpret_cast<uint64_t*>(args[0].asPtr()) = args[1].asInt();
+        }
+        return VMValue(0);
+    }
+    if (name == "atomic_fence") {
         return VMValue(0);
     }
 
@@ -707,6 +841,68 @@ VMValue VM::callExtern(const std::string& name, const std::vector<VMValue>& args
     return VMValue(0);
 }
 
+std::string VM::formatException(void* exPtr) {
+    if (!exPtr) return "unknown";
+    char* typeName = *reinterpret_cast<char**>(static_cast<char*>(exPtr) + 8);
+    void* payload = static_cast<char*>(exPtr) + 16;
+    if (!typeName) return "unknown";
+    std::string tn(typeName);
+
+    if (tn == "int" || tn == "int32") {
+        int32_t val = *reinterpret_cast<int32_t*>(payload);
+        return tn + " " + std::to_string(val);
+    } else if (tn == "int8") {
+        int8_t val = *reinterpret_cast<int8_t*>(payload);
+        return tn + " " + std::to_string(static_cast<int>(val));
+    } else if (tn == "int16") {
+        int16_t val = *reinterpret_cast<int16_t*>(payload);
+        return tn + " " + std::to_string(val);
+    } else if (tn == "int64") {
+        int64_t val = *reinterpret_cast<int64_t*>(payload);
+        return tn + " " + std::to_string(val);
+    } else if (tn == "uint" || tn == "uint32") {
+        uint32_t val = *reinterpret_cast<uint32_t*>(payload);
+        return tn + " " + std::to_string(val);
+    } else if (tn == "uint8") {
+        uint8_t val = *reinterpret_cast<uint8_t*>(payload);
+        return tn + " " + std::to_string(static_cast<unsigned>(val));
+    } else if (tn == "uint16") {
+        uint16_t val = *reinterpret_cast<uint16_t*>(payload);
+        return tn + " " + std::to_string(val);
+    } else if (tn == "uint64") {
+        uint64_t val = *reinterpret_cast<uint64_t*>(payload);
+        return tn + " " + std::to_string(val);
+    } else if (tn == "double") {
+        double val = *reinterpret_cast<double*>(payload);
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%g", val);
+        return tn + " " + buf;
+    } else if (tn == "float") {
+        float val = *reinterpret_cast<float*>(payload);
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%g", val);
+        return tn + " " + buf;
+    } else if (tn == "bool") {
+        bool val = (*reinterpret_cast<uint8_t*>(payload)) != 0;
+        return tn + " " + (val ? "true" : "false");
+    } else if (tn == "char") {
+        char val = *reinterpret_cast<char*>(payload);
+        std::string s = tn + " '";
+        s += val;
+        s += "'";
+        return s;
+    } else if (tn == "string") {
+        char* str = *reinterpret_cast<char**>(payload);
+        if (str) {
+            return tn + " \"" + std::string(str) + "\"";
+        } else {
+            return tn;
+        }
+    } else {
+        return tn;
+    }
+}
+
 VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
     if (!fn) return VMValue(0);
     if (fn->isExtern) {
@@ -715,6 +911,7 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
 
     StackFrame frame;
     frame.function = fn;
+    size_t savedCaughtDepth = caughtExceptionStack.size();
 
     if (fn->isVariadic && args.size() > fn->params.size()) {
         frame.varargs.assign(args.begin() + fn->params.size(), args.end());
@@ -1221,6 +1418,7 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                     break;
                 }
                 case Opcode::Ret: {
+                    if (caughtExceptionStack.size() > savedCaughtDepth) caughtExceptionStack.resize(savedCaughtDepth);
                     if (inst->operands.empty() || inst->operands[0].type->isVoid()) {
                         return VMValue(0);
                     }
@@ -1247,7 +1445,48 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                     return retVal;
                 }
                 case Opcode::Unreachable:
+                    if (caughtExceptionStack.size() > savedCaughtDepth) caughtExceptionStack.resize(savedCaughtDepth);
                     return VMValue(0);
+
+                case Opcode::Throw: {
+                    void* exPtr = getOperand(inst->operands[0], frame).asPtr();
+                    currentException = exPtr;
+                    if (!frame.exceptionHandlers.empty()) {
+                        nextBB = frame.exceptionHandlers.back();
+                        frame.exceptionHandlers.pop_back();
+                    } else {
+                        if (caughtExceptionStack.size() > savedCaughtDepth) caughtExceptionStack.resize(savedCaughtDepth);
+                        return VMValue(0);
+                    }
+                    break;
+                }
+                case Opcode::PushHandler: {
+                    std::string targetLabel = inst->operands[0].text;
+                    BasicBlock* targetBB = nullptr;
+                    for (const auto& b : frame.function->blocks) {
+                        if (b->name == targetLabel) {
+                            targetBB = b.get();
+                            break;
+                        }
+                    }
+                    if (targetBB) {
+                        frame.exceptionHandlers.push_back(targetBB);
+                    }
+                    break;
+                }
+                case Opcode::PopHandler: {
+                    if (!frame.exceptionHandlers.empty()) {
+                        frame.exceptionHandlers.pop_back();
+                    }
+                    break;
+                }
+                case Opcode::LandingPad: {
+                    if (!inst->resultVar.empty()) {
+                        frame.registers[inst->resultVar] = VMValue(currentException);
+                    }
+                    currentException = nullptr;
+                    break;
+                }
 
                 case Opcode::MakeClosure:
                 case Opcode::MakeInterface:
@@ -1347,6 +1586,15 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                     if (!inst->resultVar.empty()) {
                         frame.registers[inst->resultVar] = retVal;
                     }
+                    if (hasException()) {
+                        if (!frame.exceptionHandlers.empty()) {
+                            nextBB = frame.exceptionHandlers.back();
+                            frame.exceptionHandlers.pop_back();
+                        } else {
+                            if (caughtExceptionStack.size() > savedCaughtDepth) caughtExceptionStack.resize(savedCaughtDepth);
+                            return VMValue(0);
+                        }
+                    }
                     break;
                 }
 
@@ -1434,6 +1682,15 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                     if (!inst->resultVar.empty()) {
                         frame.registers[inst->resultVar] = retVal;
                     }
+                    if (hasException()) {
+                        if (!frame.exceptionHandlers.empty()) {
+                            nextBB = frame.exceptionHandlers.back();
+                            frame.exceptionHandlers.pop_back();
+                        } else {
+                            if (caughtExceptionStack.size() > savedCaughtDepth) caughtExceptionStack.resize(savedCaughtDepth);
+                            return VMValue(0);
+                        }
+                    }
                     break;
                 }
                 case Opcode::InlineAsm: {
@@ -1456,6 +1713,7 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
         curBB = nextBB;
     }
 
+    if (caughtExceptionStack.size() > savedCaughtDepth) caughtExceptionStack.resize(savedCaughtDepth);
     return VMValue(0);
 }
 
@@ -1529,6 +1787,10 @@ int VM::run(Module* module, const std::string& entryFn, const std::vector<std::s
 
     VMValue res = executeFunction(mainFn, mainArgs);
     if (argvBuf) free(argvBuf);
+    if (hasException()) {
+        std::cerr << "error: uncaught exception: " << formatException(currentException) << std::endl;
+        return 1;
+    }
     return static_cast<int>(res.asInt());
 }
 

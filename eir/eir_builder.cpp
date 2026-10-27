@@ -960,9 +960,15 @@ void EIRBuilder::visit(FunctionDecl* node) {
 
     auto savedCleanups = std::move(cleanupScopes);
     auto savedLoops = std::move(loopContextStack);
+    auto savedUnwind = currentUnwindTarget;
+    auto savedUnwindStack = std::move(unwindTargetStack);
+    size_t savedHandlerDepth = currentHandlerDepth;
     cleanupScopes.clear();
     cleanupScopes.emplace_back(); // root function cleanup frame
     loopContextStack.clear();
+    currentUnwindTarget = nullptr;
+    unwindTargetStack.clear();
+    currentHandlerDepth = 0;
 
     pushScope();
 
@@ -997,6 +1003,9 @@ void EIRBuilder::visit(FunctionDecl* node) {
 
     cleanupScopes = std::move(savedCleanups);
     loopContextStack = std::move(savedLoops);
+    currentUnwindTarget = savedUnwind;
+    unwindTargetStack = std::move(savedUnwindStack);
+    currentHandlerDepth = savedHandlerDepth;
     popScope();
     currentFunction = nullptr;
     currentBlock = nullptr;
@@ -1071,6 +1080,9 @@ void EIRBuilder::visit(VarDecl* node) {
 void EIRBuilder::visit(BlockStmt* node) {
     pushScope();
     cleanupScopes.emplace_back();
+    BasicBlock* savedBlockUnwind = currentUnwindTarget;
+    size_t startHandlerDepth = currentHandlerDepth;
+
     for (auto& item : node->items) {
         if (currentBlock && currentBlock->hasTerminator()) break;
         if (std::holds_alternative<DeclPtr>(item)) {
@@ -1081,7 +1093,12 @@ void EIRBuilder::visit(BlockStmt* node) {
     }
     if (currentBlock && !currentBlock->hasTerminator()) {
         runCleanupsToDepth(cleanupScopes.size() - 1, false);
+        while (currentHandlerDepth > startHandlerDepth) {
+            emit(Instruction{Opcode::PopHandler, "", Type::getVoid(), {}});
+            currentHandlerDepth--;
+        }
     }
+    currentUnwindTarget = savedBlockUnwind;
     cleanupScopes.pop_back();
     popScope();
 }
@@ -1155,7 +1172,7 @@ void EIRBuilder::visit(WhileStmt* node) {
     setBlock(bodyBB);
     breakStack.push_back(exitBB);
     continueStack.push_back(condBB);
-    loopContextStack.push_back({exitBB, condBB, cleanupScopes.size()});
+    loopContextStack.push_back({exitBB, condBB, cleanupScopes.size(), currentHandlerDepth});
 
     node->body->accept(this);
     if (!currentBlock->hasTerminator()) {
@@ -1203,7 +1220,7 @@ void EIRBuilder::visit(ForStmt* node) {
     setBlock(bodyBB);
     breakStack.push_back(exitBB);
     continueStack.push_back(stepBB);
-    loopContextStack.push_back({exitBB, stepBB, cleanupScopes.size()});
+    loopContextStack.push_back({exitBB, stepBB, cleanupScopes.size(), currentHandlerDepth});
 
     node->body->accept(this);
     if (!currentBlock->hasTerminator()) {
@@ -1225,6 +1242,9 @@ void EIRBuilder::visit(ForStmt* node) {
 void EIRBuilder::visit(BreakStmt*) {
     if (!loopContextStack.empty()) {
         runCleanupsToDepth(loopContextStack.back().cleanupDepth, false);
+        for (size_t h = currentHandlerDepth; h > loopContextStack.back().handlerDepth; --h) {
+            emit(Instruction{Opcode::PopHandler, "", Type::getVoid(), {}});
+        }
         if (currentBlock && !currentBlock->hasTerminator()) {
             emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(loopContextStack.back().breakTarget->name)}});
         }
@@ -1236,6 +1256,9 @@ void EIRBuilder::visit(BreakStmt*) {
 void EIRBuilder::visit(ContinueStmt*) {
     if (!loopContextStack.empty()) {
         runCleanupsToDepth(loopContextStack.back().cleanupDepth, false);
+        for (size_t h = currentHandlerDepth; h > loopContextStack.back().handlerDepth; --h) {
+            emit(Instruction{Opcode::PopHandler, "", Type::getVoid(), {}});
+        }
         if (currentBlock && !currentBlock->hasTerminator()) {
             emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(loopContextStack.back().continueTarget->name)}});
         }
@@ -1675,6 +1698,14 @@ void EIRBuilder::visit(LiteralExpr* node) {
 
 void EIRBuilder::visit(CallExpr* node) {
     if (auto id = dynamic_cast<IdentExpr*>(node->callee.get())) {
+        if (id->name == "exception_text" && node->args.empty()) {
+            std::string resVar = newVar();
+            emit(Instruction{Opcode::Call, resVar, Type::getPtr(Type::getU8()), {
+                Operand::global("__eir_exception_text", Type::getPtr(Type::getU8()))
+            }});
+            lastValue = Operand::var(resVar, Type::getPtr(Type::getU8()));
+            return;
+        }
         if ((id->name == "va_start" || id->name == "va_end") && node->args.size() == 1) {
             Operand ap = evaluateLValue(node->args[0]);
             emit(Instruction{Opcode::Call, "", Type::getVoid(), {
@@ -1697,7 +1728,7 @@ void EIRBuilder::visit(CallExpr* node) {
                 closureOp = evaluateExpr(node->callee);
             }
         }
-    } else if (!dynamic_cast<MemberExpr*>(node->callee.get())) {
+    } else {
         TypePtr cTy = getExprEirType(node->callee);
         if (cTy && cTy->isClosure()) {
             isClosureCall = true;
@@ -2696,7 +2727,7 @@ void EIRBuilder::visit(DoWhileStmt* node) {
     setBlock(bodyBB);
     breakStack.push_back(exitBB);
     continueStack.push_back(condBB);
-    loopContextStack.push_back({exitBB, condBB, cleanupScopes.size()});
+    loopContextStack.push_back({exitBB, condBB, cleanupScopes.size(), currentHandlerDepth});
 
     node->body->accept(this);
     if (!currentBlock->hasTerminator()) {
@@ -2750,7 +2781,7 @@ void EIRBuilder::visit(SwitchStmt* node) {
     emit(std::move(swInst));
 
     breakStack.push_back(endBB);
-    loopContextStack.push_back({endBB, nullptr, cleanupScopes.size()});
+    loopContextStack.push_back({endBB, nullptr, cleanupScopes.size(), currentHandlerDepth});
     pushScope();
 
     for (size_t i = 0; i < node->cases.size(); ++i) {
@@ -3223,9 +3254,15 @@ void EIRBuilder::visit(LambdaExpr* node) {
     auto prevContinueStack = continueStack;
     auto prevCleanups = std::move(cleanupScopes);
     auto prevLoops = std::move(loopContextStack);
+    auto prevUnwind = currentUnwindTarget;
+    auto prevUnwindStack = std::move(unwindTargetStack);
+    size_t prevHandlerDepth = currentHandlerDepth;
     cleanupScopes.clear();
     cleanupScopes.emplace_back(); // root lambda cleanup frame
     loopContextStack.clear();
+    currentUnwindTarget = nullptr;
+    unwindTargetStack.clear();
+    currentHandlerDepth = 0;
 
     std::vector<std::pair<std::string, TypePtr>> fnParams;
     fnParams.emplace_back("env", Type::getPtr());
@@ -3282,6 +3319,9 @@ void EIRBuilder::visit(LambdaExpr* node) {
 
     cleanupScopes = std::move(prevCleanups);
     loopContextStack = std::move(prevLoops);
+    currentUnwindTarget = prevUnwind;
+    unwindTargetStack = std::move(prevUnwindStack);
+    currentHandlerDepth = prevHandlerDepth;
 
     currentFunction = prevFn;
     setBlock(prevBB);
@@ -3429,26 +3469,272 @@ void EIRBuilder::visit(ThreadJoinStmt* node) {
     Operand tid = evaluateExpr(node->tid);
     emit(Instruction{Opcode::Call, "", Type::getVoid(), {Operand::global("__eir_thread_join", Type::getVoid()), tid}});
 }
-void EIRBuilder::visit(ThrowStmt*) {}
+std::string EIRBuilder::exceptionTypeName(const std::string& raw) const {
+    std::string t = tyq::strip(raw);
+    if (!t.empty() && t[0] == '?') t = t.substr(1);
+    for (const char* tag : {"struct:", "interface:"}) {
+        size_t p;
+        while ((p = t.find(tag)) != std::string::npos) t.erase(p, std::string(tag).size());
+    }
+    if (t.find('<') != std::string::npos) t = mangleTemplate(t);
+    if (t == "int32") t = "int";
+    if (t == "uint32") t = "uint";
+    return t.empty() ? "unknown" : t;
+}
+
+void EIRBuilder::emitDeferPad(Stmt* body) {
+    if (!currentFunction || !currentBlock) return;
+    BasicBlock* savedBB = currentBlock;
+    BasicBlock* pad = createBlock("defer.lpad");
+    setBlock(pad);
+
+    std::string exVar = newVar();
+    emit(Instruction{Opcode::LandingPad, exVar, Type::getPtr(), {}});
+    Operand exObj = Operand::var(exVar, Type::getPtr());
+
+    if (body) {
+        body->accept(this);
+    }
+
+    if (currentBlock && !currentBlock->hasTerminator()) {
+        emit(Instruction{Opcode::Throw, "", Type::getVoid(), {exObj}});
+    }
+
+    setBlock(savedBB);
+    currentUnwindTarget = pad;
+    currentHandlerDepth++;
+    emit(Instruction{Opcode::PushHandler, "", Type::getVoid(), {Operand::block(pad->name)}});
+}
+
+void EIRBuilder::visit(ThrowStmt* node) {
+    if (!node->value) return;
+
+    Operand val = evaluateExpr(node->value);
+    Operand exPtr;
+
+    if (node->rethrowCaptured) {
+        exPtr = val;
+    } else {
+        std::string thrownType = node->valueType;
+        if (thrownType.empty()) {
+            TypePtr ety = getExprEirType(node->value);
+            if (ety) thrownType = ety->nominalName();
+        }
+        thrownType = exceptionTypeName(thrownType);
+
+        size_t paySize = 8;
+        if (val.type) {
+            if (val.type->isStruct() && module) {
+                paySize = module->getStructSize(val.type->nominalName());
+            } else {
+                paySize = getTypeSize(val.type, module.get());
+            }
+        }
+        if (paySize == 0) paySize = 8;
+
+        Operand typeStr = Operand::constString(thrownType);
+        std::string exVar = newVar();
+        emit(Instruction{Opcode::Call, exVar, Type::getPtr(), {
+            Operand::global("__eir_alloc_exception", Type::getPtr()),
+            Operand::constInt(static_cast<int64_t>(16 + paySize), Type::getI64()),
+            typeStr
+        }});
+        exPtr = Operand::var(exVar, Type::getPtr());
+
+        std::string slotVar = newVar();
+        emit(Instruction{Opcode::OffsetPtr, slotVar, Type::getPtr(), {
+            exPtr,
+            Operand::constInt(16, Type::getI64())
+        }});
+        emit(Instruction{Opcode::Store, "", Type::getVoid(), {
+            val,
+            Operand::var(slotVar, Type::getPtr())
+        }});
+    }
+
+    emit(Instruction{Opcode::Throw, "", Type::getVoid(), {exPtr}});
+}
+
 void EIRBuilder::visit(TryStmt* node) {
-    if (node->finally) {
-        cleanupScopes.emplace_back();
+    if (!currentFunction) return;
+
+    BasicBlock* lpadBB     = createBlock("try.lpad");
+    BasicBlock* dispatchBB = createBlock("try.dispatch");
+    BasicBlock* finallyBB  = createBlock("try.finally");
+    BasicBlock* doneBB     = createBlock("try.done");
+
+    BasicBlock* savedUnwind = currentUnwindTarget;
+    currentUnwindTarget = lpadBB;
+    size_t savedHandlerDepth = currentHandlerDepth;
+
+    // Track finally in cleanupScopes for early return/break
+    cleanupScopes.emplace_back();
+    if (node->finally && !node->unwindOnly) {
         cleanupScopes.back().push_back({node->finally, false});
     }
+
+    // Push try handler
+    currentHandlerDepth++;
+    emit(Instruction{Opcode::PushHandler, "", Type::getVoid(), {Operand::block(lpadBB->name)}});
+
     if (node->body) {
         node->body->accept(this);
     }
-    if (node->finally) {
-        if (currentBlock && !currentBlock->hasTerminator()) {
-            runCleanupsToDepth(cleanupScopes.size() - 1, false);
+
+    // Normal exit of try body
+    if (currentBlock && !currentBlock->hasTerminator()) {
+        while (currentHandlerDepth > savedHandlerDepth) {
+            emit(Instruction{Opcode::PopHandler, "", Type::getVoid(), {}});
+            currentHandlerDepth--;
         }
-        cleanupScopes.pop_back();
+        emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(finallyBB->name)}});
     }
+
+    cleanupScopes.pop_back();
+    currentUnwindTarget = savedUnwind;
+    currentHandlerDepth = savedHandlerDepth;
+
+    // --- Landing Pad ---
+    setBlock(lpadBB);
+    std::string exVar = newVar();
+    emit(Instruction{Opcode::LandingPad, exVar, Type::getPtr(), {}});
+    Operand exObj = Operand::var(exVar, Type::getPtr());
+    emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(dispatchBB->name)}});
+
+    // --- Catch Dispatch ---
+    setBlock(dispatchBB);
+
+    std::string typeSlotVar = newVar();
+    emit(Instruction{Opcode::OffsetPtr, typeSlotVar, Type::getPtr(), {exObj, Operand::constInt(8, Type::getI64())}});
+    std::string exTypeVar = newVar();
+    emit(Instruction{Opcode::Load, exTypeVar, Type::getPtr(Type::getU8()), {Operand::var(typeSlotVar, Type::getPtr())}});
+    Operand exType = Operand::var(exTypeVar, Type::getPtr(Type::getU8()));
+
+    for (size_t i = 0; i < node->catches.size(); ++i) {
+        auto& c = node->catches[i];
+        bool isCatchAll = c.captureAll || c.type.empty() || c.type == "_" || c.name == "_";
+
+        BasicBlock* handlerBB = createBlock("catch." + (c.type.empty() ? "any" : c.type));
+        BasicBlock* nextClauseBB = isCatchAll ? nullptr : createBlock("catch.next");
+
+        if (isCatchAll) {
+            emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(handlerBB->name)}});
+        } else {
+            std::string cTypeName = exceptionTypeName(c.type);
+            Operand cTypeStr = Operand::constString(cTypeName);
+            std::string cmpVar = newVar();
+            emit(Instruction{Opcode::Call, cmpVar, Type::getI32(), {
+                Operand::global("strcmp", Type::getI32()),
+                exType,
+                cTypeStr
+            }});
+            std::string matchVar = newVar();
+            Instruction cmpInst{Opcode::ICmp, matchVar, Type::getI1(), {
+                Operand::var(cmpVar, Type::getI32()),
+                Operand::constInt(0, Type::getI32())
+            }};
+            cmpInst.icmpCond = ICmpCond::Eq;
+            emit(cmpInst);
+            emit(Instruction{Opcode::BrCond, "", Type::getVoid(), {
+                Operand::var(matchVar, Type::getI1()),
+                Operand::block(handlerBB->name),
+                Operand::block(nextClauseBB->name)
+            }});
+        }
+
+        // --- Handler Block ---
+        setBlock(handlerBB);
+        pushScope();
+
+        // Register exception as active caught exception for exception_text()
+        emit(Instruction{Opcode::Call, "", Type::getVoid(), {
+            Operand::global("__eir_push_caught", Type::getVoid()),
+            exObj
+        }});
+        emit(Instruction{Opcode::Call, "", Type::getVoid(), {
+            Operand::global("__eir_clear_exception", Type::getVoid())
+        }});
+
+        if (!isCatchAll && !c.name.empty()) {
+            TypePtr catchEirTy = toEirType(c.type);
+            std::string paySlotVar = newVar();
+            emit(Instruction{Opcode::OffsetPtr, paySlotVar, Type::getPtr(), {exObj, Operand::constInt(16, Type::getI64())}});
+            std::string payValVar = newVar();
+            emit(Instruction{Opcode::Load, payValVar, catchEirTy, {Operand::var(paySlotVar, Type::getPtr())}});
+
+            std::string localSlot = newVar();
+            emit(Instruction{Opcode::Alloca, localSlot, catchEirTy, {}});
+            emit(Instruction{Opcode::Store, "", Type::getVoid(), {
+                Operand::var(payValVar, catchEirTy),
+                Operand::var(localSlot, Type::getPtr(catchEirTy))
+            }});
+            declareVar(c.name, Operand::var(localSlot, Type::getPtr(catchEirTy)), catchEirTy);
+        }
+
+        // Finally also runs on early return/break from catch body
+        cleanupScopes.emplace_back();
+        size_t catchStartHandler = currentHandlerDepth;
+        BasicBlock* savedCatchUnwind = currentUnwindTarget;
+        if (node->finally && !node->unwindOnly) {
+            cleanupScopes.back().push_back({node->finally, false});
+            emitDeferPad(node->finally.get());
+        }
+
+        if (c.body) {
+            c.body->accept(this);
+        }
+
+        if (currentBlock && !currentBlock->hasTerminator()) {
+            while (currentHandlerDepth > catchStartHandler) {
+                emit(Instruction{Opcode::PopHandler, "", Type::getVoid(), {}});
+                currentHandlerDepth--;
+            }
+            emit(Instruction{Opcode::Call, "", Type::getVoid(), {
+                Operand::global("__eir_pop_caught", Type::getVoid())
+            }});
+            emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(finallyBB->name)}});
+        }
+
+        currentUnwindTarget = savedCatchUnwind;
+        cleanupScopes.pop_back();
+        popScope();
+
+        if (nextClauseBB) {
+            setBlock(nextClauseBB);
+        }
+    }
+
+    // --- Unhandled path (no catch matched, or no catch clauses) ---
+    if (currentBlock && !currentBlock->hasTerminator()) {
+        if (node->finally) {
+            node->finally->accept(this);
+        }
+        if (currentBlock && !currentBlock->hasTerminator()) {
+            emit(Instruction{Opcode::Throw, "", Type::getVoid(), {exObj}});
+        }
+    }
+
+    // --- Finally Block (normal execution path) ---
+    setBlock(finallyBB);
+    if (node->finally && !node->unwindOnly) {
+        node->finally->accept(this);
+    }
+    if (currentBlock && !currentBlock->hasTerminator()) {
+        emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(doneBB->name)}});
+    }
+
+    currentUnwindTarget = savedUnwind;
+    currentHandlerDepth = savedHandlerDepth;
+
+    setBlock(doneBB);
 }
 
 void EIRBuilder::visit(DeferStmt* node) {
     if (node->body && !cleanupScopes.empty()) {
         cleanupScopes.back().push_back({node->body, node->isErr});
+        if (!node->isErr && currentFunction) {
+            emitDeferPad(node->body.get());
+        }
     }
 }
 

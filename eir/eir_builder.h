@@ -162,8 +162,16 @@ private:
         BasicBlock* breakTarget = nullptr;
         BasicBlock* continueTarget = nullptr;
         size_t cleanupDepth = 0;
+        size_t handlerDepth = 0;
     };
     std::vector<LoopContext> loopContextStack;
+
+    // Exception handling
+    BasicBlock* currentUnwindTarget = nullptr;
+    std::vector<BasicBlock*> unwindTargetStack;
+    size_t currentHandlerDepth = 0;
+    void emitDeferPad(Stmt* body);
+    std::string exceptionTypeName(const std::string& raw) const;
 
     // Bitfield helpers
     void storeBitfield(MemberExpr* m, Operand val, bool isVolatile);

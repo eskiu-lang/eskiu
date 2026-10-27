@@ -59,6 +59,7 @@ struct StackFrame {
     Function* function = nullptr;
     std::unordered_map<std::string, VMValue> registers;
     std::vector<VMValue> varargs;
+    std::vector<BasicBlock*> exceptionHandlers;
     std::vector<std::unique_ptr<uint8_t[]>> chunks;
     size_t currentChunkOffset = 0;
     static constexpr size_t CHUNK_SIZE = 64 * 1024;
@@ -126,6 +127,15 @@ private:
         size_t index = 0;
     };
     std::unordered_map<void*, VMVaList> activeVaLists;
+
+    // Exception handling state
+    void* currentException = nullptr;
+    std::vector<void*> caughtExceptionStack;
+    std::string activeExceptionText;
+
+    bool hasException() const { return currentException != nullptr; }
+    void clearException() { currentException = nullptr; }
+    std::string formatException(void* exPtr);
 };
 
 } // namespace eir
