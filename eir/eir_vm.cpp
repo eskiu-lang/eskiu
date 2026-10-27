@@ -539,7 +539,7 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                     if (inst->type->isStruct() && currentModule) {
                         sz = currentModule->getStructSize(inst->type->nominalName());
                     }
-                    if (sz == 0) sz = getTypeSize(inst->type);
+                    if (sz == 0) sz = getTypeSize(inst->type, currentModule);
                     if (sz == 0) sz = 8;
                     size_t al = inst->operands.empty() ? 8 : static_cast<size_t>(inst->operands[0].intVal);
                     if (inst->type->isStruct() && al < 8) al = 8;

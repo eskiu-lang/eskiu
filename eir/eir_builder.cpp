@@ -1213,6 +1213,14 @@ void EIRBuilder::visit(ExprStmt* node) {
 }
 
 void EIRBuilder::visit(BinaryExpr* node) {
+    if (node->op != "=" && !node->opFunc.empty()) {
+        auto call = std::make_shared<CallExpr>(
+            std::make_shared<IdentExpr>(node->opFunc),
+            std::vector<ExprPtr>{node->left, node->right});
+        call->accept(this);
+        return;
+    }
+
     // Assignment: =
     if (node->op == "=") {
         if (auto* mem = dynamic_cast<MemberExpr*>(node->left.get())) {
@@ -1452,6 +1460,14 @@ void EIRBuilder::visit(BinaryExpr* node) {
 }
 
 void EIRBuilder::visit(UnaryExpr* node) {
+    if (!node->opFunc.empty()) {
+        auto call = std::make_shared<CallExpr>(
+            std::make_shared<IdentExpr>(node->opFunc),
+            std::vector<ExprPtr>{node->operand});
+        call->accept(this);
+        return;
+    }
+
     if (node->op == "&") {
         lastValue = evaluateLValue(node->operand);
         return;
@@ -2108,6 +2124,14 @@ void EIRBuilder::visit(MemberExpr* node) {
 }
 
 void EIRBuilder::visit(IndexExpr* node) {
+    if (!node->opFunc.empty()) {
+        auto call = std::make_shared<CallExpr>(
+            std::make_shared<IdentExpr>(node->opFunc),
+            std::vector<ExprPtr>{node->base, node->index});
+        call->accept(this);
+        return;
+    }
+
     TypePtr baseTy = getExprEirType(node->base);
     Operand basePtr;
     if (baseTy && baseTy->isPointer()) {
@@ -3241,13 +3265,17 @@ void EIRBuilder::visit(UnionDecl*) {}
 void EIRBuilder::visit(SizeofExpr* node) {
     TypePtr ty = nullptr;
     if (!node->typeName.empty()) {
-        ty = toEirType(node->typeName);
+        std::string actualType = node->typeName;
+        if (!typeParamOverride.empty()) {
+            actualType = substType(actualType, typeParamOverride);
+        }
+        ty = toEirType(actualType);
     } else if (node->operand) {
         ty = getExprEirType(node->operand);
     }
     size_t sz = 0;
     if (ty) {
-        sz = getTypeSize(ty);
+        sz = getTypeSize(ty, module.get());
         if (sz == 0 && ty->isStruct() && module) {
             sz = module->getStructSize(ty->nominalName());
         }
