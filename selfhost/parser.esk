@@ -12,6 +12,7 @@ import "preprocessor.esk";
 // Abort the parse on an unrecoverable syntax error (see check_name_not_keyword).
 extern void exit(int code);
 extern string realpath(string path, string resolved);   // canonical import keys
+extern *char getcwd(*char buf, int64 size);
 
 struct Parser {
     List<Token> toks;
@@ -57,9 +58,19 @@ string g_import_err;           // resolve_import's "unknown package" error (null
 // The dedup key for a source file: its absolute path with `.`/`..`/symlinks resolved
 // (mirrors Parser::canonicalPath); the path itself if it cannot be resolved.
 string canonical_path(string path) {
-    string r = realpath(path, null);
-    if (r == null) {
+    if (path == null || path[0] == 0) {
         return path;
+    }
+    string p = path;
+    if (p[0] != 47) {
+        char[1024] cwd;
+        if (getcwd(&cwd[0], 1024) != null) {
+            p = str_concat((string)&cwd[0], str_concat("/", p));
+        }
+    }
+    string r = realpath(p, null);
+    if (r == null) {
+        return p;
     }
     return r;
 }
