@@ -98,7 +98,7 @@ TypePtr Type::getF64() {
 }
 
 TypePtr Type::getPtr(TypePtr pointee) {
-    auto t = std::make_shared<Type>(Type{TypeKind::Pointer, "ptr", 64, false, pointee, nullptr, 0, {}, nullptr});
+    auto t = std::make_shared<Type>(Type{TypeKind::Pointer, "ptr", 64, false, pointee, pointee, 0, {}, nullptr});
     return t;
 }
 

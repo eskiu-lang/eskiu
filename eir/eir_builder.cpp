@@ -61,7 +61,7 @@ TypePtr EIRBuilder::lookupVarType(const std::string& name) {
 }
 
 TypePtr EIRBuilder::toEirType(const std::string& typeStr) {
-    std::string s = tyq::strip(typeStr);
+    std::string s = tyq::strip(typeParamOverride.empty() ? typeStr : substType(typeStr, typeParamOverride));
     ty::Type t = ty::Type::parse(s);
 
     switch (t.kind) {
@@ -95,7 +95,7 @@ TypePtr EIRBuilder::toEirType(const std::string& typeStr) {
         case ty::Type::Kind::Template:
         case ty::Type::Kind::Named:
         case ty::Type::Kind::Struct: {
-            std::string sname = t.nominalName();
+            std::string sname = (t.kind == ty::Type::Kind::Template || s.find('<') != std::string::npos) ? mangleTemplate(s) : t.nominalName();
             if (sname.empty()) sname = t.name;
             if (plainEnums.count(sname)) {
                 return Type::getI32();
@@ -127,6 +127,38 @@ TypePtr EIRBuilder::toEirType(const std::string& typeStr) {
 
 TypePtr EIRBuilder::getExprEirType(const Expr* expr) {
     if (!expr) return Type::getI32();
+    if (auto id = dynamic_cast<const IdentExpr*>(expr)) {
+        TypePtr vt = lookupVarType(id->name);
+        if (vt && !vt->isVoid()) return vt;
+    }
+    if (auto c = dynamic_cast<const CastExpr*>(expr)) {
+        return toEirType(c->targetType);
+    }
+    if (auto mem = dynamic_cast<const MemberExpr*>(expr)) {
+        TypePtr bty = getExprEirType(mem->base);
+        std::string sname;
+        if (bty && bty->isStruct()) sname = bty->nominalName();
+        else if (bty && bty->isPointer() && bty->elemType && bty->elemType->isStruct()) sname = bty->elemType->nominalName();
+        if (!sname.empty() && module) {
+            auto it = module->structLayouts.find(sname);
+            if (it != module->structLayouts.end()) {
+                const StructFieldInfo* fi = it->second.getFieldInfo(mem->member);
+                if (fi) return fi->type;
+            }
+        }
+    }
+    if (auto b = dynamic_cast<const BinaryExpr*>(expr)) {
+        if (b->op == "==" || b->op == "!=" || b->op == "<" || b->op == "<=" || b->op == ">" || b->op == ">=" ||
+            b->op == "&&" || b->op == "||") {
+            return Type::getI1();
+        }
+        TypePtr lty = getExprEirType(b->left);
+        TypePtr rty = getExprEirType(b->right);
+        if (lty && lty->isFloat()) return lty;
+        if (rty && rty->isFloat()) return rty;
+        if (lty && lty->bitWidth > 32) return lty;
+        if (rty && rty->bitWidth > 32) return rty;
+    }
     if (resolvedExprTypes) {
         auto it = resolvedExprTypes->find(const_cast<Expr*>(expr));
         if (it != resolvedExprTypes->end()) {
@@ -406,6 +438,15 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
     volatileVars.clear();
     cleanupScopes.clear();
     loopContextStack.clear();
+    templateDecls.clear();
+    funcTemplateDecls.clear();
+    templateInstanceArgs.clear();
+    typeParamOverride.clear();
+    if (semaInstanceArgs) {
+        for (const auto& kv : *semaInstanceArgs) {
+            templateInstanceArgs.emplace(kv.first, kv.second);
+        }
+    }
     module = std::make_unique<Module>();
     module->name = "main";
     module->targetTriple = targetTriple;
@@ -419,6 +460,10 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
             info.name = iface->name;
             for (const auto& m : iface->methods) {
                 info.methodNames.push_back(m.name);
+                info.methodReturnTypes.push_back(m.returnType);
+                std::vector<std::string> pts;
+                for (const auto& p : m.params) pts.push_back(p.first);
+                info.methodParamTypes.push_back(pts);
             }
             interfaces[iface->name] = info;
         } else if (auto e = dynamic_cast<EnumDecl*>(decl.get())) {
@@ -467,6 +512,10 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
                 }
             }
         } else if (auto s = dynamic_cast<StructDecl*>(decl.get())) {
+            if (!s->typeParams.empty()) {
+                templateDecls[s->name] = s;
+                continue;
+            }
             std::vector<TypePtr> fields;
             StructInfo sinfo;
             sinfo.name = s->name;
@@ -494,6 +543,11 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
             }
             module->structLayouts[s->name] = sinfo;
             module->structTypes.push_back(Type::getStruct(s->name, fields));
+        } else if (auto f = dynamic_cast<FunctionDecl*>(decl.get())) {
+            if (!f->typeParams.empty()) {
+                funcTemplateDecls[f->name] = f;
+                continue;
+            }
         } else if (auto v = dynamic_cast<VarDecl*>(decl.get())) {
             if (v->isVolatile) {
                 volatileVars.insert(v->name);
@@ -520,9 +574,47 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
         }
     }
 
+    // Monomorphized template struct layouts
+    for (const auto& kv : templateInstanceArgs) {
+        const std::string& mangled = kv.first;
+        const std::string& tname = kv.second.first;
+        const std::vector<std::string>& targs = kv.second.second;
+        auto tdIt = templateDecls.find(tname);
+        if (tdIt == templateDecls.end()) continue;
+        if (module->structLayouts.count(mangled)) continue;
+
+        StructDecl* td = tdIt->second;
+        std::map<std::string, std::string> subs;
+        for (size_t i = 0; i < td->typeParams.size() && i < targs.size(); ++i) {
+            subs[td->typeParams[i]] = targs[i];
+        }
+
+        std::vector<TypePtr> fields;
+        StructInfo sinfo;
+        sinfo.name = mangled;
+        size_t currentOffset = 0;
+        size_t maxAlign = 1;
+        for (const auto& f : td->fields) {
+            std::string subType = substType(f.type, subs);
+            TypePtr ft = toEirType(subType);
+            fields.push_back(ft);
+            size_t sz = getTypeSize(ft);
+            size_t al = getTypeAlign(ft);
+            if (al > maxAlign) maxAlign = al;
+            currentOffset = (currentOffset + al - 1) & ~(al - 1);
+            sinfo.fields.push_back({f.name, ft, currentOffset, sz});
+            currentOffset += sz;
+        }
+        sinfo.totalSize = (currentOffset + maxAlign - 1) & ~(maxAlign - 1);
+        sinfo.alignment = maxAlign;
+        module->structLayouts[mangled] = sinfo;
+        module->structTypes.push_back(Type::getStruct(mangled, fields));
+    }
+
     // Phase 2: Function prototypes
     for (auto& decl : program->declarations) {
         if (auto f = dynamic_cast<FunctionDecl*>(decl.get())) {
+            if (!f->typeParams.empty()) continue;
             std::vector<std::pair<std::string, TypePtr>> params;
             for (const auto& p : f->params) {
                 params.emplace_back(p.second, toEirType(p.first));
@@ -542,6 +634,7 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
             fn->isExtern = true;
             fn->isVariadic = hasVarargs;
         } else if (auto s = dynamic_cast<StructDecl*>(decl.get())) {
+            if (!s->typeParams.empty()) continue;
             for (const auto& m : s->methods) {
                 if (auto mf = dynamic_cast<FunctionDecl*>(m.get())) {
                     std::vector<std::pair<std::string, TypePtr>> params;
@@ -637,6 +730,11 @@ void EIRBuilder::visit(Program* node) {
 }
 
 void EIRBuilder::visit(FunctionDecl* node) {
+    if (!node->typeParams.empty()) {
+        funcTemplateDecls[node->name] = node;
+        return;
+    }
+
     currentFunction = module->getFunction(node->name);
     if (!currentFunction) {
         std::vector<std::pair<std::string, TypePtr>> params;
@@ -658,8 +756,11 @@ void EIRBuilder::visit(FunctionDecl* node) {
     BasicBlock* entryBB = currentFunction->createBlock("entry");
     setBlock(entryBB);
 
+    auto savedCleanups = std::move(cleanupScopes);
+    auto savedLoops = std::move(loopContextStack);
     cleanupScopes.clear();
     cleanupScopes.emplace_back(); // root function cleanup frame
+    loopContextStack.clear();
 
     pushScope();
 
@@ -692,7 +793,8 @@ void EIRBuilder::visit(FunctionDecl* node) {
         }
     }
 
-    cleanupScopes.clear();
+    cleanupScopes = std::move(savedCleanups);
+    loopContextStack = std::move(savedLoops);
     popScope();
     currentFunction = nullptr;
     currentBlock = nullptr;
@@ -1400,6 +1502,46 @@ void EIRBuilder::visit(CallExpr* node) {
         }
     }
 
+    // 2.5 Inferred template function call (e.g. fill(&big, 5000000000, 3))
+    if (auto id = dynamic_cast<IdentExpr*>(node->callee.get())) {
+        auto tIt = funcTemplateDecls.find(id->name);
+        if (tIt != funcTemplateDecls.end()) {
+            FunctionDecl* fd = tIt->second;
+            std::set<std::string> tps(fd->typeParams.begin(), fd->typeParams.end());
+            std::map<std::string, std::string> subs;
+            auto getArgTypeStr = [&](const ExprPtr& arg) -> std::string {
+                if (resolvedExprTypes) {
+                    auto it = resolvedExprTypes->find(arg.get());
+                    if (it != resolvedExprTypes->end()) return it->second;
+                }
+                return getExprEirType(arg)->nominalName();
+            };
+            for (size_t j = 0; j < fd->params.size() && j < node->args.size(); ++j) {
+                if (!tps.count(tyq::strip(fd->params[j].first))) {
+                    unifyTypeParam(fd->params[j].first, getArgTypeStr(node->args[j]), tps, subs);
+                }
+            }
+            for (size_t j = 0; j < fd->params.size() && j < node->args.size(); ++j) {
+                std::string tp = tyq::strip(fd->params[j].first);
+                if (!tps.count(tp) || subs.count(tp)) continue;
+                std::string at = getArgTypeStr(node->args[j]);
+                if (at.empty() || at == "null") continue;
+                unifyTypeParam(fd->params[j].first, at, tps, subs);
+            }
+            std::vector<std::string> typeArgs;
+            for (const auto& tpName : fd->typeParams) {
+                auto sIt = subs.find(tpName);
+                if (sIt == subs.end()) break;
+                typeArgs.push_back(sIt->second);
+            }
+            if (typeArgs.size() == fd->typeParams.size()) {
+                TemplateCallExpr tc(id->name, typeArgs, node->args);
+                visit(&tc);
+                return;
+            }
+        }
+    }
+
     // 3. Named or Member Function Call
     std::string fnName;
     std::vector<Operand> args;
@@ -1469,6 +1611,63 @@ void EIRBuilder::visit(CallExpr* node) {
             emit(Instruction{Opcode::CallIndirect, dst, retTy, callArgs});
             lastValue = dst.empty() ? Operand::var("", Type::getVoid()) : Operand::var(dst, retTy);
             return;
+        }
+
+        std::string mangled = baseTypeName + "_" + mem->member;
+        Function* mfunc = module ? module->getFunction(mangled) : nullptr;
+        if (!mfunc) mfunc = instantiateGenericMethod(baseTypeName, mem->member);
+        if (mfunc) {
+            fnName = mfunc->name;
+            args.push_back(Operand::global(fnName, Type::getPtr()));
+            if (baseTy && baseTy->isPointer()) {
+                args.push_back(evaluateExpr(mem->base));
+            } else {
+                args.push_back(evaluateLValue(mem->base));
+            }
+            for (size_t i = 0; i < node->args.size(); ++i) {
+                std::string paramType = (i + 1 < mfunc->params.size()) ? mfunc->params[i + 1].second->nominalName() : "";
+                args.push_back(evalForType(node->args[i], paramType));
+            }
+            TypePtr retTy = getExprEirType(node);
+            std::string dst = retTy->isVoid() ? "" : newVar();
+            emit(Instruction{Opcode::Call, dst, retTy, args});
+            lastValue = dst.empty() ? Operand::var("", Type::getVoid()) : Operand::var(dst, retTy);
+            return;
+        }
+
+        if (FunctionDecl* gf = genericFreeMethod(baseTypeName, mem->member)) {
+            std::set<std::string> tps(gf->typeParams.begin(), gf->typeParams.end());
+            std::map<std::string, std::string> subs;
+            bool baseIsPtr = baseTy && baseTy->isPointer();
+            std::string recvAsSelf = baseIsPtr ? ("*" + baseTypeName) : baseTypeName;
+            if (tyq::isPtr(gf->params[0].first) && !baseIsPtr) recvAsSelf = "*" + baseTypeName;
+            unifyTypeParam(gf->params[0].first, recvAsSelf, tps, subs);
+            for (size_t j = 1; j < gf->params.size() && j - 1 < node->args.size(); ++j) {
+                TypePtr at = getExprEirType(node->args[j - 1]);
+                if (at) unifyTypeParam(gf->params[j].first, at->nominalName(), tps, subs);
+            }
+            std::string gname = gf->name;
+            for (const auto& tpn : gf->typeParams) gname += "_" + mangleTemplate(subs[tpn]);
+            Function* gfunc = instantiateFnTemplate(gf, gname, subs);
+            if (gfunc) {
+                fnName = gfunc->name;
+                args.push_back(Operand::global(fnName, Type::getPtr()));
+                if (tyq::isPtr(gf->params[0].first)) {
+                    if (baseIsPtr) args.push_back(evaluateExpr(mem->base));
+                    else args.push_back(evaluateLValue(mem->base));
+                } else {
+                    args.push_back(evaluateExpr(mem->base));
+                }
+                for (size_t i = 0; i < node->args.size(); ++i) {
+                    std::string paramType = (i + 1 < gfunc->params.size()) ? gfunc->params[i + 1].second->nominalName() : "";
+                    args.push_back(evalForType(node->args[i], paramType));
+                }
+                TypePtr retTy = getExprEirType(node);
+                std::string dst = retTy->isVoid() ? "" : newVar();
+                emit(Instruction{Opcode::Call, dst, retTy, args});
+                lastValue = dst.empty() ? Operand::var("", Type::getVoid()) : Operand::var(dst, retTy);
+                return;
+            }
         }
 
         fnName = baseTypeName + "_" + mem->member;
@@ -1572,7 +1771,21 @@ void EIRBuilder::visit(MemberExpr* node) {
     } else if (resolvedExprTypes) {
         auto it = resolvedExprTypes->find(node->base.get());
         if (it != resolvedExprTypes->end()) {
-            structName = ty::Type::parse(tyq::strip(it->second)).nominalName();
+            std::string st = tyq::strip(it->second);
+            if (!typeParamOverride.empty()) st = substType(st, typeParamOverride);
+            while (!st.empty() && st.front() == '*') st = st.substr(1);
+            while (!st.empty() && st.back() == '*') st.pop_back();
+            structName = (st.find('<') != std::string::npos) ? mangleTemplate(st) : ty::Type::parse(st).nominalName();
+        }
+    }
+    if (structName.empty()) {
+        if (auto id = dynamic_cast<IdentExpr*>(node->base.get())) {
+            TypePtr vt = lookupVarType(id->name);
+            if (vt && vt->isPointer() && vt->elemType && vt->elemType->isStruct()) {
+                structName = vt->elemType->nominalName();
+            } else if (vt && vt->isStruct()) {
+                structName = vt->nominalName();
+            }
         }
     }
 
@@ -1588,12 +1801,14 @@ void EIRBuilder::visit(MemberExpr* node) {
         }
     }
 
-    Operand basePtr;
-    if (objTy && objTy->isPointer()) {
-        basePtr = evaluateExpr(node->base);
-    } else {
-        basePtr = evaluateLValue(node->base);
+    bool isPtr = (objTy && objTy->isPointer());
+    if (!isPtr) {
+        if (auto id = dynamic_cast<IdentExpr*>(node->base.get())) {
+            TypePtr vt = lookupVarType(id->name);
+            if (vt && vt->isPointer()) isPtr = true;
+        }
     }
+    Operand basePtr = isPtr ? evaluateExpr(node->base) : evaluateLValue(node->base);
 
     TypePtr memberTy = nullptr;
     if (module && !structName.empty()) {
@@ -1643,6 +1858,10 @@ void EIRBuilder::visit(IndexExpr* node) {
 }
 
 void EIRBuilder::visit(StructDecl* node) {
+    if (!node->typeParams.empty()) {
+        templateDecls[node->name] = node;
+        return;
+    }
     for (const auto& m : node->methods) {
         if (auto mf = dynamic_cast<FunctionDecl*>(m.get())) {
             std::vector<std::pair<std::string, std::string>> params;
@@ -1657,6 +1876,152 @@ void EIRBuilder::visit(StructDecl* node) {
 }
 void EIRBuilder::visit(ExternDecl*) {}
 void EIRBuilder::visit(IntrinsicDecl*) {}
+
+void EIRBuilder::unifyTypeParam(std::string pattern, std::string concrete,
+                                const std::set<std::string>& tps,
+                                std::map<std::string, std::string>& subs) const {
+    auto stripStruct = [](std::string s) {
+        return s.rfind("struct:", 0) == 0 ? s.substr(7) : s;
+    };
+    auto canon = [](std::string t) {
+        int stars = 0;
+        while (!t.empty() && t.back()  == '*') { t.pop_back();    stars++; }
+        while (!t.empty() && t.front() == '*') { t = t.substr(1); stars++; }
+        return std::string(stars, '*') + t;
+    };
+    pattern  = canon(stripStruct(tyq::strip(pattern)));
+    concrete = canon(stripStruct(tyq::strip(concrete)));
+    size_t pi = 0, ci = 0;
+    while (pi < pattern.size() && pattern[pi] == '*' &&
+           ci < concrete.size() && concrete[ci] == '*') { pi++; ci++; }
+    pattern = pattern.substr(pi);
+    concrete = stripStruct(concrete.substr(ci));
+    if (pattern.empty() || concrete.empty()) return;
+
+    if (tps.count(pattern)) {
+        if (!subs.count(pattern)) subs[pattern] = concrete;
+        return;
+    }
+    auto isSlice = [](const std::string& t) {
+        return t.size() > 2 && t.compare(t.size() - 2, 2, "[]") == 0;
+    };
+    if (isSlice(pattern)) {
+        if (isSlice(concrete))
+            unifyTypeParam(pattern.substr(0, pattern.size() - 2),
+                           concrete.substr(0, concrete.size() - 2), tps, subs);
+        return;
+    }
+    size_t lt = pattern.find('<');
+    if (lt == std::string::npos) return;
+    auto [pbase, pargs] = splitTemplateType(pattern);
+    std::string cbase; std::vector<std::string> cargs;
+    if (concrete.find('<') != std::string::npos) {
+        auto pr = splitTemplateType(concrete); cbase = pr.first; cargs = pr.second;
+    } else {
+        auto it = templateInstanceArgs.find(concrete);
+        if (it != templateInstanceArgs.end()) { cbase = it->second.first; cargs = it->second.second; }
+    }
+    if (cbase != pbase) return;
+    for (size_t i = 0; i < pargs.size() && i < cargs.size(); ++i)
+        unifyTypeParam(pargs[i], cargs[i], tps, subs);
+}
+
+FunctionDecl* EIRBuilder::genericFreeMethod(const std::string& instName, const std::string& method) const {
+    auto ia = templateInstanceArgs.find(instName);
+    if (ia == templateInstanceArgs.end()) return nullptr;
+    auto ft = funcTemplateDecls.find(ia->second.first + "_" + method);
+    if (ft == funcTemplateDecls.end() || ft->second->params.empty()) return nullptr;
+    return ft->second;
+}
+
+Function* EIRBuilder::instantiateGenericMethod(const std::string& instName, const std::string& method) {
+    std::string mangled = instName + "_" + method;
+    if (module) {
+        if (Function* f = module->getFunction(mangled)) return f;
+    }
+    std::map<std::string, std::string> subs;
+    auto ia = templateInstanceArgs.find(instName);
+    if (ia == templateInstanceArgs.end()) return nullptr;
+    auto tdIt = templateDecls.find(ia->second.first);
+    if (tdIt == templateDecls.end()) return nullptr;
+    StructDecl* td = tdIt->second;
+    FunctionDecl* mf = nullptr;
+    for (const auto& m : td->methods) {
+        auto* f = dynamic_cast<FunctionDecl*>(m.get());
+        if (f && f->name == method) {
+            mf = f;
+            break;
+        }
+    }
+    if (!mf || !mf->body) return nullptr;
+
+    const auto& tp = td->typeParams;
+    for (size_t i = 0; i < tp.size() && i < ia->second.second.size(); ++i)
+        subs[tp[i]] = ia->second.second[i];
+
+    std::vector<std::pair<std::string, std::string>> params{{"*" + instName, "self"}};
+    for (const auto& p : mf->params) params.push_back({substType(p.first, subs), p.second});
+
+    BasicBlock* savedBlock = currentBlock;
+    Function* savedFunc = currentFunction;
+    int savedVarId = nextVarId;
+    int savedBlockId = nextBlockId;
+    auto savedOverride = typeParamOverride;
+
+    typeParamOverride = subs;
+    std::string retType = substType(mf->returnType, subs);
+    std::vector<std::pair<std::string, TypePtr>> eirParams;
+    for (const auto& p : params) {
+        eirParams.emplace_back(p.second, toEirType(p.first));
+    }
+    module->createFunction(mangled, toEirType(retType), eirParams);
+
+    auto inst = std::make_shared<FunctionDecl>(mangled, retType, params, mf->body);
+    inst->accept(this);
+
+    typeParamOverride = savedOverride;
+    currentFunction = savedFunc;
+    currentBlock = savedBlock;
+    nextVarId = savedVarId;
+    nextBlockId = savedBlockId;
+
+    return module->getFunction(mangled);
+}
+
+Function* EIRBuilder::instantiateFnTemplate(FunctionDecl* fd, const std::string& mangledName,
+                                            const std::map<std::string, std::string>& subs) {
+    if (module) {
+        if (Function* f = module->getFunction(mangledName)) return f;
+    }
+
+    BasicBlock* savedBlock = currentBlock;
+    Function* savedFunc = currentFunction;
+    int savedVarId = nextVarId;
+    int savedBlockId = nextBlockId;
+    auto savedOverride = typeParamOverride;
+
+    typeParamOverride = subs;
+    std::string retType = substType(fd->returnType, subs);
+    std::vector<std::pair<std::string, std::string>> params;
+    std::vector<std::pair<std::string, TypePtr>> eirParams;
+    for (const auto& p : fd->params) {
+        std::string subPType = substType(p.first, subs);
+        params.emplace_back(subPType, p.second);
+        eirParams.emplace_back(p.second, toEirType(subPType));
+    }
+    module->createFunction(mangledName, toEirType(retType), eirParams);
+
+    auto inst = std::make_shared<FunctionDecl>(mangledName, retType, params, fd->body);
+    inst->accept(this);
+
+    typeParamOverride = savedOverride;
+    currentFunction = savedFunc;
+    currentBlock = savedBlock;
+    nextVarId = savedVarId;
+    nextBlockId = savedBlockId;
+
+    return module->getFunction(mangledName);
+}
 
 Operand EIRBuilder::boxAsInterface(const std::string& ifaceName, const std::string& structName, const Operand& structPtr) {
     auto ifIt = interfaces.find(ifaceName);
@@ -1675,11 +2040,30 @@ Operand EIRBuilder::boxAsInterface(const std::string& ifaceName, const std::stri
             GlobalVar g;
             g.name = vtGlobName;
             g.type = Type::getArray(Type::getPtr(), ifIt->second.methodNames.size());
-            for (const auto& mname : ifIt->second.methodNames) {
+            for (size_t mi = 0; mi < ifIt->second.methodNames.size(); ++mi) {
+                const auto& mname = ifIt->second.methodNames[mi];
                 std::string mangled = structName + "_" + mname;
-                g.elements.push_back(Operand::global(mangled, Type::getPtr()));
+                Function* fn = module->getFunction(mangled);
+                if (!fn) fn = instantiateGenericMethod(structName, mname);
+                if (!fn) {
+                    if (FunctionDecl* gf = genericFreeMethod(structName, mname)) {
+                        std::set<std::string> tps(gf->typeParams.begin(), gf->typeParams.end());
+                        std::map<std::string, std::string> subs;
+                        unifyTypeParam(gf->params[0].first, "*" + structName, tps, subs);
+                        if (mi < ifIt->second.methodParamTypes.size()) {
+                            const auto& ipts = ifIt->second.methodParamTypes[mi];
+                            for (size_t j = 1; j < gf->params.size() && j - 1 < ipts.size(); ++j)
+                                unifyTypeParam(gf->params[j].first, ipts[j - 1], tps, subs);
+                        }
+                        std::string gname = gf->name;
+                        for (const auto& tpn : gf->typeParams) gname += "_" + mangleTemplate(subs[tpn]);
+                        fn = instantiateFnTemplate(gf, gname, subs);
+                    }
+                }
+                std::string actualName = fn ? fn->name : mangled;
+                g.elements.push_back(Operand::global(actualName, Type::getPtr()));
             }
-            module->globals.push_back(g);
+            module->globals.push_back(std::move(g));
         }
     }
 
@@ -2135,9 +2519,14 @@ void EIRBuilder::visit(QuestionExpr* node) {
 
 void EIRBuilder::visit(StructInitExpr* node) {
     std::string sname = node->structName;
-    TypePtr stype = Type::getStruct(sname, {});
+    if (sname.find('<') != std::string::npos) {
+        sname = mangleTemplate(typeParamOverride.empty() ? sname : substType(sname, typeParamOverride));
+    }
+    TypePtr stype = toEirType(sname);
+    size_t al = getTypeAlign(stype);
+    if (al < 1) al = 1;
     std::string tempSlot = newVar();
-    emit(Instruction{Opcode::Alloca, tempSlot, stype, {Operand::constInt(8, Type::getI32())}});
+    emit(Instruction{Opcode::Alloca, tempSlot, stype, {Operand::constInt(static_cast<int64_t>(al), Type::getI32())}});
 
     for (size_t i = 0; i < node->fieldInits.size(); ++i) {
         std::string fname = node->fieldInits[i].first;
@@ -2230,7 +2619,18 @@ void EIRBuilder::visit(AllocWithExpr*) {}
 
 void EIRBuilder::visit(TemplateCallExpr* node) {
     std::string fnName = node->templateName;
-    if (module && !module->getFunction(fnName)) {
+    auto templ = funcTemplateDecls.find(node->templateName);
+    if (templ != funcTemplateDecls.end()) {
+        FunctionDecl* fd = templ->second;
+        std::map<std::string, std::string> subs;
+        for (size_t i = 0; i < fd->typeParams.size() && i < node->typeArgs.size(); ++i) {
+            subs[fd->typeParams[i]] = node->typeArgs[i];
+        }
+        std::string mangledName = node->templateName;
+        for (const auto& t : node->typeArgs) mangledName += "_" + mangleTemplate(t);
+        Function* func = instantiateFnTemplate(fd, mangledName, subs);
+        if (func) fnName = func->name;
+    } else if (module && !module->getFunction(fnName)) {
         std::string mangled = node->templateName;
         for (const auto& t : node->typeArgs) {
             mangled += "_" + mangleTemplate(t);

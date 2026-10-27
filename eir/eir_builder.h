@@ -122,10 +122,26 @@ private:
     struct InterfaceInfo {
         std::string name;
         std::vector<std::string> methodNames;
+        std::vector<std::vector<std::string>> methodParamTypes;
+        std::vector<std::string> methodReturnTypes;
     };
     std::unordered_map<std::string, InterfaceInfo> interfaces;
     Operand boxAsInterface(const std::string& ifaceName, const std::string& structName, const Operand& structPtr);
     Operand evalForType(const ExprPtr& e, const std::string& targetType);
+
+    // Template tracking & instantiation
+    std::map<std::string, StructDecl*> templateDecls;
+    std::map<std::string, FunctionDecl*> funcTemplateDecls;
+    std::map<std::string, std::pair<std::string, std::vector<std::string>>> templateInstanceArgs;
+    std::map<std::string, std::string> typeParamOverride;
+
+    void unifyTypeParam(std::string pattern, std::string concrete,
+                        const std::set<std::string>& tps,
+                        std::map<std::string, std::string>& subs) const;
+    Function* instantiateGenericMethod(const std::string& instName, const std::string& method);
+    Function* instantiateFnTemplate(FunctionDecl* fd, const std::string& mangledName,
+                                    const std::map<std::string, std::string>& subs);
+    FunctionDecl* genericFreeMethod(const std::string& instName, const std::string& method) const;
 
     // Volatile tracking
     std::set<std::string> volatileVars;
