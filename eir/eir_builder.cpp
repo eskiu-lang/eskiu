@@ -57,6 +57,11 @@ TypePtr EIRBuilder::lookupVarType(const std::string& name) {
         auto found = it->find(name);
         if (found != it->end()) return found->second;
     }
+    if (module) {
+        for (const auto& g : module->globals) {
+            if (g.name == name) return g.type;
+        }
+    }
     return Type::getI32();
 }
 
@@ -129,6 +134,10 @@ TypePtr EIRBuilder::toEirType(const std::string& typeStr) {
             if (sname.empty()) sname = t.name;
             return Type::getInterface(sname);
         }
+        case ty::Type::Kind::VaList:
+            return Type::getStruct("__va_list", {
+                Type::getPtr(), Type::getPtr(), Type::getPtr(), Type::getI32(), Type::getI32()
+            });
         case ty::Type::Kind::Fn:
             return Type::getClosure(t.ret ? toEirType(t.ret->str()) : Type::getVoid());
         default:
@@ -701,10 +710,16 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
         if (auto f = dynamic_cast<FunctionDecl*>(decl.get())) {
             if (!f->typeParams.empty()) continue;
             std::vector<std::pair<std::string, TypePtr>> params;
+            bool hasVarargs = false;
             for (const auto& p : f->params) {
+                if (p.first == "...") {
+                    hasVarargs = true;
+                    break;
+                }
                 params.emplace_back(p.second, toEirType(p.first));
             }
-            module->createFunction(f->name, toEirType(f->returnType), params);
+            auto fn = module->createFunction(f->name, toEirType(f->returnType), params);
+            fn->isVariadic = hasVarargs;
         } else if (auto ext = dynamic_cast<ExternDecl*>(decl.get())) {
             std::vector<std::pair<std::string, TypePtr>> params;
             bool hasVarargs = false;
@@ -823,10 +838,16 @@ void EIRBuilder::visit(FunctionDecl* node) {
     currentFunction = module->getFunction(node->name);
     if (!currentFunction) {
         std::vector<std::pair<std::string, TypePtr>> params;
+        bool hasVarargs = false;
         for (const auto& p : node->params) {
+            if (p.first == "...") {
+                hasVarargs = true;
+                break;
+            }
             params.emplace_back(p.second, toEirType(p.first));
         }
         currentFunction = module->createFunction(node->name, toEirType(node->returnType), params);
+        currentFunction->isVariadic = hasVarargs;
     }
 
     if (!node->body) {
@@ -1299,6 +1320,19 @@ void EIRBuilder::visit(BinaryExpr* node) {
             std::string negIdx = newVar();
             emit(Instruction{Opcode::Sub, negIdx, rhs.type, {Operand::constInt(0, rhs.type), rhs}});
             emit(Instruction{Opcode::Gep, dst, resTy, {lhs, Operand::var(negIdx, rhs.type)}});
+        } else if (lhs.type->isPointer() && rhs.type->isPointer()) {
+            std::string rawDiff = newVar();
+            emit(Instruction{Opcode::Sub, rawDiff, Type::getI64(), {lhs, rhs}});
+            TypePtr elemTy = lhs.type->elemType ? lhs.type->elemType : Type::getI8();
+            size_t elemSz = getTypeSize(elemTy);
+            if (elemSz > 1) {
+                emit(Instruction{Opcode::SDiv, dst, resTy, {
+                    Operand::var(rawDiff, Type::getI64()),
+                    Operand::constInt(static_cast<int64_t>(elemSz), Type::getI64())
+                }});
+            } else {
+                dst = rawDiff;
+            }
         } else {
             emit(Instruction{resTy->isFloat() ? Opcode::FSub : Opcode::Sub, dst, resTy, {lhs, rhs}});
         }
@@ -1319,6 +1353,19 @@ void EIRBuilder::visit(BinaryExpr* node) {
     else if (node->op == ">>") emit(Instruction{lhs.type->isSigned ? Opcode::AShr : Opcode::LShr, dst, resTy, {lhs, rhs}});
     // Comparison
     else if (node->op == "==" || node->op == "!=" || node->op == "<" || node->op == "<=" || node->op == ">" || node->op == ">=") {
+        if (lhs.type->isFloat() || rhs.type->isFloat()) {
+            FCmpCond fcond = FCmpCond::Oeq;
+            if (node->op == "!=") fcond = FCmpCond::One;
+            else if (node->op == "<")  fcond = FCmpCond::Olt;
+            else if (node->op == "<=") fcond = FCmpCond::Ole;
+            else if (node->op == ">")  fcond = FCmpCond::Ogt;
+            else if (node->op == ">=") fcond = FCmpCond::Oge;
+
+            emit(Instruction{Opcode::FCmp, dst, Type::getI1(), {lhs, rhs}, ICmpCond::Eq, fcond});
+            lastValue = Operand::var(dst, Type::getI1());
+            return;
+        }
+
         ICmpCond icond = ICmpCond::Eq;
         if (node->op == "!=") icond = ICmpCond::Ne;
         else if (node->op == "<")  icond = lhs.type->isSigned ? ICmpCond::Slt : ICmpCond::Ult;
@@ -1508,6 +1555,18 @@ void EIRBuilder::visit(LiteralExpr* node) {
 }
 
 void EIRBuilder::visit(CallExpr* node) {
+    if (auto id = dynamic_cast<IdentExpr*>(node->callee.get())) {
+        if ((id->name == "va_start" || id->name == "va_end") && node->args.size() == 1) {
+            Operand ap = evaluateLValue(node->args[0]);
+            emit(Instruction{Opcode::Call, "", Type::getVoid(), {
+                Operand::global(id->name, Type::getPtr()),
+                ap
+            }});
+            lastValue = Operand::constInt(0, Type::getVoid());
+            return;
+        }
+    }
+
     // 1. Check if callee is a closure variable or expression
     bool isClosureCall = false;
     Operand closureOp;
@@ -1816,6 +1875,34 @@ void EIRBuilder::visit(CallExpr* node) {
 void EIRBuilder::visit(CastExpr* node) {
     Operand val = evaluateExpr(node->expr);
     TypePtr toTy = toEirType(node->targetType);
+
+    if (val.kind == OperandKind::ConstantInt) {
+        if (toTy->isInt()) {
+            int64_t v = val.intVal;
+            if (toTy->bitWidth == 1) v = v ? 1 : 0;
+            else if (toTy->bitWidth == 8) v = toTy->isSigned ? static_cast<int8_t>(v) : static_cast<uint8_t>(v);
+            else if (toTy->bitWidth == 16) v = toTy->isSigned ? static_cast<int16_t>(v) : static_cast<uint16_t>(v);
+            else if (toTy->bitWidth == 32) v = toTy->isSigned ? static_cast<int32_t>(v) : static_cast<uint32_t>(v);
+            lastValue = Operand::constInt(v, toTy);
+            return;
+        } else if (toTy->isFloat()) {
+            lastValue = Operand::constFloat(static_cast<double>(val.intVal), toTy);
+            return;
+        }
+    } else if (val.kind == OperandKind::ConstantFloat) {
+        if (toTy->isInt()) {
+            lastValue = Operand::constInt(static_cast<int64_t>(val.floatVal), toTy);
+            return;
+        } else if (toTy->isFloat()) {
+            lastValue = Operand::constFloat(val.floatVal, toTy);
+            return;
+        }
+    } else if (val.kind == OperandKind::ConstantNull) {
+        lastValue = Operand::constNull();
+        lastValue.type = toTy;
+        return;
+    }
+
     std::string dst = newVar();
 
     if (val.type->isInt() && toTy->isInt()) {
@@ -1824,7 +1911,9 @@ void EIRBuilder::visit(CastExpr* node) {
         } else if (toTy->bitWidth > val.type->bitWidth) {
             emit(Instruction{val.type->isSigned ? Opcode::SExt : Opcode::ZExt, dst, toTy, {val}});
         } else {
-            dst = val.str();
+            lastValue = val;
+            lastValue.type = toTy;
+            return;
         }
     } else if (val.type->isFloat() && toTy->isInt()) {
         emit(Instruction{Opcode::FPToSI, dst, toTy, {val}});
@@ -1833,7 +1922,9 @@ void EIRBuilder::visit(CastExpr* node) {
     } else if (val.type->isPointer() && toTy->isPointer()) {
         emit(Instruction{Opcode::Bitcast, dst, toTy, {val}});
     } else {
-        dst = val.str();
+        lastValue = val;
+        lastValue.type = toTy;
+        return;
     }
 
     lastValue = Operand::var(dst, toTy);
@@ -2773,6 +2864,19 @@ void EIRBuilder::visit(ArrayLitExpr* node) {
 void EIRBuilder::visit(AllocWithExpr*) {}
 
 void EIRBuilder::visit(TemplateCallExpr* node) {
+    if (node->templateName == "va_arg" && node->args.size() == 1 && node->typeArgs.size() == 1) {
+        Operand ap = evaluateLValue(node->args[0]);
+        std::string t = typeParamOverride.empty() ? node->typeArgs[0] : substType(node->typeArgs[0], typeParamOverride);
+        TypePtr resTy = toEirType(t);
+        std::string dst = newVar();
+        emit(Instruction{Opcode::Call, dst, resTy, {
+            Operand::global("va_arg", Type::getPtr()),
+            ap
+        }});
+        lastValue = Operand::var(dst, resTy);
+        return;
+    }
+
     std::string fnName = node->templateName;
     std::vector<std::string> substitutedArgs;
     for (const auto& a : node->typeArgs) {

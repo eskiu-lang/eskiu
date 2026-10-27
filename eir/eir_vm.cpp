@@ -170,8 +170,15 @@ std::string VM::formatString(const std::string& fmt, const std::vector<VMValue>&
                 out += buf;
             } else if (conv == 's') {
                 const char* s = static_cast<const char*>(arg.asPtr());
-                std::snprintf(buf, sizeof(buf), spec.c_str(), s ? s : "(null)");
-                out += buf;
+                if (!s) s = "(null)";
+                if (spec == "%s") {
+                    out += s;
+                } else {
+                    size_t sLen = std::strlen(s);
+                    std::vector<char> dynBuf(sLen + 64);
+                    std::snprintf(dynBuf.data(), dynBuf.size(), spec.c_str(), s);
+                    out += dynBuf.data();
+                }
             } else if (conv == 'c') {
                 std::snprintf(buf, sizeof(buf), spec.c_str(), static_cast<int>(arg.asInt()));
                 out += buf;
@@ -230,6 +237,76 @@ VMValue VM::callExtern(const std::string& name, const std::vector<VMValue>& args
             return VMValue(static_cast<int64_t>(formatted.size()));
         }
         return VMValue(0);
+    }
+    if (name == "vsnprintf" || name == "__mingw_vsnprintf") {
+        if (args.size() >= 4) {
+            char* dest = static_cast<char*>(args[0].asPtr());
+            size_t maxLen = static_cast<size_t>(args[1].asInt());
+            const char* fmt = static_cast<const char*>(args[2].asPtr());
+            void* apPtr = args[3].asPtr();
+
+            const std::vector<VMValue>* varargs = nullptr;
+            auto it = activeVaLists.find(apPtr);
+            if (it != activeVaLists.end()) {
+                varargs = &it->second.args;
+            } else if (apPtr) {
+                void* orig = *reinterpret_cast<void**>(apPtr);
+                auto it2 = activeVaLists.find(orig);
+                if (it2 != activeVaLists.end()) {
+                    varargs = &it2->second.args;
+                }
+            }
+
+            std::string formatted = varargs ? formatString(fmt ? fmt : "", *varargs)
+                                            : formatString(fmt ? fmt : "", {});
+            if (dest && maxLen > 0) {
+                size_t toCopy = std::min(maxLen - 1, formatted.size());
+                std::memcpy(dest, formatted.c_str(), toCopy);
+                dest[toCopy] = '\0';
+            }
+            return VMValue(static_cast<int64_t>(formatted.size()));
+        }
+        return VMValue(0);
+    }
+    if (name == "strtod") {
+        if (args.size() >= 2) {
+            const char* str = static_cast<const char*>(args[0].asPtr());
+            char** endptr = static_cast<char**>(args[1].asPtr());
+            double res = std::strtod(str ? str : "", endptr);
+            return VMValue(res);
+        }
+        return VMValue(0.0);
+    }
+    if (name == "atof") {
+        if (!args.empty()) {
+            const char* str = static_cast<const char*>(args[0].asPtr());
+            return VMValue(std::atof(str ? str : ""));
+        }
+        return VMValue(0.0);
+    }
+    if (name == "bsearch") {
+        if (args.size() >= 5) {
+            void* key = args[0].asPtr();
+            const char* base = static_cast<const char*>(args[1].asPtr());
+            size_t n = static_cast<size_t>(args[2].asInt());
+            size_t size = static_cast<size_t>(args[3].asInt());
+            void* cmpFnPtr = args[4].asPtr();
+            Function* cmpFn = static_cast<Function*>(cmpFnPtr);
+            size_t l = 0, r = n;
+            while (l < r) {
+                size_t m = l + (r - l) / 2;
+                const void* elem = base + m * size;
+                VMValue cres(0);
+                if (cmpFn) {
+                    cres = executeFunction(cmpFn, {VMValue(const_cast<void*>(key)), VMValue(const_cast<void*>(elem))});
+                }
+                int cmp = static_cast<int>(cres.asInt());
+                if (cmp == 0) return VMValue(const_cast<void*>(elem));
+                if (cmp < 0) r = m;
+                else l = m + 1;
+            }
+        }
+        return VMValue(static_cast<void*>(nullptr));
     }
     if (name == "puts") {
         if (!args.empty()) {
@@ -358,6 +435,10 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
 
     StackFrame frame;
     frame.function = fn;
+
+    if (fn->isVariadic && args.size() > fn->params.size()) {
+        frame.varargs.assign(args.begin() + fn->params.size(), args.end());
+    }
 
     // Bind parameters
     for (size_t i = 0; i < fn->params.size(); ++i) {
@@ -503,19 +584,37 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                 case Opcode::And: {
                     int64_t a = getOperand(inst->operands[0], frame).asInt();
                     int64_t b = getOperand(inst->operands[1], frame).asInt();
-                    frame.registers[inst->resultVar] = VMValue(a & b);
+                    int64_t res = a & b;
+                    if (inst->type && !inst->type->isSigned) {
+                        if (inst->type->bitWidth == 8) res = static_cast<uint8_t>(res);
+                        else if (inst->type->bitWidth == 16) res = static_cast<uint16_t>(res);
+                        else if (inst->type->bitWidth == 32) res = static_cast<uint32_t>(res);
+                    }
+                    frame.registers[inst->resultVar] = VMValue(res);
                     break;
                 }
                 case Opcode::Or: {
                     int64_t a = getOperand(inst->operands[0], frame).asInt();
                     int64_t b = getOperand(inst->operands[1], frame).asInt();
-                    frame.registers[inst->resultVar] = VMValue(a | b);
+                    int64_t res = a | b;
+                    if (inst->type && !inst->type->isSigned) {
+                        if (inst->type->bitWidth == 8) res = static_cast<uint8_t>(res);
+                        else if (inst->type->bitWidth == 16) res = static_cast<uint16_t>(res);
+                        else if (inst->type->bitWidth == 32) res = static_cast<uint32_t>(res);
+                    }
+                    frame.registers[inst->resultVar] = VMValue(res);
                     break;
                 }
                 case Opcode::Xor: {
                     int64_t a = getOperand(inst->operands[0], frame).asInt();
                     int64_t b = getOperand(inst->operands[1], frame).asInt();
-                    frame.registers[inst->resultVar] = VMValue(a ^ b);
+                    int64_t res = a ^ b;
+                    if (inst->type && !inst->type->isSigned) {
+                        if (inst->type->bitWidth == 8) res = static_cast<uint8_t>(res);
+                        else if (inst->type->bitWidth == 16) res = static_cast<uint16_t>(res);
+                        else if (inst->type->bitWidth == 32) res = static_cast<uint32_t>(res);
+                    }
+                    frame.registers[inst->resultVar] = VMValue(res);
                     break;
                 }
                 case Opcode::Shl: {
@@ -529,7 +628,10 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                         frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(static_cast<uint16_t>(ua << b)));
                     } else if (inst->type && inst->type->bitWidth == 32) {
                         uint32_t ua = static_cast<uint32_t>(a);
-                        frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(static_cast<int32_t>(ua << b)));
+                        uint32_t res = ua << b;
+                        frame.registers[inst->resultVar] = VMValue(inst->type->isSigned
+                            ? static_cast<int64_t>(static_cast<int32_t>(res))
+                            : static_cast<int64_t>(res));
                     } else {
                         frame.registers[inst->resultVar] = VMValue(a << b);
                     }
@@ -538,7 +640,18 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                 case Opcode::LShr: {
                     uint64_t a = static_cast<uint64_t>(getOperand(inst->operands[0], frame).asInt());
                     uint64_t b = static_cast<uint64_t>(getOperand(inst->operands[1], frame).asInt());
-                    frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(a >> b));
+                    if (inst->type && inst->type->bitWidth == 8) {
+                        uint8_t ua = static_cast<uint8_t>(a);
+                        frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(ua >> b));
+                    } else if (inst->type && inst->type->bitWidth == 16) {
+                        uint16_t ua = static_cast<uint16_t>(a);
+                        frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(ua >> b));
+                    } else if (inst->type && inst->type->bitWidth == 32) {
+                        uint32_t ua = static_cast<uint32_t>(a);
+                        frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(ua >> b));
+                    } else {
+                        frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(a >> b));
+                    }
                     break;
                 }
                 case Opcode::AShr: {
@@ -808,6 +921,52 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
 
                 case Opcode::Call: {
                     std::string targetFnName = inst->operands[0].text;
+                    if (targetFnName == "va_start" || targetFnName == "llvm.va_start.p0") {
+                        if (inst->operands.size() > 1) {
+                            void* apPtr = getOperand(inst->operands[1], frame).asPtr();
+                            if (apPtr) {
+                                activeVaLists[apPtr] = VMVaList{ frame.varargs, 0 };
+                                *reinterpret_cast<void**>(apPtr) = apPtr;
+                            }
+                        }
+                        break;
+                    }
+                    if (targetFnName == "va_end" || targetFnName == "llvm.va_end.p0") {
+                        if (inst->operands.size() > 1) {
+                            void* apPtr = getOperand(inst->operands[1], frame).asPtr();
+                            if (apPtr) {
+                                activeVaLists.erase(apPtr);
+                                void* orig = *reinterpret_cast<void**>(apPtr);
+                                if (orig) activeVaLists.erase(orig);
+                            }
+                        }
+                        break;
+                    }
+                    if (targetFnName == "va_arg") {
+                        VMValue retVal(0);
+                        if (inst->operands.size() > 1) {
+                            void* apPtr = getOperand(inst->operands[1], frame).asPtr();
+                            VMVaList* vl = nullptr;
+                            auto it = activeVaLists.find(apPtr);
+                            if (it != activeVaLists.end()) {
+                                vl = &it->second;
+                            } else if (apPtr) {
+                                void* orig = *reinterpret_cast<void**>(apPtr);
+                                auto it2 = activeVaLists.find(orig);
+                                if (it2 != activeVaLists.end()) {
+                                    vl = &it2->second;
+                                }
+                            }
+                            if (vl && vl->index < vl->args.size()) {
+                                retVal = vl->args[vl->index++];
+                            }
+                        }
+                        if (!inst->resultVar.empty()) {
+                            frame.registers[inst->resultVar] = retVal;
+                        }
+                        break;
+                    }
+
                     std::vector<VMValue> callArgs;
                     for (size_t i = 1; i < inst->operands.size(); ++i) {
                         callArgs.push_back(getOperand(inst->operands[i], frame));

@@ -58,6 +58,7 @@ struct VMValue {
 struct StackFrame {
     Function* function = nullptr;
     std::unordered_map<std::string, VMValue> registers;
+    std::vector<VMValue> varargs;
     std::vector<std::unique_ptr<uint8_t[]>> chunks;
     size_t currentChunkOffset = 0;
     static constexpr size_t CHUNK_SIZE = 64 * 1024;
@@ -118,6 +119,13 @@ private:
 
     // Buffer for returning aggregates / fat pointers across stack frames
     std::vector<uint8_t> returnBuffer;
+
+    // Active va_list state for variadics and vsnprintf
+    struct VMVaList {
+        std::vector<VMValue> args;
+        size_t index = 0;
+    };
+    std::unordered_map<void*, VMVaList> activeVaLists;
 };
 
 } // namespace eir
