@@ -158,6 +158,13 @@ TypePtr EIRBuilder::getExprEirType(const Expr* expr) {
     }
     if (auto mem = dynamic_cast<const MemberExpr*>(expr)) {
         TypePtr bty = getExprEirType(mem->base);
+        if (bty && (bty->isSlice() || (bty->isPointer() && bty->elemType && bty->elemType->isSlice()))) {
+            if (mem->member == "len") return Type::getI64();
+            if (mem->member == "ptr" || mem->member == "data") {
+                TypePtr elem = bty->isSlice() ? bty->elemType : bty->elemType->elemType;
+                return Type::getPtr(elem ? elem : Type::getU8());
+            }
+        }
         std::string sname;
         if (bty && bty->isStruct()) sname = bty->nominalName();
         else if (bty && bty->isPointer() && bty->elemType && bty->elemType->isStruct()) sname = bty->elemType->nominalName();
@@ -171,6 +178,24 @@ TypePtr EIRBuilder::getExprEirType(const Expr* expr) {
     }
     if (auto idx = dynamic_cast<const IndexExpr*>(expr)) {
         TypePtr bty = getExprEirType(idx->base);
+        if (idx->isSlice()) {
+            TypePtr elemTy = nullptr;
+            if (bty && (bty->isPointer() || bty->isArray() || bty->isSlice()) && bty->elemType) {
+                elemTy = bty->elemType;
+            }
+            if (!elemTy && resolvedExprTypes) {
+                auto it = resolvedExprTypes->find(const_cast<Expr*>(expr));
+                if (it != resolvedExprTypes->end()) {
+                    std::string et = it->second;
+                    if (!typeParamOverride.empty()) et = substType(et, typeParamOverride);
+                    if (et.size() >= 2 && et.substr(et.size() - 2) == "[]") {
+                        elemTy = toEirType(et.substr(0, et.size() - 2));
+                    }
+                }
+            }
+            if (!elemTy) elemTy = Type::getI32();
+            return Type::getSlice(elemTy);
+        }
         if (bty && (bty->isPointer() || bty->isArray() || bty->isSlice()) && bty->elemType) {
             return bty->elemType;
         }
@@ -2051,6 +2076,32 @@ void EIRBuilder::visit(TernaryExpr* node) {
 
 void EIRBuilder::visit(MemberExpr* node) {
     TypePtr objTy = getExprEirType(node->base);
+    if (!objTy) {
+        if (auto id = dynamic_cast<IdentExpr*>(node->base.get())) {
+            objTy = lookupVarType(id->name);
+        }
+    }
+    if (objTy && (objTy->isSlice() || (objTy->isPointer() && objTy->elemType && objTy->elemType->isSlice()))) {
+        Operand sliceFat = evaluateExpr(node->base);
+        if (node->member == "len") {
+            std::string lenVar = newVar() + ".len";
+            emit(Instruction{Opcode::ExtractFat, lenVar, Type::getI64(), {sliceFat, Operand::constInt(1, Type::getI32())}});
+            lastValue = Operand::var(lenVar, Type::getI64());
+            std::string lenPtr = newVar() + ".len_ptr";
+            emit(Instruction{Opcode::OffsetPtr, lenPtr, Type::getPtr(Type::getI64()), {sliceFat, Operand::constInt(8, Type::getI64())}});
+            lastLValue = Operand::var(lenPtr, Type::getPtr(Type::getI64()));
+            return;
+        } else if (node->member == "ptr" || node->member == "data") {
+            TypePtr elemTy = objTy->isSlice() ? objTy->elemType : objTy->elemType->elemType;
+            if (!elemTy) elemTy = Type::getU8();
+            std::string ptrVar = newVar() + ".ptr";
+            emit(Instruction{Opcode::ExtractFat, ptrVar, Type::getPtr(elemTy), {sliceFat, Operand::constInt(0, Type::getI32())}});
+            lastValue = Operand::var(ptrVar, Type::getPtr(elemTy));
+            lastLValue = sliceFat;
+            return;
+        }
+    }
+
     std::string structName;
     if (objTy && objTy->isStruct()) {
         structName = objTy->nominalName();
@@ -2133,18 +2184,67 @@ void EIRBuilder::visit(IndexExpr* node) {
     }
 
     TypePtr baseTy = getExprEirType(node->base);
+    TypePtr elemTy = nullptr;
+    if (baseTy && (baseTy->isPointer() || baseTy->isArray() || baseTy->isSlice()) && baseTy->elemType) {
+        elemTy = baseTy->elemType;
+    }
+    if (!elemTy) {
+        TypePtr selfTy = getExprEirType(node);
+        if (node->isSlice() && selfTy && selfTy->isSlice()) {
+            elemTy = selfTy->elemType;
+        } else if (!node->isSlice() && selfTy) {
+            elemTy = selfTy;
+        }
+    }
+    if (!elemTy) elemTy = Type::getI32();
+
+    if (node->isSlice()) {
+        Operand lo = evaluateExpr(node->index);
+        Operand hi = evaluateExpr(node->highIndex);
+
+        std::string lenVar = newVar() + ".slice_len";
+        emit(Instruction{Opcode::Sub, lenVar, Type::getI64(), {hi, lo}});
+
+        Operand sliceStart;
+        if (baseTy && baseTy->isSlice()) {
+            Operand baseFat = evaluateExpr(node->base);
+            std::string baseData = newVar() + ".base_data";
+            emit(Instruction{Opcode::ExtractFat, baseData, Type::getPtr(elemTy), {baseFat, Operand::constInt(0, Type::getI32())}});
+            std::string startPtr = newVar() + ".slice_start";
+            emit(Instruction{Opcode::Gep, startPtr, Type::getPtr(elemTy), {Operand::var(baseData, Type::getPtr(elemTy)), lo}});
+            sliceStart = Operand::var(startPtr, Type::getPtr(elemTy));
+        } else if (baseTy && baseTy->isPointer()) {
+            Operand basePtr = evaluateExpr(node->base);
+            std::string startPtr = newVar() + ".slice_start";
+            emit(Instruction{Opcode::Gep, startPtr, Type::getPtr(elemTy), {basePtr, lo}});
+            sliceStart = Operand::var(startPtr, Type::getPtr(elemTy));
+        } else {
+            Operand basePtr = evaluateLValue(node->base);
+            std::string startPtr = newVar() + ".slice_start";
+            emit(Instruction{Opcode::Gep, startPtr, Type::getPtr(elemTy), {basePtr, lo}});
+            sliceStart = Operand::var(startPtr, Type::getPtr(elemTy));
+        }
+
+        std::string sliceSlot = newVar() + ".slice";
+        TypePtr sliceTy = Type::getSlice(elemTy);
+        emit(Instruction{Opcode::MakeSlice, sliceSlot, sliceTy, {sliceStart, Operand::var(lenVar, Type::getI64())}});
+        lastValue = Operand::var(sliceSlot, sliceTy);
+        lastLValue = lastValue;
+        return;
+    }
+
     Operand basePtr;
-    if (baseTy && baseTy->isPointer()) {
+    if (baseTy && baseTy->isSlice()) {
+        Operand sliceFat = evaluateExpr(node->base);
+        std::string dataPtr = newVar() + ".slice_data";
+        emit(Instruction{Opcode::ExtractFat, dataPtr, Type::getPtr(elemTy), {sliceFat, Operand::constInt(0, Type::getI32())}});
+        basePtr = Operand::var(dataPtr, Type::getPtr(elemTy));
+    } else if (baseTy && baseTy->isPointer()) {
         basePtr = evaluateExpr(node->base);
     } else {
         basePtr = evaluateLValue(node->base);
     }
     Operand idx = evaluateExpr(node->index);
-    TypePtr elemTy = nullptr;
-    if (baseTy && (baseTy->isPointer() || baseTy->isArray() || baseTy->isSlice()) && baseTy->elemType) {
-        elemTy = baseTy->elemType;
-    }
-    if (!elemTy) elemTy = getExprEirType(node);
 
     std::string gepDst = newVar();
     emit(Instruction{Opcode::Gep, gepDst, Type::getPtr(elemTy), {basePtr, idx}});

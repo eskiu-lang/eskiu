@@ -38,6 +38,8 @@ void VM::writeMemory(void* ptr, TypePtr type, const VMValue& val) {
     } else if (type->isClosure() || type->isInterface() || type->isSlice()) {
         if (val.asPtr()) {
             std::memcpy(ptr, val.asPtr(), 16);
+        } else {
+            std::memset(ptr, 0, 16);
         }
     } else {
         *reinterpret_cast<uint64_t*>(ptr) = static_cast<uint64_t>(val.asInt());
@@ -135,11 +137,39 @@ std::string VM::formatString(const std::string& fmt, const std::vector<VMValue>&
 
             size_t start = i;
             i++;
-            // Skip flags, width, precision, modifiers
-            while (i < fmt.size() && (fmt[i] == '-' || fmt[i] == '+' || fmt[i] == ' ' ||
-                                      fmt[i] == '#' || fmt[i] == '0' || fmt[i] == '.' ||
-                                      (fmt[i] >= '0' && fmt[i] <= '9') ||
-                                      fmt[i] == 'l' || fmt[i] == 'h' || fmt[i] == 'z')) {
+
+            // Flags: '-', '+', ' ', '#', '0'
+            while (i < fmt.size() && (fmt[i] == '-' || fmt[i] == '+' || fmt[i] == ' ' || fmt[i] == '#' || fmt[i] == '0')) {
+                i++;
+            }
+
+            // Width: '*' or digits
+            bool hasWidthArg = false;
+            int widthArg = 0;
+            if (i < fmt.size() && fmt[i] == '*') {
+                hasWidthArg = true;
+                if (argIdx < args.size()) widthArg = static_cast<int>(args[argIdx++].asInt());
+                i++;
+            } else {
+                while (i < fmt.size() && (fmt[i] >= '0' && fmt[i] <= '9')) i++;
+            }
+
+            // Precision: '.' followed by '*' or digits
+            bool hasPrecArg = false;
+            int precArg = 0;
+            if (i < fmt.size() && fmt[i] == '.') {
+                i++;
+                if (i < fmt.size() && fmt[i] == '*') {
+                    hasPrecArg = true;
+                    if (argIdx < args.size()) precArg = static_cast<int>(args[argIdx++].asInt());
+                    i++;
+                } else {
+                    while (i < fmt.size() && (fmt[i] >= '0' && fmt[i] <= '9')) i++;
+                }
+            }
+
+            // Length modifiers: 'l', 'h', 'z', etc.
+            while (i < fmt.size() && (fmt[i] == 'l' || fmt[i] == 'h' || fmt[i] == 'z' || fmt[i] == 'j' || fmt[i] == 't')) {
                 i++;
             }
 
@@ -157,33 +187,85 @@ std::string VM::formatString(const std::string& fmt, const std::vector<VMValue>&
                 if (spec.find("ll") == std::string::npos) {
                     spec.insert(spec.size() - 1, "ll");
                 }
-                std::snprintf(buf, sizeof(buf), spec.c_str(), static_cast<long long>(arg.asInt()));
+                long long val = static_cast<long long>(arg.asInt());
+                if (hasWidthArg && hasPrecArg) {
+                    std::snprintf(buf, sizeof(buf), spec.c_str(), widthArg, precArg, val);
+                } else if (hasWidthArg) {
+                    std::snprintf(buf, sizeof(buf), spec.c_str(), widthArg, val);
+                } else if (hasPrecArg) {
+                    std::snprintf(buf, sizeof(buf), spec.c_str(), precArg, val);
+                } else {
+                    std::snprintf(buf, sizeof(buf), spec.c_str(), val);
+                }
                 out += buf;
             } else if (conv == 'u' || conv == 'x' || conv == 'X' || conv == 'o') {
                 if (spec.find("ll") == std::string::npos) {
                     spec.insert(spec.size() - 1, "ll");
                 }
-                std::snprintf(buf, sizeof(buf), spec.c_str(), static_cast<unsigned long long>(arg.asInt()));
+                unsigned long long val = static_cast<unsigned long long>(arg.asInt());
+                if (hasWidthArg && hasPrecArg) {
+                    std::snprintf(buf, sizeof(buf), spec.c_str(), widthArg, precArg, val);
+                } else if (hasWidthArg) {
+                    std::snprintf(buf, sizeof(buf), spec.c_str(), widthArg, val);
+                } else if (hasPrecArg) {
+                    std::snprintf(buf, sizeof(buf), spec.c_str(), precArg, val);
+                } else {
+                    std::snprintf(buf, sizeof(buf), spec.c_str(), val);
+                }
                 out += buf;
             } else if (conv == 'f' || conv == 'g' || conv == 'G' || conv == 'e' || conv == 'E') {
-                std::snprintf(buf, sizeof(buf), spec.c_str(), arg.asFloat());
+                double val = arg.asFloat();
+                if (hasWidthArg && hasPrecArg) {
+                    std::snprintf(buf, sizeof(buf), spec.c_str(), widthArg, precArg, val);
+                } else if (hasWidthArg) {
+                    std::snprintf(buf, sizeof(buf), spec.c_str(), widthArg, val);
+                } else if (hasPrecArg) {
+                    std::snprintf(buf, sizeof(buf), spec.c_str(), precArg, val);
+                } else {
+                    std::snprintf(buf, sizeof(buf), spec.c_str(), val);
+                }
                 out += buf;
             } else if (conv == 's') {
                 const char* s = static_cast<const char*>(arg.asPtr());
                 if (!s) s = "(null)";
-                if (spec == "%s") {
-                    out += s;
+                if (hasWidthArg && hasPrecArg) {
+                    std::vector<char> dyn(std::abs(widthArg) + std::abs(precArg) + 64);
+                    std::snprintf(dyn.data(), dyn.size(), spec.c_str(), widthArg, precArg, s);
+                    out += dyn.data();
+                } else if (hasWidthArg) {
+                    std::vector<char> dyn(std::abs(widthArg) + std::strlen(s) + 64);
+                    std::snprintf(dyn.data(), dyn.size(), spec.c_str(), widthArg, s);
+                    out += dyn.data();
+                } else if (hasPrecArg) {
+                    if (precArg < 0) precArg = 0;
+                    size_t slen = 0;
+                    while (slen < static_cast<size_t>(precArg) && s[slen] != '\0') slen++;
+                    out.append(s, slen);
                 } else {
-                    size_t sLen = std::strlen(s);
-                    std::vector<char> dynBuf(sLen + 64);
-                    std::snprintf(dynBuf.data(), dynBuf.size(), spec.c_str(), s);
-                    out += dynBuf.data();
+                    if (spec == "%s") {
+                        out += s;
+                    } else {
+                        size_t sLen = std::strlen(s);
+                        std::vector<char> dynBuf(sLen + 64);
+                        std::snprintf(dynBuf.data(), dynBuf.size(), spec.c_str(), s);
+                        out += dynBuf.data();
+                    }
                 }
             } else if (conv == 'c') {
-                std::snprintf(buf, sizeof(buf), spec.c_str(), static_cast<int>(arg.asInt()));
+                int val = static_cast<int>(arg.asInt());
+                if (hasWidthArg) {
+                    std::snprintf(buf, sizeof(buf), spec.c_str(), widthArg, val);
+                } else {
+                    std::snprintf(buf, sizeof(buf), spec.c_str(), val);
+                }
                 out += buf;
             } else if (conv == 'p') {
-                std::snprintf(buf, sizeof(buf), spec.c_str(), arg.asPtr());
+                void* val = arg.asPtr();
+                if (hasWidthArg) {
+                    std::snprintf(buf, sizeof(buf), spec.c_str(), widthArg, val);
+                } else {
+                    std::snprintf(buf, sizeof(buf), spec.c_str(), val);
+                }
                 out += buf;
             } else {
                 out += spec;
@@ -565,7 +647,7 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                     void* base = getOperand(inst->operands[0], frame).asPtr();
                     int64_t idx = getOperand(inst->operands[1], frame).asInt();
                     TypePtr elemType = inst->type->pointee ? inst->type->pointee : (inst->type->elemType ? inst->type->elemType : inst->type);
-                    size_t elemSize = getTypeSize(elemType);
+                    size_t elemSize = getTypeSize(elemType, currentModule);
                     if (elemSize == 0 && elemType->isStruct() && currentModule) {
                         elemSize = currentModule->getStructSize(elemType->nominalName());
                     }
@@ -580,6 +662,10 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                     void* base = getOperand(inst->operands[1], frame).asPtr();
                     std::string fieldName = inst->operands[2].text;
                     size_t off = currentModule ? currentModule->getFieldOffset(structName, fieldName) : 0;
+                    if (off == 0 && (structName.empty() || structName == "slice")) {
+                        if (fieldName == "len") off = 8;
+                        else if (fieldName == "ptr" || fieldName == "data") off = 0;
+                    }
                     void* res = static_cast<uint8_t*>(base) + off;
                     frame.registers[inst->resultVar] = VMValue(res);
                     break;
