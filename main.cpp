@@ -29,6 +29,7 @@
 #include "codegen/codegen.h"
 #include "eir/eir_builder.h"
 #include "eir/eir_vm.h"
+#include "eir/eir_asm.h"
 #include "main_support.h"
 #include "repl.h"
 #include "pkg.h"
@@ -76,6 +77,10 @@ static llvm::cl::opt<bool> TestEir("test-eir",
 
 static llvm::cl::opt<bool> RunEir("run-eir",
                                   llvm::cl::desc("Execute program using the EIR Virtual Machine"),
+    llvm::cl::cat(EskiuCat));
+
+static llvm::cl::opt<bool> EmitAsm("emit-asm",
+                                   llvm::cl::desc("Emit native assembly (.s) via EIR without LLVM"),
     llvm::cl::cat(EskiuCat));
 
 static llvm::cl::opt<bool> TestTypeChecker("test-typechecker",
@@ -471,6 +476,49 @@ static int runEir(const std::string& filename) {
     }
 }
 
+// Emit native assembly (.s) directly from EIR without LLVM
+static int emitAsm(const std::string& filename) {
+    auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding);
+    if (!program) return 1;
+
+    try {
+        TypeChecker tc; tc.targetTriple = std::string(TargetTriple); tc.warnDeprecated = !WnoDeprecated;
+        tc.sourceFile = filename; applyWarningFlags(tc);
+        if (!tc.check(program.get())) return 1;
+
+        AsyncTransform(&tc.expressionTypeMap(), &tc.instanceArgsMap(), &tc.instanceExprTypeMap()).run(program.get());
+        TypeChecker postTc; postTc.targetTriple = std::string(TargetTriple); postTc.warnDeprecated = false; postTc.warnDefaults = false; postTc.sourceFile = filename;
+        if (!postTc.check(program.get())) return 1;
+
+        eir::EIRBuilder builder;
+        builder.resolvedExprTypes = &postTc.expressionTypeMap();
+        builder.semaInstanceArgs = &postTc.instanceArgsMap();
+        if (!TargetTriple.empty()) builder.targetTriple = std::string(TargetTriple);
+
+        auto eirModule = builder.build(program.get());
+        if (!eirModule) {
+            std::cerr << "EIR generation failed!" << std::endl;
+            return 1;
+        }
+
+        auto emitter = eir::createArm64Emitter(std::string(TargetTriple));
+        if (OutputFilename.empty() || OutputFilename == "-") {
+            emitter->emitModule(eirModule.get(), std::cout);
+        } else {
+            std::ofstream out(OutputFilename);
+            if (!out) {
+                std::cerr << "error: cannot open output file '" << OutputFilename << "'\n";
+                return 1;
+            }
+            emitter->emitModule(eirModule.get(), out);
+        }
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
 // Test parser: tokenize, parse, and print AST
 static int testParser(const std::string& filename) {
     auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding);
@@ -842,6 +890,11 @@ static int compilerMain(int argc, char** argv) {
     // Handle --run-eir
     if (RunEir) {
         return runEir(InputFilename);
+    }
+
+    // Handle --emit-asm
+    if (EmitAsm) {
+        return emitAsm(InputFilename);
     }
 
     // Full compilation pipeline — parse every input file and merge their

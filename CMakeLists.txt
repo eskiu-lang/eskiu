@@ -52,6 +52,7 @@ set(SOURCES
     eir/eir.cpp
     eir/eir_builder.cpp
     eir/eir_vm.cpp
+    eir/eir_asm_arm64.cpp
 )
 
 add_executable(eskiuc ${SOURCES})
