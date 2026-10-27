@@ -330,7 +330,7 @@ void EIRBuilder::emitArrayInitInto(Operand dest, ArrayLitExpr* lit, TypePtr arrT
                 emit(Instruction{Opcode::Store, "", Type::getVoid(), {subVal, Operand::var(elemPtr, Type::getPtr(arrTy->elemType))}});
             }
         } else {
-            Operand val = evalForType(lit->elements[i], arrTy->elemType ? arrTy->elemType->nominalName() : "");
+            Operand val = evalForType(lit->elements[i], arrTy->elemType);
             emit(Instruction{Opcode::Store, "", Type::getVoid(), {val, Operand::var(elemPtr, Type::getPtr(arrTy->elemType))}});
         }
     }
@@ -520,6 +520,28 @@ void EIRBuilder::storeBitfield(MemberExpr* m, Operand val, bool isVolatile) {
     emit(st);
 }
 
+static bool isConstIntExpr(const ExprPtr& expr, const std::unordered_map<std::string, int64_t>& enumConstants) {
+    if (!expr) return false;
+    if (auto lit = dynamic_cast<LiteralExpr*>(expr.get())) {
+        return lit->kind == LiteralExpr::Kind::INT ||
+               lit->kind == LiteralExpr::Kind::CHAR ||
+               lit->kind == LiteralExpr::Kind::BOOL;
+    }
+    if (auto id = dynamic_cast<IdentExpr*>(expr.get())) {
+        return enumConstants.count(id->name) > 0;
+    }
+    if (auto u = dynamic_cast<UnaryExpr*>(expr.get())) {
+        return (u->op == "-" || u->op == "~" || u->op == "!") && isConstIntExpr(u->operand, enumConstants);
+    }
+    if (auto b = dynamic_cast<BinaryExpr*>(expr.get())) {
+        return isConstIntExpr(b->left, enumConstants) && isConstIntExpr(b->right, enumConstants);
+    }
+    if (auto c = dynamic_cast<CastExpr*>(expr.get())) {
+        return isConstIntExpr(c->expr, enumConstants);
+    }
+    return false;
+}
+
 std::unique_ptr<Module> EIRBuilder::build(Program* program) {
     volatileVars.clear();
     cleanupScopes.clear();
@@ -657,11 +679,25 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
                     }
                 }
                 if (initOp.kind != OperandKind::GlobalRef) {
-                    int64_t cv = foldConstInt(v->initializer);
-                    if (v->isConst) {
-                        enumConstants[v->name] = cv;
+                    if (type && type->isInt()) {
+                        if (isConstIntExpr(v->initializer, enumConstants)) {
+                            int64_t cv = foldConstInt(v->initializer);
+                            if (v->isConst) {
+                                enumConstants[v->name] = cv;
+                            }
+                            initOp = Operand::constInt(cv, type);
+                        } else {
+                            initOp = Operand::constInt(0, type);
+                        }
+                    } else if (type && type->isFloat()) {
+                        double fv = 0.0;
+                        if (auto lit = dynamic_cast<LiteralExpr*>(v->initializer.get())) {
+                            try { fv = std::stod(lit->value); } catch (...) {}
+                        }
+                        initOp = Operand::constFloat(fv, type);
+                    } else {
+                        initOp = Operand::constNull();
                     }
-                    initOp = Operand::constInt(cv, type);
                 }
             }
             module->globals.push_back(GlobalVar{v->name, type, initOp, v->isConst});
@@ -1481,6 +1517,18 @@ void EIRBuilder::visit(IdentExpr* node) {
         return;
     }
 
+    Operand* slot = lookupVar(node->name);
+    if (slot) {
+        TypePtr ty = lookupVarType(node->name);
+        std::string dst = newVar();
+        Instruction ld{Opcode::Load, dst, ty, {*slot}};
+        ld.isVolatile = volatileVars.count(node->name) > 0;
+        emit(ld);
+        lastValue = Operand::var(dst, ty);
+        lastLValue = *slot;
+        return;
+    }
+
     if (module && module->getFunction(node->name)) {
         TypePtr ty = getExprEirType(node);
         if (ty && ty->isClosure()) {
@@ -1495,28 +1543,17 @@ void EIRBuilder::visit(IdentExpr* node) {
         return;
     }
 
-    Operand* slot = lookupVar(node->name);
-    if (!slot) {
-        lastLValue = Operand::global(node->name, Type::getPtr());
-        TypePtr ty = getExprEirType(node);
-        if (ty && !ty->isArray() && !ty->isFunction()) {
-            std::string dst = newVar();
-            Instruction ld{Opcode::Load, dst, ty, {lastLValue}};
-            ld.isVolatile = volatileVars.count(node->name) > 0;
-            emit(ld);
-            lastValue = Operand::var(dst, ty);
-        } else {
-            lastValue = lastLValue;
-        }
-        return;
+    lastLValue = Operand::global(node->name, Type::getPtr());
+    TypePtr ty = getExprEirType(node);
+    if (ty && !ty->isArray() && !ty->isFunction()) {
+        std::string dst = newVar();
+        Instruction ld{Opcode::Load, dst, ty, {lastLValue}};
+        ld.isVolatile = volatileVars.count(node->name) > 0;
+        emit(ld);
+        lastValue = Operand::var(dst, ty);
+    } else {
+        lastValue = lastLValue;
     }
-    TypePtr ty = lookupVarType(node->name);
-    std::string dst = newVar();
-    Instruction ld{Opcode::Load, dst, ty, {*slot}};
-    ld.isVolatile = volatileVars.count(node->name) > 0;
-    emit(ld);
-    lastValue = Operand::var(dst, ty);
-    lastLValue = *slot;
 }
 
 void EIRBuilder::visit(LiteralExpr* node) {
