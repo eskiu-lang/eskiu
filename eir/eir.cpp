@@ -122,9 +122,12 @@ TypePtr Type::getInterface(const std::string& name) {
     return t;
 }
 
-TypePtr Type::getClosure() {
-    static auto t = std::make_shared<Type>(Type{TypeKind::Closure, "closure", 0, false, nullptr, nullptr, 0, {}, nullptr});
-    return t;
+TypePtr Type::getClosure(TypePtr ret) {
+    if (!ret) {
+        static auto t = std::make_shared<Type>(Type{TypeKind::Closure, "closure", 0, false, nullptr, nullptr, 0, {}, nullptr});
+        return t;
+    }
+    return std::make_shared<Type>(Type{TypeKind::Closure, "closure", 0, false, nullptr, nullptr, 0, {}, ret});
 }
 
 TypePtr Type::getFunction(TypePtr ret, const std::vector<TypePtr>& params) {

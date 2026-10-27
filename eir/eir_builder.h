@@ -128,8 +128,10 @@ private:
     std::unordered_map<std::string, InterfaceInfo> interfaces;
     Operand boxAsInterface(const std::string& ifaceName, const std::string& structName, const Operand& structPtr);
     Operand evalForType(const ExprPtr& e, const std::string& targetType);
+    Operand evalForType(const ExprPtr& e, TypePtr targetType);
 
     // Template tracking & instantiation
+    std::map<std::string, std::string> typeAliases;
     std::map<std::string, StructDecl*> templateDecls;
     std::map<std::string, FunctionDecl*> funcTemplateDecls;
     std::map<std::string, std::pair<std::string, std::vector<std::string>>> templateInstanceArgs;

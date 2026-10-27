@@ -77,7 +77,7 @@ struct Type {
     static TypePtr getArray(TypePtr elem, uint64_t size);
     static TypePtr getSlice(TypePtr elem);
     static TypePtr getInterface(const std::string& name = "interface");
-    static TypePtr getClosure();
+    static TypePtr getClosure(TypePtr ret = nullptr);
     static TypePtr getFunction(TypePtr ret, const std::vector<TypePtr>& params);
 };
 
