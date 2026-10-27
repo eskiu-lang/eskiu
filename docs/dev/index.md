@@ -45,6 +45,8 @@ Each test mode exits 0 on success and prints a human-readable dump to stdout. A 
 | [`http2-design.md`](http2-design.md) | The HTTP/2 stack: framing, HPACK, streams and flow control, the multiplexed server |
 | [`debugging.md`](debugging.md)      | How each `--test-*` mode works, error message format, common failure patterns                  |
 | [`api.md`](api.md) | C++ public API reference for the lexer, parser, type checker, and codegen modules              |
+| [`eir-spec.md`](eir-spec.md)         | Eskiu Intermediate Representation: opcode set, lowering invariants, and text syntax |
+| [`evm.md`](evm.md)                   | Standalone EIR Virtual Machine interpreter (`--run-eir`), runtime architecture, and FFI |
 | [`../../kernel/README.md`](../../kernel/README.md) | The freestanding bare-metal ARM64 kernel demo (no libc; boots in QEMU), a worked example of `--freestanding` + inline asm |
 
 ---
