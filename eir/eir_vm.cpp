@@ -122,12 +122,13 @@ VMValue VM::getOperand(const Operand& op, StackFrame& frame) {
     return VMValue(0);
 }
 
-void VM::handlePrintf(const std::string& fmt, const std::vector<VMValue>& args) {
+std::string VM::formatString(const std::string& fmt, const std::vector<VMValue>& args) {
+    std::string out;
     size_t argIdx = 0;
     for (size_t i = 0; i < fmt.size(); ++i) {
         if (fmt[i] == '%' && i + 1 < fmt.size()) {
             if (fmt[i + 1] == '%') {
-                std::cout << '%';
+                out += '%';
                 i++;
                 continue;
             }
@@ -143,7 +144,7 @@ void VM::handlePrintf(const std::string& fmt, const std::vector<VMValue>& args) 
             }
 
             if (i >= fmt.size() || argIdx >= args.size()) {
-                std::cout << fmt.substr(start, i - start + 1);
+                out += fmt.substr(start, i - start + 1);
                 continue;
             }
 
@@ -157,33 +158,38 @@ void VM::handlePrintf(const std::string& fmt, const std::vector<VMValue>& args) 
                     spec.insert(spec.size() - 1, "ll");
                 }
                 std::snprintf(buf, sizeof(buf), spec.c_str(), static_cast<long long>(arg.asInt()));
-                std::cout << buf;
+                out += buf;
             } else if (conv == 'u' || conv == 'x' || conv == 'X' || conv == 'o') {
                 if (spec.find("ll") == std::string::npos) {
                     spec.insert(spec.size() - 1, "ll");
                 }
                 std::snprintf(buf, sizeof(buf), spec.c_str(), static_cast<unsigned long long>(arg.asInt()));
-                std::cout << buf;
+                out += buf;
             } else if (conv == 'f' || conv == 'g' || conv == 'G' || conv == 'e' || conv == 'E') {
                 std::snprintf(buf, sizeof(buf), spec.c_str(), arg.asFloat());
-                std::cout << buf;
+                out += buf;
             } else if (conv == 's') {
                 const char* s = static_cast<const char*>(arg.asPtr());
                 std::snprintf(buf, sizeof(buf), spec.c_str(), s ? s : "(null)");
-                std::cout << buf;
+                out += buf;
             } else if (conv == 'c') {
                 std::snprintf(buf, sizeof(buf), spec.c_str(), static_cast<int>(arg.asInt()));
-                std::cout << buf;
+                out += buf;
             } else if (conv == 'p') {
                 std::snprintf(buf, sizeof(buf), spec.c_str(), arg.asPtr());
-                std::cout << buf;
+                out += buf;
             } else {
-                std::cout << spec;
+                out += spec;
             }
         } else {
-            std::cout << fmt[i];
+            out += fmt[i];
         }
     }
+    return out;
+}
+
+void VM::handlePrintf(const std::string& fmt, const std::vector<VMValue>& args) {
+    std::cout << formatString(fmt, args);
     std::cout.flush();
 }
 
@@ -193,6 +199,35 @@ VMValue VM::callExtern(const std::string& name, const std::vector<VMValue>& args
             const char* fmt = static_cast<const char*>(args[0].asPtr());
             std::vector<VMValue> varargs(args.begin() + 1, args.end());
             handlePrintf(fmt ? fmt : "", varargs);
+        }
+        return VMValue(0);
+    }
+    if (name == "sprintf") {
+        if (args.size() >= 2) {
+            char* dest = static_cast<char*>(args[0].asPtr());
+            const char* fmt = static_cast<const char*>(args[1].asPtr());
+            std::vector<VMValue> varargs(args.begin() + 2, args.end());
+            std::string formatted = formatString(fmt ? fmt : "", varargs);
+            if (dest) {
+                std::memcpy(dest, formatted.c_str(), formatted.size() + 1);
+            }
+            return VMValue(static_cast<int64_t>(formatted.size()));
+        }
+        return VMValue(0);
+    }
+    if (name == "snprintf") {
+        if (args.size() >= 3) {
+            char* dest = static_cast<char*>(args[0].asPtr());
+            size_t maxLen = static_cast<size_t>(args[1].asInt());
+            const char* fmt = static_cast<const char*>(args[2].asPtr());
+            std::vector<VMValue> varargs(args.begin() + 3, args.end());
+            std::string formatted = formatString(fmt ? fmt : "", varargs);
+            if (dest && maxLen > 0) {
+                size_t toCopy = std::min(maxLen - 1, formatted.size());
+                std::memcpy(dest, formatted.c_str(), toCopy);
+                dest[toCopy] = '\0';
+            }
+            return VMValue(static_cast<int64_t>(formatted.size()));
         }
         return VMValue(0);
     }

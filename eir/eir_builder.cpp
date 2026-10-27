@@ -2877,7 +2877,7 @@ void EIRBuilder::visit(LambdaExpr* node) {
     Operand envPtr = Operand::constNull();
     if (!node->captures.empty()) {
         std::string envSlot = newVar() + ".env";
-        emit(Instruction{Opcode::Alloca, envSlot, Type::getPtr(), {Operand::constInt(static_cast<int64_t>(totalEnvSize), Type::getI32())}});
+        emit(Instruction{Opcode::Alloca, envSlot, Type::getArray(Type::getU8(), totalEnvSize), {Operand::constInt(static_cast<int64_t>(maxAlign), Type::getI32())}});
         for (size_t c = 0; c < node->captures.size(); ++c) {
             Operand* srcSlot = lookupVar(node->captures[c].first);
             if (srcSlot) {

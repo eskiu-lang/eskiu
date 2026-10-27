@@ -58,18 +58,31 @@ struct VMValue {
 struct StackFrame {
     Function* function = nullptr;
     std::unordered_map<std::string, VMValue> registers;
-    std::vector<uint8_t> stackMemory;
-    size_t stackOffset = 0;
+    std::vector<std::unique_ptr<uint8_t[]>> chunks;
+    size_t currentChunkOffset = 0;
+    static constexpr size_t CHUNK_SIZE = 64 * 1024;
 
     void* allocStack(size_t bytes, size_t align = 8) {
         if (align < 1) align = 1;
-        size_t aligned = (stackOffset + align - 1) & ~(align - 1);
-        stackOffset = aligned + bytes;
-        if (stackOffset > stackMemory.size()) {
-            stackMemory.resize(std::max(stackMemory.size() * 2, stackOffset + 4096));
+        if (chunks.empty()) {
+            chunks.push_back(std::make_unique<uint8_t[]>(CHUNK_SIZE));
+            currentChunkOffset = 0;
         }
-        std::memset(&stackMemory[aligned], 0, bytes);
-        return &stackMemory[aligned];
+
+        size_t aligned = (currentChunkOffset + align - 1) & ~(align - 1);
+        if (aligned + bytes <= CHUNK_SIZE) {
+            currentChunkOffset = aligned + bytes;
+            void* ptr = &chunks.back()[aligned];
+            std::memset(ptr, 0, bytes);
+            return ptr;
+        }
+
+        size_t allocSize = std::max(CHUNK_SIZE, bytes + align);
+        chunks.push_back(std::make_unique<uint8_t[]>(allocSize));
+        currentChunkOffset = bytes;
+        void* ptr = &chunks.back()[0];
+        std::memset(ptr, 0, bytes);
+        return ptr;
     }
 };
 
@@ -100,6 +113,7 @@ private:
 
     // External C function calls
     VMValue callExtern(const std::string& name, const std::vector<VMValue>& args, TypePtr retTy);
+    std::string formatString(const std::string& format, const std::vector<VMValue>& args);
     void handlePrintf(const std::string& format, const std::vector<VMValue>& args);
 
     // Buffer for returning aggregates / fat pointers across stack frames
