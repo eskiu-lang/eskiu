@@ -573,7 +573,7 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                 case Opcode::FDiv: {
                     double a = getOperand(inst->operands[0], frame).asFloat();
                     double b = getOperand(inst->operands[1], frame).asFloat();
-                    frame.registers[inst->resultVar] = VMValue(b != 0.0 ? a / b : 0.0);
+                    frame.registers[inst->resultVar] = VMValue(a / b);
                     break;
                 }
                 case Opcode::Neg: {
