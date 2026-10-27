@@ -92,12 +92,16 @@ TypePtr EIRBuilder::toEirType(const std::string& typeStr) {
             }
             return Type::getArray(t.elem ? toEirType(t.elem->str()) : Type::getI32(), n);
         }
+        case ty::Type::Kind::Template:
         case ty::Type::Kind::Named:
         case ty::Type::Kind::Struct: {
             std::string sname = t.nominalName();
             if (sname.empty()) sname = t.name;
             if (plainEnums.count(sname)) {
                 return Type::getI32();
+            }
+            if (interfaces.count(sname)) {
+                return Type::getInterface(sname);
             }
             if (module) {
                 auto it = module->structLayouts.find(sname);
@@ -109,8 +113,11 @@ TypePtr EIRBuilder::toEirType(const std::string& typeStr) {
             }
             return Type::getStruct(sname, {});
         }
-        case ty::Type::Kind::Interface:
-            return Type::getInterface();
+        case ty::Type::Kind::Interface: {
+            std::string sname = t.nominalName();
+            if (sname.empty()) sname = t.name;
+            return Type::getInterface(sname);
+        }
         case ty::Type::Kind::Fn:
             return Type::getClosure();
         default:
@@ -205,7 +212,7 @@ void EIRBuilder::emitArrayInitInto(Operand dest, ArrayLitExpr* lit, TypePtr arrT
                 emit(Instruction{Opcode::Store, "", Type::getVoid(), {subVal, Operand::var(elemPtr, Type::getPtr(arrTy->elemType))}});
             }
         } else {
-            Operand val = evaluateExpr(lit->elements[i]);
+            Operand val = evalForType(lit->elements[i], arrTy->elemType ? arrTy->elemType->nominalName() : "");
             emit(Instruction{Opcode::Store, "", Type::getVoid(), {val, Operand::var(elemPtr, Type::getPtr(arrTy->elemType))}});
         }
     }
@@ -407,7 +414,14 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
 
     // Phase 1: Structs, Enums, and Interfaces
     for (auto& decl : program->declarations) {
-        if (auto e = dynamic_cast<EnumDecl*>(decl.get())) {
+        if (auto iface = dynamic_cast<InterfaceDecl*>(decl.get())) {
+            InterfaceInfo info;
+            info.name = iface->name;
+            for (const auto& m : iface->methods) {
+                info.methodNames.push_back(m.name);
+            }
+            interfaces[iface->name] = info;
+        } else if (auto e = dynamic_cast<EnumDecl*>(decl.get())) {
             if (e->isADT()) {
                 adtEnums[e->name] = e;
                 size_t maxPayloadSize = 0;
@@ -430,6 +444,7 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
                     if (pOffset > maxPayloadSize) maxPayloadSize = pOffset;
                     adtVariants[vname] = {e->name, static_cast<int>(i), payloadTypes};
                 }
+                if (maxPayloadSize < 24) maxPayloadSize = 24;
                 StructInfo sinfo;
                 sinfo.name = e->name;
                 sinfo.fields.push_back({"tag", Type::getI32(), 0, 4});
@@ -540,8 +555,66 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
         }
     }
 
+    bool hasGlobalInits = false;
+    for (const auto& decl : program->declarations) {
+        if (auto v = dynamic_cast<VarDecl*>(decl.get())) {
+            if (v->initializer) {
+                hasGlobalInits = true;
+                break;
+            }
+        }
+    }
+    if (hasGlobalInits) {
+        module->createFunction("__eir_global_init", Type::getVoid(), {});
+        module->globals.push_back(GlobalVar{"__eir_inited", Type::getI1(), Operand::constInt(0, Type::getI1()), false});
+    }
+
     // Phase 3: Function bodies
     program->accept(this);
+
+    // Phase 4: Emit global initializers
+    if (hasGlobalInits) {
+        Function* initFn = module->getFunction("__eir_global_init");
+        currentFunction = initFn;
+        nextVarId = 0;
+        nextBlockId = 0;
+        BasicBlock* entryBB = initFn->createBlock("entry");
+        setBlock(entryBB);
+
+        std::string flagVal = newVar();
+        emit(Instruction{Opcode::Load, flagVal, Type::getI1(), {Operand::global("__eir_inited", Type::getPtr(Type::getI1()))}});
+        BasicBlock* doInitBB = initFn->createBlock("do_init");
+        BasicBlock* exitBB = initFn->createBlock("already_inited");
+        emit(Instruction{Opcode::BrCond, "", Type::getVoid(), {Operand::var(flagVal, Type::getI1()), Operand::block(exitBB->name), Operand::block(doInitBB->name)}});
+
+        setBlock(doInitBB);
+        emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::constInt(1, Type::getI1()), Operand::global("__eir_inited", Type::getPtr(Type::getI1()))}});
+
+        for (const auto& decl : program->declarations) {
+            if (auto v = dynamic_cast<VarDecl*>(decl.get())) {
+                if (v->initializer) {
+                    TypePtr type = toEirType(v->type);
+                    Operand target = Operand::global(v->name, Type::getPtr(type));
+                    if (auto arrLit = dynamic_cast<ArrayLitExpr*>(v->initializer.get())) {
+                        emitArrayInitInto(target, arrLit, type);
+                    } else {
+                        Operand val = evalForType(v->initializer, v->type);
+                        Instruction st{Opcode::Store, "", Type::getVoid(),
+                            {(type->isStruct() || type->isArray()) ? Operand::var(val.str(), type) : val,
+                             target}};
+                        st.isVolatile = v->isVolatile;
+                        emit(st);
+                    }
+                }
+            }
+        }
+        emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(exitBB->name)}});
+
+        setBlock(exitBB);
+        emit(Instruction{Opcode::Ret, "", Type::getVoid(), {}});
+        currentFunction = nullptr;
+        currentBlock = nullptr;
+    }
 
     return std::move(module);
 }
@@ -551,6 +624,13 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
 // ============================================================================
 
 void EIRBuilder::visit(Program* node) {
+    for (auto& decl : node->declarations) {
+        if (auto iface = dynamic_cast<InterfaceDecl*>(decl.get())) {
+            iface->accept(this);
+        } else if (auto en = dynamic_cast<EnumDecl*>(decl.get())) {
+            en->accept(this);
+        }
+    }
     for (auto& decl : node->declarations) {
         decl->accept(this);
     }
@@ -592,6 +672,12 @@ void EIRBuilder::visit(FunctionDecl* node) {
         declareVar(p.first, Operand::var(slotName, Type::getPtr(p.second)), p.second);
     }
 
+    if (node->name == "main") {
+        if (module->getFunction("__eir_global_init")) {
+            emit(Instruction{Opcode::Call, "", Type::getVoid(), {Operand::global("__eir_global_init", Type::getVoid())}});
+        }
+    }
+
     node->body->accept(this);
 
     // Ensure terminator and run any remaining cleanups
@@ -620,6 +706,44 @@ void EIRBuilder::visit(VarDecl* node) {
         volatileVars.insert(node->name);
     }
     TypePtr type = toEirType(node->type);
+
+    if (node->isStatic) {
+        std::string gname = (currentFunction ? currentFunction->name : "global") + "." + node->name;
+        std::string guardName = gname + ".inited";
+        bool found = false;
+        for (const auto& g : module->globals) {
+            if (g.name == gname) { found = true; break; }
+        }
+        if (!found) {
+            module->globals.push_back(GlobalVar{gname, type, Operand::constInt(0, type), false});
+            module->globals.push_back(GlobalVar{guardName, Type::getI1(), Operand::constInt(0, Type::getI1()), false});
+        }
+        declareVar(node->name, Operand::global(gname, Type::getPtr(type)), type);
+
+        if (node->initializer) {
+            std::string guardVal = newVar();
+            emit(Instruction{Opcode::Load, guardVal, Type::getI1(), {Operand::global(guardName, Type::getPtr(Type::getI1()))}});
+            BasicBlock* initBB = createBlock("static.init");
+            BasicBlock* contBB = createBlock("static.cont");
+            emit(Instruction{Opcode::BrCond, "", Type::getVoid(), {Operand::var(guardVal, Type::getI1()), Operand::block(contBB->name), Operand::block(initBB->name)}});
+
+            setBlock(initBB);
+            emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::constInt(1, Type::getI1()), Operand::global(guardName, Type::getPtr(Type::getI1()))}});
+            if (auto arrLit = dynamic_cast<ArrayLitExpr*>(node->initializer.get())) {
+                emitArrayInitInto(Operand::global(gname, Type::getPtr(type)), arrLit, type);
+            } else {
+                Operand val = evalForType(node->initializer, node->type);
+                Instruction st{Opcode::Store, "", Type::getVoid(),
+                    {(type->isStruct() || type->isArray()) ? Operand::var(val.str(), type) : val,
+                     Operand::global(gname, Type::getPtr(type))}};
+                emit(st);
+            }
+            emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(contBB->name)}});
+            setBlock(contBB);
+        }
+        return;
+    }
+
     size_t al = getTypeAlign(type);
     if (al < 1) al = 1;
     std::string slotName = "%" + node->name + ".addr";
@@ -630,7 +754,7 @@ void EIRBuilder::visit(VarDecl* node) {
         if (auto arrLit = dynamic_cast<ArrayLitExpr*>(node->initializer.get())) {
             emitArrayInitInto(Operand::var(slotName, Type::getPtr(type)), arrLit, type);
         } else {
-            Operand val = evaluateExpr(node->initializer);
+            Operand val = evalForType(node->initializer, node->type);
             Instruction st{Opcode::Store, "", Type::getVoid(),
                 {(type->isStruct() || type->isArray()) ? Operand::var(val.str(), type) : val,
                  Operand::var(slotName, Type::getPtr(type))}};
@@ -660,7 +784,8 @@ void EIRBuilder::visit(BlockStmt* node) {
 
 void EIRBuilder::visit(ReturnStmt* node) {
     if (node->value) {
-        Operand val = evaluateExpr(node->value);
+        std::string retTyName = currentFunction && currentFunction->returnType ? currentFunction->returnType->nominalName() : "";
+        Operand val = evalForType(node->value, retTyName);
         runCleanupsToDepth(0, false);
         if (currentBlock && !currentBlock->hasTerminator()) {
             emit(Instruction{Opcode::Ret, "", val.type, {val}});
@@ -835,7 +960,9 @@ void EIRBuilder::visit(BinaryExpr* node) {
                 }
             }
         }
-        Operand rhs = evaluateExpr(node->right);
+        TypePtr lhsTy = getExprEirType(node->left);
+        std::string targetTy = lhsTy ? lhsTy->nominalName() : "";
+        Operand rhs = evalForType(node->right, targetTy);
         Operand lhsAddr = evaluateLValue(node->left);
         Instruction st{Opcode::Store, "", Type::getVoid(), {rhs, lhsAddr}};
         st.isVolatile = volatileRooted(node->left.get());
@@ -1120,6 +1247,20 @@ void EIRBuilder::visit(IdentExpr* node) {
         return;
     }
 
+    if (module && module->getFunction(node->name)) {
+        TypePtr ty = getExprEirType(node);
+        if (ty && ty->isClosure()) {
+            std::string dst = newVar() + ".fn_closure";
+            emit(Instruction{Opcode::MakeClosure, dst, ty, {Operand::global(node->name, Type::getPtr()), Operand::constNull()}});
+            lastValue = Operand::var(dst, ty);
+            lastLValue = lastValue;
+            return;
+        }
+        lastLValue = Operand::global(node->name, Type::getPtr());
+        lastValue = lastLValue;
+        return;
+    }
+
     Operand* slot = lookupVar(node->name);
     if (!slot) {
         lastLValue = Operand::global(node->name, Type::getPtr());
@@ -1200,10 +1341,23 @@ void EIRBuilder::visit(CallExpr* node) {
     }
 
     if (isClosureCall) {
+        std::vector<std::string> paramNominals;
+        if (resolvedExprTypes) {
+            auto it = resolvedExprTypes->find(node->callee.get());
+            if (it != resolvedExprTypes->end()) {
+                auto parsed = ty::Type::parse(it->second);
+                if (parsed.kind == ty::Type::Kind::Fn) {
+                    for (const auto& p : parsed.params) {
+                        paramNominals.push_back(p.nominalName());
+                    }
+                }
+            }
+        }
         std::vector<Operand> args;
         args.push_back(closureOp);
-        for (const auto& arg : node->args) {
-            args.push_back(evaluateExpr(arg));
+        for (size_t i = 0; i < node->args.size(); ++i) {
+            std::string pName = (i < paramNominals.size()) ? paramNominals[i] : "";
+            args.push_back(evalForType(node->args[i], pName));
         }
         TypePtr retTy = getExprEirType(node);
         std::string dst = retTy->isVoid() ? "" : newVar();
@@ -1235,12 +1389,13 @@ void EIRBuilder::visit(CallExpr* node) {
                 emit(Instruction{Opcode::OffsetPtr, payPtr, Type::getPtr(pt), {
                     Operand::var(slot, Type::getPtr()), Operand::constInt(static_cast<int64_t>(payOffset), Type::getI64())
                 }});
-                Operand argVal = evaluateExpr(node->args[p]);
+                std::string targetNominal = pt ? pt->nominalName() : "";
+                Operand argVal = evalForType(node->args[p], targetNominal);
                 emit(Instruction{Opcode::Store, "", Type::getVoid(), {argVal, Operand::var(payPtr, Type::getPtr(pt))}});
                 payOffset += getTypeSize(pt);
             }
             lastLValue = Operand::var(slot, Type::getPtr(enumTy));
-            lastValue = lastLValue;
+            lastValue = Operand::var(slot, enumTy);
             return;
         }
     }
@@ -1252,15 +1407,21 @@ void EIRBuilder::visit(CallExpr* node) {
     if (auto id = dynamic_cast<IdentExpr*>(node->callee.get())) {
         fnName = id->name;
         args.push_back(Operand::global(fnName, Type::getPtr()));
-        for (const auto& arg : node->args) {
-            args.push_back(evaluateExpr(arg));
+        Function* targetFn = module ? module->getFunction(fnName) : nullptr;
+        for (size_t i = 0; i < node->args.size(); ++i) {
+            std::string paramType = (targetFn && i < targetFn->params.size()) ? targetFn->params[i].second->nominalName() : "";
+            args.push_back(evalForType(node->args[i], paramType));
         }
     } else if (auto mem = dynamic_cast<MemberExpr*>(node->callee.get())) {
         std::string baseTypeName;
         TypePtr baseTy = getExprEirType(mem->base);
-        if (baseTy && baseTy->isStruct()) {
+        if (baseTy && baseTy->isInterface()) {
+            baseTypeName = baseTy->nominalName();
+        } else if (baseTy && baseTy->isStruct()) {
             baseTypeName = baseTy->nominalName();
         } else if (baseTy && baseTy->isPointer() && baseTy->elemType && baseTy->elemType->isStruct()) {
+            baseTypeName = baseTy->elemType->nominalName();
+        } else if (baseTy && baseTy->isPointer() && baseTy->elemType && baseTy->elemType->isInterface()) {
             baseTypeName = baseTy->elemType->nominalName();
         } else if (resolvedExprTypes) {
             auto it = resolvedExprTypes->find(mem->base.get());
@@ -1268,6 +1429,48 @@ void EIRBuilder::visit(CallExpr* node) {
                 baseTypeName = ty::Type::parse(tyq::strip(it->second)).nominalName();
             }
         }
+
+        if (interfaces.count(baseTypeName)) {
+            // Dynamic dispatch through interface vtable!
+            Operand fat = evaluateExpr(mem->base);
+            if (baseTy && baseTy->isPointer()) {
+                std::string loadedFat = newVar();
+                emit(Instruction{Opcode::Load, loadedFat, Type::getInterface(baseTypeName), {fat}});
+                fat = Operand::var(loadedFat, Type::getInterface(baseTypeName));
+            }
+            std::string dataVar = newVar() + ".data";
+            std::string vtVar = newVar() + ".vt";
+            emit(Instruction{Opcode::ExtractFat, dataVar, Type::getPtr(), {fat, Operand::constInt(0, Type::getI32())}});
+            emit(Instruction{Opcode::ExtractFat, vtVar, Type::getPtr(), {fat, Operand::constInt(1, Type::getI32())}});
+
+            auto& iface = interfaces[baseTypeName];
+            int methodIdx = 0;
+            for (size_t m = 0; m < iface.methodNames.size(); ++m) {
+                if (iface.methodNames[m] == mem->member) {
+                    methodIdx = static_cast<int>(m);
+                    break;
+                }
+            }
+
+            std::string fnPtrSlot = newVar() + ".fn_ptr_slot";
+            emit(Instruction{Opcode::Gep, fnPtrSlot, Type::getPtr(), {Operand::var(vtVar, Type::getPtr()), Operand::constInt(methodIdx, Type::getI32())}});
+            std::string fnPtr = newVar() + ".fn_ptr";
+            emit(Instruction{Opcode::Load, fnPtr, Type::getPtr(), {Operand::var(fnPtrSlot, Type::getPtr())}});
+
+            std::vector<Operand> callArgs;
+            callArgs.push_back(Operand::var(fnPtr, Type::getPtr()));
+            callArgs.push_back(Operand::var(dataVar, Type::getPtr()));
+            for (const auto& arg : node->args) {
+                callArgs.push_back(evaluateExpr(arg));
+            }
+
+            TypePtr retTy = getExprEirType(node);
+            std::string dst = retTy->isVoid() ? "" : newVar();
+            emit(Instruction{Opcode::CallIndirect, dst, retTy, callArgs});
+            lastValue = dst.empty() ? Operand::var("", Type::getVoid()) : Operand::var(dst, retTy);
+            return;
+        }
+
         fnName = baseTypeName + "_" + mem->member;
         args.push_back(Operand::global(fnName, Type::getPtr()));
 
@@ -1325,23 +1528,31 @@ void EIRBuilder::visit(CastExpr* node) {
 
 void EIRBuilder::visit(TernaryExpr* node) {
     Operand cond = evaluateExpr(node->condition);
+    if (cond.type->kind != TypeKind::Int || cond.type->bitWidth != 1) {
+        std::string cmpDst = newVar();
+        emit(Instruction{Opcode::ICmp, cmpDst, Type::getI1(), {cond, Operand::constInt(0, cond.type)}, ICmpCond::Ne});
+        cond = Operand::var(cmpDst, Type::getI1());
+    }
+
     BasicBlock* thenBB = createBlock("ternary.then");
     BasicBlock* elseBB = createBlock("ternary.else");
     BasicBlock* mergeBB = createBlock("ternary.merge");
 
     TypePtr resTy = getExprEirType(node);
     std::string resultSlot = newVar() + ".ternary";
-    emit(Instruction{Opcode::Alloca, resultSlot, resTy, {Operand::constInt(resTy->bitWidth <= 32 ? 4 : 8, Type::getI32())}});
+    size_t al = (resTy->bitWidth <= 32 && !resTy->isInterface() && !resTy->isClosure() && !resTy->isSlice() && !resTy->isStruct()) ? 4 : 8;
+    emit(Instruction{Opcode::Alloca, resultSlot, resTy, {Operand::constInt(al, Type::getI32())}});
 
     emit(Instruction{Opcode::BrCond, "", Type::getVoid(), {cond, Operand::block(thenBB->name), Operand::block(elseBB->name)}});
 
+    std::string targetNominal = resTy ? resTy->nominalName() : "";
     setBlock(thenBB);
-    Operand trueVal = evaluateExpr(node->thenExpr);
+    Operand trueVal = evalForType(node->thenExpr, targetNominal);
     emit(Instruction{Opcode::Store, "", Type::getVoid(), {trueVal, Operand::var(resultSlot, Type::getPtr(resTy))}});
     emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(mergeBB->name)}});
 
     setBlock(elseBB);
-    Operand falseVal = evaluateExpr(node->elseExpr);
+    Operand falseVal = evalForType(node->elseExpr, targetNominal);
     emit(Instruction{Opcode::Store, "", Type::getVoid(), {falseVal, Operand::var(resultSlot, Type::getPtr(resTy))}});
     emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(mergeBB->name)}});
 
@@ -1446,7 +1657,80 @@ void EIRBuilder::visit(StructDecl* node) {
 }
 void EIRBuilder::visit(ExternDecl*) {}
 void EIRBuilder::visit(IntrinsicDecl*) {}
-void EIRBuilder::visit(InterfaceDecl*) {}
+
+Operand EIRBuilder::boxAsInterface(const std::string& ifaceName, const std::string& structName, const Operand& structPtr) {
+    auto ifIt = interfaces.find(ifaceName);
+    if (ifIt == interfaces.end()) return structPtr;
+
+    std::string vtGlobName = ifaceName + "_vtable_" + structName;
+    if (module) {
+        bool found = false;
+        for (const auto& g : module->globals) {
+            if (g.name == vtGlobName) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            GlobalVar g;
+            g.name = vtGlobName;
+            g.type = Type::getArray(Type::getPtr(), ifIt->second.methodNames.size());
+            for (const auto& mname : ifIt->second.methodNames) {
+                std::string mangled = structName + "_" + mname;
+                g.elements.push_back(Operand::global(mangled, Type::getPtr()));
+            }
+            module->globals.push_back(g);
+        }
+    }
+
+    std::string dst = newVar() + ".iface";
+    emit(Instruction{Opcode::MakeInterface, dst, Type::getInterface(ifaceName), {structPtr, Operand::global(vtGlobName, Type::getPtr())}});
+    return Operand::var(dst, Type::getInterface(ifaceName));
+}
+
+Operand EIRBuilder::evalForType(const ExprPtr& e, const std::string& targetType) {
+    if (!e) return Operand::constNull();
+    if (targetType.empty()) return evaluateExpr(e);
+    std::string t = targetType;
+    if (t.rfind("interface:", 0) == 0) t = t.substr(10);
+    auto ifIt = interfaces.find(t);
+    if (ifIt == interfaces.end()) return evaluateExpr(e);
+
+    std::string iface = t;
+    TypePtr srcTy = getExprEirType(e);
+    if (srcTy && srcTy->isInterface()) return evaluateExpr(e);
+
+    if (auto* lit = dynamic_cast<LiteralExpr*>(e.get()); lit && lit->kind == LiteralExpr::Kind::NULL_VAL) {
+        std::string dst = newVar() + ".iface_null";
+        emit(Instruction{Opcode::MakeInterface, dst, Type::getInterface(iface), {Operand::constNull(), Operand::constNull()}});
+        return Operand::var(dst, Type::getInterface(iface));
+    }
+
+    std::string sname;
+    if (resolvedExprTypes) {
+        auto it = resolvedExprTypes->find(e.get());
+        if (it != resolvedExprTypes->end()) {
+            std::string st = tyq::strip(it->second);
+            while (!st.empty() && st.front() == '*') st = st.substr(1);
+            while (!st.empty() && st.back() == '*') st.pop_back();
+            sname = ty::Type::parse(st).nominalName();
+        }
+    }
+    if (sname.empty() && srcTy && srcTy->elemType) {
+        sname = srcTy->elemType->nominalName();
+    }
+    return boxAsInterface(iface, sname, evaluateExpr(e));
+}
+
+void EIRBuilder::visit(InterfaceDecl* node) {
+    InterfaceInfo info;
+    info.name = node->name;
+    for (const auto& m : node->methods) {
+        info.methodNames.push_back(m.name);
+    }
+    interfaces[node->name] = info;
+}
+
 void EIRBuilder::visit(EnumDecl*) {}
 void EIRBuilder::visit(TypeAliasDecl*) {}
 void EIRBuilder::visit(ForInStmt* node) {
@@ -1755,9 +2039,38 @@ void EIRBuilder::visit(MatchStmt* node) {
             auto it = adtVariants.find(arm.variant);
             if (it != adtVariants.end()) {
                 auto& vinfo = it->second;
+                std::vector<TypePtr> actualPayloadTypes = vinfo.payloadTypes;
+                std::string subTypeName;
+                if (resolvedExprTypes) {
+                    auto sit = resolvedExprTypes->find(node->subject.get());
+                    if (sit != resolvedExprTypes->end()) {
+                        subTypeName = tyq::strip(sit->second);
+                    }
+                }
+                if (subTypeName.empty() && node->subject) {
+                    TypePtr st = getExprEirType(node->subject);
+                    if (st) subTypeName = st->nominalName();
+                }
+
+                if (!subTypeName.empty()) {
+                    auto parsed = ty::Type::parse(subTypeName);
+                    if (parsed.kind == ty::Type::Kind::Template && !parsed.args.empty()) {
+                        for (size_t a = 0; a < parsed.args.size() && a < actualPayloadTypes.size(); ++a) {
+                            actualPayloadTypes[a] = toEirType(parsed.args[a].str());
+                        }
+                    } else {
+                        size_t u = subTypeName.find('_');
+                        if (u != std::string::npos) {
+                            std::string targ = subTypeName.substr(u + 1);
+                            if (!actualPayloadTypes.empty()) {
+                                actualPayloadTypes[0] = toEirType(targ);
+                            }
+                        }
+                    }
+                }
                 size_t payOffset = 8;
-                for (size_t b = 0; b < arm.bindings.size() && b < vinfo.payloadTypes.size(); ++b) {
-                    TypePtr bTy = vinfo.payloadTypes[b];
+                for (size_t b = 0; b < arm.bindings.size() && b < actualPayloadTypes.size(); ++b) {
+                    TypePtr bTy = actualPayloadTypes[b];
                     size_t bAlign = getTypeAlign(bTy);
                     payOffset = (payOffset + bAlign - 1) & ~(bAlign - 1);
                     std::string fPtr = newVar() + "." + arm.bindings[b] + ".ptr";
@@ -1891,7 +2204,7 @@ void EIRBuilder::visit(StructInitExpr* node) {
             Operand::constString(fname)
         }});
 
-        Operand val = evaluateExpr(fval);
+        Operand val = evalForType(fval, ftype ? ftype->nominalName() : "");
         if (ftype->isFloat() && val.type->isFloat() && val.type->bitWidth != ftype->bitWidth) {
             val.type = ftype;
         }
@@ -1941,19 +2254,20 @@ void EIRBuilder::visit(TemplateCallExpr* node) {
 
         size_t payOffset = 8;
         for (size_t p = 0; p < node->args.size() && p < vinfo.payloadTypes.size(); ++p) {
-            TypePtr pt = vinfo.payloadTypes[p];
+            TypePtr pt = (p < node->typeArgs.size()) ? toEirType(node->typeArgs[p]) : vinfo.payloadTypes[p];
             size_t pAlign = getTypeAlign(pt);
             payOffset = (payOffset + pAlign - 1) & ~(pAlign - 1);
             std::string payPtr = newVar() + ".pay";
             emit(Instruction{Opcode::OffsetPtr, payPtr, Type::getPtr(pt), {
                 Operand::var(slot, Type::getPtr()), Operand::constInt(static_cast<int64_t>(payOffset), Type::getI64())
             }});
-            Operand argVal = evaluateExpr(node->args[p]);
+            std::string targetNominal = pt ? pt->nominalName() : "";
+            Operand argVal = evalForType(node->args[p], targetNominal);
             emit(Instruction{Opcode::Store, "", Type::getVoid(), {argVal, Operand::var(payPtr, Type::getPtr(pt))}});
             payOffset += getTypeSize(pt);
         }
         lastLValue = Operand::var(slot, Type::getPtr(enumTy));
-        lastValue = lastLValue;
+        lastValue = Operand::var(slot, enumTy);
         return;
     }
 

@@ -119,6 +119,13 @@ private:
     std::unordered_map<std::string, EnumDecl*> plainEnums;
     std::unordered_map<std::string, EnumDecl*> adtEnums;
     std::unordered_map<std::string, int64_t> enumConstants;
+    struct InterfaceInfo {
+        std::string name;
+        std::vector<std::string> methodNames;
+    };
+    std::unordered_map<std::string, InterfaceInfo> interfaces;
+    Operand boxAsInterface(const std::string& ifaceName, const std::string& structName, const Operand& structPtr);
+    Operand evalForType(const ExprPtr& e, const std::string& targetType);
 
     // Volatile tracking
     std::set<std::string> volatileVars;

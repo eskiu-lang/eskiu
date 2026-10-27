@@ -101,6 +101,9 @@ private:
     // External C function calls
     VMValue callExtern(const std::string& name, const std::vector<VMValue>& args, TypePtr retTy);
     void handlePrintf(const std::string& format, const std::vector<VMValue>& args);
+
+    // Buffer for returning aggregates / fat pointers across stack frames
+    std::vector<uint8_t> returnBuffer;
 };
 
 } // namespace eir

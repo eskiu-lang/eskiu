@@ -76,7 +76,7 @@ struct Type {
     static TypePtr getStruct(const std::string& name, const std::vector<TypePtr>& fields);
     static TypePtr getArray(TypePtr elem, uint64_t size);
     static TypePtr getSlice(TypePtr elem);
-    static TypePtr getInterface();
+    static TypePtr getInterface(const std::string& name = "interface");
     static TypePtr getClosure();
     static TypePtr getFunction(TypePtr ret, const std::vector<TypePtr>& params);
 };
@@ -241,6 +241,7 @@ struct GlobalVar {
     TypePtr type;
     Operand init;
     bool isConst = false;
+    std::vector<Operand> elements;
 };
 
 struct StructFieldInfo {
@@ -295,11 +296,21 @@ struct Module {
     size_t getFieldOffset(const std::string& structName, const std::string& fieldName) const {
         auto it = structLayouts.find(structName);
         if (it != structLayouts.end()) return it->second.getFieldOffset(fieldName);
+        size_t u = structName.find('_');
+        if (u != std::string::npos) {
+            it = structLayouts.find(structName.substr(0, u));
+            if (it != structLayouts.end()) return it->second.getFieldOffset(fieldName);
+        }
         return 0;
     }
     size_t getStructSize(const std::string& structName) const {
         auto it = structLayouts.find(structName);
         if (it != structLayouts.end()) return it->second.totalSize;
+        size_t u = structName.find('_');
+        if (u != std::string::npos) {
+            it = structLayouts.find(structName.substr(0, u));
+            if (it != structLayouts.end()) return it->second.totalSize;
+        }
         return 0;
     }
     void dump(std::ostream& os) const;

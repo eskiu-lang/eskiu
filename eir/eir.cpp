@@ -117,8 +117,8 @@ TypePtr Type::getSlice(TypePtr elem) {
     return t;
 }
 
-TypePtr Type::getInterface() {
-    static auto t = std::make_shared<Type>(Type{TypeKind::Interface, "interface", 0, false, nullptr, nullptr, 0, {}, nullptr});
+TypePtr Type::getInterface(const std::string& name) {
+    auto t = std::make_shared<Type>(Type{TypeKind::Interface, name, 0, false, nullptr, nullptr, 0, {}, nullptr});
     return t;
 }
 
