@@ -795,25 +795,61 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                 case Opcode::Add: {
                     int64_t a = getOperand(inst->operands[0], frame).asInt();
                     int64_t b = getOperand(inst->operands[1], frame).asInt();
-                    frame.registers[inst->resultVar] = VMValue(a + b);
+                    if (inst->type && inst->type->bitWidth == 32) {
+                        int32_t res = static_cast<int32_t>(static_cast<uint32_t>(a) + static_cast<uint32_t>(b));
+                        frame.registers[inst->resultVar] = VMValue(inst->type->isSigned ? static_cast<int64_t>(res) : static_cast<int64_t>(static_cast<uint32_t>(res)));
+                    } else {
+                        uint64_t res = static_cast<uint64_t>(a) + static_cast<uint64_t>(b);
+                        frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(res));
+                    }
                     break;
                 }
                 case Opcode::Sub: {
                     int64_t a = getOperand(inst->operands[0], frame).asInt();
                     int64_t b = getOperand(inst->operands[1], frame).asInt();
-                    frame.registers[inst->resultVar] = VMValue(a - b);
+                    if (inst->type && inst->type->bitWidth == 32) {
+                        int32_t res = static_cast<int32_t>(static_cast<uint32_t>(a) - static_cast<uint32_t>(b));
+                        frame.registers[inst->resultVar] = VMValue(inst->type->isSigned ? static_cast<int64_t>(res) : static_cast<int64_t>(static_cast<uint32_t>(res)));
+                    } else {
+                        uint64_t res = static_cast<uint64_t>(a) - static_cast<uint64_t>(b);
+                        frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(res));
+                    }
                     break;
                 }
                 case Opcode::Mul: {
                     int64_t a = getOperand(inst->operands[0], frame).asInt();
                     int64_t b = getOperand(inst->operands[1], frame).asInt();
-                    frame.registers[inst->resultVar] = VMValue(a * b);
+                    if (inst->type && inst->type->bitWidth == 32) {
+                        int32_t res = static_cast<int32_t>(static_cast<uint32_t>(a) * static_cast<uint32_t>(b));
+                        frame.registers[inst->resultVar] = VMValue(inst->type->isSigned ? static_cast<int64_t>(res) : static_cast<int64_t>(static_cast<uint32_t>(res)));
+                    } else {
+                        uint64_t res = static_cast<uint64_t>(a) * static_cast<uint64_t>(b);
+                        frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(res));
+                    }
                     break;
                 }
                 case Opcode::SDiv: {
                     int64_t a = getOperand(inst->operands[0], frame).asInt();
                     int64_t b = getOperand(inst->operands[1], frame).asInt();
-                    frame.registers[inst->resultVar] = VMValue(b != 0 ? a / b : 0);
+                    if (b == 0) {
+                        frame.registers[inst->resultVar] = VMValue(0);
+                    } else if (inst->type && inst->type->bitWidth == 32) {
+                        int32_t a32 = static_cast<int32_t>(a);
+                        int32_t b32 = static_cast<int32_t>(b);
+                        if (b32 == -1 && a32 == -2147483648LL) {
+                            frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(a32));
+                        } else if (b32 == 0) {
+                            frame.registers[inst->resultVar] = VMValue(0);
+                        } else {
+                            frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(a32 / b32));
+                        }
+                    } else {
+                        if (b == -1 && a == std::numeric_limits<int64_t>::min()) {
+                            frame.registers[inst->resultVar] = VMValue(a);
+                        } else {
+                            frame.registers[inst->resultVar] = VMValue(a / b);
+                        }
+                    }
                     break;
                 }
                 case Opcode::UDiv: {
@@ -825,7 +861,25 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                 case Opcode::SRem: {
                     int64_t a = getOperand(inst->operands[0], frame).asInt();
                     int64_t b = getOperand(inst->operands[1], frame).asInt();
-                    frame.registers[inst->resultVar] = VMValue(b != 0 ? a % b : 0);
+                    if (b == 0) {
+                        frame.registers[inst->resultVar] = VMValue(0);
+                    } else if (inst->type && inst->type->bitWidth == 32) {
+                        int32_t a32 = static_cast<int32_t>(a);
+                        int32_t b32 = static_cast<int32_t>(b);
+                        if (b32 == -1 && a32 == -2147483648LL) {
+                            frame.registers[inst->resultVar] = VMValue(0);
+                        } else if (b32 == 0) {
+                            frame.registers[inst->resultVar] = VMValue(0);
+                        } else {
+                            frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(a32 % b32));
+                        }
+                    } else {
+                        if (b == -1 && a == std::numeric_limits<int64_t>::min()) {
+                            frame.registers[inst->resultVar] = VMValue(0);
+                        } else {
+                            frame.registers[inst->resultVar] = VMValue(a % b);
+                        }
+                    }
                     break;
                 }
                 case Opcode::URem: {
@@ -903,19 +957,25 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                     int64_t a = getOperand(inst->operands[0], frame).asInt();
                     int64_t b = getOperand(inst->operands[1], frame).asInt();
                     if (inst->type && inst->type->bitWidth == 8) {
+                        b &= 7;
                         uint8_t ua = static_cast<uint8_t>(a);
                         frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(static_cast<uint8_t>(ua << b)));
                     } else if (inst->type && inst->type->bitWidth == 16) {
+                        b &= 15;
                         uint16_t ua = static_cast<uint16_t>(a);
                         frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(static_cast<uint16_t>(ua << b)));
                     } else if (inst->type && inst->type->bitWidth == 32) {
+                        b &= 31;
                         uint32_t ua = static_cast<uint32_t>(a);
                         uint32_t res = ua << b;
                         frame.registers[inst->resultVar] = VMValue(inst->type->isSigned
                             ? static_cast<int64_t>(static_cast<int32_t>(res))
                             : static_cast<int64_t>(res));
                     } else {
-                        frame.registers[inst->resultVar] = VMValue(a << b);
+                        b &= 63;
+                        uint64_t ua = static_cast<uint64_t>(a);
+                        uint64_t res = ua << b;
+                        frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(res));
                     }
                     break;
                 }
@@ -923,15 +983,19 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                     uint64_t a = static_cast<uint64_t>(getOperand(inst->operands[0], frame).asInt());
                     uint64_t b = static_cast<uint64_t>(getOperand(inst->operands[1], frame).asInt());
                     if (inst->type && inst->type->bitWidth == 8) {
+                        b &= 7;
                         uint8_t ua = static_cast<uint8_t>(a);
                         frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(ua >> b));
                     } else if (inst->type && inst->type->bitWidth == 16) {
+                        b &= 15;
                         uint16_t ua = static_cast<uint16_t>(a);
                         frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(ua >> b));
                     } else if (inst->type && inst->type->bitWidth == 32) {
+                        b &= 31;
                         uint32_t ua = static_cast<uint32_t>(a);
                         frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(ua >> b));
                     } else {
+                        b &= 63;
                         frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(a >> b));
                     }
                     break;
@@ -940,15 +1004,19 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                     int64_t a = getOperand(inst->operands[0], frame).asInt();
                     int64_t b = getOperand(inst->operands[1], frame).asInt();
                     if (inst->type && inst->type->bitWidth == 8) {
+                        b &= 7;
                         int8_t sa = static_cast<int8_t>(a);
                         frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(sa >> b));
                     } else if (inst->type && inst->type->bitWidth == 16) {
+                        b &= 15;
                         int16_t sa = static_cast<int16_t>(a);
                         frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(sa >> b));
                     } else if (inst->type && inst->type->bitWidth == 32) {
+                        b &= 31;
                         int32_t sa = static_cast<int32_t>(a);
                         frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(sa >> b));
                     } else {
+                        b &= 63;
                         frame.registers[inst->resultVar] = VMValue(a >> b);
                     }
                     break;
@@ -1009,9 +1077,40 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                     frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(res ? 1 : 0));
                     break;
                 }
-                case Opcode::Trunc:
-                case Opcode::ZExt:
-                case Opcode::SExt:
+                case Opcode::Trunc: {
+                    int64_t a = getOperand(inst->operands[0], frame).asInt();
+                    if (inst->type && inst->type->bitWidth == 1) {
+                        a = a & 1;
+                    } else if (inst->type && inst->type->bitWidth == 8) {
+                        a = inst->type->isSigned ? static_cast<int64_t>(static_cast<int8_t>(a)) : static_cast<int64_t>(static_cast<uint8_t>(a));
+                    } else if (inst->type && inst->type->bitWidth == 16) {
+                        a = inst->type->isSigned ? static_cast<int64_t>(static_cast<int16_t>(a)) : static_cast<int64_t>(static_cast<uint16_t>(a));
+                    } else if (inst->type && inst->type->bitWidth == 32) {
+                        a = inst->type->isSigned ? static_cast<int64_t>(static_cast<int32_t>(a)) : static_cast<int64_t>(static_cast<uint32_t>(a));
+                    }
+                    frame.registers[inst->resultVar] = VMValue(a);
+                    break;
+                }
+                case Opcode::ZExt: {
+                    uint64_t a = static_cast<uint64_t>(getOperand(inst->operands[0], frame).asInt());
+                    int srcBw = inst->operands[0].type ? inst->operands[0].type->bitWidth : 32;
+                    if (srcBw == 1) a &= 1;
+                    else if (srcBw == 8) a = static_cast<uint8_t>(a);
+                    else if (srcBw == 16) a = static_cast<uint16_t>(a);
+                    else if (srcBw == 32) a = static_cast<uint32_t>(a);
+                    frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(a));
+                    break;
+                }
+                case Opcode::SExt: {
+                    int64_t a = getOperand(inst->operands[0], frame).asInt();
+                    int srcBw = inst->operands[0].type ? inst->operands[0].type->bitWidth : 32;
+                    if (srcBw == 1) a = (a & 1) ? -1 : 0;
+                    else if (srcBw == 8) a = static_cast<int8_t>(a);
+                    else if (srcBw == 16) a = static_cast<int16_t>(a);
+                    else if (srcBw == 32) a = static_cast<int32_t>(a);
+                    frame.registers[inst->resultVar] = VMValue(a);
+                    break;
+                }
                 case Opcode::Bitcast: {
                     VMValue a = getOperand(inst->operands[0], frame);
                     frame.registers[inst->resultVar] = a;
@@ -1019,7 +1118,53 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                 }
                 case Opcode::FPToSI: {
                     double a = getOperand(inst->operands[0], frame).asFloat();
-                    frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(a));
+                    int64_t res = 0;
+                    if (std::isnan(a)) {
+                        res = 0;
+                    } else if (inst->type) {
+                        bool uns = !inst->type->isSigned;
+                        int bw = inst->type->bitWidth;
+                        if (uns) {
+                            if (bw == 8) {
+                                if (a <= 0.0) res = 0;
+                                else if (a >= 255.0) res = 255;
+                                else res = static_cast<uint8_t>(a);
+                            } else if (bw == 16) {
+                                if (a <= 0.0) res = 0;
+                                else if (a >= 65535.0) res = 65535;
+                                else res = static_cast<uint16_t>(a);
+                            } else if (bw == 32) {
+                                if (a <= 0.0) res = 0;
+                                else if (a >= 4294967295.0) res = 4294967295ULL;
+                                else res = static_cast<uint32_t>(a);
+                            } else {
+                                if (a <= 0.0) res = 0;
+                                else if (a >= 18446744073709551615.0) res = -1LL;
+                                else res = static_cast<int64_t>(static_cast<uint64_t>(a));
+                            }
+                        } else {
+                            if (bw == 8) {
+                                if (a <= -128.0) res = -128;
+                                else if (a >= 127.0) res = 127;
+                                else res = static_cast<int8_t>(a);
+                            } else if (bw == 16) {
+                                if (a <= -32768.0) res = -32768;
+                                else if (a >= 32767.0) res = 32767;
+                                else res = static_cast<int16_t>(a);
+                            } else if (bw == 32) {
+                                if (a <= -2147483648.0) res = -2147483648LL;
+                                else if (a >= 2147483647.0) res = 2147483647LL;
+                                else res = static_cast<int32_t>(a);
+                            } else {
+                                if (a <= -9223372036854775808.0) res = std::numeric_limits<int64_t>::min();
+                                else if (a >= 9223372036854775807.0) res = std::numeric_limits<int64_t>::max();
+                                else res = static_cast<int64_t>(a);
+                            }
+                        }
+                    } else {
+                        res = static_cast<int64_t>(a);
+                    }
+                    frame.registers[inst->resultVar] = VMValue(res);
                     break;
                 }
                 case Opcode::SIToFP: {
@@ -1311,7 +1456,7 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
     return VMValue(0);
 }
 
-int VM::run(Module* module, const std::string& entryFn, const std::vector<std::string>& /*args*/) {
+int VM::run(Module* module, const std::string& entryFn, const std::vector<std::string>& args) {
     if (!module) return 1;
     currentModule = module;
 
@@ -1361,7 +1506,26 @@ int VM::run(Module* module, const std::string& entryFn, const std::vector<std::s
         return 1;
     }
 
-    VMValue res = executeFunction(mainFn, {});
+    std::vector<VMValue> mainArgs;
+    std::vector<const char*> argvPointers;
+    void* argvBuf = nullptr;
+    if (!mainFn->params.empty()) {
+        for (const auto& a : args) {
+            internedStrings[a] = a;
+            argvPointers.push_back(internedStrings[a].c_str());
+        }
+        argvPointers.push_back(nullptr);
+
+        mainArgs.push_back(VMValue(static_cast<int64_t>(args.size())));
+        if (mainFn->params.size() >= 2) {
+            argvBuf = malloc(argvPointers.size() * sizeof(const char*));
+            std::memcpy(argvBuf, argvPointers.data(), argvPointers.size() * sizeof(const char*));
+            mainArgs.push_back(VMValue(argvBuf));
+        }
+    }
+
+    VMValue res = executeFunction(mainFn, mainArgs);
+    if (argvBuf) free(argvBuf);
     return static_cast<int>(res.asInt());
 }
 

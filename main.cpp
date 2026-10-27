@@ -464,7 +464,7 @@ static int runEir(const std::string& filename) {
         }
 
         eir::VM vm;
-        return vm.run(eirModule.get(), "main");
+        return vm.run(eirModule.get(), "main", {filename});
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
