@@ -147,6 +147,14 @@ TypePtr EIRBuilder::toEirType(const std::string& typeStr) {
 
 TypePtr EIRBuilder::getExprEirType(const Expr* expr) {
     if (!expr) return Type::getI32();
+    if (resolvedExprTypes) {
+        auto it = resolvedExprTypes->find(const_cast<Expr*>(expr));
+        if (it != resolvedExprTypes->end()) {
+            std::string t = it->second;
+            if (!typeParamOverride.empty()) t = substType(t, typeParamOverride);
+            return toEirType(t);
+        }
+    }
     if (auto id = dynamic_cast<const IdentExpr*>(expr)) {
         TypePtr vt = lookupVarType(id->name);
         if (vt && !vt->isVoid()) return vt;
@@ -670,6 +678,9 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
                 funcTemplateDecls[f->name] = f;
             }
         } else if (auto v = dynamic_cast<VarDecl*>(decl.get())) {
+            if (v->isExtern) {
+                continue;
+            }
             if (v->isVolatile) {
                 volatileVars.insert(v->name);
             }

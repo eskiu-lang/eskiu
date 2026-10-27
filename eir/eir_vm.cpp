@@ -125,6 +125,9 @@ VMValue VM::getOperand(const Operand& op, StackFrame& frame) {
                     return VMValue(static_cast<void*>(fn));
                 }
             }
+            if (void* sym = dlsym(RTLD_DEFAULT, op.text.c_str())) {
+                return VMValue(sym);
+            }
             return VMValue(static_cast<void*>(nullptr));
         }
         case OperandKind::BlockRef:
