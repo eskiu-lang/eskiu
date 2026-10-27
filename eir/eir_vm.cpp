@@ -5,6 +5,11 @@
 #include <cstdio>
 #include <cmath>
 #include <dlfcn.h>
+#ifndef _WIN32
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#endif
 
 namespace eir {
 
@@ -564,6 +569,53 @@ VMValue VM::callExtern(const std::string& name, const std::vector<VMValue>& args
     if (name == "io_stdout") return VMValue(static_cast<void*>(stdout));
     if (name == "io_stderr") return VMValue(static_cast<void*>(stderr));
     if (name == "io_stdin")  return VMValue(static_cast<void*>(stdin));
+
+#ifndef _WIN32
+    if (name == "fcntl") {
+        if (args.size() == 2) {
+            int res = fcntl(static_cast<int>(args[0].asInt()), static_cast<int>(args[1].asInt()));
+            return VMValue(static_cast<int64_t>(res));
+        }
+        if (args.size() >= 3) {
+            int res = fcntl(static_cast<int>(args[0].asInt()), static_cast<int>(args[1].asInt()), args[2].asPtr());
+            return VMValue(static_cast<int64_t>(res));
+        }
+        return VMValue(-1);
+    }
+    if (name == "open") {
+        if (args.size() == 2) {
+            int res = open(static_cast<const char*>(args[0].asPtr()), static_cast<int>(args[1].asInt()));
+            return VMValue(static_cast<int64_t>(res));
+        }
+        if (args.size() >= 3) {
+            int res = open(static_cast<const char*>(args[0].asPtr()), static_cast<int>(args[1].asInt()), static_cast<mode_t>(args[2].asInt()));
+            return VMValue(static_cast<int64_t>(res));
+        }
+        return VMValue(-1);
+    }
+    if (name == "openat") {
+        if (args.size() == 3) {
+            int res = openat(static_cast<int>(args[0].asInt()), static_cast<const char*>(args[1].asPtr()), static_cast<int>(args[2].asInt()));
+            return VMValue(static_cast<int64_t>(res));
+        }
+        if (args.size() >= 4) {
+            int res = openat(static_cast<int>(args[0].asInt()), static_cast<const char*>(args[1].asPtr()), static_cast<int>(args[2].asInt()), static_cast<mode_t>(args[3].asInt()));
+            return VMValue(static_cast<int64_t>(res));
+        }
+        return VMValue(-1);
+    }
+    if (name == "ioctl") {
+        if (args.size() == 2) {
+            int res = ioctl(static_cast<int>(args[0].asInt()), static_cast<unsigned long>(args[1].asInt()));
+            return VMValue(static_cast<int64_t>(res));
+        }
+        if (args.size() >= 3) {
+            int res = ioctl(static_cast<int>(args[0].asInt()), static_cast<unsigned long>(args[1].asInt()), args[2].asPtr());
+            return VMValue(static_cast<int64_t>(res));
+        }
+        return VMValue(-1);
+    }
+#endif
 
     // Fallback: dynamic lookup via dlsym
     void* sym = dlsym(RTLD_DEFAULT, name.c_str());
