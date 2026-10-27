@@ -624,28 +624,47 @@ VMValue VM::callExtern(const std::string& name, const std::vector<VMValue>& args
         void* target = args.empty() ? nullptr : args[0].asPtr();
         if (!target) return VMValue(static_cast<void*>(nullptr));
 
-        void* fnPtr = *reinterpret_cast<void**>(static_cast<uint8_t*>(target) + 0);
-        void* envPtr = *reinterpret_cast<void**>(static_cast<uint8_t*>(target) + 8);
+        bool owned = args.size() > 1 ? args[1].asInt() != 0 : false;
 
         Function* callee = nullptr;
+        void* envPtr = nullptr;
+
+        // Check if target is a direct Function* pointer
         if (currentModule) {
             for (const auto& f : currentModule->functions) {
-                if (f.get() == static_cast<Function*>(fnPtr)) {
+                if (f.get() == static_cast<Function*>(target)) {
                     callee = f.get();
                     break;
                 }
             }
         }
-        if (!callee) callee = static_cast<Function*>(fnPtr);
+
+        // If not a direct Function*, it is a fat pointer struct {fnPtr, envPtr}
+        if (!callee) {
+            void* fnPtr = *reinterpret_cast<void**>(static_cast<uint8_t*>(target) + 0);
+            envPtr = *reinterpret_cast<void**>(static_cast<uint8_t*>(target) + 8);
+            if (currentModule) {
+                for (const auto& f : currentModule->functions) {
+                    if (f.get() == static_cast<Function*>(fnPtr)) {
+                        callee = f.get();
+                        break;
+                    }
+                }
+            }
+            if (!callee) callee = static_cast<Function*>(fnPtr);
+        }
 
         std::vector<VMValue> callArgs;
         if (callee && !callee->params.empty() && callee->params[0].first == "env") {
             callArgs.push_back(VMValue(envPtr));
         }
 
-        auto th = new std::thread([this, callee, callArgs]() {
+        auto th = new std::thread([this, callee, callArgs, owned, envPtr]() {
             if (callee) {
                 this->executeFunction(callee, callArgs);
+            }
+            if (owned && envPtr) {
+                free(envPtr);
             }
         });
         return VMValue(static_cast<void*>(th));

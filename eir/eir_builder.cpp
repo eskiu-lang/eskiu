@@ -3172,7 +3172,13 @@ void EIRBuilder::visit(LambdaExpr* node) {
     Operand envPtr = Operand::constNull();
     if (!node->captures.empty()) {
         std::string envSlot = newVar() + ".env";
-        emit(Instruction{Opcode::Alloca, envSlot, Type::getArray(Type::getU8(), totalEnvSize), {Operand::constInt(static_cast<int64_t>(maxAlign), Type::getI32())}});
+        if (node->escapes) {
+            emit(Instruction{Opcode::Call, envSlot, Type::getPtr(), {
+                Operand::global("malloc", Type::getPtr()), Operand::constInt(static_cast<int64_t>(totalEnvSize), Type::getI64())
+            }});
+        } else {
+            emit(Instruction{Opcode::Alloca, envSlot, Type::getArray(Type::getU8(), totalEnvSize), {Operand::constInt(static_cast<int64_t>(maxAlign), Type::getI32())}});
+        }
         for (size_t c = 0; c < node->captures.size(); ++c) {
             Operand* srcSlot = lookupVar(node->captures[c].first);
             if (srcSlot) {
@@ -3388,7 +3394,12 @@ void EIRBuilder::visit(SizeofExpr* node) {
 void EIRBuilder::visit(ThreadCreateExpr* node) {
     Operand worker = evaluateExpr(node->worker);
     std::string handleVar = newVar() + ".thr_handle";
-    emit(Instruction{Opcode::Call, handleVar, Type::getPtr(), {Operand::global("__eir_thread_create", Type::getPtr()), worker}});
+    bool owned = dynamic_cast<LambdaExpr*>(node->worker.get()) != nullptr;
+    emit(Instruction{Opcode::Call, handleVar, Type::getPtr(), {
+        Operand::global("__eir_thread_create", Type::getPtr()),
+        worker,
+        Operand::constInt(owned ? 1 : 0, Type::getI32())
+    }});
     lastValue = Operand::var(handleVar, Type::getPtr());
     lastLValue = lastValue;
 }
