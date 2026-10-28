@@ -649,7 +649,7 @@ void TypeChecker::checkPendingInstances() {
         inst.accept(this);
         curTemplate = nullptr;
         inInstance = false;
-        if (p.fn->isAsync)
+        if (p.fn->isAsync || recordInstanceTypes)
             for (const auto& [e, t] : expressionTypes) instanceExprTypes[e].push_back({p.subs, t});
         instRawReturnType.clear();
         instDepth = 0;

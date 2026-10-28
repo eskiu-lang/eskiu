@@ -51,6 +51,9 @@ public:
     // its temporaries from these).
     using InstanceExprTypes = std::map<Expr*, std::vector<std::pair<std::map<std::string, std::string>, std::string>>>;
     const InstanceExprTypes& instanceExprTypeMap() const { return instanceExprTypes; }
+    // Record every generic instance's expression types (not only an async one's): the EIR
+    // builder types a shared generic body per instance from them.
+    bool recordInstanceTypes = false;
 
     // Visitor methods
     void visit(Program* node) override;
