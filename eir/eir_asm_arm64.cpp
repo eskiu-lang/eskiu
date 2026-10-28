@@ -119,6 +119,7 @@ private:
     std::string fnTag;
     std::unordered_map<std::string, size_t> slots;
     std::unordered_set<std::string> addrVars;
+    std::unordered_map<std::string, TypePtr> resultTypes;   // integer results narrower than 64 bits
     std::unordered_map<std::string, int> handlerIds;
     size_t sretSlot = 0, handlerDepthSlot = 0, handlerStackSlot = 0, handlerCap = 0;
     size_t caughtSlot = 0, retSaveSlot = 0, incomingStackBytes = 0;
@@ -205,9 +206,9 @@ private:
         if (!t || !t->isInt()) return v;
         switch (t->bitWidth) {
             case 1: return v & 1;
-            case 8: return t->isSigned ? static_cast<int8_t>(v) : static_cast<uint8_t>(v);
-            case 16: return t->isSigned ? static_cast<int16_t>(v) : static_cast<uint16_t>(v);
-            case 32: return t->isSigned ? static_cast<int32_t>(v) : static_cast<uint32_t>(v);
+            case 8: return t->isSigned ? static_cast<int64_t>(static_cast<int8_t>(v)) : static_cast<int64_t>(static_cast<uint8_t>(v));
+            case 16: return t->isSigned ? static_cast<int64_t>(static_cast<int16_t>(v)) : static_cast<int64_t>(static_cast<uint16_t>(v));
+            case 32: return t->isSigned ? static_cast<int64_t>(static_cast<int32_t>(v)) : static_cast<int64_t>(static_cast<uint32_t>(v));
             default: return v;
         }
     }
@@ -304,7 +305,12 @@ private:
         return it->second;
     }
 
+    // Store an instruction's result: an integer is first normalized to its type (every
+    // integer value is held wrapped to its width and extended by its signedness).
     void storeX(const std::string& reg, const std::string& var, std::ostream& os) {
+        auto it = resultTypes.find(var);
+        if (it != resultTypes.end() && reg.size() > 1 && reg[0] == 'x' && isdigit(static_cast<unsigned char>(reg[1])))
+            normalize(std::stoi(reg.substr(1)), it->second, os);
         memOp("str", reg, "sp", slotOf(var), 8, os);
     }
 
@@ -352,7 +358,7 @@ private:
         std::string reg = "x" + std::to_string(regIdx);
         switch (op.kind) {
             case OperandKind::ConstantInt:
-                movImm(reg, op.intVal, os);
+                movImm(reg, truncConst(op.intVal, op.type), os);
                 break;
             case OperandKind::ConstantNull:
                 os << "    mov " << reg << ", #0\n";
@@ -508,6 +514,7 @@ private:
         fnTag = "F" + std::to_string(idx);
         slots.clear();
         addrVars.clear();
+        resultTypes.clear();
         handlerIds.clear();
 
         fnHasSret = isAggregate(fn->returnType);
@@ -589,6 +596,8 @@ private:
                 } else if (!rv.empty() && !slots.count(rv)) {
                     slots[rv] = alloc(8, 8);
                 }
+                if (!rv.empty() && !addrVars.count(rv) && inst->type && inst->type->isInt() && inst->type->bitWidth < 64)
+                    resultTypes[rv] = inst->type;
             }
         }
 

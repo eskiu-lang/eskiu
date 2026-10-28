@@ -230,9 +230,9 @@ private:
         if (!t || !t->isInt()) return v;
         switch (t->bitWidth) {
             case 1: return v & 1;
-            case 8: return t->isSigned ? static_cast<int8_t>(v) : static_cast<uint8_t>(v);
-            case 16: return t->isSigned ? static_cast<int16_t>(v) : static_cast<uint16_t>(v);
-            case 32: return t->isSigned ? static_cast<int32_t>(v) : static_cast<uint32_t>(v);
+            case 8: return t->isSigned ? static_cast<int64_t>(static_cast<int8_t>(v)) : static_cast<int64_t>(static_cast<uint8_t>(v));
+            case 16: return t->isSigned ? static_cast<int64_t>(static_cast<int16_t>(v)) : static_cast<int64_t>(static_cast<uint16_t>(v));
+            case 32: return t->isSigned ? static_cast<int64_t>(static_cast<int32_t>(v)) : static_cast<int64_t>(static_cast<uint32_t>(v));
             default: return v;
         }
     }
@@ -300,7 +300,7 @@ private:
     // The operand as an int64_t (a pointer through intptr_t, a float converted).
     std::string ival(const Operand& op) {
         switch (op.kind) {
-            case OperandKind::ConstantInt: return i64Const(op.intVal);
+            case OperandKind::ConstantInt: return i64Const(truncConst(op.intVal, op.type));
             case OperandKind::ConstantNull: return "INT64_C(0)";
             case OperandKind::ConstantFloat: return "((int64_t)" + floatConst(op.floatVal, false) + ")";
             case OperandKind::ConstantString: return "((int64_t)(intptr_t)" + escape(op.text) + ")";
@@ -624,6 +624,19 @@ private:
     }
 
     void emitInstruction(const Instruction* inst, std::ostream& os) {
+        emitInstructionBody(inst, os);
+        // Every integer value is held normalized to its type: wrapped to its width,
+        // extended by its signedness.
+        const std::string& rv = inst->resultVar;
+        TypePtr t = inst->type;
+        if (!rv.empty() && t && t->isInt() && t->bitWidth < 64 && varKind.count(rv) && varKind[rv] == 'i' && !inst->isTerminator()) {
+            std::string v = var(rv);
+            if (t->bitWidth == 1) os << "    " << v << " &= 1;\n";
+            else os << "    " << v << " = (int64_t)(" << cType(t) << ")" << v << ";\n";
+        }
+    }
+
+    void emitInstructionBody(const Instruction* inst, std::ostream& os) {
         const auto& ops = inst->operands;
         std::string res = inst->resultVar.empty() ? "" : var(inst->resultVar);
         TypePtr rt = inst->type;
