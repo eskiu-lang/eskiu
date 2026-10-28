@@ -7,6 +7,26 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
+## [Unreleased]
+
+### Added
+- Native EIR backends that skip LLVM's code generator: `--emit-asm` (ARM64), `--emit-c`
+  (C99), `--emit-obj`, and `--backend=eir`, which builds through the normal driver
+  (`#pragma link`, implied libraries, `-c`, `.a`, `eskiuc run`). Exceptions, threads and
+  `exception_text` run on a small C runtime. Options that only change LLVM's output (`-O`,
+  `--safe`, `--freestanding`, ...) are errors under it. See `docs/dev/eir-backends.md`.
+- `tests/eir/check.sh` runs the run tests through a backend and fails when a test that
+  passed stops passing.
+
+### Fixed
+- EIR: a cast between `float` and `double`, or between a pointer and an integer, now emits
+  its conversion; a closure call converts its arguments to the parameter types; a top-level
+  function used as a closure goes through a `__fnptr_` thunk; an extern's function
+  parameter receives a C function pointer; `continue` inside a `switch` no longer crashes
+  the compiler; a repeated prototype no longer defines the function twice.
+- EVM: integer `/` and `%` by zero stop the program instead of yielding 0, and
+  `ptrtoint`, `inttoptr`, `fptrunc` and `fpext` are executed.
+
 ## [0.14.0] - 2026-10-23
 
 ### Added

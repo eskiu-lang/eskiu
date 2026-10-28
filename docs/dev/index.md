@@ -47,6 +47,7 @@ Each test mode exits 0 on success and prints a human-readable dump to stdout. A 
 | [`api.md`](api.md) | C++ public API reference for the lexer, parser, type checker, and codegen modules              |
 | [`eir-spec.md`](eir-spec.md)         | Eskiu Intermediate Representation: opcode set, lowering invariants, and text syntax |
 | [`evm.md`](evm.md)                   | Standalone EIR Virtual Machine interpreter (`--run-eir`), runtime architecture, and FFI |
+| [`eir-backends.md`](eir-backends.md) | Native EIR backends (`--emit-asm`, `--emit-c`, `--backend=eir`): value model, ABI, runtime, gate |
 | [`../../kernel/README.md`](../../kernel/README.md) | The freestanding bare-metal ARM64 kernel demo (no libc; boots in QEMU), a worked example of `--freestanding` + inline asm |
 
 ---
