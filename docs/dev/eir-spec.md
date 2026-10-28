@@ -145,6 +145,12 @@ Syntax:
 %4 = and u32 %a, 0xFF
 ```
 
+Both operands have the instruction's type, and the result is normalized to it (wrapped
+to the width, sign- or zero-extended by the signedness). C's promotions and usual
+arithmetic conversions are explicit `sext`/`zext`/`trunc`/`sitofp`/`fpext` before the
+instruction; a shift's count has the shifted operand's type and is masked to its width.
+Integer `sdiv`/`udiv`/`srem`/`urem` by zero stop the program.
+
 ### 5.3 Comparisons & Conditionals
 * `icmp <cond> <type> %a, %b`
   Integer comparison. Condition `<cond>`:

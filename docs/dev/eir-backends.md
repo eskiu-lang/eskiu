@@ -18,14 +18,22 @@ errors under it, not ignored.
 
 ## Value model
 
-Both backends follow the EVM, which defines what an EIR program means:
+The EVM and both backends share one meaning of an EIR program:
 
-- An integer value is 64 bits wide. A 32-bit `add`/`sub`/`mul`/`sdiv`/`srem` wraps to 32
-  bits, a narrow unsigned bitwise result is masked to its width, a shift works at its
-  type's width with the count masked; everything else is 64-bit. A load extends by its
-  type, a store truncates. An integer constant is used as written.
+- An integer value is normalized to its type: wrapped to its width and sign- or
+  zero-extended by its signedness. Every instruction producing an integer normalizes its
+  result, and an integer constant is read as a value of its operand type. A load extends by
+  its type, a store truncates.
+- The operands of an arithmetic, bitwise or comparison instruction have the instruction's
+  type. The builder makes C's conversions explicit (`EIRBuilder::promoteInt`,
+  `commonType`, `coerceNumeric`): a narrow integer promotes to `int`, two operands meet at
+  their usual arithmetic conversion type, a shift has its promoted left operand's type, a
+  compound assignment converts its result back to the target, and a value passed,
+  returned, stored or tested converts to the type there. Constant expressions fold with
+  `ty::CInt`, as sema and codegen fold them.
 - An aggregate (struct, array, closure, interface, slice) is the address of its bytes. A
-  load of one yields the address, a store copies the bytes.
+  load of one yields the address, a store copies the bytes. An `alloca` is zeroed each time
+  it runs.
 - Integer `/` and `%` stop the program on a zero divisor (`brk` / `__builtin_trap`; the EVM
   aborts with an error). `MIN / -1` wraps.
 - Float to integer saturates and NaN is 0.
