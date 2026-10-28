@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Behavioral gate for the native EIR backends: compile each run test (tests/NAME.esk with a
-# NAME.expected and no C companion) without LLVM, run it, and compare its stdout with the
-# expected output.
+# NAME.expected, linked with its C companion NAME.c when there is one) without LLVM, run it
+# as tests/run.sh does (from the repository root, stdout and stderr together, exit code 0),
+# and compare with the expected output.
 #
 #   tests/eir/check.sh [asm|c]
 #
@@ -32,16 +33,22 @@ passed=()
 for f in tests/*.esk; do
     n="$(basename "$f" .esk)"
     [ -f "tests/$n.expected" ] || continue
-    [ -f "tests/$n.c" ] && continue
     exe="$work/$n.out"
+    companion=()
+    if [ -f "tests/$n.c" ]; then
+        "$CC" -c "tests/$n.c" -o "$work/$n.c.o" >/dev/null 2>&1 || continue
+        companion=("$work/$n.c.o")
+    fi
     if [ "$mode" = asm ]; then
-        "$BIN" "$f" -o "$exe" --backend=eir >/dev/null 2>&1 || continue
+        link=()
+        [ ${#companion[@]} -gt 0 ] && link=(--link-arg "${companion[0]}")
+        "$BIN" "$f" ${link[@]+"${link[@]}"} -o "$exe" --backend=eir >/dev/null 2>&1 || continue
     else
         "$BIN" "$f" --emit-c -o "$work/$n.c" >/dev/null 2>&1 || continue
-        "$CC" -std=c99 -w -fno-strict-aliasing "$work/$n.c" -o "$exe" -lm -lpthread >/dev/null 2>&1 || continue
+        "$CC" -std=c99 -w -fno-strict-aliasing "$work/$n.c" ${companion[@]+"${companion[@]}"} -o "$exe" -lm -lpthread >/dev/null 2>&1 || continue
     fi
-    out="$(cd tests && timeout 10 "$exe" 2>/dev/null)"
-    [ "$out" = "$(cat "tests/$n.expected")" ] && passed+=("$n")
+    timeout 10 "$exe" >"$work/$n.got" 2>&1 || continue
+    diff -q "tests/$n.expected" "$work/$n.got" >/dev/null && passed+=("$n")
 done
 
 printf '%s\n' "${passed[@]}" | sort > "$work/now.txt"
