@@ -32,6 +32,7 @@
 #include "eir/eir_asm.h"
 #include "eir/eir_c.h"
 #include "eir/eir_obj.h"
+#include "eir/eir_runtime.h"
 #include "main_support.h"
 #include "repl.h"
 #include "pkg.h"
@@ -418,260 +419,92 @@ static int testCodegen(const std::string& filename) {
 }
 
 // Test EIR: tokenize, parse, typecheck, async-transform, and emit EIR
-static int testEir(const std::string& filename) {
+// The EIR modes share the front end: parse, check, async-lower, check again, then lower
+// the checked program to EIR.
+static std::unique_ptr<eir::Module> lowerToEir(Program* program, TypeChecker& postTc) {
+    eir::EIRBuilder builder;
+    builder.resolvedExprTypes = &postTc.expressionTypeMap();
+    builder.semaInstanceArgs = &postTc.instanceArgsMap();
+    if (!TargetTriple.empty()) builder.targetTriple = std::string(TargetTriple);
+    auto mod = builder.build(program);
+    if (!mod) std::cerr << "error: EIR generation failed" << std::endl;
+    return mod;
+}
+
+static std::unique_ptr<eir::Module> buildEir(const std::string& filename) {
     auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding);
     if (!program) {
-        std::cerr << "Parse failed!" << std::endl;
+        std::cerr << "error: parse failed" << std::endl;
+        return nullptr;
+    }
+    TypeChecker tc; tc.targetTriple = std::string(TargetTriple); tc.warnDeprecated = !WnoDeprecated;
+    tc.sourceFile = filename; applyWarningFlags(tc);
+    if (!tc.check(program.get())) return nullptr;
+    AsyncTransform(&tc.expressionTypeMap(), &tc.instanceArgsMap(), &tc.instanceExprTypeMap()).run(program.get());
+    TypeChecker postTc; postTc.targetTriple = std::string(TargetTriple); postTc.warnDeprecated = false; postTc.warnDefaults = false; postTc.sourceFile = filename;
+    if (!postTc.check(program.get())) {
+        std::cerr << "error: internal: the async lowering produced a program that does not type-check" << std::endl;
+        return nullptr;
+    }
+    return lowerToEir(program.get(), postTc);
+}
+
+// Write an EIR emitter's text to -o, or to stdout without one.
+template <typename Emit>
+static int writeEirText(Emit emit) {
+    if (OutputFilename.empty() || OutputFilename == "-") {
+        emit(std::cout);
+        return 0;
+    }
+    std::ofstream out(OutputFilename);
+    if (!out) {
+        std::cerr << "error: cannot open output file '" << OutputFilename << "'" << std::endl;
         return 1;
     }
-
-    try {
-        TypeChecker tc; tc.targetTriple = std::string(TargetTriple); tc.warnDeprecated = !WnoDeprecated;
-        tc.sourceFile = filename; applyWarningFlags(tc);
-        if (!tc.check(program.get())) {
-            std::cerr << "Type checking failed!" << std::endl;
-            return 1;
-        }
-        AsyncTransform(&tc.expressionTypeMap(), &tc.instanceArgsMap(), &tc.instanceExprTypeMap()).run(program.get());
-        TypeChecker postTc; postTc.targetTriple = std::string(TargetTriple); postTc.warnDeprecated = false; postTc.warnDefaults = false; postTc.sourceFile = filename;
-        if (!postTc.check(program.get())) {
-            std::cerr << "error: internal: the async lowering produced a program that does not type-check" << std::endl;
-            return 1;
-        }
-
-        eir::EIRBuilder builder;
-        builder.resolvedExprTypes = &postTc.expressionTypeMap();
-        builder.semaInstanceArgs = &postTc.instanceArgsMap();
-        if (!TargetTriple.empty()) builder.targetTriple = std::string(TargetTriple);
-
-        auto eirModule = builder.build(program.get());
-        if (!eirModule) {
-            std::cerr << "EIR generation failed!" << std::endl;
-            return 1;
-        }
-
-        eirModule->dump(std::cout);
-    } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
-        return 1;
-    }
+    emit(out);
     return 0;
 }
 
-// Run EIR: tokenize, parse, typecheck, lower to EIR, and execute directly with EIR Virtual Machine
-static int runEir(const std::string& filename) {
-    auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding);
-    if (!program) {
-        std::cerr << "Parse failed!" << std::endl;
-        return 1;
-    }
-
+// --test-eir, --run-eir, --emit-asm and --emit-c.
+static int eirMode(const std::string& filename) {
     try {
-        TypeChecker tc; tc.targetTriple = std::string(TargetTriple); tc.warnDeprecated = !WnoDeprecated;
-        tc.sourceFile = filename; applyWarningFlags(tc);
-        if (!tc.check(program.get())) {
-            std::cerr << "Type checking failed!" << std::endl;
-            return 1;
-        }
-        AsyncTransform(&tc.expressionTypeMap(), &tc.instanceArgsMap(), &tc.instanceExprTypeMap()).run(program.get());
-        TypeChecker postTc; postTc.targetTriple = std::string(TargetTriple); postTc.warnDeprecated = false; postTc.warnDefaults = false; postTc.sourceFile = filename;
-        if (!postTc.check(program.get())) {
-            std::cerr << "error: internal: the async lowering produced a program that does not type-check" << std::endl;
-            return 1;
-        }
-
-        eir::EIRBuilder builder;
-        builder.resolvedExprTypes = &postTc.expressionTypeMap();
-        builder.semaInstanceArgs = &postTc.instanceArgsMap();
-        if (!TargetTriple.empty()) builder.targetTriple = std::string(TargetTriple);
-
-        auto eirModule = builder.build(program.get());
-        if (!eirModule) {
-            std::cerr << "EIR generation failed!" << std::endl;
-            return 1;
-        }
-
-        eir::VM vm;
-        return vm.run(eirModule.get(), "main", {filename});
-    } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
-        return 1;
-    }
-}
-
-// Emit native assembly (.s) directly from EIR without LLVM
-static int emitAsm(const std::string& filename) {
-    auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding);
-    if (!program) return 1;
-
-    try {
-        TypeChecker tc; tc.targetTriple = std::string(TargetTriple); tc.warnDeprecated = !WnoDeprecated;
-        tc.sourceFile = filename; applyWarningFlags(tc);
-        if (!tc.check(program.get())) return 1;
-
-        AsyncTransform(&tc.expressionTypeMap(), &tc.instanceArgsMap(), &tc.instanceExprTypeMap()).run(program.get());
-        TypeChecker postTc; postTc.targetTriple = std::string(TargetTriple); postTc.warnDeprecated = false; postTc.warnDefaults = false; postTc.sourceFile = filename;
-        if (!postTc.check(program.get())) return 1;
-
-        eir::EIRBuilder builder;
-        builder.resolvedExprTypes = &postTc.expressionTypeMap();
-        builder.semaInstanceArgs = &postTc.instanceArgsMap();
-        if (!TargetTriple.empty()) builder.targetTriple = std::string(TargetTriple);
-
-        auto eirModule = builder.build(program.get());
-        if (!eirModule) {
-            std::cerr << "EIR generation failed!" << std::endl;
-            return 1;
-        }
-
-        auto emitter = eir::createArm64Emitter(std::string(TargetTriple));
-        if (OutputFilename.empty() || OutputFilename == "-") {
-            emitter->emitModule(eirModule.get(), std::cout);
-        } else {
-            std::ofstream out(OutputFilename);
-            if (!out) {
-                std::cerr << "error: cannot open output file '" << OutputFilename << "'\n";
-                return 1;
-            }
-            emitter->emitModule(eirModule.get(), out);
-        }
-        return 0;
-    } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
-        return 1;
-    }
-}
-
-// Emit portable C99 code (.c) directly from EIR without LLVM
-static int emitC(const std::string& filename) {
-    auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding);
-    if (!program) return 1;
-
-    try {
-        TypeChecker tc; tc.targetTriple = std::string(TargetTriple); tc.warnDeprecated = !WnoDeprecated;
-        tc.sourceFile = filename; applyWarningFlags(tc);
-        if (!tc.check(program.get())) return 1;
-
-        AsyncTransform(&tc.expressionTypeMap(), &tc.instanceArgsMap(), &tc.instanceExprTypeMap()).run(program.get());
-        TypeChecker postTc; postTc.targetTriple = std::string(TargetTriple); postTc.warnDeprecated = false; postTc.warnDefaults = false; postTc.sourceFile = filename;
-        if (!postTc.check(program.get())) return 1;
-
-        eir::EIRBuilder builder;
-        builder.resolvedExprTypes = &postTc.expressionTypeMap();
-        builder.semaInstanceArgs = &postTc.instanceArgsMap();
-        if (!TargetTriple.empty()) builder.targetTriple = std::string(TargetTriple);
-
-        auto eirModule = builder.build(program.get());
-        if (!eirModule) {
-            std::cerr << "EIR generation failed!" << std::endl;
-            return 1;
-        }
-
-        auto emitter = eir::createCEmitter();
-        if (OutputFilename.empty() || OutputFilename == "-") {
-            emitter->emitModule(eirModule.get(), std::cout);
-        } else {
-            std::ofstream out(OutputFilename);
-            if (!out) {
-                std::cerr << "error: cannot open output file '" << OutputFilename << "'\n";
-                return 1;
-            }
-            emitter->emitModule(eirModule.get(), out);
-        }
-        return 0;
-    } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
-        return 1;
-    }
-}
-
-// Compile program via EIR backend (alternative to LLVM)
-static int compileEir(const std::string& filename) {
-    auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding);
-    if (!program) return 1;
-
-    try {
-        TypeChecker tc; tc.targetTriple = std::string(TargetTriple); tc.warnDeprecated = !WnoDeprecated;
-        tc.sourceFile = filename; applyWarningFlags(tc);
-        if (!tc.check(program.get())) return 1;
-
-        AsyncTransform(&tc.expressionTypeMap(), &tc.instanceArgsMap(), &tc.instanceExprTypeMap()).run(program.get());
-        TypeChecker postTc; postTc.targetTriple = std::string(TargetTriple); postTc.warnDeprecated = false; postTc.warnDefaults = false; postTc.sourceFile = filename;
-        if (!postTc.check(program.get())) return 1;
-
-        eir::EIRBuilder builder;
-        builder.resolvedExprTypes = &postTc.expressionTypeMap();
-        builder.semaInstanceArgs = &postTc.instanceArgsMap();
-        if (!TargetTriple.empty()) builder.targetTriple = std::string(TargetTriple);
-
-        auto eirModule = builder.build(program.get());
-        if (!eirModule) {
-            std::cerr << "EIR generation failed!" << std::endl;
-            return 1;
-        }
-
-        // `eskiuc run`: link into a temporary executable, then run it.
-        std::string runExePath;
-        if (g_runMode) {
-            llvm::SmallString<128> tmpExe;
-#ifdef _WIN32
-            const char* runSuffix = "exe";
-#else
-            const char* runSuffix = "";
-#endif
-            if (llvm::sys::fs::createTemporaryFile("eskiu-run", runSuffix, tmpExe)) {
-                std::cerr << "error: could not create a temporary executable" << std::endl;
-                return 1;
-            }
-            runExePath = std::string(tmpExe.str());
-        }
-
-        std::string outFile = !runExePath.empty() ? runExePath
-            : OutputFilename.empty() ? (CompileOnly || EmitObj ? std::string(filename) + ".o" : "a.out")
-            : std::string(OutputFilename);
-
-        if (EmitObj || CompileOnly || endsWith(outFile, ".o") || endsWith(outFile, ".obj")) {
-            if (!eir::emitEirObject(eirModule.get(), outFile, std::string(TargetTriple))) {
-                return 1;
-            }
+        auto mod = buildEir(filename);
+        if (!mod) return 1;
+        if (TestEir) {
+            mod->dump(std::cout);
             return 0;
         }
-
-        // Link into an executable
-        llvm::SmallString<128> tmpObj;
-        if (llvm::sys::fs::createTemporaryFile("eskiu_eir", "o", tmpObj)) {
-            std::cerr << "error: could not create a temporary object file" << std::endl;
-            return 1;
+        if (RunEir) {
+            eir::VM vm;
+            return vm.run(mod.get(), "main", {filename});
         }
-        std::string tmpObjPath(tmpObj.str());
-        if (!eir::emitEirObject(eirModule.get(), tmpObjPath, std::string(TargetTriple))) {
-            llvm::sys::fs::remove(tmpObjPath);
-            return 1;
+        if (EmitAsm) {
+            auto emitter = eir::createArm64Emitter(std::string(TargetTriple));
+            return writeEirText([&](std::ostream& os) { emitter->emitModule(mod.get(), os); });
         }
-
-        std::vector<std::string> libs(LinkLibs.begin(), LinkLibs.end());
-        std::vector<std::string> paths(LinkPaths.begin(), LinkPaths.end());
-        std::vector<std::string> extra(LinkArgs.begin(), LinkArgs.end());
-        if (Asan) extra.push_back("-fsanitize=address");
-
-        bool ok = linkExecutable(tmpObjPath, outFile, libs, paths, extra, /*sanitized=*/Asan,
-                                 std::string(TargetTriple));
-        llvm::sys::fs::remove(tmpObjPath);
-        if (!ok) {
-            if (g_runMode) llvm::sys::fs::remove(runExePath);
-            return 1;
-        }
-
-        if (g_runMode) {
-            int rc = runExecutable(runExePath, g_runArgs);
-            llvm::sys::fs::remove(runExePath);
-            return rc;
-        }
-        return 0;
+        auto emitter = eir::createCEmitter();
+        return writeEirText([&](std::ostream& os) { emitter->emitModule(mod.get(), os); });
     } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
+        std::cerr << "error: " << e.what() << std::endl;
         return 1;
     }
+}
+
+// The EIR backend emits the program as written, so an option that changes how LLVM
+// generates code is an error under it rather than silently ignored.
+static bool checkEirOptions(unsigned safeChecks) {
+    std::vector<std::string> bad;
+    if (OptLevel) bad.push_back("-O" + std::to_string(OptLevel));
+    if (safeChecks) bad.push_back("--safe");
+    if (Freestanding) bad.push_back("--freestanding");
+    if (Asan) bad.push_back("--asan");
+    if (Ubsan) bad.push_back("--ubsan");
+    if (!TargetCPU.empty()) bad.push_back("--mcpu");
+    if (!TargetFeatures.empty()) bad.push_back("--mattr");
+    if (!RelocModel.empty()) bad.push_back("--reloc");
+    for (const auto& b : bad)
+        std::cerr << "error: " << b << " is not supported by the EIR backend" << std::endl;
+    return bad.empty();
 }
 
 // Test parser: tokenize, parse, and print AST
@@ -1037,30 +870,14 @@ static int compilerMain(int argc, char** argv) {
         return testCodegen(InputFilename);
     }
 
-    // Handle --test-eir
-    if (TestEir) {
-        return testEir(InputFilename);
+    // --test-eir, --run-eir, --emit-asm, --emit-c
+    if (TestEir || RunEir || EmitAsm || EmitC) {
+        return eirMode(InputFilename);
     }
 
-    // Handle --run-eir
-    if (RunEir) {
-        return runEir(InputFilename);
-    }
-
-    // Handle --emit-asm
-    if (EmitAsm) {
-        return emitAsm(InputFilename);
-    }
-
-    // Handle --emit-c
-    if (EmitC) {
-        return emitC(InputFilename);
-    }
-
-    // Handle EIR backend compilation or --emit-obj
-    if (EmitObj || Backend == BackendKind::EIR) {
-        return compileEir(InputFilename);
-    }
+    // --emit-obj is the EIR backend writing an object file.
+    bool useEir = EmitObj || Backend == BackendKind::EIR;
+    if (useEir && !checkEirOptions(safeChecks)) return 1;
 
     // Full compilation pipeline — parse every input file and merge their
     // top-level declarations into a single program (`eskiuc a.esk b.esk ...`).
@@ -1093,22 +910,32 @@ static int compilerMain(int argc, char** argv) {
             return 1;
         }
         CodeGen codegen;
-        codegen.resolvedExprTypes = &postTc.expressionTypeMap();
-        codegen.semaInstanceArgs = &postTc.instanceArgsMap();
-        if (!TargetTriple.empty()) codegen.targetTriple = std::string(TargetTriple);
-        if (!TargetCPU.empty()) codegen.targetCPU = std::string(TargetCPU);
-        if (!TargetFeatures.empty()) codegen.targetFeatures = std::string(TargetFeatures);
-        if (!RelocModel.empty()) codegen.relocModel = std::string(RelocModel);
-        codegen.freestanding = Freestanding;
-        codegen.safeChecks = safeChecks;
-        codegen.asan = Asan;
-        codegen.ubsan = Ubsan;
-        codegen.optLevel = OptLevel;
-        if (!codegen.generateCode(program)) {
-            std::cerr << "error: code generation failed" << std::endl;
-            return 1;
+        std::unique_ptr<eir::Module> eirModule;
+        if (useEir) {
+            eirModule = lowerToEir(program.get(), postTc);
+            if (!eirModule) return 1;
+        } else {
+            codegen.resolvedExprTypes = &postTc.expressionTypeMap();
+            codegen.semaInstanceArgs = &postTc.instanceArgsMap();
+            if (!TargetTriple.empty()) codegen.targetTriple = std::string(TargetTriple);
+            if (!TargetCPU.empty()) codegen.targetCPU = std::string(TargetCPU);
+            if (!TargetFeatures.empty()) codegen.targetFeatures = std::string(TargetFeatures);
+            if (!RelocModel.empty()) codegen.relocModel = std::string(RelocModel);
+            codegen.freestanding = Freestanding;
+            codegen.safeChecks = safeChecks;
+            codegen.asan = Asan;
+            codegen.ubsan = Ubsan;
+            codegen.optLevel = OptLevel;
+            if (!codegen.generateCode(program)) {
+                std::cerr << "error: code generation failed" << std::endl;
+                return 1;
+            }
+            if (OptLevel) codegen.optimizeModule();
         }
-        if (OptLevel) codegen.optimizeModule();
+        auto emitObject = [&](const std::string& path) {
+            if (eirModule) return eir::emitEirObject(eirModule.get(), path, std::string(TargetTriple));
+            return codegen.emitObjectFile(path);
+        };
 
         // `eskiuc run`: link into a temporary executable, then run it.
         std::string runExePath;
@@ -1134,7 +961,7 @@ static int compilerMain(int argc, char** argv) {
         // Link into an executable when the output is not an object file.
         // Object-only when: -c is given, the output ends in .o or .obj, no -o was given,
         // or --freestanding (bare-metal needs a custom linker script: link yourself).
-        bool linkExe = g_runMode || (!CompileOnly && !Freestanding &&
+        bool linkExe = g_runMode || (!CompileOnly && !EmitObj && !Freestanding &&
                        !OutputFilename.empty() && !endsWith(outFile, ".o") &&
                        !endsWith(outFile, ".obj") && !endsWith(outFile, ".a") &&
                        !endsWith(outFile, ".lib"));
@@ -1148,7 +975,7 @@ static int compilerMain(int argc, char** argv) {
                 return 1;
             }
             std::string tmpObjPath(tmpObj.str());
-            bool ok = codegen.emitObjectFile(tmpObjPath) &&
+            bool ok = emitObject(tmpObjPath) &&
                       writeStaticLibrary(tmpObjPath, outFile, std::string(TargetTriple));
             llvm::sys::fs::remove(tmpObjPath);
             return ok ? 0 : 1;
@@ -1161,7 +988,7 @@ static int compilerMain(int argc, char** argv) {
                 return 1;
             }
             std::string tmpObjPath(tmpObj.str());
-            if (!codegen.emitObjectFile(tmpObjPath)) {
+            if (!emitObject(tmpObjPath)) {
                 llvm::sys::fs::remove(tmpObjPath);
                 return 1;
             }
@@ -1173,11 +1000,16 @@ static int compilerMain(int argc, char** argv) {
             // The libraries the program implies go after every object (a --link-arg
             // object may need them too), skipping any -l already given.
             if (!NoDefaultLibs) {
-                llvm::Module* mod = codegen.getModule();
-                bool usesEH = mod->getFunction("__cxa_throw") || mod->getFunction("__cxa_rethrow") ||
-                              mod->getFunction("__gxx_personality_v0") ||
-                              mod->getFunction("__gxx_personality_seh0");
-                bool usesThreads = mod->getFunction("pthread_create") != nullptr;
+                bool usesEH = false, usesThreads = false;
+                if (eirModule) {
+                    usesThreads = eir::moduleUsesThreads(eirModule.get());
+                } else {
+                    llvm::Module* mod = codegen.getModule();
+                    usesEH = mod->getFunction("__cxa_throw") || mod->getFunction("__cxa_rethrow") ||
+                             mod->getFunction("__gxx_personality_v0") ||
+                             mod->getFunction("__gxx_personality_seh0");
+                    usesThreads = mod->getFunction("pthread_create") != nullptr;
+                }
                 std::vector<std::string> implied = pragmaLibs;
                 for (const auto& l : implicitLinkLibs(macros, usesEH, usesThreads)) implied.push_back(l);
                 // emscripten catches exceptions only when linked to (its JavaScript runtime).
@@ -1189,7 +1021,7 @@ static int compilerMain(int argc, char** argv) {
             // On macOS the object records a minimum OS version (the native triple carries the
             // host's); link for the same one, or ld warns that the object is newer than the
             // version the C driver picked from its SDK.
-            {
+            if (!eirModule) {
                 llvm::Triple t(codegen.getModule()->getTargetTriple());
                 llvm::VersionTuple v;
                 if (t.isMacOSX() && t.getMacOSXVersion(v) && v.getMajor() > 0)
@@ -1243,7 +1075,7 @@ static int compilerMain(int argc, char** argv) {
             return 0;
         }
 
-        if (!codegen.emitObjectFile(outFile)) {
+        if (!emitObject(outFile)) {
             return 1;
         }
         return 0;
