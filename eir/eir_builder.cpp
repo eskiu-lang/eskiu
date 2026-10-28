@@ -1,11 +1,16 @@
 #include "eir_builder.h"
+#include "../sema/type_checker.h"
 #include "../ast/type_qual.h"
+#include "../ast/ast_walk.h"
 #include "../template_utils.h"
 #include <iostream>
 #include <stdexcept>
 #include <cmath>
+#include <functional>
 
 namespace eir {
+
+static std::string intSpelling(const TypePtr& t);
 
 EIRBuilder::EIRBuilder() = default;
 
@@ -105,7 +110,19 @@ TypePtr EIRBuilder::toEirType(const std::string& typeStr) {
         case ty::Type::Kind::Array: {
             uint64_t n = 0;
             if (!t.dim.empty()) {
-                try { n = std::stoull(t.dim); } catch (...) { n = 0; }
+                // A dimension is an integer constant expression (`N * 2`, `sizeof(S) / 4`).
+                long long v = 0;
+                auto name = [&](const std::string& nm, long long& out) {
+                    if (nm.rfind("sizeof(", 0) == 0 && nm.back() == ')') {
+                        out = static_cast<long long>(sizeOfType(nm.substr(7, nm.size() - 8)));
+                        return out > 0;
+                    }
+                    auto it = enumConstants.find(nm);
+                    if (it == enumConstants.end()) return false;
+                    out = it->second;
+                    return true;
+                };
+                if (ty::foldDim(t.dim, name, v) && v > 0) n = static_cast<uint64_t>(v);
             }
             return Type::getArray(t.elem ? toEirType(t.elem->str()) : Type::getI32(), n);
         }
@@ -148,6 +165,23 @@ TypePtr EIRBuilder::toEirType(const std::string& typeStr) {
 
 TypePtr EIRBuilder::getExprEirType(const Expr* expr) {
     if (!expr) return Type::getI32();
+    // Inside a generic instance the shared AST carries no per-instance types: a local's
+    // type is the one its declaration took for this instance.
+    if (!typeParamOverride.empty()) {
+        if (auto id = dynamic_cast<const IdentExpr*>(expr)) {
+            TypePtr vt = lookupVarType(id->name);
+            if (vt && !vt->isVoid()) return vt;
+        }
+    }
+    // In a generic instance, the type the checker gave this expression in this instance.
+    if (!typeParamOverride.empty() && instanceExprTypes) {
+        auto it = instanceExprTypes->find(const_cast<Expr*>(expr));
+        if (it != instanceExprTypes->end()) {
+            for (const auto& [subs, t] : it->second) {
+                if (subs == typeParamOverride) return toEirType(t);
+            }
+        }
+    }
     if (resolvedExprTypes) {
         auto it = resolvedExprTypes->find(const_cast<Expr*>(expr));
         if (it != resolvedExprTypes->end()) {
@@ -353,6 +387,15 @@ bool EIRBuilder::foldCInt(const ExprPtr& expr, ty::CInt& out) {
         if (al != typeAliases.end()) t = al->second;
         return foldCInt(c->expr, x) && ty::cintCast(t, x, out);
     }
+    if (auto sz = dynamic_cast<SizeofExpr*>(expr.get())) {
+        uint64_t n = 0;
+        if (!sz->typeName.empty() && lookupVar(sz->typeName)) n = getTypeSize(lookupVarType(sz->typeName), module.get());
+        else if (!sz->typeName.empty()) n = sizeOfType(sz->typeName);
+        else if (sz->operand) n = getTypeSize(getExprEirType(sz->operand), module.get());
+        if (n == 0) return false;
+        out = ty::cintMake(static_cast<long long>(n), 64, false);
+        return true;
+    }
     if (auto t = dynamic_cast<TernaryExpr*>(expr.get())) {
         ty::CInt c, a, b;
         if (!foldCInt(t->condition, c) || !foldCInt(t->thenExpr, a) || !foldCInt(t->elseExpr, b)) return false;
@@ -360,6 +403,19 @@ bool EIRBuilder::foldCInt(const ExprPtr& expr, ty::CInt& out) {
         return true;
     }
     return false;
+}
+
+// The size of a type spelled in the source, laid out for the target.
+uint64_t EIRBuilder::sizeOfType(const std::string& spelling) {
+    std::string t = typeParamOverride.empty() ? spelling : substType(spelling, typeParamOverride);
+    TypePtr ty = toEirType(t);
+    if (ty && ty->isStruct()) ensureStructLayout(ty->nominalName());
+    size_t sz = getTypeSize(ty, module.get());
+    if (ty && ty->isStruct()) {
+        size_t ss = module->getStructSize(ty->nominalName());
+        if (ss) sz = ss;
+    }
+    return sz;
 }
 
 int64_t EIRBuilder::foldConstInt(const ExprPtr& expr) {
@@ -415,74 +471,319 @@ void EIRBuilder::runCleanupsToDepth(size_t depth, bool errorPath) {
         for (size_t j = frame.size(); j-- > 0; ) {
             if (currentBlock && currentBlock->hasTerminator()) return;
             if (frame[j].isErr && !errorPath) continue;
+            auto savedScopes = scopeStack;
+            auto savedTypes = varTypeStack;
+            if (!frame[j].scopes.empty()) {
+                scopeStack = frame[j].scopes;
+                varTypeStack = frame[j].varTypes;
+            }
             frame[j].body->accept(this);
+            scopeStack = std::move(savedScopes);
+            varTypeStack = std::move(savedTypes);
         }
     }
 }
 
-void EIRBuilder::layoutBitfieldsForStruct(StructDecl* s, StructInfo& sinfo, std::vector<TypePtr>& fields) {
-    uint64_t bitpos = 0;
-    size_t structAlign = 1;
-    for (const auto& f : s->fields) {
-        TypePtr ty = toEirType(f.type);
-        fields.push_back(ty);
-        size_t size = getTypeSize(ty, module.get());
-        if (size < 1) size = 1;
-        size_t align = getTypeAlign(ty, module.get());
-        if (align < 1) align = 1;
-        if (align > structAlign) structAlign = align;
+// An unbraced body (of an if, else, loop, case or match arm) is a scope of its own: its
+// defers run at the end of it, and only if it was reached.
+void EIRBuilder::visitBody(const StmtPtr& body) {
+    if (!body) return;
+    if (dynamic_cast<BlockStmt*>(body.get())) {
+        body->accept(this);
+        return;
+    }
+    pushScope();
+    cleanupScopes.emplace_back();
+    size_t depth = cleanupScopes.size() - 1;
+    body->accept(this);
+    if (currentBlock && !currentBlock->hasTerminator()) runCleanupsToDepth(depth, false);
+    cleanupScopes.pop_back();
+    popScope();
+}
 
-        if (f.bitWidth > 0) {
-            uint64_t w = static_cast<uint64_t>(f.bitWidth);
-            uint64_t unitBits = size * 8;
-            if (bitpos / unitBits != (bitpos + w - 1) / unitBits) {
-                bitpos = (bitpos + unitBits - 1) / unitBits * unitBits;
+// Lay out a struct or union as C does on the target: natural alignment capped by
+// `#pragma pack`, bitfields by the SysV/AAPCS rules (sharing an aligned unit of their
+// type) or the MS ones on Windows (a new word when the type's size changes), unnamed
+// bitfields only moving the position. The rules are TypeChecker::bitfieldLayout's (which
+// computes sizeof); this also records where each field lives.
+void EIRBuilder::layoutRecord(const std::string& name, const std::vector<StructDecl::Field>& declFields,
+                              const std::vector<StructDecl::Pad>& pads, bool isUnion, int packAlign,
+                              const std::map<std::string, std::string>& subs) {
+    auto up = [](uint64_t x, uint64_t a) { return a ? (x + a - 1) / a * a : x; };
+    TargetLayoutInfo L = targetLayoutInfo(targetTriple);
+    bool packed = packAlign == 1;
+    uint64_t packN = packAlign >= 2 ? static_cast<uint64_t>(packAlign) : 0;
+    bool contiguous = packed || packN;
+
+    StructInfo sinfo;
+    sinfo.name = name;
+    std::vector<TypePtr> fieldTypes;
+    uint64_t structAlign = 1;
+
+    struct Item { StructDecl::Field f; TypePtr ty; uint64_t size, align, natural; };
+    std::vector<Item> items;
+    for (const auto& f : layoutFields(declFields, pads)) {
+        std::string tstr = subs.empty() ? f.type : substType(f.type, subs);
+        TypePtr ft = toEirType(tstr);
+        if (ft && ft->isStruct()) ensureStructLayout(ft->nominalName());
+        uint64_t fs = getTypeSize(ft, module.get());
+        if (ft && ft->isStruct()) { size_t ss = module->getStructSize(ft->nominalName()); if (ss) fs = ss; }
+        uint64_t fa = getTypeAlign(ft, module.get());
+        if (fa < 1) fa = 1;
+        uint64_t natural = fa;
+        if (packed) fa = 1;
+        if (packN) fa = std::min(fa, packN);
+        items.push_back({f, ft, fs, fa, natural});
+        if (!f.unnamed) fieldTypes.push_back(ft);
+    }
+
+    auto unsignedUnit = [](uint64_t bytes) {
+        return bytes >= 8 ? Type::getU64() : bytes >= 4 ? Type::getU32() : bytes >= 2 ? Type::getU16() : Type::getU8();
+    };
+    auto addField = [&](const Item& it, uint64_t off) {
+        StructFieldInfo fi;
+        fi.name = it.f.name;
+        fi.type = it.ty;
+        fi.offset = off;
+        fi.size = it.size;
+        sinfo.fields.push_back(fi);
+    };
+    auto addBitfield = [&](const Item& it, uint64_t unitOff, uint64_t unitBytes, uint64_t bitOff) {
+        StructFieldInfo fi;
+        fi.name = it.f.name;
+        fi.type = it.ty;
+        fi.offset = unitOff;
+        fi.size = unitBytes;
+        fi.isBitfield = true;
+        fi.bitOffset = static_cast<unsigned>(bitOff);
+        fi.bitWidth = static_cast<unsigned>(it.f.bitWidth);
+        fi.isSigned = it.ty && it.ty->isInt() && it.ty->isSigned && it.ty->bitWidth > 1;
+        fi.storageType = unsignedUnit(unitBytes);
+        fi.storageOffset = unitOff;
+        sinfo.fields.push_back(fi);
+    };
+    // A bitfield packed back to back is read through the smallest unit covering its bits.
+    auto spanUnit = [](uint64_t bitpos, uint64_t w) {
+        uint64_t bytes = (bitpos % 8 + w + 7) / 8;
+        return bytes <= 1 ? 1 : bytes <= 2 ? 2 : bytes <= 4 ? 4 : 8;
+    };
+
+    uint64_t size = 0;
+    if (isUnion) {
+        for (const auto& it : items) {
+            if (it.f.unnamed) {
+                uint64_t bytes = L.msBitfields ? it.size : (static_cast<uint64_t>(std::max(it.f.bitWidth, 0)) + 7) / 8;
+                size = std::max(size, bytes);
+                continue;
             }
-            size_t byteOffset = (bitpos / unitBits) * size;
-            unsigned bitOffset = static_cast<unsigned>(bitpos - byteOffset * 8);
-            StructFieldInfo sfield;
-            sfield.name = f.name;
-            sfield.type = ty;
-            sfield.offset = byteOffset;
-            sfield.size = size;
-            sfield.isBitfield = true;
-            sfield.bitOffset = bitOffset;
-            sfield.bitWidth = static_cast<unsigned>(w);
-            sfield.isSigned = ty->isSigned && ty->bitWidth > 1;
-            sfield.storageType = size >= 8 ? Type::getU64() : size >= 4 ? Type::getU32() : size >= 2 ? Type::getU16() : Type::getU8();
-            sfield.storageOffset = byteOffset;
-            sinfo.fields.push_back(sfield);
-            bitpos += w;
-        } else {
-            size_t off = ((bitpos + 7) / 8 + align - 1) / align * align;
-            StructFieldInfo sfield;
-            sfield.name = f.name;
-            sfield.type = ty;
-            sfield.offset = off;
-            sfield.size = size;
-            sfield.isBitfield = false;
-            sinfo.fields.push_back(sfield);
-            bitpos = (off + size) * 8;
+            structAlign = std::max(structAlign, it.align);
+            if (it.f.bitWidth > 0) addBitfield(it, 0, it.size, 0);
+            else addField(it, 0);
+            size = std::max(size, it.size);
+        }
+    } else if (L.msBitfields) {
+        uint64_t off = 0, curBits = 0, curOff = 0, wordOff = 0;
+        bool open = false, afterBits = false;
+        for (const auto& it : items) {
+            if (it.f.unnamed && it.f.bitWidth <= 0) {
+                if (afterBits) {
+                    uint64_t a = L.msvcEnv ? it.align : it.natural;
+                    off = up(off, a);
+                    structAlign = std::max(structAlign, a);
+                }
+                open = false;
+                afterBits = false;
+                continue;
+            }
+            if (it.f.bitWidth > 0) {
+                uint64_t stBits = it.size * 8, w = static_cast<uint64_t>(it.f.bitWidth);
+                if (!open || curBits != stBits || curOff + w > stBits) {
+                    wordOff = up(off, it.align);
+                    off = wordOff + it.size;
+                    structAlign = std::max(structAlign, it.align);
+                    open = true;
+                    curBits = stBits;
+                    curOff = 0;
+                }
+                if (!it.f.unnamed) addBitfield(it, wordOff, it.size, curOff);
+                curOff += w;
+                afterBits = true;
+            } else {
+                open = false;
+                afterBits = false;
+                off = up(off, it.align);
+                addField(it, off);
+                off += it.size;
+                structAlign = std::max(structAlign, it.align);
+            }
+        }
+        size = off;
+    } else {
+        uint64_t bitpos = 0;
+        for (const auto& it : items) {
+            if (it.f.unnamed && it.f.bitWidth <= 0) {
+                bitpos = up(bitpos, it.natural * 8);
+                if (L.unnamedBitfieldsAlign) structAlign = std::max(structAlign, it.natural);
+                continue;
+            }
+            if (!it.f.unnamed || L.unnamedBitfieldsAlign) structAlign = std::max(structAlign, it.align);
+            if (it.f.bitWidth > 0) {
+                uint64_t w = static_cast<uint64_t>(it.f.bitWidth), unitBits = it.size * 8;
+                if (!contiguous && it.align < it.size) {
+                    if (bitpos % (it.align * 8) + w > unitBits) bitpos = up(bitpos, it.align * 8);
+                } else if (!contiguous && unitBits && bitpos / unitBits != (bitpos + w - 1) / unitBits) {
+                    bitpos = up(bitpos, unitBits);
+                }
+                if (!it.f.unnamed) {
+                    if (contiguous) {
+                        uint64_t unit = spanUnit(bitpos, w);
+                        addBitfield(it, bitpos / 8, unit, bitpos % 8);
+                    } else {
+                        uint64_t unitOff = bitpos / (it.align * 8) * it.align;
+                        addBitfield(it, unitOff, it.size, bitpos - unitOff * 8);
+                    }
+                }
+                bitpos += w;
+            } else {
+                uint64_t off = up((bitpos + 7) / 8, it.align);
+                addField(it, off);
+                bitpos = (off + it.size) * 8;
+            }
+        }
+        size = (bitpos + 7) / 8;
+    }
+    sinfo.alignment = structAlign;
+    sinfo.totalSize = up(size, structAlign);
+    module->structLayouts[name] = sinfo;
+    module->structTypes.push_back(Type::getStruct(name, fieldTypes));
+}
+
+// The variant `variant` of the sum type `instName` (an instance of a generic enum has its
+// own payload types), else the variant by name.
+const EIRBuilder::AdtVariantInfo* EIRBuilder::variantFor(const std::string& variant, const std::string& instName) {
+    if (!instName.empty()) {
+        ensureStructLayout(instName);
+        auto it = adtInstanceVariants.find(instName + "::" + variant);
+        if (it != adtInstanceVariants.end()) return &it->second;
+    }
+    auto it = adtVariants.find(variant);
+    return it != adtVariants.end() ? &it->second : nullptr;
+}
+
+// The instance `G<args>` of the generic enum declaring `variant`, registered for layout.
+std::string EIRBuilder::genericVariantInstance(const std::string& variant, const std::vector<std::string>& args) {
+    auto it = adtVariants.find(variant);
+    if (it == adtVariants.end() || !genericEnums.count(it->second.enumName) || args.empty()) return "";
+    std::string spelled = it->second.enumName + "<";
+    for (size_t i = 0; i < args.size(); ++i) spelled += (i ? "," : "") + args[i];
+    spelled += ">";
+    std::string inst = mangleTemplate(spelled);
+    if (!templateInstanceArgs.count(inst)) templateInstanceArgs[inst] = {it->second.enumName, args};
+    return inst;
+}
+
+// A sum type as codegen's makeAdtStruct: { i32 tag, [N x i64] payload }, the payload at 8,
+// N the largest variant's bytes in i64s (at least one). Registers each variant.
+void EIRBuilder::layoutAdt(const std::string& name, EnumDecl* e, const std::map<std::string, std::string>& subs) {
+    size_t maxPayloadSize = 0;
+    for (size_t i = 0; i < e->members.size(); ++i) {
+        std::vector<TypePtr> payloadTypes;
+        size_t pOffset = 0, pMaxAlign = 1;
+        if (i < e->payloads.size()) {
+            for (const auto& ptStr : e->payloads[i]) {
+                TypePtr pt = toEirType(subs.empty() ? ptStr : substType(ptStr, subs));
+                if (pt && pt->isStruct()) ensureStructLayout(pt->nominalName());
+                payloadTypes.push_back(pt);
+                size_t al = getTypeAlign(pt, module.get());
+                if (al > pMaxAlign) pMaxAlign = al;
+                pOffset = (pOffset + al - 1) & ~(al - 1);
+                size_t sz = getTypeSize(pt, module.get());
+                if (pt && pt->isStruct()) { size_t ss = module->getStructSize(pt->nominalName()); if (ss) sz = ss; }
+                pOffset += sz;
+            }
+        }
+        pOffset = (pOffset + pMaxAlign - 1) & ~(pMaxAlign - 1);
+        if (pOffset > maxPayloadSize) maxPayloadSize = pOffset;
+        if (subs.empty()) adtVariants[e->members[i].first] = {name, static_cast<int>(i), payloadTypes};
+        else adtInstanceVariants[name + "::" + e->members[i].first] = {name, static_cast<int>(i), payloadTypes};
+    }
+    size_t words = std::max<size_t>(1, (maxPayloadSize + 7) / 8);
+    StructInfo sinfo;
+    sinfo.name = name;
+    sinfo.fields.push_back({"tag", Type::getI32(), 0, 4});
+    sinfo.totalSize = 8 + 8 * words;
+    sinfo.alignment = 8;
+    module->structLayouts[name] = sinfo;
+    module->structTypes.push_back(Type::getStruct(name, {Type::getI32()}));
+}
+
+void EIRBuilder::ensureStructLayout(const std::string& name) {
+    if (name.empty() || module->structLayouts.count(name)) return;
+    auto tit = templateInstanceArgs.find(name);
+    if (tit != templateInstanceArgs.end()) {
+        auto geIt = genericEnums.find(tit->second.first);
+        if (geIt != genericEnums.end()) {
+            EnumDecl* ge = geIt->second;
+            std::map<std::string, std::string> subs;
+            for (size_t i = 0; i < ge->typeParams.size() && i < tit->second.second.size(); ++i)
+                subs[ge->typeParams[i]] = tit->second.second[i];
+            layoutAdt(name, ge, subs);
+            return;
+        }
+        auto tdIt = templateDecls.find(tit->second.first);
+        if (tdIt != templateDecls.end()) {
+            StructDecl* td = tdIt->second;
+            std::map<std::string, std::string> subs;
+            for (size_t i = 0; i < td->typeParams.size() && i < tit->second.second.size(); ++i)
+                subs[td->typeParams[i]] = tit->second.second[i];
+            layoutRecord(name, td->fields, td->pads, false, td->isPacked ? 1 : td->packAlign, subs);
+            return;
         }
     }
-    sinfo.totalSize = ((bitpos + 7) / 8 + structAlign - 1) / structAlign * structAlign;
-    sinfo.alignment = structAlign;
+    auto sit = plainStructs.find(name);
+    if (sit != plainStructs.end()) {
+        StructDecl* sd = sit->second;
+        layoutRecord(name, sd->fields, sd->pads, false, sd->isPacked ? 1 : sd->packAlign, {});
+        return;
+    }
+    auto ait = adtEnums.find(name);
+    if (ait != adtEnums.end()) {
+        layoutAdt(name, ait->second, {});
+        return;
+    }
+    auto uit = unionDecls.find(name);
+    if (uit != unionDecls.end()) {
+        layoutRecord(name, uit->second->fields, uit->second->pads, true, uit->second->packAlign, {});
+    }
+}
+
+// The bitfield `m` names (null when it is not one) and the address of its struct.
+const StructFieldInfo* EIRBuilder::bitfieldOf(MemberExpr* m) {
+    std::string baseType = getExprEirType(m->base)->nominalName();
+    auto it = module->structLayouts.find(baseType);
+    if (it == module->structLayouts.end()) return nullptr;
+    const StructFieldInfo* fi = it->second.getFieldInfo(m->member);
+    return fi && fi->isBitfield ? fi : nullptr;
+}
+
+Operand EIRBuilder::bitfieldBase(MemberExpr* m) {
+    TypePtr baseTy = getExprEirType(m->base);
+    return baseTy->isPointer() ? evaluateExpr(m->base) : evaluateLValue(m->base);
 }
 
 Operand EIRBuilder::loadBitfield(MemberExpr* m, bool isVolatile) {
-    std::string baseType = getExprEirType(m->base)->nominalName();
-    auto it = module->structLayouts.find(baseType);
-    if (it == module->structLayouts.end()) return Operand::constInt(0, Type::getI32());
-    const StructFieldInfo* fi = it->second.getFieldInfo(m->member);
-    if (!fi || !fi->isBitfield) return Operand::constInt(0, Type::getI32());
+    const StructFieldInfo* fi = bitfieldOf(m);
+    if (!fi) return Operand::constInt(0, Type::getI32());
+    return loadBitfieldAt(bitfieldBase(m), fi, isVolatile);
+}
 
-    Operand basePtr;
-    TypePtr baseTy = getExprEirType(m->base);
-    if (baseTy->isPointer()) {
-        basePtr = evaluateExpr(m->base);
-    } else {
-        basePtr = evaluateLValue(m->base);
-    }
+void EIRBuilder::storeBitfield(MemberExpr* m, Operand val, bool isVolatile) {
+    const StructFieldInfo* fi = bitfieldOf(m);
+    if (!fi) return;
+    storeBitfieldAt(bitfieldBase(m), fi, val, isVolatile);
+}
+
+Operand EIRBuilder::loadBitfieldAt(const Operand& basePtr, const StructFieldInfo* fi, bool isVolatile) {
 
     std::string wordPtr = newVar();
     emit(Instruction{Opcode::OffsetPtr, wordPtr, Type::getPtr(fi->storageType),
@@ -517,23 +818,10 @@ Operand EIRBuilder::loadBitfield(MemberExpr* m, bool isVolatile) {
         emit(Instruction{Opcode::AShr, ashr, sty, {asSigned, Operand::constInt(static_cast<int64_t>(sh), sty)}});
         cur = Operand::var(ashr, sty);
     }
-    return coerceNumeric(cur, fi->type);
+    return coerceNumeric(coerceNumeric(cur, fi->type), bitfieldReadType(fi));
 }
 
-void EIRBuilder::storeBitfield(MemberExpr* m, Operand val, bool isVolatile) {
-    std::string baseType = getExprEirType(m->base)->nominalName();
-    auto it = module->structLayouts.find(baseType);
-    if (it == module->structLayouts.end()) return;
-    const StructFieldInfo* fi = it->second.getFieldInfo(m->member);
-    if (!fi || !fi->isBitfield) return;
-
-    Operand basePtr;
-    TypePtr baseTy = getExprEirType(m->base);
-    if (baseTy->isPointer()) {
-        basePtr = evaluateExpr(m->base);
-    } else {
-        basePtr = evaluateLValue(m->base);
-    }
+void EIRBuilder::storeBitfieldAt(const Operand& basePtr, const StructFieldInfo* fi, Operand val, bool isVolatile) {
 
     std::string wordPtr = newVar();
     emit(Instruction{Opcode::OffsetPtr, wordPtr, Type::getPtr(fi->storageType),
@@ -597,7 +885,8 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
     }
 
     // Phase 1: Structs, Enums, and Interfaces
-    std::unordered_map<std::string, StructDecl*> plainStructDecls;
+    plainStructs.clear();
+    unionDecls.clear();
     for (auto& decl : program->declarations) {
         if (auto iface = dynamic_cast<InterfaceDecl*>(decl.get())) {
             InterfaceInfo info;
@@ -611,36 +900,12 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
             }
             interfaces[iface->name] = info;
         } else if (auto e = dynamic_cast<EnumDecl*>(decl.get())) {
-            if (e->isADT()) {
+            if (!e->typeParams.empty()) {
+                genericEnums[e->name] = e;
+                for (size_t i = 0; i < e->members.size(); ++i)
+                    adtVariants[e->members[i].first] = {e->name, static_cast<int>(i), {}};
+            } else if (e->isADT()) {
                 adtEnums[e->name] = e;
-                size_t maxPayloadSize = 0;
-                for (size_t i = 0; i < e->members.size(); ++i) {
-                    const std::string& vname = e->members[i].first;
-                    std::vector<TypePtr> payloadTypes;
-                    size_t pOffset = 0;
-                    size_t pMaxAlign = 1;
-                    if (i < e->payloads.size()) {
-                        for (const auto& ptStr : e->payloads[i]) {
-                            TypePtr pt = toEirType(ptStr);
-                            payloadTypes.push_back(pt);
-                            size_t al = getTypeAlign(pt);
-                            if (al > pMaxAlign) pMaxAlign = al;
-                            pOffset = (pOffset + al - 1) & ~(al - 1);
-                            pOffset += getTypeSize(pt);
-                        }
-                    }
-                    pOffset = (pOffset + pMaxAlign - 1) & ~(pMaxAlign - 1);
-                    if (pOffset > maxPayloadSize) maxPayloadSize = pOffset;
-                    adtVariants[vname] = {e->name, static_cast<int>(i), payloadTypes};
-                }
-                if (maxPayloadSize < 24) maxPayloadSize = 24;
-                StructInfo sinfo;
-                sinfo.name = e->name;
-                sinfo.fields.push_back({"tag", Type::getI32(), 0, 4});
-                sinfo.totalSize = ((8 + maxPayloadSize) + 7) & ~7;
-                sinfo.alignment = 8;
-                module->structLayouts[e->name] = sinfo;
-                module->structTypes.push_back(Type::getStruct(e->name, {Type::getI32()}));
             } else {
                 plainEnums[e->name] = e;
                 int64_t nextVal = 0;
@@ -659,11 +924,13 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
             if (!s->typeParams.empty()) {
                 templateDecls[s->name] = s;
             } else {
-                plainStructDecls[s->name] = s;
+                plainStructs[s->name] = s;
             }
+        } else if (auto u = dynamic_cast<UnionDecl*>(decl.get())) {
+            unionDecls[u->name] = u;
         } else if (auto f = dynamic_cast<FunctionDecl*>(decl.get())) {
             if (!f->typeParams.empty()) {
-                funcTemplateDecls[f->name] = f;
+                if (!funcTemplateDecls.count(f->name) || f->body) funcTemplateDecls[f->name] = f;   // the definition, not a prototype
             }
         } else if (auto v = dynamic_cast<VarDecl*>(decl.get())) {
             if (v->isExtern) {
@@ -709,81 +976,13 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
         }
     }
 
-    std::function<void(const std::string&)> ensureStructLayout = [&](const std::string& name) {
-        if (name.empty() || module->structLayouts.count(name)) return;
-
-        auto tit = templateInstanceArgs.find(name);
-        if (tit != templateInstanceArgs.end()) {
-            const std::string& tname = tit->second.first;
-            const std::vector<std::string>& targs = tit->second.second;
-            auto tdIt = templateDecls.find(tname);
-            if (tdIt != templateDecls.end()) {
-                StructDecl* td = tdIt->second;
-                std::map<std::string, std::string> subs;
-                for (size_t i = 0; i < td->typeParams.size() && i < targs.size(); ++i) {
-                    subs[td->typeParams[i]] = targs[i];
-                }
-                std::vector<TypePtr> fields;
-                StructInfo sinfo;
-                sinfo.name = name;
-                size_t currentOffset = 0;
-                size_t maxAlign = 1;
-                for (const auto& f : td->fields) {
-                    std::string subType = substType(f.type, subs);
-                    TypePtr ft = toEirType(subType);
-                    fields.push_back(ft);
-                    if (ft && ft->isStruct()) ensureStructLayout(ft->nominalName());
-                    size_t sz = getTypeSize(ft, module.get());
-                    size_t al = getTypeAlign(ft, module.get());
-                    if (al > maxAlign) maxAlign = al;
-                    currentOffset = (currentOffset + al - 1) & ~(al - 1);
-                    sinfo.fields.push_back({f.name, ft, currentOffset, sz});
-                    currentOffset += sz;
-                }
-                sinfo.totalSize = (currentOffset + maxAlign - 1) & ~(maxAlign - 1);
-                sinfo.alignment = maxAlign;
-                module->structLayouts[name] = sinfo;
-                module->structTypes.push_back(Type::getStruct(name, fields));
-                return;
-            }
-        }
-
-        auto sit = plainStructDecls.find(name);
-        if (sit != plainStructDecls.end()) {
-            StructDecl* s = sit->second;
-            std::vector<TypePtr> fields;
-            StructInfo sinfo;
-            sinfo.name = s->name;
-            bool hasBitfield = false;
-            for (const auto& f : s->fields) {
-                if (f.bitWidth > 0) { hasBitfield = true; break; }
-            }
-            if (hasBitfield) {
-                layoutBitfieldsForStruct(s, sinfo, fields);
-            } else {
-                size_t currentOffset = 0;
-                size_t maxAlign = 1;
-                for (const auto& f : s->fields) {
-                    TypePtr ft = toEirType(f.type);
-                    fields.push_back(ft);
-                    if (ft && ft->isStruct()) ensureStructLayout(ft->nominalName());
-                    size_t sz = getTypeSize(ft, module.get());
-                    size_t al = getTypeAlign(ft, module.get());
-                    if (al > maxAlign) maxAlign = al;
-                    currentOffset = (currentOffset + al - 1) & ~(al - 1);
-                    sinfo.fields.push_back({f.name, ft, currentOffset, sz});
-                    currentOffset += sz;
-                }
-                sinfo.totalSize = (currentOffset + maxAlign - 1) & ~(maxAlign - 1);
-                sinfo.alignment = maxAlign;
-            }
-            module->structLayouts[s->name] = sinfo;
-            module->structTypes.push_back(Type::getStruct(s->name, fields));
-            return;
-        }
-    };
-
-    for (const auto& kv : plainStructDecls) {
+    for (const auto& kv : adtEnums) {
+        if (!module->structLayouts.count(kv.first)) layoutAdt(kv.first, kv.second, {});
+    }
+    for (const auto& kv : plainStructs) {
+        ensureStructLayout(kv.first);
+    }
+    for (const auto& kv : unionDecls) {
         ensureStructLayout(kv.first);
     }
     for (const auto& kv : templateInstanceArgs) {
@@ -839,7 +1038,7 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
     bool hasGlobalInits = false;
     for (const auto& decl : program->declarations) {
         if (auto v = dynamic_cast<VarDecl*>(decl.get())) {
-            if (v->initializer) {
+            if (!v->isExtern && (v->initializer || defaultExprFor(v->type))) {
                 hasGlobalInits = true;
                 break;
             }
@@ -873,13 +1072,14 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
 
         for (const auto& decl : program->declarations) {
             if (auto v = dynamic_cast<VarDecl*>(decl.get())) {
-                if (v->initializer) {
+                ExprPtr init = v->isExtern ? nullptr : (v->initializer ? v->initializer : defaultExprFor(v->type));
+                if (init) {
                     TypePtr type = toEirType(v->type);
                     Operand target = Operand::global(v->name, Type::getPtr(type));
-                    if (auto arrLit = dynamic_cast<ArrayLitExpr*>(v->initializer.get())) {
+                    if (auto arrLit = dynamic_cast<ArrayLitExpr*>(init.get())) {
                         emitArrayInitInto(target, arrLit, type);
                     } else {
-                        Operand val = evalForType(v->initializer, v->type);
+                        Operand val = evalForType(init, v->type);
                         Instruction st{Opcode::Store, "", Type::getVoid(),
                             {(type->isStruct() || type->isArray()) ? Operand::var(val.str(), type) : val,
                              target}};
@@ -913,13 +1113,15 @@ void EIRBuilder::visit(Program* node) {
         }
     }
     for (auto& decl : node->declarations) {
+        currentFunction = nullptr;   // a top-level declaration is outside any function
+        currentBlock = nullptr;
         decl->accept(this);
     }
 }
 
 void EIRBuilder::visit(FunctionDecl* node) {
     if (!node->typeParams.empty()) {
-        funcTemplateDecls[node->name] = node;
+        if (!funcTemplateDecls.count(node->name) || node->body) funcTemplateDecls[node->name] = node;   // the definition, not a prototype
         return;
     }
 
@@ -1050,24 +1252,158 @@ void EIRBuilder::visit(VarDecl* node) {
         return;
     }
 
-    size_t al = getTypeAlign(type);
+    size_t al = getTypeAlign(type, module.get());
     if (al < 1) al = 1;
     std::string slotName = "%" + node->name + ".addr";
-    emit(Instruction{Opcode::Alloca, slotName, type, {Operand::constInt(static_cast<int64_t>(al), Type::getI32())}});
-    declareVar(node->name, Operand::var(slotName, Type::getPtr(type)), type);
+    // A name declared again (a nested block, a second branch) gets its own slot.
+    if (lookupVar(node->name) || functionSlots[currentFunction].count(slotName)) slotName = "%" + node->name + "." + std::to_string(nextVarId++) + ".addr";
+    functionSlots[currentFunction].insert(slotName);
+    // The slot lives in the entry block, so a jump past the declaration (to a later case
+    // label) still finds it; the declaration itself sets it, to zero without an initializer.
+    entryAlloca(slotName, type, al);
 
-    if (node->initializer) {
-        if (auto arrLit = dynamic_cast<ArrayLitExpr*>(node->initializer.get())) {
+    // The initializer is evaluated before the name is declared: `int64 x = x + 1;` in a
+    // nested block reads the outer x. Without one, a struct with field defaults takes them.
+    // A variable whose type names a type parameter starts at zero in generic code.
+    bool generic = !typeParamOverride.empty() && substType(node->type, typeParamOverride) != node->type;
+    ExprPtr init = node->initializer ? node->initializer : (generic ? nullptr : defaultExprFor(node->type));
+    if (init) {
+        if (auto arrLit = dynamic_cast<ArrayLitExpr*>(init.get())) {
             emitArrayInitInto(Operand::var(slotName, Type::getPtr(type)), arrLit, type);
         } else {
-            Operand val = evalForType(node->initializer, node->type);
-            Instruction st{Opcode::Store, "", Type::getVoid(),
-                {(type->isStruct() || type->isArray()) ? Operand::var(val.str(), type) : val,
-                 Operand::var(slotName, Type::getPtr(type))}};
+            Operand val = evalForType(init, type);
+            Instruction st{Opcode::Store, "", Type::getVoid(), {val, Operand::var(slotName, Type::getPtr(type))}};
             st.isVolatile = node->isVolatile;
             emit(st);
         }
+    } else {
+        emitZeroFill(Operand::var(slotName, Type::getPtr(type)), type);
     }
+    declareVar(node->name, Operand::var(slotName, Type::getPtr(type)), type);
+}
+
+// An alloca at the top of the function's entry block.
+void EIRBuilder::entryAlloca(const std::string& name, const TypePtr& type, size_t align) {
+    BasicBlock* entry = currentFunction->blocks.front().get();
+    auto& insts = entry->instructions;
+    size_t at = 0;
+    while (at < insts.size() && insts[at]->op == Opcode::Alloca) ++at;
+    insts.insert(insts.begin() + static_cast<long>(at), std::make_unique<Instruction>(
+        Opcode::Alloca, name, type, std::vector<Operand>{Operand::constInt(static_cast<int64_t>(align), Type::getI32())}));
+}
+
+// Zero the bytes of a `type` at `ptr`: a scalar store, or 8-byte stores then bytes.
+void EIRBuilder::emitZeroFill(const Operand& ptr, const TypePtr& type) {
+    if (!type) return;
+    if (type->isInt() || type->isFloat() || type->isPointer()) {
+        Operand zero = type->isFloat() ? Operand::constFloat(0.0, type) : type->isPointer() ? Operand::constNull() : Operand::constInt(0, type);
+        emit(Instruction{Opcode::Store, "", Type::getVoid(), {zero, Operand::var(ptr.text, Type::getPtr(type))}});
+        return;
+    }
+    size_t size = getTypeSize(type, module.get());
+    if (type->isStruct()) { size_t ss = module->getStructSize(type->nominalName()); if (ss) size = ss; }
+    if (size <= 256) {
+        size_t off = 0;
+        for (; off + 8 <= size; off += 8) {
+            std::string p = newVar();
+            emit(Instruction{Opcode::OffsetPtr, p, Type::getPtr(Type::getI64()), {ptr, Operand::constInt(static_cast<int64_t>(off), Type::getI64())}});
+            emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::constInt(0, Type::getI64()), Operand::var(p, Type::getPtr(Type::getI64()))}});
+        }
+        for (; off < size; ++off) {
+            std::string p = newVar();
+            emit(Instruction{Opcode::OffsetPtr, p, Type::getPtr(Type::getU8()), {ptr, Operand::constInt(static_cast<int64_t>(off), Type::getI64())}});
+            emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::constInt(0, Type::getU8()), Operand::var(p, Type::getPtr(Type::getU8()))}});
+        }
+        return;
+    }
+    // A large block: a loop over its 8-byte words (an aggregate's size is a multiple of 8
+    // or padded to its alignment; the tail is zeroed bytewise).
+    TypePtr i64 = Type::getI64();
+    std::string idx = newVar() + ".z";
+    entryAlloca(idx, i64, 8);
+    emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::constInt(0, i64), Operand::var(idx, Type::getPtr(i64))}});
+    BasicBlock* loopBB = createBlock("zero.loop");
+    BasicBlock* bodyBB = createBlock("zero.body");
+    BasicBlock* doneBB = createBlock("zero.done");
+    emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(loopBB->name)}});
+    setBlock(loopBB);
+    std::string iv = newVar(), more = newVar();
+    emit(Instruction{Opcode::Load, iv, i64, {Operand::var(idx, Type::getPtr(i64))}});
+    emit(Instruction{Opcode::ICmp, more, Type::getI1(), {Operand::var(iv, i64), Operand::constInt(static_cast<int64_t>(size / 8), i64)}, ICmpCond::Slt});
+    emit(Instruction{Opcode::BrCond, "", Type::getVoid(), {Operand::var(more, Type::getI1()), Operand::block(bodyBB->name), Operand::block(doneBB->name)}});
+    setBlock(bodyBB);
+    std::string p = newVar(), next = newVar();
+    emit(Instruction{Opcode::Gep, p, Type::getPtr(i64), {ptr, Operand::var(iv, i64)}});
+    emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::constInt(0, i64), Operand::var(p, Type::getPtr(i64))}});
+    emit(Instruction{Opcode::Add, next, i64, {Operand::var(iv, i64), Operand::constInt(1, i64)}});
+    emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::var(next, i64), Operand::var(idx, Type::getPtr(i64))}});
+    emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(loopBB->name)}});
+    setBlock(doneBB);
+    for (size_t off = size / 8 * 8; off < size; ++off) {
+        std::string b = newVar();
+        emit(Instruction{Opcode::OffsetPtr, b, Type::getPtr(Type::getU8()), {ptr, Operand::constInt(static_cast<int64_t>(off), Type::getI64())}});
+        emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::constInt(0, Type::getU8()), Operand::var(b, Type::getPtr(Type::getU8()))}});
+    }
+}
+
+// The value a variable of type `t` starts with when its declaration has no initializer:
+// `S{}` for a struct with field defaults (directly or in a nested struct), an array
+// literal of those for an array of such structs, else null (zero). A generic instance and
+// a union have no defaults (codegen's defaultExprFor).
+ExprPtr EIRBuilder::defaultExprFor(const std::string& t0) {
+    std::string t = tyq::strip(t0);
+    auto al = typeAliases.find(t);
+    if (al != typeAliases.end()) t = al->second;
+    if (!typeParamOverride.empty()) t = substType(t, typeParamOverride);
+    ty::Type pt = ty::Type::parse(t);
+    if (pt.kind == ty::Type::Kind::Array && pt.elem) {
+        ExprPtr e = defaultExprFor(pt.elem->str());
+        if (!e) return nullptr;
+        TypePtr at = toEirType(t);
+        if (!at || !at->isArray() || at->arraySize == 0 || at->arraySize > 65536) return nullptr;
+        return std::make_shared<ArrayLitExpr>(std::vector<ExprPtr>(static_cast<size_t>(at->arraySize), e));
+    }
+    if (pt.kind != ty::Type::Kind::Struct && pt.kind != ty::Type::Kind::Named) return nullptr;
+    std::string sname = pt.nominalName();
+    auto it = plainStructs.find(sname);
+    if (it == plainStructs.end()) return nullptr;
+    auto hit = structHasDefaults.find(sname);
+    if (hit == structHasDefaults.end()) {
+        structHasDefaults[sname] = -1;   // a recursive struct reaches itself only by pointer
+        bool any = false;
+        for (const auto& f : it->second->fields)
+            if (f.defaultValue || defaultExprFor(f.type)) { any = true; break; }
+        structHasDefaults[sname] = any ? 1 : 0;
+        hit = structHasDefaults.find(sname);
+    }
+    if (hit->second != 1) return nullptr;
+    return std::make_shared<StructInitExpr>(sname, std::vector<std::pair<std::string, ExprPtr>>{});
+}
+
+// A struct literal with its omitted fields given their defaults; null when the struct has
+// none.
+std::shared_ptr<StructInitExpr> EIRBuilder::withDefaults(StructInitExpr* init) {
+    std::string sname = init->structName;
+    if (!defaultExprFor(sname)) return nullptr;
+    const auto& fields = plainStructs[sname]->fields;
+    bool named = !init->fieldInits.empty() && !init->fieldInits[0].first.empty();
+    std::vector<std::pair<std::string, ExprPtr>> all;
+    std::set<std::string> given;
+    for (size_t i = 0; i < init->fieldInits.size(); ++i) {
+        std::string n = named ? init->fieldInits[i].first : (i < fields.size() ? fields[i].name : "");
+        if (n.empty()) continue;
+        given.insert(n);
+        all.push_back({n, init->fieldInits[i].second});
+    }
+    for (const auto& f : fields) {
+        if (given.count(f.name)) continue;
+        ExprPtr d = f.defaultValue ? f.defaultValue : defaultExprFor(f.type);
+        if (d) all.push_back({f.name, d});
+    }
+    auto out = std::make_shared<StructInitExpr>(init->structName, all);
+    out->line = init->line;
+    out->col = init->col;
+    return out;
 }
 
 void EIRBuilder::visit(BlockStmt* node) {
@@ -1125,7 +1461,7 @@ void EIRBuilder::visit(IfStmt* node) {
 
     // Then
     setBlock(thenBB);
-    node->thenBranch->accept(this);
+    visitBody(node->thenBranch);
     if (!currentBlock->hasTerminator()) {
         emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(mergeBB->name)}});
     }
@@ -1133,7 +1469,7 @@ void EIRBuilder::visit(IfStmt* node) {
     // Else
     if (elseBB) {
         setBlock(elseBB);
-        node->elseBranch->accept(this);
+        visitBody(node->elseBranch);
         if (!currentBlock->hasTerminator()) {
             emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(mergeBB->name)}});
         }
@@ -1157,9 +1493,9 @@ void EIRBuilder::visit(WhileStmt* node) {
     setBlock(bodyBB);
     breakStack.push_back(exitBB);
     continueStack.push_back(condBB);
-    loopContextStack.push_back({exitBB, condBB, cleanupScopes.size(), currentHandlerDepth});
+    loopContextStack.push_back({exitBB, condBB, cleanupScopes.size(), currentHandlerDepth, node->label});
 
-    node->body->accept(this);
+    visitBody(node->body);
     if (!currentBlock->hasTerminator()) {
         emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(condBB->name)}});
     }
@@ -1171,9 +1507,34 @@ void EIRBuilder::visit(WhileStmt* node) {
     setBlock(exitBB);
 }
 
+// The Eskiu spelling of an integer EIR type.
+static std::string intSpelling(const TypePtr& t) {
+    if (!t || !t->isInt()) return "";
+    switch (t->bitWidth) {
+        case 1: return "bool";
+        case 8: return t->isSigned ? "int8" : "uint8";
+        case 16: return t->isSigned ? "int16" : "uint16";
+        case 64: return t->isSigned ? "int64" : "uint64";
+        default: return t->isSigned ? "int" : "uint";
+    }
+}
+
 void EIRBuilder::visit(ForStmt* node) {
     pushScope();
     if (auto* ib = dynamic_cast<BlockStmt*>(node->init.get())) {
+        // `for (i in A..B)` inside a generic instance: the shared AST carries the type the
+        // checker stamped for some instance, so the bounds' common integer type is derived
+        // again for this one (as codegen does).
+        if (!typeParamOverride.empty() && ib->items.size() == 2 &&
+            std::holds_alternative<DeclPtr>(ib->items[0]) && std::holds_alternative<DeclPtr>(ib->items[1])) {
+            auto* lo = dynamic_cast<VarDecl*>(std::get<DeclPtr>(ib->items[0]).get());
+            auto* hi = dynamic_cast<VarDecl*>(std::get<DeclPtr>(ib->items[1]).get());
+            if (lo && hi && lo->rangeBound && hi->rangeBound && lo->initializer && hi->initializer) {
+                std::string ct = ty::rangeVarType(intSpelling(getExprEirType(lo->initializer)),
+                                                  intSpelling(getExprEirType(hi->initializer)));
+                if (!ct.empty()) lo->type = hi->type = ct;
+            }
+        }
         for (auto& item : ib->items) {
             if (std::holds_alternative<DeclPtr>(item)) std::get<DeclPtr>(item)->accept(this);
             else if (std::holds_alternative<StmtPtr>(item)) std::get<StmtPtr>(item)->accept(this);
@@ -1201,9 +1562,9 @@ void EIRBuilder::visit(ForStmt* node) {
     setBlock(bodyBB);
     breakStack.push_back(exitBB);
     continueStack.push_back(stepBB);
-    loopContextStack.push_back({exitBB, stepBB, cleanupScopes.size(), currentHandlerDepth});
+    loopContextStack.push_back({exitBB, stepBB, cleanupScopes.size(), currentHandlerDepth, node->label});
 
-    node->body->accept(this);
+    visitBody(node->body);
     if (!currentBlock->hasTerminator()) {
         emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(stepBB->name)}});
     }
@@ -1220,34 +1581,40 @@ void EIRBuilder::visit(ForStmt* node) {
     popScope();
 }
 
-void EIRBuilder::visit(BreakStmt*) {
-    if (!loopContextStack.empty()) {
-        runCleanupsToDepth(loopContextStack.back().cleanupDepth, false);
-        for (size_t h = currentHandlerDepth; h > loopContextStack.back().handlerDepth; --h) {
-            emit(Instruction{Opcode::PopHandler, "", Type::getVoid(), {}});
-        }
-        if (currentBlock && !currentBlock->hasTerminator()) {
-            emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(loopContextStack.back().breakTarget->name)}});
-        }
+// The loop (or switch, for an unlabeled break) a jump leaves: the innermost, or the loop
+// carrying `label`; a continue skips switches.
+const EIRBuilder::LoopContext* EIRBuilder::jumpTarget(const std::string& label, bool isContinue) const {
+    for (auto it = loopContextStack.rbegin(); it != loopContextStack.rend(); ++it) {
+        if (!label.empty() && it->label != label) continue;
+        if (isContinue && !it->continueTarget) continue;
+        return &*it;
+    }
+    return nullptr;
+}
+
+// Run the cleanups and drop the handlers inside `loop`, then branch to its exit or step.
+void EIRBuilder::jumpTo(const LoopContext* loop, bool isContinue) {
+    runCleanupsToDepth(loop->cleanupDepth, false);
+    for (size_t h = currentHandlerDepth; h > loop->handlerDepth; --h) {
+        emit(Instruction{Opcode::PopHandler, "", Type::getVoid(), {}});
+    }
+    if (currentBlock && !currentBlock->hasTerminator()) {
+        BasicBlock* target = isContinue ? loop->continueTarget : loop->breakTarget;
+        emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(target->name)}});
+    }
+}
+
+void EIRBuilder::visit(BreakStmt* node) {
+    if (const LoopContext* loop = jumpTarget(node->label, false)) {
+        jumpTo(loop, false);
     } else if (!breakStack.empty()) {
         emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(breakStack.back()->name)}});
     }
 }
 
-void EIRBuilder::visit(ContinueStmt*) {
-    // A switch pushes a context with no continue target: `continue` goes to the loop.
-    const LoopContext* loop = nullptr;
-    for (auto it = loopContextStack.rbegin(); it != loopContextStack.rend(); ++it) {
-        if (it->continueTarget) { loop = &*it; break; }
-    }
-    if (loop) {
-        runCleanupsToDepth(loop->cleanupDepth, false);
-        for (size_t h = currentHandlerDepth; h > loop->handlerDepth; --h) {
-            emit(Instruction{Opcode::PopHandler, "", Type::getVoid(), {}});
-        }
-        if (currentBlock && !currentBlock->hasTerminator()) {
-            emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(loop->continueTarget->name)}});
-        }
+void EIRBuilder::visit(ContinueStmt* node) {
+    if (const LoopContext* loop = jumpTarget(node->label, true)) {
+        jumpTo(loop, true);
     } else if (!continueStack.empty()) {
         emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(continueStack.back()->name)}});
     }
@@ -1268,23 +1635,33 @@ void EIRBuilder::visit(BinaryExpr* node) {
 
     // Assignment: =
     if (node->op == "=") {
+        // `lv op= v` is parsed as `lv = lv op v` sharing the lvalue node: evaluate the
+        // lvalue once (a[f()] += 1 calls f once).
+        if (auto* rhsOp = dynamic_cast<BinaryExpr*>(node->right.get());
+            rhsOp && rhsOp->left.get() == node->left.get() && rhsOp->op != "=") {
+            emitCompoundAssign(node, rhsOp);
+            return;
+        }
         if (auto* mem = dynamic_cast<MemberExpr*>(node->left.get())) {
             std::string baseType = getExprEirType(mem->base)->nominalName();
             auto it = module->structLayouts.find(baseType);
             if (it != module->structLayouts.end()) {
                 const StructFieldInfo* fi = it->second.getFieldInfo(mem->member);
                 if (fi && fi->isBitfield) {
-                    Operand rhs = evaluateExpr(node->right);
-                    storeBitfield(mem, rhs, volatileRooted(mem));
-                    lastValue = rhs;
+                    // The assignment's value is the field's (wrapped) value, read as the
+                    // field is.
+                    Operand base = bitfieldBase(mem);
+                    Operand rhs = coerceNumeric(evaluateExpr(node->right), fi->type);
+                    storeBitfieldAt(base, fi, rhs, volatileRooted(mem));
+                    lastValue = coerceNumeric(rhs, bitfieldReadType(fi));
                     return;
                 }
             }
         }
+        // The target's address first, then the value (as compound assignment does).
         TypePtr lhsTy = getExprEirType(node->left);
-        std::string targetTy = lhsTy ? lhsTy->nominalName() : "";
-        Operand rhs = evalForType(node->right, targetTy);
         Operand lhsAddr = evaluateLValue(node->left);
+        Operand rhs = evalForType(node->right, lhsTy);
         Instruction st{Opcode::Store, "", Type::getVoid(), {rhs, lhsAddr}};
         st.isVolatile = volatileRooted(node->left.get());
         emit(st);
@@ -1304,11 +1681,12 @@ void EIRBuilder::visit(BinaryExpr* node) {
             if (it != module->structLayouts.end()) {
                 const StructFieldInfo* fi = it->second.getFieldInfo(mem->member);
                 if (fi && fi->isBitfield) {
-                    Operand cur = loadBitfield(mem, volatileRooted(mem));
+                    Operand base = bitfieldBase(mem);
+                    Operand cur = loadBitfieldAt(base, fi, volatileRooted(mem));
                     Operand rhs = evaluateExpr(node->right);
-                    Operand res = compoundOp(baseOp, cur, rhs, cur.type);
-                    storeBitfield(mem, res, volatileRooted(mem));
-                    lastValue = res;
+                    Operand res = compoundOp(baseOp, cur, rhs, fi->type);
+                    storeBitfieldAt(base, fi, res, volatileRooted(mem));
+                    lastValue = coerceNumeric(res, cur.type);
                     return;
                 }
             }
@@ -1367,6 +1745,10 @@ void EIRBuilder::visit(BinaryExpr* node) {
     Operand lhs = evaluateExpr(node->left);
     Operand rhs = evaluateExpr(node->right);
     const std::string& op = node->op;
+    if (std::string f = instanceOperator(op, {lhs, rhs}); !f.empty()) {
+        lastValue = callOperator(f, {lhs, rhs});
+        return;
+    }
     bool isCmp = op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=";
     auto isNum = [](const Operand& o) {
         return o.kind != OperandKind::ConstantNull && o.type && (o.type->isInt() || o.type->isFloat());
@@ -1559,6 +1941,10 @@ void EIRBuilder::visit(UnaryExpr* node) {
         return;
     }
 
+    if (std::string f = instanceOperator(node->op == "-" ? "u-" : node->op, {val}); !f.empty()) {
+        lastValue = callOperator(f, {val});
+        return;
+    }
     // `+`, `-` and `~` work on the promoted operand (C), so `-u8` is an int.
     val = promoteInt(val);
     if (node->op == "+") {
@@ -1585,6 +1971,17 @@ void EIRBuilder::visit(UnaryExpr* node) {
     lastValue = Operand::var(dst, val.type);
 }
 
+// `x + 1` / `x - 1` for ++/--: a pointer steps by one element, a float by 1.0, an integer
+// at its promoted type, converted back to the operand's type.
+Operand EIRBuilder::stepByOne(const Operand& cur, const TypePtr& ty, bool decrement) {
+    if (ty && ty->isPointer()) {
+        std::string dst = newVar();
+        emit(Instruction{Opcode::Gep, dst, ty, {cur, Operand::constInt(decrement ? -1 : 1, Type::getI64())}});
+        return Operand::var(dst, ty);
+    }
+    return compoundOp(decrement ? "-" : "+", cur, Operand::constInt(1, Type::getI32()), ty);
+}
+
 void EIRBuilder::visit(IncDecExpr* node) {
     if (auto* mem = dynamic_cast<MemberExpr*>(node->operand.get())) {
         std::string baseType = getExprEirType(mem->base)->nominalName();
@@ -1592,11 +1989,17 @@ void EIRBuilder::visit(IncDecExpr* node) {
         if (it != module->structLayouts.end()) {
             const StructFieldInfo* fi = it->second.getFieldInfo(mem->member);
             if (fi && fi->isBitfield) {
-                Operand cur = loadBitfield(mem, volatileRooted(mem));
-                std::string next = newVar();
-                emit(Instruction{node->decrement ? Opcode::Sub : Opcode::Add, next, cur.type, {cur, Operand::constInt(1, cur.type)}});
-                storeBitfield(mem, Operand::var(next, cur.type), volatileRooted(mem));
-                lastValue = node->prefix ? Operand::var(next, cur.type) : cur;
+                // The new value is what the field holds after the store (wrapped to its
+                // width); a postfix result keeps the field's declared type (clang).
+                Operand base = bitfieldBase(mem);
+                Operand cur = loadBitfieldAt(base, fi, volatileRooted(mem));
+                Operand stored = coerceNumeric(stepByOne(cur, fi->type, node->decrement), fi->type);
+                storeBitfieldAt(base, fi, stored, volatileRooted(mem));
+                if (node->prefix) {
+                    lastValue = coerceNumeric(loadBitfieldAt(base, fi, volatileRooted(mem)), cur.type);
+                } else {
+                    lastValue = coerceNumeric(cur, fi->type);
+                }
                 return;
             }
         }
@@ -1610,16 +2013,28 @@ void EIRBuilder::visit(IncDecExpr* node) {
     ld.isVolatile = volatileRooted(node->operand.get());
     emit(ld);
 
-    std::string next = newVar();
-    emit(Instruction{node->decrement ? Opcode::Sub : Opcode::Add, next, ty, {Operand::var(cur, ty), Operand::constInt(1, ty)}});
-    Instruction st{Opcode::Store, "", Type::getVoid(), {Operand::var(next, ty), addr}};
+    Operand next = stepByOne(Operand::var(cur, ty), ty, node->decrement);
+    Instruction st{Opcode::Store, "", Type::getVoid(), {next, addr}};
     st.isVolatile = volatileRooted(node->operand.get());
     emit(st);
 
-    lastValue = node->prefix ? Operand::var(next, ty) : Operand::var(cur, ty);
+    lastValue = node->prefix ? next : Operand::var(cur, ty);
 }
 
 void EIRBuilder::visit(IdentExpr* node) {
+    // A local or parameter shadows a constant, an enum member and a variant of that name.
+    Operand* slot = lookupVar(node->name);
+    if (slot) {
+        TypePtr ty = lookupVarType(node->name);
+        std::string dst = newVar();
+        Instruction ld{Opcode::Load, dst, ty, {*slot}};
+        ld.isVolatile = volatileVars.count(node->name) > 0;
+        emit(ld);
+        lastValue = Operand::var(dst, ty);
+        lastLValue = *slot;
+        return;
+    }
+
     auto ecIt = enumConstants.find(node->name);
     if (ecIt != enumConstants.end()) {
         auto ctIt = constTypes.find(node->name);
@@ -1642,18 +2057,6 @@ void EIRBuilder::visit(IdentExpr* node) {
         return;
     }
 
-    Operand* slot = lookupVar(node->name);
-    if (slot) {
-        TypePtr ty = lookupVarType(node->name);
-        std::string dst = newVar();
-        Instruction ld{Opcode::Load, dst, ty, {*slot}};
-        ld.isVolatile = volatileVars.count(node->name) > 0;
-        emit(ld);
-        lastValue = Operand::var(dst, ty);
-        lastLValue = *slot;
-        return;
-    }
-
     if (module && module->getFunction(node->name)) {
         TypePtr ty = getExprEirType(node);
         if (ty && ty->isClosure()) {
@@ -1668,8 +2071,8 @@ void EIRBuilder::visit(IdentExpr* node) {
         return;
     }
 
-    lastLValue = Operand::global(node->name, Type::getPtr());
     TypePtr ty = getExprEirType(node);
+    lastLValue = Operand::global(node->name, Type::getPtr(ty && !ty->isFunction() ? ty : nullptr));
     if (ty && !ty->isArray() && !ty->isFunction()) {
         std::string dst = newVar();
         Instruction ld{Opcode::Load, dst, ty, {lastLValue}};
@@ -1724,7 +2127,14 @@ void EIRBuilder::visit(LiteralExpr* node) {
 
 void EIRBuilder::visit(CallExpr* node) {
     if (auto id = dynamic_cast<IdentExpr*>(node->callee.get())) {
-        if (id->name == "exception_text" && node->args.empty()) {
+        if (id->name == "exception_text" && node->args.empty() && !lookupVar(id->name) && !module->getFunction(id->name)) {
+            // The text belongs to its catch block: formatted into the handler's own buffer.
+            if (!catchTextSlots.empty()) {
+                Operand buf = Operand::var(catchTextSlots.back(), Type::getPtr(Type::getU8()));
+                emit(Instruction{Opcode::Call, "", Type::getVoid(), {Operand::global("__exception_text_into", Type::getVoid()), buf}});
+                lastValue = buf;
+                return;
+            }
             std::string resVar = newVar();
             emit(Instruction{Opcode::Call, resVar, Type::getPtr(Type::getU8()), {
                 Operand::global("__eir_exception_text", Type::getPtr(Type::getU8()))
@@ -1760,6 +2170,12 @@ void EIRBuilder::visit(CallExpr* node) {
                 isClosureCall = true;
                 closureOp = evaluateExpr(node->callee);
             }
+        } else if (!module->getFunction(id->name) && isGlobalName(id->name)) {
+            TypePtr gt = getExprEirType(node->callee);   // a global fn value
+            if (gt && gt->isClosure()) {
+                isClosureCall = true;
+                closureOp = evaluateExpr(node->callee);
+            }
         }
     } else {
         TypePtr cTy = getExprEirType(node->callee);
@@ -1773,9 +2189,9 @@ void EIRBuilder::visit(CallExpr* node) {
         std::vector<std::string> paramNominals;
         std::vector<TypePtr> paramTypes;
         if (resolvedExprTypes) {
-            auto it = resolvedExprTypes->find(node->callee.get());
-            if (it != resolvedExprTypes->end()) {
-                auto parsed = ty::Type::parse(it->second);
+            std::string calleeTy = semaType(node->callee.get());
+            if (!calleeTy.empty()) {
+                auto parsed = ty::Type::parse(calleeTy);
                 if (parsed.kind == ty::Type::Kind::Fn) {
                     for (const auto& p : parsed.params) {
                         paramNominals.push_back(p.nominalName());
@@ -1801,6 +2217,7 @@ void EIRBuilder::visit(CallExpr* node) {
         std::string dst = retTy->isVoid() ? "" : newVar();
         emit(Instruction{Opcode::CallIndirect, dst, retTy, args});
         lastValue = dst.empty() ? Operand::var("", Type::getVoid()) : Operand::var(dst, retTy);
+        lastLValue = (retTy && (retTy->isStruct() || retTy->isArray() || retTy->isInterface() || retTy->isClosure() || retTy->isSlice())) ? Operand::var(dst, Type::getPtr(retTy)) : lastValue;
         return;
     }
 
@@ -1827,10 +2244,9 @@ void EIRBuilder::visit(CallExpr* node) {
                 emit(Instruction{Opcode::OffsetPtr, payPtr, Type::getPtr(pt), {
                     Operand::var(slot, Type::getPtr()), Operand::constInt(static_cast<int64_t>(payOffset), Type::getI64())
                 }});
-                std::string targetNominal = pt ? pt->nominalName() : "";
-                Operand argVal = evalForType(node->args[p], targetNominal);
+                Operand argVal = evalForType(node->args[p], pt);
                 emit(Instruction{Opcode::Store, "", Type::getVoid(), {argVal, Operand::var(payPtr, Type::getPtr(pt))}});
-                payOffset += getTypeSize(pt);
+                payOffset += getTypeSize(pt, module.get());
             }
             lastLValue = Operand::var(slot, Type::getPtr(enumTy));
             lastValue = Operand::var(slot, enumTy);
@@ -1846,23 +2262,29 @@ void EIRBuilder::visit(CallExpr* node) {
             std::set<std::string> tps(fd->typeParams.begin(), fd->typeParams.end());
             std::map<std::string, std::string> subs;
             auto getArgTypeStr = [&](const ExprPtr& arg) -> std::string {
-                if (resolvedExprTypes) {
-                    auto it = resolvedExprTypes->find(arg.get());
-                    if (it != resolvedExprTypes->end()) return it->second;
-                }
-                return getExprEirType(arg)->nominalName();
+                std::string st = semaType(arg.get());
+                return st.empty() ? eskiuSpelling(getExprEirType(arg)) : st;
             };
             for (size_t j = 0; j < fd->params.size() && j < node->args.size(); ++j) {
                 if (!tps.count(tyq::strip(fd->params[j].first))) {
                     unifyTypeParam(fd->params[j].first, getArgTypeStr(node->args[j]), tps, subs);
                 }
             }
+            std::set<std::string> fromComposite;   // bound by `*T`, `List<T>*`: those win
+            for (const auto& kv : subs) fromComposite.insert(kv.first);
             for (size_t j = 0; j < fd->params.size() && j < node->args.size(); ++j) {
                 std::string tp = tyq::strip(fd->params[j].first);
-                if (!tps.count(tp) || subs.count(tp)) continue;
+                if (!tps.count(tp) || fromComposite.count(tp)) continue;
                 std::string at = getArgTypeStr(node->args[j]);
                 if (at.empty() || at == "null") continue;
-                unifyTypeParam(fd->params[j].first, at, tps, subs);
+                if (!subs.count(tp)) {
+                    unifyTypeParam(fd->params[j].first, at, tps, subs);
+                } else if (subs[tp] != at) {
+                    // By-value `T a, T b` deductions of different integer types meet at
+                    // their common type (ty::rangeVarType), as sema infers.
+                    std::string common = ty::rangeVarType(tyq::strip(subs[tp]), tyq::strip(at));
+                    if (!common.empty()) subs[tp] = common;
+                }
             }
             std::vector<std::string> typeArgs;
             for (const auto& tpName : fd->typeParams) {
@@ -1906,10 +2328,8 @@ void EIRBuilder::visit(CallExpr* node) {
         } else if (baseTy && baseTy->isPointer() && baseTy->elemType && baseTy->elemType->isInterface()) {
             baseTypeName = baseTy->elemType->nominalName();
         } else if (resolvedExprTypes) {
-            auto it = resolvedExprTypes->find(mem->base.get());
-            if (it != resolvedExprTypes->end()) {
-                baseTypeName = ty::Type::parse(tyq::strip(it->second)).nominalName();
-            }
+            std::string bt = semaType(mem->base.get());
+            if (!bt.empty()) baseTypeName = ty::Type::parse(tyq::strip(bt)).nominalName();
         }
 
         if (interfaces.count(baseTypeName)) {
@@ -1950,6 +2370,7 @@ void EIRBuilder::visit(CallExpr* node) {
             std::string dst = retTy->isVoid() ? "" : newVar();
             emit(Instruction{Opcode::CallIndirect, dst, retTy, callArgs});
             lastValue = dst.empty() ? Operand::var("", Type::getVoid()) : Operand::var(dst, retTy);
+            lastLValue = (retTy && (retTy->isStruct() || retTy->isArray() || retTy->isInterface() || retTy->isClosure() || retTy->isSlice())) ? Operand::var(dst, Type::getPtr(retTy)) : lastValue;
             return;
         }
 
@@ -1985,10 +2406,7 @@ void EIRBuilder::visit(CallExpr* node) {
             unifyTypeParam(gf->params[0].first, recvAsSelf, tps, subs);
             for (size_t j = 1; j < gf->params.size() && j - 1 < node->args.size(); ++j) {
                 std::string at;
-                if (resolvedExprTypes) {
-                    auto it = resolvedExprTypes->find(node->args[j - 1].get());
-                    if (it != resolvedExprTypes->end()) at = it->second;
-                }
+                at = semaType(node->args[j - 1].get());
                 if (at.empty()) {
                     TypePtr et = getExprEirType(node->args[j - 1]);
                     if (et) {
@@ -2072,6 +2490,10 @@ void EIRBuilder::visit(CastExpr* node) {
         lastValue.type = toTy;
         return;
     }
+    if (toTy->isInt() && toTy->bitWidth == 1) {   // to bool: `!= 0` (C _Bool), a pointer too
+        lastValue = truth(val);
+        return;
+    }
     bool fromNum = val.type && (val.type->isInt() || val.type->isFloat());
     if (fromNum && (toTy->isInt() || toTy->isFloat())) {
         lastValue = coerceNumeric(val, toTy);
@@ -2108,14 +2530,13 @@ void EIRBuilder::visit(TernaryExpr* node) {
 
     emit(Instruction{Opcode::BrCond, "", Type::getVoid(), {cond, Operand::block(thenBB->name), Operand::block(elseBB->name)}});
 
-    std::string targetNominal = resTy ? resTy->nominalName() : "";
     setBlock(thenBB);
-    Operand trueVal = evalForType(node->thenExpr, targetNominal);
+    Operand trueVal = evalForType(node->thenExpr, resTy);
     emit(Instruction{Opcode::Store, "", Type::getVoid(), {trueVal, Operand::var(resultSlot, Type::getPtr(resTy))}});
     emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(mergeBB->name)}});
 
     setBlock(elseBB);
-    Operand falseVal = evalForType(node->elseExpr, targetNominal);
+    Operand falseVal = evalForType(node->elseExpr, resTy);
     emit(Instruction{Opcode::Store, "", Type::getVoid(), {falseVal, Operand::var(resultSlot, Type::getPtr(resTy))}});
     emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(mergeBB->name)}});
 
@@ -2123,6 +2544,7 @@ void EIRBuilder::visit(TernaryExpr* node) {
     std::string dst = newVar();
     emit(Instruction{Opcode::Load, dst, resTy, {Operand::var(resultSlot, Type::getPtr(resTy))}});
     lastValue = Operand::var(dst, resTy);
+    lastLValue = Operand::var(resultSlot, Type::getPtr(resTy));   // `(c ? a : b).x` reads the chosen arm
 }
 
 void EIRBuilder::visit(MemberExpr* node) {
@@ -2159,10 +2581,9 @@ void EIRBuilder::visit(MemberExpr* node) {
     } else if (objTy && objTy->isPointer() && objTy->elemType && objTy->elemType->isStruct()) {
         structName = objTy->elemType->nominalName();
     } else if (resolvedExprTypes) {
-        auto it = resolvedExprTypes->find(node->base.get());
-        if (it != resolvedExprTypes->end()) {
-            std::string st = tyq::strip(it->second);
-            if (!typeParamOverride.empty()) st = substType(st, typeParamOverride);
+        std::string semaBase = semaType(node->base.get());
+        if (!semaBase.empty()) {
+            std::string st = tyq::strip(semaBase);
             while (!st.empty() && st.front() == '*') st = st.substr(1);
             while (!st.empty() && st.back() == '*') st.pop_back();
             structName = (st.find('<') != std::string::npos) ? mangleTemplate(st) : ty::Type::parse(st).nominalName();
@@ -2553,9 +2974,9 @@ Operand EIRBuilder::evalForType(const ExprPtr& e, TypePtr targetType) {
 
         std::string sname;
         if (resolvedExprTypes) {
-            auto it = resolvedExprTypes->find(e.get());
-            if (it != resolvedExprTypes->end()) {
-                std::string st = tyq::strip(it->second);
+            std::string semaE = semaType(e.get());
+            if (!semaE.empty()) {
+                std::string st = tyq::strip(semaE);
                 while (!st.empty() && st.front() == '*') st = st.substr(1);
                 while (!st.empty() && st.back() == '*') st.pop_back();
                 sname = ty::Type::parse(st).nominalName();
@@ -2700,6 +3121,56 @@ Operand EIRBuilder::truth(const Operand& v) {
     return Operand::var(dst, Type::getI1());
 }
 
+// The type a bitfield reads as: int when every value fits one (C promotion), else its type.
+TypePtr EIRBuilder::bitfieldReadType(const StructFieldInfo* fi) {
+    TypePtr t = fi->type;
+    if (t && t->isInt() && t->bitWidth >= 32 &&
+        ((!t->isSigned && fi->bitWidth < 32) || (t->isSigned && t->bitWidth == 64 && fi->bitWidth <= 32)))
+        return Type::getI32();
+    return t;
+}
+
+// `lv op= v` (as `lv = lv op v` with the lvalue node shared): the lvalue's address (or a
+// bitfield's struct) once, then `*p = *p op v` with the operator's usual conversions, or
+// the overloaded operator's function.
+void EIRBuilder::emitCompoundAssign(BinaryExpr* node, BinaryExpr* rhsOp) {
+    const std::string& op = rhsOp->op;
+    if (auto* mem = dynamic_cast<MemberExpr*>(node->left.get())) {
+        if (const StructFieldInfo* fi = bitfieldOf(mem)) {
+            Operand base = bitfieldBase(mem);
+            Operand cur = loadBitfieldAt(base, fi, volatileRooted(mem));
+            Operand rhs = evaluateExpr(rhsOp->right);
+            Operand res = compoundOp(op, cur, rhs, fi->type);
+            storeBitfieldAt(base, fi, res, volatileRooted(mem));
+            lastValue = coerceNumeric(res, cur.type);
+            return;
+        }
+    }
+    Operand lhsAddr = evaluateLValue(node->left);
+    TypePtr ty = getExprEirType(node->left);
+    std::string curVal = newVar();
+    Instruction ld{Opcode::Load, curVal, ty, {lhsAddr}};
+    ld.isVolatile = volatileRooted(node->left.get());
+    emit(ld);
+    Operand cur = Operand::var(curVal, ty);
+    Operand res;
+    if (!rhsOp->opFunc.empty()) {
+        Function* f = module->getFunction(rhsOp->opFunc);
+        TypePtr pt = f && f->params.size() > 1 ? f->params[1].second : nullptr;
+        Operand rhs = pt ? evalForType(rhsOp->right, pt) : evaluateExpr(rhsOp->right);
+        TypePtr rt = f ? f->returnType : ty;
+        std::string dst = newVar();
+        emit(Instruction{Opcode::Call, dst, rt, {Operand::global(rhsOp->opFunc, Type::getPtr()), cur, rhs}});
+        res = coerceNumeric(Operand::var(dst, rt), ty);
+    } else {
+        res = compoundOp(op, cur, evaluateExpr(rhsOp->right), ty);
+    }
+    Instruction st{Opcode::Store, "", Type::getVoid(), {res, lhsAddr}};
+    st.isVolatile = volatileRooted(node->left.get());
+    emit(st);
+    lastValue = res;
+}
+
 // C's integer promotion: an integer narrower than `int` becomes an `int`.
 Operand EIRBuilder::promoteInt(const Operand& v) {
     if (v.type && v.type->isInt() && v.type->bitWidth < 32) return coerceNumeric(v, Type::getI32());
@@ -2716,6 +3187,80 @@ TypePtr EIRBuilder::commonType(const TypePtr& a, const TypePtr& b) {
     if (!b || !b->isInt()) return a;
     if (a->bitWidth != b->bitWidth) return a->bitWidth > b->bitWidth ? a : b;
     return a->isSigned ? b : a;
+}
+
+// The Eskiu spelling of an EIR type, as an exception's type name: `int`, `double`,
+// `string` (a pointer to bytes), a struct's (instance) name.
+std::string EIRBuilder::eskiuSpelling(const TypePtr& t) {
+    if (!t) return "";
+    if (t->isInt()) return intSpelling(t);
+    if (t->isFloat()) return t->bitWidth == 32 ? "float" : "double";
+    if (t->isPointer()) return t->pointee && t->pointee->isInt() && t->pointee->bitWidth == 8 ? "string" : "*void";
+    return t->nominalName();
+}
+
+// In a generic instance, the overloaded operator for these operand types (sema resolves
+// one per instance but cannot stamp the shared AST), or "" for a built-in operation.
+std::string EIRBuilder::instanceOperator(const std::string& op, const std::vector<Operand>& ops) {
+    if (typeParamOverride.empty()) return "";
+    bool nominal = false;
+    std::vector<std::string> tys;
+    for (const auto& o : ops) {
+        if (!o.type || o.kind == OperandKind::ConstantNull) return "";
+        if (!(o.type->isInt() || o.type->isFloat())) nominal = true;
+        if (o.type->isPointer()) return "";
+        tys.push_back(eskiuSpelling(o.type));
+    }
+    if (!nominal) return "";
+    std::string name = eskiuOpName(op, tys);
+    if (module->getFunction(name)) return name;
+    // An overload is named from its declared spellings (`Vec<int>`), an operand here by its
+    // instance (`Vec_int`): retry with each instance's source form.
+    for (auto& t : tys) {
+        auto it = templateInstanceArgs.find(t);
+        if (it == templateInstanceArgs.end()) continue;
+        std::string src = it->second.first + "<";
+        for (size_t i = 0; i < it->second.second.size(); ++i) src += (i ? "," : "") + it->second.second[i];
+        t = src + ">";
+    }
+    name = eskiuOpName(op, tys);
+    return module->getFunction(name) ? name : "";
+}
+
+Operand EIRBuilder::callOperator(const std::string& fn, const std::vector<Operand>& args) {
+    Function* f = module->getFunction(fn);
+    std::vector<Operand> ops{Operand::global(fn, Type::getPtr())};
+    for (size_t i = 0; i < args.size(); ++i)
+        ops.push_back(f && i < f->params.size() ? coerceNumeric(args[i], f->params[i].second) : args[i]);
+    TypePtr rt = f ? f->returnType : Type::getI32();
+    std::string dst = rt->isVoid() ? "" : newVar();
+    emit(Instruction{Opcode::Call, dst, rt, ops});
+    return dst.empty() ? Operand::var("", Type::getVoid()) : Operand::var(dst, rt);
+}
+
+// The checker's type spelling for an expression: in a generic instance the one it had in
+// this instance (else the shared record with the type parameters substituted); "" if none.
+std::string EIRBuilder::semaType(const Expr* e) {
+    if (!e) return "";
+    if (!typeParamOverride.empty() && instanceExprTypes) {
+        auto it = instanceExprTypes->find(const_cast<Expr*>(e));
+        if (it != instanceExprTypes->end()) {
+            for (const auto& [subs, t] : it->second) {
+                if (subs == typeParamOverride) return t;
+            }
+        }
+    }
+    if (resolvedExprTypes) {
+        auto it = resolvedExprTypes->find(const_cast<Expr*>(e));
+        if (it != resolvedExprTypes->end())
+            return typeParamOverride.empty() ? it->second : substType(it->second, typeParamOverride);
+    }
+    return "";
+}
+
+bool EIRBuilder::isGlobalName(const std::string& name) const {
+    for (const auto& g : module->globals) if (g.name == name) return true;
+    return false;
 }
 
 // A closure's function always takes the env first. A top-level function used as a
@@ -2783,125 +3328,91 @@ void EIRBuilder::visit(TypeAliasDecl* node) {
         templateTypeAliases()[node->name] = node->aliased;
     }
 }
+// `for (x in it)` as codegen lowers it: a counted for loop (so `continue` reaches the
+// step and the label carries over) over a fixed-size array, a slice, or a List-like struct
+// with `data` and `size` fields (also through a pointer). The iterable is evaluated once:
+// anything but a stable place is held in a local (a List-like value with an address by a
+// pointer to it).
 void EIRBuilder::visit(ForInStmt* node) {
-    pushScope();
-    TypePtr itTy = getExprEirType(node->iterable);
-    Operand itVal = evaluateExpr(node->iterable);
+    std::string idxName = "__forin_i_" + std::to_string(forInCounter++);
+    auto idx = [&]() -> ExprPtr { return std::make_shared<IdentExpr>(idxName); };
+    auto intLit = [](const std::string& v) { return std::make_shared<LiteralExpr>(LiteralExpr::Kind::INT, v); };
 
-    if (itTy && itTy->isArray()) {
-        TypePtr elemTy = itTy->elemType ? itTy->elemType : Type::getI32();
-        uint64_t totalCount = itTy->arraySize;
-
-        std::string iterSlot = newVar() + ".forin_arr";
-        emit(Instruction{Opcode::Alloca, iterSlot, itTy, {Operand::constInt(8, Type::getI32())}});
-        emit(Instruction{Opcode::Store, "", Type::getVoid(), {itVal, Operand::var(iterSlot, Type::getPtr(itTy))}});
-
-        std::string varSlot = "%" + node->varName + ".addr";
-        emit(Instruction{Opcode::Alloca, varSlot, elemTy, {Operand::constInt(static_cast<int64_t>(getTypeAlign(elemTy)), Type::getI32())}});
-        declareVar(node->varName, Operand::var(varSlot, Type::getPtr(elemTy)), elemTy);
-
-        std::string idxSlot = newVar() + ".idx";
-        emit(Instruction{Opcode::Alloca, idxSlot, Type::getI64(), {Operand::constInt(8, Type::getI32())}});
-        emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::constInt(0, Type::getI64()), Operand::var(idxSlot, Type::getPtr(Type::getI64()))}});
-
-        BasicBlock* condBB = createBlock("forin.cond");
-        BasicBlock* bodyBB = createBlock("forin.body");
-        BasicBlock* stepBB = createBlock("forin.step");
-        BasicBlock* exitBB = createBlock("forin.exit");
-
-        emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(condBB->name)}});
-
-        setBlock(condBB);
-        std::string curIdx = newVar();
-        emit(Instruction{Opcode::Load, curIdx, Type::getI64(), {Operand::var(idxSlot, Type::getPtr(Type::getI64()))}});
-        std::string cmp = newVar();
-        emit(Instruction{Opcode::ICmp, cmp, Type::getI1(), {Operand::var(curIdx, Type::getI64()), Operand::constInt(static_cast<int64_t>(totalCount), Type::getI64())}, ICmpCond::Slt});
-        emit(Instruction{Opcode::BrCond, "", Type::getVoid(), {Operand::var(cmp, Type::getI1()), Operand::block(bodyBB->name), Operand::block(exitBB->name)}});
-
-        setBlock(bodyBB);
-        breakStack.push_back(exitBB);
-        continueStack.push_back(stepBB);
-
-        std::string elemPtr = newVar();
-        emit(Instruction{Opcode::Gep, elemPtr, Type::getPtr(elemTy), {Operand::var(iterSlot, Type::getPtr(itTy)), Operand::var(curIdx, Type::getI64())}});
-        std::string loadedElem = newVar();
-        emit(Instruction{Opcode::Load, loadedElem, elemTy, {Operand::var(elemPtr, Type::getPtr(elemTy))}});
-        emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::var(loadedElem, elemTy), Operand::var(varSlot, Type::getPtr(elemTy))}});
-
-        node->body->accept(this);
-
-        if (!currentBlock->hasTerminator()) {
-            emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(stepBB->name)}});
-        }
-
-        breakStack.pop_back();
-        continueStack.pop_back();
-
-        setBlock(stepBB);
-        std::string nextIdx = newVar();
-        emit(Instruction{Opcode::Add, nextIdx, Type::getI64(), {Operand::var(curIdx, Type::getI64()), Operand::constInt(1, Type::getI64())}});
-        emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::var(nextIdx, Type::getI64()), Operand::var(idxSlot, Type::getPtr(Type::getI64()))}});
-        emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(condBB->name)}});
-
-        setBlock(exitBB);
-    } else if (itTy && itTy->isSlice()) {
-        TypePtr elemTy = itTy->elemType ? itTy->elemType : Type::getI32();
-
-        std::string dataPtr = newVar() + ".slice_data";
-        emit(Instruction{Opcode::ExtractFat, dataPtr, Type::getPtr(elemTy), {itVal, Operand::constInt(0, Type::getI32())}});
-        std::string lenVal = newVar() + ".slice_len";
-        emit(Instruction{Opcode::ExtractFat, lenVal, Type::getI64(), {itVal, Operand::constInt(1, Type::getI32())}});
-
-        std::string varSlot = "%" + node->varName + ".addr";
-        emit(Instruction{Opcode::Alloca, varSlot, elemTy, {Operand::constInt(static_cast<int64_t>(getTypeAlign(elemTy)), Type::getI32())}});
-        declareVar(node->varName, Operand::var(varSlot, Type::getPtr(elemTy)), elemTy);
-
-        std::string idxSlot = newVar() + ".idx";
-        emit(Instruction{Opcode::Alloca, idxSlot, Type::getI64(), {Operand::constInt(8, Type::getI32())}});
-        emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::constInt(0, Type::getI64()), Operand::var(idxSlot, Type::getPtr(Type::getI64()))}});
-
-        BasicBlock* condBB = createBlock("forin.cond");
-        BasicBlock* bodyBB = createBlock("forin.body");
-        BasicBlock* stepBB = createBlock("forin.step");
-        BasicBlock* exitBB = createBlock("forin.exit");
-
-        emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(condBB->name)}});
-
-        setBlock(condBB);
-        std::string curIdx = newVar();
-        emit(Instruction{Opcode::Load, curIdx, Type::getI64(), {Operand::var(idxSlot, Type::getPtr(Type::getI64()))}});
-        std::string cmp = newVar();
-        emit(Instruction{Opcode::ICmp, cmp, Type::getI1(), {Operand::var(curIdx, Type::getI64()), Operand::var(lenVal, Type::getI64())}, ICmpCond::Slt});
-        emit(Instruction{Opcode::BrCond, "", Type::getVoid(), {Operand::var(cmp, Type::getI1()), Operand::block(bodyBB->name), Operand::block(exitBB->name)}});
-
-        setBlock(bodyBB);
-        breakStack.push_back(exitBB);
-        continueStack.push_back(stepBB);
-
-        std::string elemPtr = newVar();
-        emit(Instruction{Opcode::Gep, elemPtr, Type::getPtr(elemTy), {Operand::var(dataPtr, Type::getPtr(elemTy)), Operand::var(curIdx, Type::getI64())}});
-        std::string loadedElem = newVar();
-        emit(Instruction{Opcode::Load, loadedElem, elemTy, {Operand::var(elemPtr, Type::getPtr(elemTy))}});
-        emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::var(loadedElem, elemTy), Operand::var(varSlot, Type::getPtr(elemTy))}});
-
-        node->body->accept(this);
-
-        if (!currentBlock->hasTerminator()) {
-            emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(stepBB->name)}});
-        }
-
-        breakStack.pop_back();
-        continueStack.pop_back();
-
-        setBlock(stepBB);
-        std::string nextIdx = newVar();
-        emit(Instruction{Opcode::Add, nextIdx, Type::getI64(), {Operand::var(curIdx, Type::getI64()), Operand::constInt(1, Type::getI64())}});
-        emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::var(nextIdx, Type::getI64()), Operand::var(idxSlot, Type::getPtr(Type::getI64()))}});
-        emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(condBB->name)}});
-
-        setBlock(exitBB);
+    std::string itType = node->resolvedIterType;
+    if (!typeParamOverride.empty()) itType = substType(itType, typeParamOverride);
+    if (!typeParamOverride.empty() || itType.empty()) {
+        std::string st = semaType(node->iterable.get());
+        if (!st.empty()) itType = st;
     }
-    popScope();
+    itType = tyq::strip(itType);
+    auto al = typeAliases.find(itType);
+    if (al != typeAliases.end()) itType = al->second;
+
+    ExprPtr iterable = node->iterable;
+    std::shared_ptr<VarDecl> holdDecl;
+    ty::Type k = ty::Type::parse(itType);
+    if (!astwalk::isStablePlace(node->iterable.get())) {
+        std::function<bool(Expr*)> addressable = [&](Expr* e) -> bool {
+            if (dynamic_cast<IdentExpr*>(e)) return true;
+            if (auto* u = dynamic_cast<UnaryExpr*>(e)) return u->op == "*" && u->opFunc.empty();
+            if (auto* ix = dynamic_cast<IndexExpr*>(e)) return ix->opFunc.empty() && !ix->highIndex;
+            if (auto* m = dynamic_cast<MemberExpr*>(e)) {
+                TypePtr bt = getExprEirType(m->base);
+                return (bt && bt->isPointer()) || addressable(m->base.get());
+            }
+            return false;
+        };
+        bool byRef = k.kind != ty::Type::Kind::Array && k.kind != ty::Type::Kind::Slice && !k.isPointer()
+                     && addressable(node->iterable.get());
+        ExprPtr init = byRef ? ExprPtr(std::make_shared<UnaryExpr>("&", node->iterable)) : node->iterable;
+        holdDecl = std::make_shared<VarDecl>(idxName + "_v", byRef ? "*" + itType : itType, init);
+        iterable = std::make_shared<IdentExpr>(idxName + "_v");
+    }
+
+    std::string elemType;
+    ExprPtr lengthExpr, elemExpr;
+    if (k.kind == ty::Type::Kind::Array && k.elem) {
+        elemType = k.elem->str();
+        TypePtr at = toEirType(itType);
+        lengthExpr = intLit(std::to_string(at && at->isArray() ? at->arraySize : 0));
+        elemExpr = std::make_shared<IndexExpr>(iterable, idx());
+    } else if (k.kind == ty::Type::Kind::Slice && k.elem) {
+        elemType = k.elem->str();
+        lengthExpr = std::make_shared<MemberExpr>(iterable, "len");
+        elemExpr = std::make_shared<IndexExpr>(iterable, idx());
+    } else {
+        ty::Type base = k;
+        while (base.isPointer() && base.pointee) { ty::Type p = *base.pointee; base = p; }
+        std::string sname = base.isTemplate() ? mangleTemplate(base.str()) : base.nominalName();
+        if (k.isPointer() && !holdDecl) {
+            holdDecl = std::make_shared<VarDecl>(idxName + "_p", itType, node->iterable);
+            iterable = std::make_shared<IdentExpr>(idxName + "_p");
+        }
+        ensureStructLayout(sname);
+        std::string dataType;
+        auto lit = module->structLayouts.find(sname);
+        if (lit != module->structLayouts.end() && lit->second.getFieldInfo("size")) {
+            elemType = node->resolvedElemType;
+            if (!typeParamOverride.empty()) elemType = substType(elemType, typeParamOverride);
+        }
+        if (elemType.empty()) throw std::runtime_error("EIR: for-in over unsupported type: " + itType);
+        lengthExpr = std::make_shared<MemberExpr>(iterable, "size");
+        elemExpr = std::make_shared<IndexExpr>(std::make_shared<MemberExpr>(iterable, "data"), idx());
+    }
+
+    auto idxDecl = std::make_shared<VarDecl>(idxName, "int", intLit("0"));
+    std::vector<BlockItem> initItems;
+    if (holdDecl) initItems.push_back(DeclPtr(holdDecl));
+    initItems.push_back(DeclPtr(idxDecl));
+    StmtPtr init = std::make_shared<BlockStmt>(initItems);
+    ExprPtr cond = std::make_shared<BinaryExpr>(idx(), "<", lengthExpr);
+    ExprPtr step = std::make_shared<BinaryExpr>(idx(), "=", std::make_shared<BinaryExpr>(idx(), "+", intLit("1")));
+    auto elemDecl = std::make_shared<VarDecl>(node->varName, elemType, elemExpr);
+    StmtPtr body = std::make_shared<BlockStmt>(std::vector<BlockItem>{DeclPtr(elemDecl), StmtPtr(node->body)});
+
+    ForStmt loop(init, cond, step, body);
+    loop.label = node->label;
+    visit(&loop);
 }
 
 void EIRBuilder::visit(DoWhileStmt* node) {
@@ -2914,9 +3425,9 @@ void EIRBuilder::visit(DoWhileStmt* node) {
     setBlock(bodyBB);
     breakStack.push_back(exitBB);
     continueStack.push_back(condBB);
-    loopContextStack.push_back({exitBB, condBB, cleanupScopes.size(), currentHandlerDepth});
+    loopContextStack.push_back({exitBB, condBB, cleanupScopes.size(), currentHandlerDepth, node->label});
 
-    node->body->accept(this);
+    visitBody(node->body);
     if (!currentBlock->hasTerminator()) {
         emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(condBB->name)}});
     }
@@ -2969,11 +3480,17 @@ void EIRBuilder::visit(SwitchStmt* node) {
 
     for (size_t i = 0; i < node->cases.size(); ++i) {
         setBlock(caseBBs[i]);
+        // A declaration after a case label is visible to the rest of the switch (C); the
+        // case's defers run at its end.
+        cleanupScopes.emplace_back();
+        size_t caseDepth = cleanupScopes.size() - 1;
         for (auto& item : node->cases[i].stmts) {
             if (currentBlock->hasTerminator()) break;
             if (std::holds_alternative<DeclPtr>(item)) std::get<DeclPtr>(item)->accept(this);
             else if (std::holds_alternative<StmtPtr>(item)) std::get<StmtPtr>(item)->accept(this);
         }
+        if (!currentBlock->hasTerminator()) runCleanupsToDepth(caseDepth, false);
+        cleanupScopes.pop_back();
         if (!currentBlock->hasTerminator()) {
             BasicBlock* next = (i + 1 < caseBBs.size()) ? caseBBs[i + 1] : endBB;
             emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(next->name)}});
@@ -3028,7 +3545,7 @@ void EIRBuilder::visit(MatchStmt* node) {
         for (size_t i = 0; i < node->arms.size(); ++i) {
             setBlock(armBBs[i]);
             pushScope();
-            node->arms[i].body->accept(this);
+            visitBody(node->arms[i].body);
             popScope();
             if (!currentBlock->hasTerminator()) {
                 emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(endBB->name)}});
@@ -3066,11 +3583,15 @@ void EIRBuilder::visit(MatchStmt* node) {
 
     Instruction swInst{Opcode::Switch, "", Type::getVoid(), {tagOp}};
     swInst.defaultLabel = defaultBB->name;
+    std::string instName;
+    if (TypePtr st = getExprEirType(node->subject)) {
+        instName = st->nominalName();
+        if (!templateInstanceArgs.count(instName)) instName.clear();
+    }
     for (size_t i = 0; i < node->arms.size(); ++i) {
         if (!node->arms[i].variant.empty() && node->arms[i].variant != "_") {
             int vidx = 0;
-            auto it = adtVariants.find(node->arms[i].variant);
-            if (it != adtVariants.end()) vidx = it->second.variantIndex;
+            if (const AdtVariantInfo* v = variantFor(node->arms[i].variant, instName)) vidx = v->variantIndex;
             swInst.switchCases.emplace_back(vidx, armBBs[i]->name);
         }
     }
@@ -3082,42 +3603,13 @@ void EIRBuilder::visit(MatchStmt* node) {
         pushScope();
 
         if (!arm.variant.empty() && arm.variant != "_" && !arm.bindings.empty()) {
-            auto it = adtVariants.find(arm.variant);
-            if (it != adtVariants.end()) {
-                auto& vinfo = it->second;
-                std::vector<TypePtr> actualPayloadTypes = vinfo.payloadTypes;
-                std::string subTypeName;
-                if (resolvedExprTypes) {
-                    auto sit = resolvedExprTypes->find(node->subject.get());
-                    if (sit != resolvedExprTypes->end()) {
-                        subTypeName = tyq::strip(sit->second);
-                    }
-                }
-                if (subTypeName.empty() && node->subject) {
-                    TypePtr st = getExprEirType(node->subject);
-                    if (st) subTypeName = st->nominalName();
-                }
-
-                if (!subTypeName.empty()) {
-                    auto parsed = ty::Type::parse(subTypeName);
-                    if (parsed.kind == ty::Type::Kind::Template && !parsed.args.empty()) {
-                        for (size_t a = 0; a < parsed.args.size() && a < actualPayloadTypes.size(); ++a) {
-                            actualPayloadTypes[a] = toEirType(parsed.args[a].str());
-                        }
-                    } else {
-                        size_t u = subTypeName.find('_');
-                        if (u != std::string::npos) {
-                            std::string targ = subTypeName.substr(u + 1);
-                            if (!actualPayloadTypes.empty()) {
-                                actualPayloadTypes[0] = toEirType(targ);
-                            }
-                        }
-                    }
-                }
+            const AdtVariantInfo* vp = variantFor(arm.variant, instName);
+            if (vp) {
+                std::vector<TypePtr> actualPayloadTypes = vp->payloadTypes;
                 size_t payOffset = 8;
                 for (size_t b = 0; b < arm.bindings.size() && b < actualPayloadTypes.size(); ++b) {
                     TypePtr bTy = actualPayloadTypes[b];
-                    size_t bAlign = getTypeAlign(bTy);
+                    size_t bAlign = getTypeAlign(bTy, module.get());
                     payOffset = (payOffset + bAlign - 1) & ~(bAlign - 1);
                     std::string fPtr = newVar() + "." + arm.bindings[b] + ".ptr";
                     emit(Instruction{Opcode::OffsetPtr, fPtr, Type::getPtr(bTy), {
@@ -3131,12 +3623,12 @@ void EIRBuilder::visit(MatchStmt* node) {
                     emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::var(loadedVal, bTy), Operand::var(slot, Type::getPtr(bTy))}});
                     declareVar(arm.bindings[b], Operand::var(slot, Type::getPtr(bTy)), bTy);
 
-                    payOffset += getTypeSize(bTy);
+                    payOffset += getTypeSize(bTy, module.get());
                 }
             }
         }
 
-        arm.body->accept(this);
+        visitBody(arm.body);
         popScope();
 
         if (!currentBlock->hasTerminator()) {
@@ -3167,8 +3659,33 @@ void EIRBuilder::visit(QuestionExpr* node) {
     BasicBlock* contBB = createBlock("q.cont");
     emit(Instruction{Opcode::BrCond, "", Type::getVoid(), {Operand::var(isErr, Type::getI1()), Operand::block(errBB->name), Operand::block(contBB->name)}});
 
+    // Error path: return the error from the enclosing function. Its Result type may differ
+    // in the success type only: then a fresh one (zeroed) gets the `ok` flag and the error.
+    // This is an early exit, so the pending defers and errdefers run first.
     setBlock(errBB);
-    emit(Instruction{Opcode::Ret, "", st, {resVal}});
+    Operand whole = Operand::var(tempSlot, st);
+    TypePtr retTy = currentFunction ? currentFunction->returnType : nullptr;
+    if (retTy && retTy->isStruct() && retTy->nominalName() != sname) {
+        std::string rname = retTy->nominalName();
+        ensureStructLayout(rname);
+        std::string out = newVar() + ".q_out";
+        emit(Instruction{Opcode::Alloca, out, retTy, {Operand::constInt(8, Type::getI32())}});
+        for (const char* fname : {"ok", "error"}) {
+            const StructFieldInfo* from = module->structLayouts.count(sname) ? module->structLayouts[sname].getFieldInfo(fname) : nullptr;
+            const StructFieldInfo* to = module->structLayouts.count(rname) ? module->structLayouts[rname].getFieldInfo(fname) : nullptr;
+            if (!from || !to) continue;
+            std::string fp = newVar(), tp = newVar(), v = newVar();
+            emit(Instruction{Opcode::FieldPtr, fp, Type::getPtr(from->type), {Operand::var(sname, nullptr), Operand::var(tempSlot, Type::getPtr(st)), Operand::constString(fname)}});
+            emit(Instruction{Opcode::Load, v, from->type, {Operand::var(fp, Type::getPtr(from->type))}});
+            emit(Instruction{Opcode::FieldPtr, tp, Type::getPtr(to->type), {Operand::var(rname, nullptr), Operand::var(out, Type::getPtr(retTy)), Operand::constString(fname)}});
+            emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::var(v, from->type), Operand::var(tp, Type::getPtr(to->type))}});
+        }
+        whole = Operand::var(out, retTy);
+    }
+    runCleanupsToDepth(0, true);
+    if (currentBlock && !currentBlock->hasTerminator()) {
+        emit(Instruction{Opcode::Ret, "", whole.type, {whole}});
+    }
 
     setBlock(contBB);
     TypePtr valTy = getExprEirType(node);
@@ -3179,7 +3696,9 @@ void EIRBuilder::visit(QuestionExpr* node) {
     lastValue = Operand::var(unwrapped, valTy);
 }
 
-void EIRBuilder::visit(StructInitExpr* node) {
+void EIRBuilder::visit(StructInitExpr* node0) {
+    std::shared_ptr<StructInitExpr> full = withDefaults(node0);
+    StructInitExpr* node = full ? full.get() : node0;
     std::string sname = node->structName;
     if (sname.find('<') != std::string::npos) {
         sname = mangleTemplate(typeParamOverride.empty() ? sname : substType(sname, typeParamOverride));
@@ -3255,15 +3774,18 @@ void EIRBuilder::visit(StructInitExpr* node) {
             Operand::constString(fname)
         }});
 
-        Operand val = evalForType(fval, ftype ? ftype->nominalName() : "");
-        if (ftype->isFloat() && val.type->isFloat() && val.type->bitWidth != ftype->bitWidth) {
-            val.type = ftype;
+        if (auto* arrLit = dynamic_cast<ArrayLitExpr*>(fval.get()); arrLit && ftype && ftype->isArray()) {
+            emitArrayInitInto(Operand::var(fptr, Type::getPtr(ftype)), arrLit, ftype);
+            continue;
         }
+        Operand val = evalForType(fval, ftype);
         emit(Instruction{Opcode::Store, "", Type::getVoid(), {val, Operand::var(fptr, Type::getPtr(ftype))}});
     }
 
+    // An aggregate value is the address of its bytes, typed as the aggregate so a store
+    // copies all of it.
     lastLValue = Operand::var(tempSlot, Type::getPtr(stype));
-    lastValue = lastLValue;
+    lastValue = Operand::var(tempSlot, stype);
 }
 
 void EIRBuilder::visit(ArrayLitExpr* node) {
@@ -3274,10 +3796,90 @@ void EIRBuilder::visit(ArrayLitExpr* node) {
     emit(Instruction{Opcode::Alloca, tempSlot, arrTy, {Operand::constInt(static_cast<int64_t>(al), Type::getI32())}});
     emitArrayInitInto(Operand::var(tempSlot, Type::getPtr(arrTy)), node, arrTy);
     lastLValue = Operand::var(tempSlot, Type::getPtr(arrTy));
-    lastValue = lastLValue;
+    lastValue = Operand::var(tempSlot, arrTy);
 }
 
-void EIRBuilder::visit(AllocWithExpr*) {}
+// `alloc_with(&a, T, n)` is `(*T)A_alloc(&a, n * sizeof(T))` (A the allocator's struct,
+// or the inline `alloc` of a generic instance), null when the size overflows or is
+// negative (or does not fit the size parameter), and the block zeroed when it is not
+// null, as alloc<T> returns zeroed memory whatever the allocator.
+void EIRBuilder::visit(AllocWithExpr* node) {
+    Operand allocPtr = evaluateExpr(node->allocator);
+    TypePtr at = getExprEirType(node->allocator);
+    std::string an = at ? at->nominalName() : "";
+    std::string fnName = an + "_alloc";
+    Function* af = module->getFunction(fnName);
+    if (!af) af = instantiateGenericMethod(an, "alloc");
+    if (!af) throw std::runtime_error("EIR: alloc_with: allocator type '" + an + "' has no alloc method (" + fnName + ")");
+    fnName = af->name;
+
+    std::string et = typeParamOverride.empty() ? node->elemType : substType(node->elemType, typeParamOverride);
+    TypePtr elemTy = toEirType(et);
+    size_t esz = getTypeSize(elemTy, module.get());
+    if (elemTy && elemTy->isStruct()) {
+        size_t ssz = module->getStructSize(elemTy->nominalName());
+        if (ssz) esz = ssz;
+    }
+    if (esz == 0) esz = 1;
+    TypePtr i64 = Type::getI64();
+    Operand n = coerceNumeric(evaluateExpr(node->count), i64);
+
+    // bad = n < 0 || n > INT64_MAX / esz (|| the size does not fit a narrower parameter)
+    int64_t maxN = INT64_MAX / static_cast<int64_t>(esz);
+    TypePtr sizeTy = af->params.size() >= 2 ? af->params[1].second : i64;
+    if (sizeTy && sizeTy->isInt() && sizeTy->bitWidth < 64) {
+        int64_t maxv = static_cast<int64_t>((uint64_t(1) << (sizeTy->bitWidth - 1)) - 1);
+        maxN = std::min<int64_t>(maxN, maxv / static_cast<int64_t>(esz));
+    }
+    std::string neg = newVar(), big = newVar(), bad = newVar();
+    emit(Instruction{Opcode::ICmp, neg, Type::getI1(), {n, Operand::constInt(0, i64)}, ICmpCond::Slt});
+    emit(Instruction{Opcode::ICmp, big, Type::getI1(), {n, Operand::constInt(maxN, i64)}, ICmpCond::Sgt});
+    emit(Instruction{Opcode::Or, bad, Type::getI1(), {Operand::var(neg, Type::getI1()), Operand::var(big, Type::getI1())}});
+
+    TypePtr resTy = Type::getPtr(elemTy);
+    std::string slot = newVar() + ".allocw";
+    emit(Instruction{Opcode::Alloca, slot, Type::getPtr(), {Operand::constInt(8, Type::getI32())}});
+    BasicBlock* callBB = createBlock("allocw.call");
+    BasicBlock* zeroBB = createBlock("allocw.zero");
+    BasicBlock* loopBB = createBlock("allocw.loop");
+    BasicBlock* bodyBB = createBlock("allocw.body");
+    BasicBlock* doneBB = createBlock("allocw.done");
+    emit(Instruction{Opcode::BrCond, "", Type::getVoid(), {Operand::var(bad, Type::getI1()), Operand::block(doneBB->name), Operand::block(callBB->name)}});
+
+    setBlock(callBB);
+    std::string total = newVar();
+    emit(Instruction{Opcode::Mul, total, i64, {n, Operand::constInt(static_cast<int64_t>(esz), i64)}});
+    Operand sizeArg = coerceNumeric(Operand::var(total, i64), sizeTy);
+    std::string p = newVar();
+    emit(Instruction{Opcode::Call, p, Type::getPtr(), {Operand::global(fnName, Type::getPtr()), allocPtr, sizeArg}});
+    emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::var(p, Type::getPtr()), Operand::var(slot, Type::getPtr(Type::getPtr()))}});
+    std::string isNull = newVar();
+    emit(Instruction{Opcode::ICmp, isNull, Type::getI1(), {Operand::var(p, Type::getPtr()), Operand::constNull()}, ICmpCond::Eq});
+    emit(Instruction{Opcode::BrCond, "", Type::getVoid(), {Operand::var(isNull, Type::getI1()), Operand::block(doneBB->name), Operand::block(zeroBB->name)}});
+
+    // Zero the block a byte at a time.
+    setBlock(zeroBB);
+    std::string idxSlot = newVar() + ".i";
+    emit(Instruction{Opcode::Alloca, idxSlot, i64, {Operand::constInt(8, Type::getI32())}});
+    emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(loopBB->name)}});
+    setBlock(loopBB);
+    std::string iv = newVar(), more = newVar();
+    emit(Instruction{Opcode::Load, iv, i64, {Operand::var(idxSlot, Type::getPtr(i64))}});
+    emit(Instruction{Opcode::ICmp, more, Type::getI1(), {Operand::var(iv, i64), Operand::var(total, i64)}, ICmpCond::Slt});
+    emit(Instruction{Opcode::BrCond, "", Type::getVoid(), {Operand::var(more, Type::getI1()), Operand::block(bodyBB->name), Operand::block(doneBB->name)}});
+    setBlock(bodyBB);
+    std::string bp = newVar(), next = newVar();
+    emit(Instruction{Opcode::OffsetPtr, bp, Type::getPtr(Type::getU8()), {Operand::var(p, Type::getPtr()), Operand::var(iv, i64)}});
+    emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::constInt(0, Type::getU8()), Operand::var(bp, Type::getPtr(Type::getU8()))}});
+    emit(Instruction{Opcode::Add, next, i64, {Operand::var(iv, i64), Operand::constInt(1, i64)}});
+    emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::var(next, i64), Operand::var(idxSlot, Type::getPtr(i64))}});
+    emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(loopBB->name)}});
+
+    setBlock(doneBB);
+    std::string res = newVar();
+    emit(Instruction{Opcode::Load, res, resTy, {Operand::var(slot, Type::getPtr(Type::getPtr()))}});
+    lastValue = Operand::var(res, resTy);
+}
 
 void EIRBuilder::visit(TemplateCallExpr* node) {
     if (node->templateName == "va_arg" && node->args.size() == 1 && node->typeArgs.size() == 1) {
@@ -3321,9 +3923,10 @@ void EIRBuilder::visit(TemplateCallExpr* node) {
     }
 
     // Check if callee is an ADT variant constructor
-    auto it = adtVariants.find(node->templateName);
-    if (it != adtVariants.end()) {
-        auto& vinfo = it->second;
+    const AdtVariantInfo* vptr = adtVariants.count(node->templateName)
+        ? variantFor(node->templateName, genericVariantInstance(node->templateName, substitutedArgs)) : nullptr;
+    if (vptr) {
+        const AdtVariantInfo& vinfo = *vptr;
         TypePtr enumTy = Type::getStruct(vinfo.enumName, {});
         std::string slot = newVar() + ".adt";
         emit(Instruction{Opcode::Alloca, slot, enumTy, {Operand::constInt(8, Type::getI32())}});
@@ -3334,17 +3937,16 @@ void EIRBuilder::visit(TemplateCallExpr* node) {
 
         size_t payOffset = 8;
         for (size_t p = 0; p < node->args.size() && p < vinfo.payloadTypes.size(); ++p) {
-            TypePtr pt = (p < substitutedArgs.size()) ? toEirType(substitutedArgs[p]) : vinfo.payloadTypes[p];
-            size_t pAlign = getTypeAlign(pt);
+            TypePtr pt = vinfo.payloadTypes[p];
+            size_t pAlign = getTypeAlign(pt, module.get());
             payOffset = (payOffset + pAlign - 1) & ~(pAlign - 1);
             std::string payPtr = newVar() + ".pay";
             emit(Instruction{Opcode::OffsetPtr, payPtr, Type::getPtr(pt), {
                 Operand::var(slot, Type::getPtr()), Operand::constInt(static_cast<int64_t>(payOffset), Type::getI64())
             }});
-            std::string targetNominal = pt ? pt->nominalName() : "";
-            Operand argVal = evalForType(node->args[p], targetNominal);
+            Operand argVal = evalForType(node->args[p], pt);
             emit(Instruction{Opcode::Store, "", Type::getVoid(), {argVal, Operand::var(payPtr, Type::getPtr(pt))}});
-            payOffset += getTypeSize(pt);
+            payOffset += getTypeSize(pt, module.get());
         }
         lastLValue = Operand::var(slot, Type::getPtr(enumTy));
         lastValue = Operand::var(slot, enumTy);
@@ -3604,7 +4206,9 @@ void EIRBuilder::visit(UnionDecl*) {}
 
 void EIRBuilder::visit(SizeofExpr* node) {
     TypePtr ty = nullptr;
-    if (!node->typeName.empty()) {
+    if (!node->typeName.empty() && lookupVar(node->typeName)) {
+        ty = lookupVarType(node->typeName);   // `sizeof(x)` of a variable the parser kept as a name
+    } else if (!node->typeName.empty()) {
         std::string actualType = node->typeName;
         if (!typeParamOverride.empty()) {
             actualType = substType(actualType, typeParamOverride);
@@ -3615,9 +4219,11 @@ void EIRBuilder::visit(SizeofExpr* node) {
     }
     size_t sz = 0;
     if (ty) {
+        if (ty->isStruct()) ensureStructLayout(ty->nominalName());
         sz = getTypeSize(ty, module.get());
-        if (sz == 0 && ty->isStruct() && module) {
-            sz = module->getStructSize(ty->nominalName());
+        if (ty->isStruct() && module) {
+            size_t ss = module->getStructSize(ty->nominalName());
+            if (ss) sz = ss;
         }
     }
     if (sz == 0) sz = 8;
@@ -3698,11 +4304,10 @@ void EIRBuilder::visit(ThrowStmt* node) {
     if (node->rethrowCaptured) {
         exPtr = val;
     } else {
-        std::string thrownType = node->valueType;
-        if (thrownType.empty()) {
-            TypePtr ety = getExprEirType(node->value);
-            if (ety) thrownType = ety->nominalName();
-        }
+        // In a generic instance the shared AST's stamp is some instance's: the thrown type is
+        // this instance's.
+        std::string thrownType = typeParamOverride.empty() ? node->valueType : "";
+        if (thrownType.empty()) thrownType = eskiuSpelling(val.type ? val.type : getExprEirType(node->value));
         thrownType = exceptionTypeName(thrownType);
 
         size_t paySize = 8;
@@ -3803,7 +4408,7 @@ void EIRBuilder::visit(TryStmt* node) {
         if (isCatchAll) {
             emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(handlerBB->name)}});
         } else {
-            std::string cTypeName = exceptionTypeName(c.type);
+            std::string cTypeName = exceptionTypeName(typeParamOverride.empty() ? c.type : substType(c.type, typeParamOverride));
             Operand cTypeStr = Operand::constString(cTypeName);
             std::string cmpVar = newVar();
             emit(Instruction{Opcode::Call, cmpVar, Type::getI32(), {
@@ -3834,6 +4439,9 @@ void EIRBuilder::visit(TryStmt* node) {
             Operand::global("__eir_push_caught", Type::getVoid()),
             exObj
         }});
+        std::string textSlot = newVar() + ".exc_text";
+        entryAlloca(textSlot, Type::getArray(Type::getU8(), 512), 8);
+        catchTextSlots.push_back(textSlot);
         emit(Instruction{Opcode::Call, "", Type::getVoid(), {
             Operand::global("__eir_clear_exception", Type::getVoid())
         }});
@@ -3847,7 +4455,7 @@ void EIRBuilder::visit(TryStmt* node) {
             declareVar(c.name, Operand::var(localSlot, Type::getPtr(Type::getPtr())), Type::getPtr());
         }
         if (!isCatchAll && !c.name.empty()) {
-            TypePtr catchEirTy = toEirType(c.type);
+            TypePtr catchEirTy = toEirType(typeParamOverride.empty() ? c.type : substType(c.type, typeParamOverride));
             std::string paySlotVar = newVar();
             emit(Instruction{Opcode::OffsetPtr, paySlotVar, Type::getPtr(), {exObj, Operand::constInt(16, Type::getI64())}});
             std::string payValVar = newVar();
@@ -3887,6 +4495,7 @@ void EIRBuilder::visit(TryStmt* node) {
         }
 
         currentUnwindTarget = savedCatchUnwind;
+        catchTextSlots.pop_back();
         cleanupScopes.pop_back();
         popScope();
 
@@ -3922,7 +4531,9 @@ void EIRBuilder::visit(TryStmt* node) {
 
 void EIRBuilder::visit(DeferStmt* node) {
     if (node->body && !cleanupScopes.empty()) {
-        cleanupScopes.back().push_back({node->body, node->isErr});
+        // The body names the variables visible here, even when it runs where a later
+        // declaration shadows one of them.
+        cleanupScopes.back().push_back({node->body, node->isErr, scopeStack, varTypeStack});
         if (!node->isErr && currentFunction) {
             emitDeferPad(node->body.get());
         }

@@ -425,6 +425,7 @@ static std::unique_ptr<eir::Module> lowerToEir(Program* program, TypeChecker& po
     eir::EIRBuilder builder;
     builder.resolvedExprTypes = &postTc.expressionTypeMap();
     builder.semaInstanceArgs = &postTc.instanceArgsMap();
+    builder.instanceExprTypes = &postTc.instanceExprTypeMap();
     if (!TargetTriple.empty()) builder.targetTriple = std::string(TargetTriple);
     auto mod = builder.build(program);
     if (!mod) std::cerr << "error: EIR generation failed" << std::endl;
@@ -442,6 +443,7 @@ static std::unique_ptr<eir::Module> buildEir(const std::string& filename) {
     if (!tc.check(program.get())) return nullptr;
     AsyncTransform(&tc.expressionTypeMap(), &tc.instanceArgsMap(), &tc.instanceExprTypeMap()).run(program.get());
     TypeChecker postTc; postTc.targetTriple = std::string(TargetTriple); postTc.warnDeprecated = false; postTc.warnDefaults = false; postTc.sourceFile = filename;
+    postTc.recordInstanceTypes = true;
     if (!postTc.check(program.get())) {
         std::cerr << "error: internal: the async lowering produced a program that does not type-check" << std::endl;
         return nullptr;
@@ -905,6 +907,7 @@ static int compilerMain(int argc, char** argv) {
         AsyncTransform(&typeChecker.expressionTypeMap(), &typeChecker.instanceArgsMap(), &typeChecker.instanceExprTypeMap()).run(program.get());
         // Single resolver: re-resolve the post-transform AST; codegen consumes it.
         TypeChecker postTc; postTc.targetTriple = std::string(TargetTriple); postTc.warnDeprecated = false; postTc.warnDefaults = false; postTc.sourceFile = std::string(InputFilename);
+        postTc.recordInstanceTypes = useEir;
         if (!postTc.check(program.get())) {
             std::cerr << "error: internal: the async lowering produced a program that does not type-check" << std::endl;
             return 1;

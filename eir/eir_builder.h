@@ -18,6 +18,8 @@ public:
     // Single-resolver tables from TypeChecker (post-AsyncTransform)
     const std::map<Expr*, std::string>* resolvedExprTypes = nullptr;
     const std::map<std::string, std::pair<std::string, std::vector<std::string>>>* semaInstanceArgs = nullptr;
+    // Each generic instance's expression types (TypeChecker::instanceExprTypeMap).
+    const std::map<Expr*, std::vector<std::pair<std::map<std::string, std::string>, std::string>>>* instanceExprTypes = nullptr;
     std::string targetTriple;
 
     // Build EIR Module from AST Program
@@ -131,8 +133,15 @@ private:
     Operand evalForType(const ExprPtr& e, const std::string& targetType);
     Operand evalForType(const ExprPtr& e, TypePtr targetType);
     Operand closureTarget(const Operand& fn);
+    bool isGlobalName(const std::string& name) const;
+    std::string instanceOperator(const std::string& op, const std::vector<Operand>& ops);
+    Operand callOperator(const std::string& fn, const std::vector<Operand>& args);
+    std::string eskiuSpelling(const TypePtr& t);
+    std::string semaType(const Expr* e);
+    std::vector<std::string> catchTextSlots;   // each enclosing catch's exception_text buffer
     Operand coerceNumeric(const Operand& v, const TypePtr& to);
     Operand promoteInt(const Operand& v);
+    Operand stepByOne(const Operand& cur, const TypePtr& ty, bool decrement);
     Operand truth(const Operand& v);
     Operand compoundOp(const std::string& baseOp, const Operand& cur, const Operand& rhs, const TypePtr& curTy);
     static TypePtr commonType(const TypePtr& a, const TypePtr& b);
@@ -163,7 +172,13 @@ private:
     struct DeferEntry {
         StmtPtr body;
         bool isErr = false;
+        std::vector<std::map<std::string, Operand>> scopes;   // the names visible at the defer
+        std::vector<std::map<std::string, TypePtr>> varTypes;
     };
+    void visitBody(const StmtPtr& body);
+    void entryAlloca(const std::string& name, const TypePtr& type, size_t align);
+    void emitZeroFill(const Operand& ptr, const TypePtr& type);
+    std::map<Function*, std::set<std::string>> functionSlots;   // each function's variable slots
     std::vector<std::vector<DeferEntry>> cleanupScopes;
     void runCleanupsToDepth(size_t depth, bool errorPath = false);
 
@@ -173,7 +188,10 @@ private:
         BasicBlock* continueTarget = nullptr;
         size_t cleanupDepth = 0;
         size_t handlerDepth = 0;
+        std::string label;   // `outer: for ...`; "" for a switch or an unlabeled loop
     };
+    const LoopContext* jumpTarget(const std::string& label, bool isContinue) const;
+    void jumpTo(const LoopContext* loop, bool isContinue);
     std::vector<LoopContext> loopContextStack;
 
     // Exception handling
@@ -186,11 +204,32 @@ private:
     // Bitfield helpers
     void storeBitfield(MemberExpr* m, Operand val, bool isVolatile);
     Operand loadBitfield(MemberExpr* m, bool isVolatile);
-    void layoutBitfieldsForStruct(StructDecl* s, StructInfo& sinfo, std::vector<TypePtr>& fields);
+    const StructFieldInfo* bitfieldOf(MemberExpr* m);
+    TypePtr bitfieldReadType(const StructFieldInfo* fi);
+    void emitCompoundAssign(BinaryExpr* node, BinaryExpr* rhsOp);
+    Operand bitfieldBase(MemberExpr* m);
+    Operand loadBitfieldAt(const Operand& base, const StructFieldInfo* fi, bool isVolatile);
+    void storeBitfieldAt(const Operand& base, const StructFieldInfo* fi, Operand val, bool isVolatile);
+    void layoutRecord(const std::string& name, const std::vector<StructDecl::Field>& fields,
+                      const std::vector<StructDecl::Pad>& pads, bool isUnion, int packAlign,
+                      const std::map<std::string, std::string>& subs);
+    void ensureStructLayout(const std::string& name);
+    ExprPtr defaultExprFor(const std::string& t);
+    std::shared_ptr<StructInitExpr> withDefaults(StructInitExpr* init);
+    std::map<std::string, int> structHasDefaults;
+    int forInCounter = 0;
+    void layoutAdt(const std::string& name, EnumDecl* e, const std::map<std::string, std::string>& subs);
+    const AdtVariantInfo* variantFor(const std::string& variant, const std::string& instName);
+    std::string genericVariantInstance(const std::string& variant, const std::vector<std::string>& args);
+    std::unordered_map<std::string, EnumDecl*> genericEnums;
+    std::unordered_map<std::string, AdtVariantInfo> adtInstanceVariants;   // "Inst::Variant" of a generic enum instance
+    std::unordered_map<std::string, StructDecl*> plainStructs;
+    std::unordered_map<std::string, UnionDecl*> unionDecls;
 
     int nextLambdaId = 0;
     int64_t foldConstInt(const ExprPtr& expr);
     bool foldCInt(const ExprPtr& expr, ty::CInt& out);
+    uint64_t sizeOfType(const std::string& spelling);
     void emitArrayInitInto(Operand dest, ArrayLitExpr* lit, TypePtr arrTy);
 };
 
