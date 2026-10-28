@@ -1459,10 +1459,18 @@ private:
         if (inst->type && inst->type->isStruct()) resultTypes = inst->type->members;
         else if (inst->type && !inst->type->isVoid()) resultTypes.push_back(inst->type);
 
-        static const int pool[] = {9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7};
+        // Operand registers, skipping any the asm clobbers.
+        static const int poolRegs[] = {9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7};
+        std::vector<int> pool;
+        for (int r : poolRegs) {
+            bool clobbered = false;
+            for (const auto& c : inst->clobbers)
+                if (c == "x" + std::to_string(r) || c == "w" + std::to_string(r)) clobbered = true;
+            if (!clobbered) pool.push_back(r);
+        }
         size_t nextReg = 0, opIdx = 0, outIdx = 0;
         auto take = [&]() {
-            if (nextReg >= sizeof(pool) / sizeof(pool[0])) throw std::runtime_error("EIR arm64: too many asm operands");
+            if (nextReg >= pool.size()) throw std::runtime_error("EIR arm64: too many asm operands");
             return pool[nextReg++];
         };
         auto regName = [](int r, const TypePtr& t) {
