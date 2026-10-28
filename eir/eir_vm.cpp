@@ -695,6 +695,10 @@ VMValue VM::callExtern(const std::string& name, const std::vector<VMValue>& args
         *reinterpret_cast<void**>(static_cast<char*>(ex) + 8) = typeNamePtr;
         return VMValue(ex);
     }
+    if (name == "__eir_free_exception") {
+        if (!args.empty()) free(args[0].asPtr());
+        return VMValue(0);
+    }
     if (name == "__eir_push_caught") {
         if (!args.empty()) {
             caughtExceptionStack.push_back(args[0].asPtr());
@@ -903,6 +907,12 @@ std::string VM::formatException(void* exPtr) {
     }
 }
 
+// An integer `/` or `%` by zero stops the program, as the compiled one traps.
+[[noreturn]] static void divisionByZero() {
+    std::cerr << "error: integer division by zero" << std::endl;
+    std::abort();
+}
+
 VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
     if (!fn) return VMValue(0);
     if (fn->isExtern) {
@@ -1032,7 +1042,7 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                     int64_t a = getOperand(inst->operands[0], frame).asInt();
                     int64_t b = getOperand(inst->operands[1], frame).asInt();
                     if (b == 0) {
-                        frame.registers[inst->resultVar] = VMValue(0);
+                        divisionByZero();
                     } else if (inst->type && inst->type->bitWidth == 32) {
                         int32_t a32 = static_cast<int32_t>(a);
                         int32_t b32 = static_cast<int32_t>(b);
@@ -1055,14 +1065,15 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                 case Opcode::UDiv: {
                     uint64_t a = static_cast<uint64_t>(getOperand(inst->operands[0], frame).asInt());
                     uint64_t b = static_cast<uint64_t>(getOperand(inst->operands[1], frame).asInt());
-                    frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(b != 0 ? a / b : 0));
+                    if (b == 0) divisionByZero();
+                    frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(a / b));
                     break;
                 }
                 case Opcode::SRem: {
                     int64_t a = getOperand(inst->operands[0], frame).asInt();
                     int64_t b = getOperand(inst->operands[1], frame).asInt();
                     if (b == 0) {
-                        frame.registers[inst->resultVar] = VMValue(0);
+                        divisionByZero();
                     } else if (inst->type && inst->type->bitWidth == 32) {
                         int32_t a32 = static_cast<int32_t>(a);
                         int32_t b32 = static_cast<int32_t>(b);
@@ -1085,7 +1096,8 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                 case Opcode::URem: {
                     uint64_t a = static_cast<uint64_t>(getOperand(inst->operands[0], frame).asInt());
                     uint64_t b = static_cast<uint64_t>(getOperand(inst->operands[1], frame).asInt());
-                    frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(b != 0 ? a % b : 0));
+                    if (b == 0) divisionByZero();
+                    frame.registers[inst->resultVar] = VMValue(static_cast<int64_t>(a % b));
                     break;
                 }
                 case Opcode::FAdd: {
@@ -1314,6 +1326,23 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                 case Opcode::Bitcast: {
                     VMValue a = getOperand(inst->operands[0], frame);
                     frame.registers[inst->resultVar] = a;
+                    break;
+                }
+                case Opcode::PtrToInt: {
+                    frame.registers[inst->resultVar] = VMValue(getOperand(inst->operands[0], frame).asInt());
+                    break;
+                }
+                case Opcode::IntToPtr: {
+                    frame.registers[inst->resultVar] = VMValue(getOperand(inst->operands[0], frame).asPtr());
+                    break;
+                }
+                case Opcode::FPTrunc: {
+                    float f = static_cast<float>(getOperand(inst->operands[0], frame).asFloat());
+                    frame.registers[inst->resultVar] = VMValue(static_cast<double>(f));
+                    break;
+                }
+                case Opcode::FPExt: {
+                    frame.registers[inst->resultVar] = VMValue(getOperand(inst->operands[0], frame).asFloat());
                     break;
                 }
                 case Opcode::FPToSI: {

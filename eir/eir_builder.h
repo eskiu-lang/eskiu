@@ -129,6 +129,9 @@ private:
     Operand boxAsInterface(const std::string& ifaceName, const std::string& structName, const Operand& structPtr);
     Operand evalForType(const ExprPtr& e, const std::string& targetType);
     Operand evalForType(const ExprPtr& e, TypePtr targetType);
+    Operand closureTarget(const Operand& fn);
+    Operand coerceNumeric(const Operand& v, const TypePtr& to);
+    Operand cFnPointer(const ExprPtr& e);
 
     // Template tracking & instantiation
     std::map<std::string, std::string> typeAliases;

@@ -3,6 +3,7 @@
 #include "../template_utils.h"
 #include <iostream>
 #include <stdexcept>
+#include <cmath>
 
 namespace eir {
 
@@ -814,9 +815,11 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
                 }
                 params.emplace_back(p.second, toEirType(p.first));
             }
+            if (module->getFunction(f->name)) continue;
             auto fn = module->createFunction(f->name, toEirType(f->returnType), params);
             fn->isVariadic = hasVarargs;
         } else if (auto ext = dynamic_cast<ExternDecl*>(decl.get())) {
+            if (module->getFunction(ext->name)) continue;
             std::vector<std::pair<std::string, TypePtr>> params;
             bool hasVarargs = false;
             for (const auto& p : ext->params) {
@@ -838,6 +841,7 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
                     for (const auto& p : mf->params) {
                         params.emplace_back(p.second, toEirType(p.first));
                     }
+                    if (module->getFunction(s->name + "_" + mf->name)) continue;
                     module->createFunction(s->name + "_" + mf->name, toEirType(mf->returnType), params);
                 }
             }
@@ -947,9 +951,10 @@ void EIRBuilder::visit(FunctionDecl* node) {
     }
 
     if (!node->body) {
-        currentFunction->isExtern = true;
+        if (currentFunction->blocks.empty()) currentFunction->isExtern = true;
         return;
     }
+    if (!currentFunction->blocks.empty()) return;
 
     currentFunction->isExtern = false;
 
@@ -1254,13 +1259,18 @@ void EIRBuilder::visit(BreakStmt*) {
 }
 
 void EIRBuilder::visit(ContinueStmt*) {
-    if (!loopContextStack.empty()) {
-        runCleanupsToDepth(loopContextStack.back().cleanupDepth, false);
-        for (size_t h = currentHandlerDepth; h > loopContextStack.back().handlerDepth; --h) {
+    // A switch pushes a context with no continue target: `continue` goes to the loop.
+    const LoopContext* loop = nullptr;
+    for (auto it = loopContextStack.rbegin(); it != loopContextStack.rend(); ++it) {
+        if (it->continueTarget) { loop = &*it; break; }
+    }
+    if (loop) {
+        runCleanupsToDepth(loop->cleanupDepth, false);
+        for (size_t h = currentHandlerDepth; h > loop->handlerDepth; --h) {
             emit(Instruction{Opcode::PopHandler, "", Type::getVoid(), {}});
         }
         if (currentBlock && !currentBlock->hasTerminator()) {
-            emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(loopContextStack.back().continueTarget->name)}});
+            emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(loop->continueTarget->name)}});
         }
     } else if (!continueStack.empty()) {
         emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(continueStack.back()->name)}});
@@ -1632,7 +1642,7 @@ void EIRBuilder::visit(IdentExpr* node) {
         TypePtr ty = getExprEirType(node);
         if (ty && ty->isClosure()) {
             std::string dst = newVar() + ".fn_closure";
-            emit(Instruction{Opcode::MakeClosure, dst, ty, {Operand::global(node->name, Type::getPtr()), Operand::constNull()}});
+            emit(Instruction{Opcode::MakeClosure, dst, ty, {closureTarget(Operand::global(node->name, Type::getPtr())), Operand::constNull()}});
             lastValue = Operand::var(dst, ty);
             lastLValue = lastValue;
             return;
@@ -1706,6 +1716,13 @@ void EIRBuilder::visit(CallExpr* node) {
             lastValue = Operand::var(resVar, Type::getPtr(Type::getU8()));
             return;
         }
+        if (id->name == "__cxa_free_exception" && node->args.size() == 1 && !lookupVar(id->name)) {
+            emit(Instruction{Opcode::Call, "", Type::getVoid(), {
+                Operand::global("__eir_free_exception", Type::getVoid()), evaluateExpr(node->args[0])
+            }});
+            lastValue = Operand::var("", Type::getVoid());
+            return;
+        }
         if ((id->name == "va_start" || id->name == "va_end") && node->args.size() == 1) {
             Operand ap = evaluateLValue(node->args[0]);
             emit(Instruction{Opcode::Call, "", Type::getVoid(), {
@@ -1738,6 +1755,7 @@ void EIRBuilder::visit(CallExpr* node) {
 
     if (isClosureCall) {
         std::vector<std::string> paramNominals;
+        std::vector<TypePtr> paramTypes;
         if (resolvedExprTypes) {
             auto it = resolvedExprTypes->find(node->callee.get());
             if (it != resolvedExprTypes->end()) {
@@ -1745,6 +1763,7 @@ void EIRBuilder::visit(CallExpr* node) {
                 if (parsed.kind == ty::Type::Kind::Fn) {
                     for (const auto& p : parsed.params) {
                         paramNominals.push_back(p.nominalName());
+                        paramTypes.push_back(toEirType(p.str()));
                     }
                 }
             }
@@ -1753,7 +1772,9 @@ void EIRBuilder::visit(CallExpr* node) {
         args.push_back(closureOp);
         for (size_t i = 0; i < node->args.size(); ++i) {
             std::string pName = (i < paramNominals.size()) ? paramNominals[i] : "";
-            args.push_back(evalForType(node->args[i], pName));
+            Operand a = evalForType(node->args[i], pName);
+            if (i < paramTypes.size()) a = coerceNumeric(a, paramTypes[i]);
+            args.push_back(a);
         }
         TypePtr retTy = nullptr;
         TypePtr cTy = getExprEirType(node->callee);
@@ -1851,6 +1872,10 @@ void EIRBuilder::visit(CallExpr* node) {
         Function* targetFn = module ? module->getFunction(fnName) : nullptr;
         for (size_t i = 0; i < node->args.size(); ++i) {
             TypePtr paramType = (targetFn && i < targetFn->params.size()) ? targetFn->params[i].second : nullptr;
+            if (targetFn && targetFn->isExtern && paramType && paramType->isClosure()) {
+                args.push_back(cFnPointer(node->args[i]));
+                continue;
+            }
             args.push_back(evalForType(node->args[i], paramType));
         }
     } else if (auto mem = dynamic_cast<MemberExpr*>(node->callee.get())) {
@@ -2041,7 +2066,18 @@ void EIRBuilder::visit(CastExpr* node) {
         }
     } else if (val.kind == OperandKind::ConstantFloat) {
         if (toTy->isInt()) {
-            lastValue = Operand::constInt(static_cast<int64_t>(val.floatVal), toTy);
+            // Saturating, NaN to 0, as the run-time conversion.
+            double f = val.floatVal;
+            int64_t v = 0;
+            if (f == f) {
+                unsigned bw = toTy->bitWidth <= 1 ? 1 : toTy->bitWidth;
+                double lo = toTy->isSigned ? -std::ldexp(1.0, bw - 1) : 0.0;
+                double hi = toTy->isSigned ? std::ldexp(1.0, bw - 1) : std::ldexp(1.0, bw);
+                if (f <= lo) v = toTy->isSigned ? static_cast<int64_t>(lo) : 0;
+                else if (f >= hi) v = toTy->isSigned ? static_cast<int64_t>(hi - 1) : static_cast<int64_t>(static_cast<uint64_t>(hi - 1));
+                else v = toTy->isSigned ? static_cast<int64_t>(f) : static_cast<int64_t>(static_cast<uint64_t>(f));
+            }
+            lastValue = Operand::constInt(v, toTy);
             return;
         } else if (toTy->isFloat()) {
             lastValue = Operand::constFloat(val.floatVal, toTy);
@@ -2069,8 +2105,14 @@ void EIRBuilder::visit(CastExpr* node) {
         emit(Instruction{Opcode::FPToSI, dst, toTy, {val}});
     } else if (val.type->isInt() && toTy->isFloat()) {
         emit(Instruction{Opcode::SIToFP, dst, toTy, {val}});
+    } else if (val.type->isFloat() && toTy->isFloat() && val.type->bitWidth != toTy->bitWidth) {
+        emit(Instruction{toTy->bitWidth < val.type->bitWidth ? Opcode::FPTrunc : Opcode::FPExt, dst, toTy, {val}});
     } else if (val.type->isPointer() && toTy->isPointer()) {
         emit(Instruction{Opcode::Bitcast, dst, toTy, {val}});
+    } else if (val.type->isPointer() && toTy->isInt()) {
+        emit(Instruction{Opcode::PtrToInt, dst, toTy, {val}});
+    } else if (val.type->isInt() && toTy->isPointer()) {
+        emit(Instruction{Opcode::IntToPtr, dst, toTy, {val}});
     } else {
         lastValue = val;
         lastValue.type = toTy;
@@ -2562,11 +2604,76 @@ Operand EIRBuilder::evalForType(const ExprPtr& e, TypePtr targetType) {
         Operand val = evaluateExpr(e);
         if (val.type && val.type->isClosure()) return val;
         std::string dst = newVar() + ".fn_closure";
-        emit(Instruction{Opcode::MakeClosure, dst, targetType, {val, Operand::constNull()}});
+        emit(Instruction{Opcode::MakeClosure, dst, targetType, {closureTarget(val), Operand::constNull()}});
         return Operand::var(dst, targetType);
     }
 
     return evaluateExpr(e);
+}
+
+// A number converted to the numeric type a parameter declares (a closure call's
+// arguments are not coerced by the type checker's call path).
+Operand EIRBuilder::coerceNumeric(const Operand& v, const TypePtr& to) {
+    if (!to || !v.type || !(to->isInt() || to->isFloat()) || !(v.type->isInt() || v.type->isFloat())) return v;
+    if (v.kind == OperandKind::ConstantInt) {
+        if (to->isFloat()) return Operand::constFloat(static_cast<double>(v.intVal), to);
+        return Operand::constInt(v.intVal, to);
+    }
+    if (v.kind == OperandKind::ConstantFloat) {
+        if (to->isFloat()) return Operand::constFloat(v.floatVal, to);
+        return v;
+    }
+    Opcode op;
+    if (v.type->isInt() && to->isFloat()) op = Opcode::SIToFP;
+    else if (v.type->isFloat() && to->isInt()) op = Opcode::FPToSI;
+    else if (v.type->isFloat() && to->isFloat()) {
+        if (v.type->bitWidth == to->bitWidth) return v;
+        op = to->bitWidth < v.type->bitWidth ? Opcode::FPTrunc : Opcode::FPExt;
+    } else {
+        if (v.type->bitWidth == to->bitWidth) return v;
+        op = to->bitWidth < v.type->bitWidth ? Opcode::Trunc : (v.type->isSigned ? Opcode::SExt : Opcode::ZExt);
+    }
+    std::string dst = newVar();
+    emit(Instruction{op, dst, to, {v}});
+    return Operand::var(dst, to);
+}
+
+// A closure's function always takes the env first. A top-level function used as a
+// closure is reached through `__fnptr_<name>`, which drops the env and forwards the rest.
+Operand EIRBuilder::closureTarget(const Operand& fn) {
+    if (fn.kind != OperandKind::GlobalRef || !module) return fn;
+    Function* target = module->getFunction(fn.text);
+    if (!target || (!target->params.empty() && target->params[0].first == "env")) return fn;
+
+    std::string thunkName = "__fnptr_" + fn.text;
+    if (!module->getFunction(thunkName)) {
+        std::vector<std::pair<std::string, TypePtr>> params;
+        params.emplace_back("env", Type::getPtr());
+        for (const auto& p : target->params) params.push_back(p);
+        Function* thunk = module->createFunction(thunkName, target->returnType, params);
+        BasicBlock* entry = thunk->createBlock("entry");
+        std::vector<Operand> args{Operand::global(target->name, Type::getPtr())};
+        for (const auto& p : target->params) args.push_back(Operand::var("%" + p.first, p.second));
+        bool isVoid = !target->returnType || target->returnType->isVoid();
+        std::string res = isVoid ? "" : "%res";
+        entry->instructions.push_back(std::make_unique<Instruction>(Opcode::Call, res, target->returnType, args));
+        std::vector<Operand> retOps;
+        if (!isVoid) retOps.push_back(Operand::var(res, target->returnType));
+        entry->instructions.push_back(std::make_unique<Instruction>(Opcode::Ret, "", target->returnType, retOps));
+    }
+    return Operand::global(thunkName, Type::getPtr());
+}
+
+// An extern's fn-typed parameter is a C function pointer: a top-level function by name
+// or `null` (sema rejects anything else).
+Operand EIRBuilder::cFnPointer(const ExprPtr& e) {
+    if (auto* lit = dynamic_cast<LiteralExpr*>(e.get()); lit && lit->kind == LiteralExpr::Kind::NULL_VAL) {
+        return Operand::constNull();
+    }
+    if (auto* id = dynamic_cast<IdentExpr*>(e.get()); id && module && module->getFunction(id->name) && !lookupVar(id->name)) {
+        return Operand::global(id->name, Type::getPtr());
+    }
+    throw std::runtime_error("EIR: an extern's function parameter takes a top-level function or null");
 }
 
 Operand EIRBuilder::evalForType(const ExprPtr& e, const std::string& targetType) {
@@ -3655,6 +3762,14 @@ void EIRBuilder::visit(TryStmt* node) {
             Operand::global("__eir_clear_exception", Type::getVoid())
         }});
 
+        if (c.captureAll && !c.name.empty()) {
+            // The async lowering's capturing catch-all names the exception object itself,
+            // which a later rethrow throws again or __cxa_free_exception releases.
+            std::string localSlot = newVar();
+            emit(Instruction{Opcode::Alloca, localSlot, Type::getPtr(), {}});
+            emit(Instruction{Opcode::Store, "", Type::getVoid(), {exObj, Operand::var(localSlot, Type::getPtr(Type::getPtr()))}});
+            declareVar(c.name, Operand::var(localSlot, Type::getPtr(Type::getPtr())), Type::getPtr());
+        }
         if (!isCatchAll && !c.name.empty()) {
             TypePtr catchEirTy = toEirType(c.type);
             std::string paySlotVar = newVar();
