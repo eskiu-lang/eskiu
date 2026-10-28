@@ -393,7 +393,7 @@ bool EIRBuilder::foldCInt(const ExprPtr& expr, ty::CInt& out) {
         else if (!sz->typeName.empty()) n = sizeOfType(sz->typeName);
         else if (sz->operand) n = getTypeSize(getExprEirType(sz->operand), module.get());
         if (n == 0) return false;
-        out = ty::cintMake(static_cast<long long>(n), 64, false);
+        out = ty::cintMake(static_cast<long long>(n), 64, true);   // uint64 in constant folds, as sema's
         return true;
     }
     if (auto t = dynamic_cast<TernaryExpr*>(expr.get())) {
@@ -558,6 +558,18 @@ void EIRBuilder::layoutRecord(const std::string& name, const std::vector<StructD
         fi.bitOffset = static_cast<unsigned>(bitOff);
         fi.bitWidth = static_cast<unsigned>(it.f.bitWidth);
         fi.isSigned = it.ty && it.ty->isInt() && it.ty->isSigned && it.ty->bitWidth > 1;
+        // An enum bitfield with no negative member is unsigned on SysV/AAPCS (clang).
+        if (auto en = plainEnums.find(tyq::strip(it.f.type)); en != plainEnums.end() && !L.msBitfields) {
+            bool negative = false;
+            for (const auto& m : en->second->members) {
+                auto c = enumConstants.find(m.first);
+                if (c != enumConstants.end() && c->second < 0) negative = true;
+            }
+            if (!negative) {
+                fi.isSigned = false;
+                fi.type = Type::getU32();
+            }
+        }
         fi.storageType = unsignedUnit(unitBytes);
         fi.storageOffset = unitOff;
         sinfo.fields.push_back(fi);
@@ -654,6 +666,10 @@ void EIRBuilder::layoutRecord(const std::string& name, const std::vector<StructD
     }
     sinfo.alignment = structAlign;
     sinfo.totalSize = up(size, structAlign);
+    sinfo.isUnion = isUnion;
+    sinfo.packAlign = packAlign;
+    for (const auto& pd : pads)
+        sinfo.pads.push_back({toEirType(subs.empty() ? pd.type : substType(pd.type, subs)), pd.bitWidth, pd.before});
     module->structLayouts[name] = sinfo;
     module->structTypes.push_back(Type::getStruct(name, fieldTypes));
 }

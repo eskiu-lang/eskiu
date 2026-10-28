@@ -266,6 +266,12 @@ struct StructInfo {
     std::vector<StructFieldInfo> fields;
     size_t totalSize = 0;
     size_t alignment = 1;
+    // As declared, for a backend that spells the record in C: a union, `#pragma pack(N)`
+    // (1 = packed), and the unnamed bitfields (type, width, index of the field they precede).
+    bool isUnion = false;
+    int packAlign = 0;
+    struct Pad { TypePtr type; int width = 0; size_t before = 0; };
+    std::vector<Pad> pads;
 
     size_t getFieldOffset(const std::string& fieldName) const {
         for (const auto& f : fields) {
