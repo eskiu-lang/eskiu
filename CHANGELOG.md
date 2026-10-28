@@ -15,8 +15,10 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   (`#pragma link`, implied libraries, `-c`, `.a`, `eskiuc run`). Exceptions, threads and
   `exception_text` run on a small C runtime. Options that only change LLVM's output (`-O`,
   `--safe`, `--freestanding`, ...) are errors under it. See `docs/dev/eir-backends.md`.
-- `tests/eir/check.sh` runs the run tests through a backend and fails when a test that
-  passed stops passing.
+- `tests/eir/check.sh` runs the run tests through a backend (as `tests/run.sh` does, C
+  companions included) and fails when a test that passed stops passing; CI runs it on macOS.
+- The EIR backends pass structs and unions by value to and from C functions and hand C a
+  function taking or returning one (or a `va_list`) through a thunk with the C signature.
 
 ### Fixed
 - EIR: a cast between `float` and `double`, or between a pointer and an integer, now emits
@@ -26,6 +28,13 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   the compiler; a repeated prototype no longer defines the function twice.
 - EVM: integer `/` and `%` by zero stop the program instead of yielding 0, and
   `ptrtoint`, `inttoptr`, `fptrunc` and `fpext` are executed.
+- EIR integers follow C everywhere: the builder makes the promotions and usual arithmetic
+  conversions explicit and every backend holds a value normalized to its type; constant
+  expressions fold with the type checker's rules.
+- EIR lowering now covers `alloc_with`, struct and union layout as C lays it out (bitfields,
+  unnamed bitfields, `#pragma pack`), generic enum instances, field defaults, `for-in`,
+  labeled `break`/`continue`, `defer` scoping, `errdefer` on `?`, `dbg`, operators and
+  locals inside generic instances, and evaluates an assignment's target once and first.
 
 ## [0.14.0] - 2026-10-23
 

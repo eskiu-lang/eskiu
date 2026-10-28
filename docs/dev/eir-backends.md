@@ -40,13 +40,23 @@ The EVM and both backends share one meaning of an EIR program:
 - An `icmp` on an interface compares its data pointers.
 
 Function boundaries follow the C ABI (AAPCS64 for assembly): parameters and results have
-their exact types, so a function can be passed to C (`qsort`). A function returning an
-aggregate gets the caller's buffer (x8 in assembly, a first `void*` parameter in C) and
-returns its address. An extern cannot take or return a struct by value under these
-backends; that is a compile error. A closure's function always takes the env first: a
-top-level function used as a closure is reached through `__fnptr_<name>` (built in
-`EIRBuilder::closureTarget`), and an extern's function parameter receives the plain C
+their exact types, so a function can be passed to C (`qsort`). Between Eskiu functions a
+record (struct, union, closure, interface, slice) travels by address, and a function
+returning one writes it to the buffer its caller passes (x8 in assembly, a first `void*`
+parameter in C) and returns that address. A closure's function always takes the env
+first: a top-level function used as a closure is reached through `__fnptr_<name>` (built
+in `EIRBuilder::closureTarget`), and an extern's function parameter receives the plain C
 function pointer.
+
+A struct or union passed to or returned from an `extern` by value follows the C ABI. The C
+backend spells the record in C (`struct __eskc_r_<name>`, its unions, bitfields, unnamed
+bitfields and `#pragma pack` as declared) and lets the C compiler pass it. The assembly
+backend classifies it as AAPCS64 does (`classifyC`): a homogeneous floating-point aggregate
+(one to four members of one float type; an unnamed bitfield of nonzero width breaks one) in
+consecutive v registers, else up to 16 bytes in x registers, else by address of a copy; the
+stack when the registers run out; a result in v0-v3, x0/x1, or the buffer x8 points to. A
+function handed to C by address whose signature has a record or a `va_list` is reached
+through a thunk with the C signature (`__cabi_<name>`, `__eskc_cabi_<name>`).
 
 ## Runtime
 
