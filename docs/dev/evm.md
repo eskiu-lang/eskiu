@@ -28,14 +28,18 @@ External C library symbols (`printf`, POSIX syscalls, Windows Win32 APIs) are di
 ### Standard I/O and String Formatting
 The VM provides integrated format string parsing (`formatString`) supporting standard integer, pointer, float, and string specifiers, along with variable width and precision arguments (`%*d`, `%.*s`).
 
-## 3. Test Suite Parity
+## 3. Semantics and Test Suite Parity
 
-EVM is validated against the Eskiu test suite and compared directly with native compiled binary output:
-- **Slice Suite (6/6):** Slice construction, element indexing, `.len`/`.ptr` access, and non-local returns pass without diffs.
-- **File System Suite (6/6):** Complete directory tree walks (`fs_walk`), descriptor handling (`openat`), and recursive deletions (`fs_remove_all`).
-- **Protocol Suites:** HTTP/2 HPACK encoding/decoding (5/5) and MIME Multipart parsing (4/4).
-- **Core Standard Library:** JSON parsing and emission, regex engine, associative maps, dynamic lists, sorting algorithms, cryptography/hashing, and datetime utilities.
-- **Compiler Parity Gates:** Full validation across `tests/selfhost/eir_parity.sh` and `tests/selfhost/cg_parity.sh`.
+EVM defines what an EIR program means, and the native back ends follow it
+([`eir-backends.md`](eir-backends.md)): every integer value is held normalized to its type
+(wrapped to its width, extended by its signedness), an `alloca` is zeroed each time it runs,
+an aggregate is the address of its bytes, and integer `/` or `%` by zero stops the program
+(`error: integer division by zero`, then abort) as the compiled program traps.
+
+Most run tests (`tests/NAME.esk` with a `NAME.expected`) pass under `--run-eir`. The ones that
+cannot are by design: inline assembly (the EVM does not execute it), a program that runs its
+own binary again (`process_self`, the uncaught-exception report), a C companion object (no
+linking), and a few network tests that exceed the run time under interpretation.
 
 ## 4. Scope and Design Boundaries
 

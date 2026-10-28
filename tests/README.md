@@ -789,6 +789,10 @@ Besides `run.sh`, these run in CI:
   by default.
 - `tests/nullable.sh`: the `?*T` checks and narrowing.
 - `tests/type_zoo/snapshot.sh check`: the golden-IR oracle (see `docs/dev/debugging.md`).
+- `tests/eir/check.sh [asm|c]`: every run test compiled by an EIR backend (ARM64
+  assembly or C99, no LLVM code generator) and run as `run.sh` runs it; a test listed in
+  `tests/eir/pass_<mode>.txt` that stops passing fails (`UPDATE=1` rewrites the list). CI
+  runs both modes on macOS. See `docs/dev/eir-backends.md`.
 - `tests/selfhost/*.sh`: parity between the self-hosted compiler and the C++ one
   (lexer, parser, preprocessor, type checker, codegen, C ABI, driver) and the bootstrap
   fixpoint; see `docs/dev/self-hosting.md`.

@@ -17,7 +17,7 @@ While LLVM provides world-class optimization for release binaries, relying exclu
 
 ### Goals of EIR
 - **Backend agnostic:** Serve as the unified lowering target from Eskiu's frontend. Backends (LLVM, custom AArch64/x86-64 machine code emitter, C99 transpiler, or bytecode VM) consume EIR.
-- **Explicit semantics:** High-level Eskiu features—such as structural interfaces (`{data, vtable}` fat pointers), closures (`{fn_ptr, env_ptr}` fat pointers), slices (`{ptr, len}`), bitfields, and `defer` cleanup sequences—are lowered into explicit, simple EIR operations.
+- **Explicit semantics:** High-level Eskiu features (structural interfaces as `{data, vtable}` fat pointers, closures as `{fn_ptr, env_ptr}`, slices as `{ptr, len}`, bitfields, and `defer` cleanup sequences) are lowered into explicit, simple EIR operations.
 - **SSA-friendly with explicit stack frames:** Functions use explicit `alloca` for mutable variables, matching the AST's scoping. A straightforward Linear Scan or stack-spill register allocator can generate native assembly directly without complex Phi analysis, while an SSA transformation (mem2reg) remains straightforward.
 - **Readable text representation:** EIR has a standard textual syntax (`.eir`) for debugging, diff testing (`--test-eir`), and tooling.
 
@@ -342,14 +342,15 @@ merge:
 
 ---
 
-## 7. Implementation Roadmap
+## 7. Implementation Status
 
-1. **EIR Data Structures (`eir/eir.h`, `eir/eir.cpp`)**:
-   Implement `Type`, `Value`, `Instruction`, `BasicBlock`, `Function`, and `Module`, with a textual serializer (`dump()`).
-2. **EIR Builder (`eir/eir_builder.h`, `eir/eir_builder.cpp`)**:
-   An `ASTVisitor` that traverses the resolved AST and builds an `eir::Module`.
-3. **Compiler CLI flag (`--test-eir`)**:
-   Hook up `main.cpp` to support `./build/eskiuc file.esk --test-eir` to print the emitted EIR.
-4. **Backend Integrations**:
-   - Native x86-64 / AArch64 code generator consuming EIR.
-   - Self-hosted parity: `selfhost/eir.esk` for the Eskiu-written compiler.
+1. **EIR data structures** (`eir/eir.h`, `eir/eir.cpp`): types, operands, instructions, blocks,
+   functions, modules and the text printer (`--test-eir`). Done.
+2. **EIR builder** (`eir/eir_builder.{h,cpp}`): an `ASTVisitor` over the checked AST, typing
+   each expression from the type checker (per instance inside a generic). Done.
+3. **EVM** (`eir/eir_vm.cpp`, `--run-eir`): see [`evm.md`](evm.md). Done.
+4. **Native back ends** (`--emit-asm` ARM64, `--emit-c` C99, `--emit-obj`, `--backend=eir`):
+   see [`eir-backends.md`](eir-backends.md); both pass the run-test corpus, gated by
+   `tests/eir/check.sh`. Done.
+5. **Self-hosted parity**: `selfhost/eir.esk` printing the same `--test-eir` text as the C++
+   builder for every test. In progress (`tests/selfhost/eir_parity.sh`).
