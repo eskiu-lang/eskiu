@@ -138,6 +138,9 @@ private:
     Operand callOperator(const std::string& fn, const std::vector<Operand>& args);
     std::string eskiuSpelling(const TypePtr& t);
     std::string semaType(const Expr* e);
+    Operand selectPtr(const Operand& c, const Operand& a, const Operand& b);
+    void dbgFormat(const std::string& t, const Operand& addr, std::string& fmt, std::vector<Operand>& args, int depth);
+    Operand emitDbg(CallExpr* node);
     std::vector<std::string> catchTextSlots;   // each enclosing catch's exception_text buffer
     Operand coerceNumeric(const Operand& v, const TypePtr& to);
     Operand promoteInt(const Operand& v);
@@ -214,6 +217,7 @@ private:
                       const std::vector<StructDecl::Pad>& pads, bool isUnion, int packAlign,
                       const std::map<std::string, std::string>& subs);
     void ensureStructLayout(const std::string& name);
+    void ensureLayoutOf(const TypePtr& t);
     ExprPtr defaultExprFor(const std::string& t);
     std::shared_ptr<StructInitExpr> withDefaults(StructInitExpr* init);
     std::map<std::string, int> structHasDefaults;

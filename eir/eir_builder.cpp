@@ -525,7 +525,7 @@ void EIRBuilder::layoutRecord(const std::string& name, const std::vector<StructD
     for (const auto& f : layoutFields(declFields, pads)) {
         std::string tstr = subs.empty() ? f.type : substType(f.type, subs);
         TypePtr ft = toEirType(tstr);
-        if (ft && ft->isStruct()) ensureStructLayout(ft->nominalName());
+        ensureLayoutOf(ft);
         uint64_t fs = getTypeSize(ft, module.get());
         if (ft && ft->isStruct()) { size_t ss = module->getStructSize(ft->nominalName()); if (ss) fs = ss; }
         uint64_t fa = getTypeAlign(ft, module.get());
@@ -692,7 +692,7 @@ void EIRBuilder::layoutAdt(const std::string& name, EnumDecl* e, const std::map<
         if (i < e->payloads.size()) {
             for (const auto& ptStr : e->payloads[i]) {
                 TypePtr pt = toEirType(subs.empty() ? ptStr : substType(ptStr, subs));
-                if (pt && pt->isStruct()) ensureStructLayout(pt->nominalName());
+                ensureLayoutOf(pt);
                 payloadTypes.push_back(pt);
                 size_t al = getTypeAlign(pt, module.get());
                 if (al > pMaxAlign) pMaxAlign = al;
@@ -715,6 +715,13 @@ void EIRBuilder::layoutAdt(const std::string& name, EnumDecl* e, const std::map<
     sinfo.alignment = 8;
     module->structLayouts[name] = sinfo;
     module->structTypes.push_back(Type::getStruct(name, {Type::getI32()}));
+}
+
+// Lay out the struct a type holds by value (itself, or an array's element).
+void EIRBuilder::ensureLayoutOf(const TypePtr& t) {
+    TypePtr e = t;
+    while (e && e->isArray()) e = e->elemType;
+    if (e && e->isStruct()) ensureStructLayout(e->nominalName());
 }
 
 void EIRBuilder::ensureStructLayout(const std::string& name) {
@@ -964,7 +971,7 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
                     } else if (type && type->isFloat()) {
                         double fv = 0.0;
                         if (auto lit = dynamic_cast<LiteralExpr*>(v->initializer.get())) {
-                            try { fv = std::stod(lit->value); } catch (...) {}
+                            fv = std::strtod(lit->value.c_str(), nullptr);
                         }
                         initOp = Operand::constFloat(fv, type);
                     } else {
@@ -2104,7 +2111,7 @@ void EIRBuilder::visit(LiteralExpr* node) {
         }
         case LiteralExpr::Kind::FLOAT: {
             double v = 0.0;
-            try { v = std::stod(node->value); } catch (...) { v = 0.0; }
+            v = std::strtod(node->value.c_str(), nullptr);   // C: a denormal stays, too large is inf
             lastValue = Operand::constFloat(v, ty);
             break;
         }
@@ -2140,6 +2147,10 @@ void EIRBuilder::visit(CallExpr* node) {
                 Operand::global("__eir_exception_text", Type::getPtr(Type::getU8()))
             }});
             lastValue = Operand::var(resVar, Type::getPtr(Type::getU8()));
+            return;
+        }
+        if (node->dbgBuiltin && node->args.size() == 1) {
+            lastValue = emitDbg(node);
             return;
         }
         if (id->name == "__cxa_free_exception" && node->args.size() == 1 && !lookupVar(id->name)) {
@@ -2441,6 +2452,24 @@ void EIRBuilder::visit(CallExpr* node) {
             }
         }
 
+        // A constrained call on a primitive (`t.cmp(x)` with T = int) is the free function
+        // named like the method, taking the primitive first.
+        if (baseTy && (baseTy->isInt() || baseTy->isFloat()) && !module->getFunction(baseTypeName + "_" + mem->member)) {
+            if (Function* free = module->getFunction(mem->member)) {
+                fnName = free->name;
+                args.push_back(Operand::global(fnName, Type::getPtr()));
+                args.push_back(free->params.empty() ? evaluateExpr(mem->base) : evalForType(mem->base, free->params[0].second));
+                for (size_t i = 0; i < node->args.size(); ++i) {
+                    TypePtr pt = i + 1 < free->params.size() ? free->params[i + 1].second : nullptr;
+                    args.push_back(evalForType(node->args[i], pt));
+                }
+                TypePtr retTy = free->returnType;
+                std::string dst = retTy->isVoid() ? "" : newVar();
+                emit(Instruction{Opcode::Call, dst, retTy, args});
+                lastValue = dst.empty() ? Operand::var("", Type::getVoid()) : Operand::var(dst, retTy);
+                return;
+            }
+        }
         fnName = baseTypeName + "_" + mem->member;
         args.push_back(Operand::global(fnName, Type::getPtr()));
 
@@ -2482,8 +2511,14 @@ void EIRBuilder::visit(CallExpr* node) {
 }
 
 void EIRBuilder::visit(CastExpr* node) {
-    Operand val = evaluateExpr(node->expr);
     TypePtr toTy = toEirType(node->targetType);
+    // `(*void)f` of a top-level function is its C function pointer, not a closure.
+    if (auto* id = dynamic_cast<IdentExpr*>(node->expr.get());
+        id && toTy->isPointer() && !lookupVar(id->name) && module->getFunction(id->name)) {
+        lastValue = Operand::global(id->name, toTy);
+        return;
+    }
+    Operand val = evaluateExpr(node->expr);
 
     if (val.kind == OperandKind::ConstantNull) {
         lastValue = Operand::constNull();
@@ -2889,12 +2924,14 @@ Function* EIRBuilder::instantiateFnTemplate(FunctionDecl* fd, const std::string&
     std::string retType = substType(fd->returnType, subs);
     std::vector<std::pair<std::string, std::string>> params;
     std::vector<std::pair<std::string, TypePtr>> eirParams;
+    bool variadic = false;
     for (const auto& p : fd->params) {
         std::string subPType = substType(p.first, subs);
         params.emplace_back(subPType, p.second);
+        if (p.first == "...") { variadic = true; continue; }
         eirParams.emplace_back(p.second, toEirType(subPType));
     }
-    module->createFunction(mangledName, toEirType(retType), eirParams);
+    module->createFunction(mangledName, toEirType(retType), eirParams)->isVariadic = variadic;
 
     auto inst = std::make_shared<FunctionDecl>(mangledName, retType, params, fd->body);
     inst->accept(this);
@@ -3256,6 +3293,168 @@ std::string EIRBuilder::semaType(const Expr* e) {
             return typeParamOverride.empty() ? it->second : substType(it->second, typeParamOverride);
     }
     return "";
+}
+
+// `c ? a : b` for pointers, through a slot.
+Operand EIRBuilder::selectPtr(const Operand& c, const Operand& a, const Operand& b) {
+    std::string slot = newVar() + ".sel";
+    entryAlloca(slot, Type::getPtr(), 8);
+    BasicBlock* yes = createBlock("sel.a");
+    BasicBlock* no = createBlock("sel.b");
+    BasicBlock* done = createBlock("sel.done");
+    emit(Instruction{Opcode::BrCond, "", Type::getVoid(), {c, Operand::block(yes->name), Operand::block(no->name)}});
+    setBlock(yes);
+    emit(Instruction{Opcode::Store, "", Type::getVoid(), {a, Operand::var(slot, Type::getPtr(Type::getPtr()))}});
+    emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(done->name)}});
+    setBlock(no);
+    emit(Instruction{Opcode::Store, "", Type::getVoid(), {b, Operand::var(slot, Type::getPtr(Type::getPtr()))}});
+    emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(done->name)}});
+    setBlock(done);
+    std::string v = newVar();
+    emit(Instruction{Opcode::Load, v, Type::getPtr(), {Operand::var(slot, Type::getPtr(Type::getPtr()))}});
+    return Operand::var(v, Type::getPtr());
+}
+
+// The format and arguments `dbg` prints a value of type `t` at `addr` with, as codegen's
+// dbgFormat: integers, bool, char, floats, strings (quoted, or null), arrays up to 16
+// elements, structs by field (4 levels), a plain enum as `E(n)`, a pointer as %p, anything
+// else as `<T>`.
+void EIRBuilder::dbgFormat(const std::string& t0, const Operand& addr, std::string& fmt, std::vector<Operand>& args, int depth) {
+    std::string t = tyq::strip(t0);
+    auto al = typeAliases.find(t);
+    if (al != typeAliases.end()) t = tyq::strip(al->second);
+    std::string key = t.rfind("struct:", 0) == 0 ? t.substr(7) : t;
+    auto lit = [&](const std::string& x) { for (char c : x) fmt += c == '%' ? std::string("%%") : std::string(1, c); };
+    TypePtr ty = toEirType(t);
+    static const std::set<std::string> sints = {"int", "int8", "int16", "int32", "int64"};
+    static const std::set<std::string> uints = {"uint", "uint8", "uint16", "uint32", "uint64"};
+    ty::Type pt = ty::Type::parse(t);
+    auto load = [&](const TypePtr& lt) {
+        std::string v = newVar();
+        emit(Instruction{Opcode::Load, v, lt, {addr}});
+        return Operand::var(v, lt);
+    };
+    if (sints.count(t) || uints.count(t)) {
+        args.push_back(coerceNumeric(load(ty), sints.count(t) ? Type::getI64() : Type::getU64()));
+        fmt += sints.count(t) ? "%lld" : "%llu";
+    } else if (t == "bool") {
+        args.push_back(selectPtr(load(ty), Operand::constString("true"), Operand::constString("false")));
+        fmt += "%s";
+    } else if (t == "char") {
+        args.push_back(coerceNumeric(load(ty), Type::getI32()));
+        fmt += "'%c'";
+    } else if (t == "float" || t == "double") {
+        args.push_back(coerceNumeric(load(ty), Type::getF64()));
+        fmt += "%g";
+    } else if (t == "string") {
+        Operand v = load(ty);
+        std::string isNull = newVar();
+        emit(Instruction{Opcode::ICmp, isNull, Type::getI1(), {v, Operand::constNull()}, ICmpCond::Eq});
+        Operand c = Operand::var(isNull, Type::getI1());
+        Operand q = selectPtr(c, Operand::constString(""), Operand::constString("\""));
+        args.push_back(q);
+        args.push_back(selectPtr(c, Operand::constString("null"), v));
+        args.push_back(q);
+        fmt += "%s%s%s";
+    } else if (pt.kind == ty::Type::Kind::Array && pt.elem && ty && ty->isArray()) {
+        fmt += "[";
+        for (uint64_t i = 0; i < ty->arraySize && i < 16; ++i) {
+            if (i) fmt += ", ";
+            std::string ep = newVar();
+            emit(Instruction{Opcode::Gep, ep, Type::getPtr(ty->elemType), {addr, Operand::constInt(static_cast<int64_t>(i), Type::getI64())}});
+            if (depth < 4) dbgFormat(pt.elem->str(), Operand::var(ep, Type::getPtr(ty->elemType)), fmt, args, depth + 1);
+            else fmt += "...";
+        }
+        if (ty->arraySize > 16) fmt += ", ...";
+        fmt += "]";
+    } else if (StructDecl* sd = plainStructs.count(key) ? plainStructs[key] : nullptr;
+               (sd && !unionDecls.count(key)) || (templateInstanceArgs.count(key) && templateDecls.count(templateInstanceArgs[key].first))) {
+        std::map<std::string, std::string> subs;
+        if (!sd) {
+            const auto& ia = templateInstanceArgs[key];
+            sd = templateDecls[ia.first];
+            for (size_t i = 0; i < sd->typeParams.size() && i < ia.second.size(); ++i) subs[sd->typeParams[i]] = ia.second[i];
+        }
+        bool bits = false;
+        for (const auto& f : sd->fields) if (f.bitWidth != 0) bits = true;
+        if (bits || !sd->pads.empty()) {
+            fmt += "<"; lit(key); fmt += ">";
+            return;
+        }
+        ensureStructLayout(key);
+        lit(key);
+        fmt += "{";
+        for (size_t i = 0; i < sd->fields.size(); ++i) {
+            if (i) fmt += ", ";
+            lit(sd->fields[i].name);
+            fmt += ": ";
+            std::string fts = subs.empty() ? sd->fields[i].type : substType(sd->fields[i].type, subs);
+            TypePtr ft = toEirType(fts);
+            std::string fp = newVar();
+            emit(Instruction{Opcode::FieldPtr, fp, Type::getPtr(ft), {Operand::var(key, nullptr), addr, Operand::constString(sd->fields[i].name)}});
+            if (depth < 4) dbgFormat(fts, Operand::var(fp, Type::getPtr(ft)), fmt, args, depth + 1);
+            else fmt += "...";
+        }
+        fmt += "}";
+    } else if (ty && ty->isPointer()) {
+        args.push_back(load(ty));
+        fmt += "%p";
+    } else if (plainEnums.count(key)) {
+        lit(key);
+        fmt += "(%lld)";
+        args.push_back(coerceNumeric(load(Type::getI32()), Type::getI64()));
+    } else {
+        fmt += "<";
+        lit(key);
+        fmt += ">";
+    }
+}
+
+// `dbg(e)`: prints `[dbg L:C] <source of e> = <value>` to stderr and yields e's value.
+Operand EIRBuilder::emitDbg(CallExpr* node) {
+    std::string t = semaType(node->args[0].get());
+    TypePtr ty = toEirType(t);
+    Operand v = evalForType(node->args[0], ty);
+    std::string slot = newVar() + ".dbg";
+    entryAlloca(slot, ty, 8);
+    Operand addr = Operand::var(slot, Type::getPtr(ty));
+    emit(Instruction{Opcode::Store, "", Type::getVoid(), {v, addr}});
+    std::string fmt;
+    for (char c : "[dbg " + std::to_string(node->callee->line) + ":" + std::to_string(node->callee->col) + "] " + node->dbgText + " = ")
+        fmt += c == '%' ? std::string("%%") : std::string(1, c);
+    std::vector<Operand> args;
+    dbgFormat(t, addr, fmt, args, 0);
+    fmt += "\n";
+
+    std::string triple = targetTriple;
+#if defined(__APPLE__)
+    if (triple.empty()) triple = "darwin";
+#elif defined(_WIN32)
+    if (triple.empty()) triple = "windows";
+#endif
+    Operand err;
+    if (triple.find("windows") != std::string::npos || triple.find("mingw") != std::string::npos) {
+        std::string e = newVar();
+        emit(Instruction{Opcode::Call, e, Type::getPtr(), {Operand::global("__acrt_iob_func", Type::getPtr()), Operand::constInt(2, Type::getI32())}});
+        err = Operand::var(e, Type::getPtr());
+    } else {
+        bool darwin = triple.find("darwin") != std::string::npos || triple.find("apple") != std::string::npos ||
+                      triple.find("macos") != std::string::npos || triple.find("ios") != std::string::npos;
+        std::string e = newVar();
+        emit(Instruction{Opcode::Load, e, Type::getPtr(), {Operand::global(darwin ? "__stderrp" : "stderr", Type::getPtr(Type::getPtr()))}});
+        err = Operand::var(e, Type::getPtr());
+    }
+    if (!module->getFunction("fprintf")) {
+        Function* f = module->createFunction("fprintf", Type::getI32(), {{"stream", Type::getPtr()}, {"fmt", Type::getPtr(Type::getU8())}});
+        f->isExtern = true;
+        f->isVariadic = true;
+    }
+    std::vector<Operand> callArgs{Operand::global("fprintf", Type::getPtr()), err, Operand::constString(fmt)};
+    callArgs.insert(callArgs.end(), args.begin(), args.end());
+    emit(Instruction{Opcode::Call, newVar(), Type::getI32(), callArgs});
+    std::string r = newVar();
+    emit(Instruction{Opcode::Load, r, ty, {addr}});
+    return Operand::var(r, ty);
 }
 
 bool EIRBuilder::isGlobalName(const std::string& name) const {
