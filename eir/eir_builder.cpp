@@ -304,55 +304,67 @@ Operand EIRBuilder::evaluateLValue(const ExprPtr& expr) {
     return lastLValue;
 }
 
-int64_t EIRBuilder::foldConstInt(const ExprPtr& expr) {
-    if (!expr) return 0;
+// An integer constant expression folded with C's rules (ty::CInt: promotions, usual
+// arithmetic conversions, wraparound), as sema and codegen fold. False when it is not one.
+bool EIRBuilder::foldCInt(const ExprPtr& expr, ty::CInt& out) {
+    if (!expr) return false;
     if (auto lit = dynamic_cast<LiteralExpr*>(expr.get())) {
         if (lit->kind == LiteralExpr::Kind::INT) {
             try {
                 if (!lit->value.empty() && lit->value[0] == '-') {
-                    return std::stoll(lit->value, nullptr, 0);
+                    out = ty::cintNegLiteral(std::stoull(lit->value.substr(1), nullptr, 0));
                 } else {
-                    return static_cast<int64_t>(std::stoull(lit->value, nullptr, 0));
+                    out = ty::cintLiteral(std::stoull(lit->value, nullptr, 0));
                 }
-            } catch (...) { return 0; }
+            } catch (...) { return false; }
+            return true;
         }
         if (lit->kind == LiteralExpr::Kind::CHAR) {
-            return (!lit->value.empty()) ? static_cast<int64_t>(static_cast<unsigned char>(lit->value[0])) : 0;
+            out = ty::cintMake(lit->value.empty() ? 0 : static_cast<unsigned char>(lit->value[0]), 32, false);
+            return true;
         }
         if (lit->kind == LiteralExpr::Kind::BOOL) {
-            return (lit->value == "true") ? 1 : 0;
+            out = ty::cintMake(lit->value == "true" ? 1 : 0, 32, false);
+            return true;
         }
-    } else if (auto id = dynamic_cast<IdentExpr*>(expr.get())) {
-        auto it = enumConstants.find(id->name);
-        if (it != enumConstants.end()) return it->second;
-    } else if (auto u = dynamic_cast<UnaryExpr*>(expr.get())) {
-        int64_t sub = foldConstInt(u->operand);
-        if (u->op == "-") return -sub;
-        if (u->op == "~") return ~sub;
-        if (u->op == "!") return sub == 0 ? 1 : 0;
-    } else if (auto b = dynamic_cast<BinaryExpr*>(expr.get())) {
-        int64_t left = foldConstInt(b->left);
-        int64_t right = foldConstInt(b->right);
-        if (b->op == "+") return left + right;
-        if (b->op == "-") return left - right;
-        if (b->op == "*") return left * right;
-        if (b->op == "/") return right != 0 ? left / right : 0;
-        if (b->op == "%") return right != 0 ? left % right : 0;
-        if (b->op == "&") return left & right;
-        if (b->op == "|") return left | right;
-        if (b->op == "^") return left ^ right;
-        if (b->op == "<<") return left << right;
-        if (b->op == ">>") return left >> right;
-        if (b->op == "==") return left == right ? 1 : 0;
-        if (b->op == "!=") return left != right ? 1 : 0;
-        if (b->op == "<") return left < right ? 1 : 0;
-        if (b->op == "<=") return left <= right ? 1 : 0;
-        if (b->op == ">") return left > right ? 1 : 0;
-        if (b->op == ">=") return left >= right ? 1 : 0;
-    } else if (auto c = dynamic_cast<CastExpr*>(expr.get())) {
-        return foldConstInt(c->expr);
+        return false;
     }
-    return 0;
+    if (auto id = dynamic_cast<IdentExpr*>(expr.get())) {
+        auto it = enumConstants.find(id->name);
+        if (it == enumConstants.end()) return false;
+        auto ct = constTypes.find(id->name);
+        TypePtr t = ct != constTypes.end() ? ct->second : Type::getI32();
+        if (t->bitWidth < 32) out = ty::cintMake(it->second, 32, false);
+        else out = ty::cintMake(it->second, t->bitWidth > 32 ? 64 : 32, !t->isSigned);
+        return true;
+    }
+    if (auto u = dynamic_cast<UnaryExpr*>(expr.get())) {
+        ty::CInt x;
+        return foldCInt(u->operand, x) && ty::cintUnary(u->op, x, out);
+    }
+    if (auto b = dynamic_cast<BinaryExpr*>(expr.get())) {
+        ty::CInt l, r;
+        return foldCInt(b->left, l) && foldCInt(b->right, r) && ty::cintBinary(b->op, l, r, out);
+    }
+    if (auto c = dynamic_cast<CastExpr*>(expr.get())) {
+        ty::CInt x;
+        std::string t = c->targetType;
+        auto al = typeAliases.find(t);
+        if (al != typeAliases.end()) t = al->second;
+        return foldCInt(c->expr, x) && ty::cintCast(t, x, out);
+    }
+    if (auto t = dynamic_cast<TernaryExpr*>(expr.get())) {
+        ty::CInt c, a, b;
+        if (!foldCInt(t->condition, c) || !foldCInt(t->thenExpr, a) || !foldCInt(t->elseExpr, b)) return false;
+        out = c.v ? a : b;
+        return true;
+    }
+    return false;
+}
+
+int64_t EIRBuilder::foldConstInt(const ExprPtr& expr) {
+    ty::CInt v;
+    return foldCInt(expr, v) ? v.v : 0;
 }
 
 void EIRBuilder::emitArrayInitInto(Operand dest, ArrayLitExpr* lit, TypePtr arrTy) {
@@ -436,8 +448,8 @@ void EIRBuilder::layoutBitfieldsForStruct(StructDecl* s, StructInfo& sinfo, std:
             sfield.isBitfield = true;
             sfield.bitOffset = bitOffset;
             sfield.bitWidth = static_cast<unsigned>(w);
-            sfield.isSigned = ty->isSigned;
-            sfield.storageType = ty;
+            sfield.isSigned = ty->isSigned && ty->bitWidth > 1;
+            sfield.storageType = size >= 8 ? Type::getU64() : size >= 4 ? Type::getU32() : size >= 2 ? Type::getU16() : Type::getU8();
             sfield.storageOffset = byteOffset;
             sinfo.fields.push_back(sfield);
             bitpos += w;
@@ -493,14 +505,19 @@ Operand EIRBuilder::loadBitfield(MemberExpr* m, bool isVolatile) {
     cur = Operand::var(masked, fi->storageType);
 
     if (fi->isSigned && fi->bitWidth < static_cast<unsigned>(fi->storageType->bitWidth)) {
+        // Sign-extend from the field's top bit in a signed type of the unit's width.
+        TypePtr sty = fi->type && fi->type->isInt() && fi->type->bitWidth == fi->storageType->bitWidth ? fi->type
+                    : fi->storageType->bitWidth == 64 ? Type::getI64() : fi->storageType->bitWidth == 32 ? Type::getI32()
+                    : fi->storageType->bitWidth == 16 ? Type::getI16() : Type::getI8();
         unsigned sh = static_cast<unsigned>(fi->storageType->bitWidth) - fi->bitWidth;
         std::string shl = newVar();
         emit(Instruction{Opcode::Shl, shl, fi->storageType, {cur, Operand::constInt(static_cast<int64_t>(sh), fi->storageType)}});
+        Operand asSigned = coerceNumeric(Operand::var(shl, fi->storageType), sty);
         std::string ashr = newVar();
-        emit(Instruction{Opcode::AShr, ashr, fi->storageType, {Operand::var(shl, fi->storageType), Operand::constInt(static_cast<int64_t>(sh), fi->storageType)}});
-        cur = Operand::var(ashr, fi->storageType);
+        emit(Instruction{Opcode::AShr, ashr, sty, {asSigned, Operand::constInt(static_cast<int64_t>(sh), sty)}});
+        cur = Operand::var(ashr, sty);
     }
-    return cur;
+    return coerceNumeric(cur, fi->type);
 }
 
 void EIRBuilder::storeBitfield(MemberExpr* m, Operand val, bool isVolatile) {
@@ -532,16 +549,8 @@ void EIRBuilder::storeBitfield(MemberExpr* m, Operand val, bool isVolatile) {
     std::string cleared = newVar();
     emit(Instruction{Opcode::And, cleared, fi->storageType, {Operand::var(wordVal, fi->storageType), Operand::constInt(static_cast<int64_t>(~fieldMask), fi->storageType)}});
 
-    Operand valToStore = val;
-    if (val.type->bitWidth != fi->storageType->bitWidth) {
-        std::string conv = newVar();
-        if (val.type->bitWidth > fi->storageType->bitWidth) {
-            emit(Instruction{Opcode::Trunc, conv, fi->storageType, {val}});
-        } else {
-            emit(Instruction{fi->isSigned ? Opcode::SExt : Opcode::ZExt, conv, fi->storageType, {val}});
-        }
-        valToStore = Operand::var(conv, fi->storageType);
-    }
+    // The value as the field's type, then its bits in the unit's (unsigned) type.
+    Operand valToStore = coerceNumeric(coerceNumeric(val, fi->type), fi->storageType);
 
     std::string vMasked = newVar();
     emit(Instruction{Opcode::And, vMasked, fi->storageType, {valToStore, Operand::constInt(static_cast<int64_t>(mask), fi->storageType)}});
@@ -558,28 +567,6 @@ void EIRBuilder::storeBitfield(MemberExpr* m, Operand val, bool isVolatile) {
     Instruction st{Opcode::Store, "", Type::getVoid(), {Operand::var(newWord, fi->storageType), Operand::var(wordPtr, Type::getPtr(fi->storageType))}};
     st.isVolatile = isVolatile;
     emit(st);
-}
-
-static bool isConstIntExpr(const ExprPtr& expr, const std::unordered_map<std::string, int64_t>& enumConstants) {
-    if (!expr) return false;
-    if (auto lit = dynamic_cast<LiteralExpr*>(expr.get())) {
-        return lit->kind == LiteralExpr::Kind::INT ||
-               lit->kind == LiteralExpr::Kind::CHAR ||
-               lit->kind == LiteralExpr::Kind::BOOL;
-    }
-    if (auto id = dynamic_cast<IdentExpr*>(expr.get())) {
-        return enumConstants.count(id->name) > 0;
-    }
-    if (auto u = dynamic_cast<UnaryExpr*>(expr.get())) {
-        return (u->op == "-" || u->op == "~" || u->op == "!") && isConstIntExpr(u->operand, enumConstants);
-    }
-    if (auto b = dynamic_cast<BinaryExpr*>(expr.get())) {
-        return isConstIntExpr(b->left, enumConstants) && isConstIntExpr(b->right, enumConstants);
-    }
-    if (auto c = dynamic_cast<CastExpr*>(expr.get())) {
-        return isConstIntExpr(c->expr, enumConstants);
-    }
-    return false;
 }
 
 std::unique_ptr<Module> EIRBuilder::build(Program* program) {
@@ -697,10 +684,11 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
                 }
                 if (initOp.kind != OperandKind::GlobalRef) {
                     if (type && type->isInt()) {
-                        if (isConstIntExpr(v->initializer, enumConstants)) {
-                            int64_t cv = foldConstInt(v->initializer);
+                        if (ty::CInt folded; foldCInt(v->initializer, folded)) {
+                            int64_t cv = truncConst(folded.v, type);
                             if (v->isConst) {
                                 enumConstants[v->name] = cv;
+                                constTypes[v->name] = type;
                             }
                             initOp = Operand::constInt(cv, type);
                         } else {
@@ -1110,8 +1098,8 @@ void EIRBuilder::visit(BlockStmt* node) {
 
 void EIRBuilder::visit(ReturnStmt* node) {
     if (node->value) {
-        std::string retTyName = currentFunction && currentFunction->returnType ? currentFunction->returnType->nominalName() : "";
-        Operand val = evalForType(node->value, retTyName);
+        TypePtr retTy = currentFunction ? currentFunction->returnType : nullptr;
+        Operand val = (retTy && !retTy->isVoid()) ? evalForType(node->value, retTy) : evaluateExpr(node->value);
         runCleanupsToDepth(0, false);
         if (currentBlock && !currentBlock->hasTerminator()) {
             emit(Instruction{Opcode::Ret, "", val.type, {val}});
@@ -1127,11 +1115,7 @@ void EIRBuilder::visit(ReturnStmt* node) {
 void EIRBuilder::visit(IfStmt* node) {
     Operand cond = evaluateExpr(node->condition);
 
-    if (cond.type->kind != TypeKind::Int || cond.type->bitWidth != 1) {
-        std::string cmpDst = newVar();
-        emit(Instruction{Opcode::ICmp, cmpDst, Type::getI1(), {cond, Operand::constInt(0, cond.type)}, ICmpCond::Ne});
-        cond = Operand::var(cmpDst, Type::getI1());
-    }
+    cond = truth(cond);
 
     BasicBlock* thenBB = createBlock("then");
     BasicBlock* elseBB = node->elseBranch ? createBlock("else") : nullptr;
@@ -1167,11 +1151,7 @@ void EIRBuilder::visit(WhileStmt* node) {
 
     setBlock(condBB);
     Operand cond = evaluateExpr(node->condition);
-    if (cond.type->kind != TypeKind::Int || cond.type->bitWidth != 1) {
-        std::string cmpDst = newVar();
-        emit(Instruction{Opcode::ICmp, cmpDst, Type::getI1(), {cond, Operand::constInt(0, cond.type)}, ICmpCond::Ne});
-        cond = Operand::var(cmpDst, Type::getI1());
-    }
+    cond = truth(cond);
     emit(Instruction{Opcode::BrCond, "", Type::getVoid(), {cond, Operand::block(bodyBB->name), Operand::block(exitBB->name)}});
 
     setBlock(bodyBB);
@@ -1212,11 +1192,7 @@ void EIRBuilder::visit(ForStmt* node) {
     setBlock(condBB);
     if (node->condition) {
         Operand cond = evaluateExpr(node->condition);
-        if (cond.type->kind != TypeKind::Int || cond.type->bitWidth != 1) {
-            std::string cmpDst = newVar();
-            emit(Instruction{Opcode::ICmp, cmpDst, Type::getI1(), {cond, Operand::constInt(0, cond.type)}, ICmpCond::Ne});
-            cond = Operand::var(cmpDst, Type::getI1());
-        }
+        cond = truth(cond);
         emit(Instruction{Opcode::BrCond, "", Type::getVoid(), {cond, Operand::block(bodyBB->name), Operand::block(exitBB->name)}});
     } else {
         emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(bodyBB->name)}});
@@ -1330,22 +1306,9 @@ void EIRBuilder::visit(BinaryExpr* node) {
                 if (fi && fi->isBitfield) {
                     Operand cur = loadBitfield(mem, volatileRooted(mem));
                     Operand rhs = evaluateExpr(node->right);
-                    std::string resVar = newVar();
-
-                    Opcode binOp = Opcode::Add;
-                    if (baseOp == "-") binOp = Opcode::Sub;
-                    else if (baseOp == "*") binOp = Opcode::Mul;
-                    else if (baseOp == "/") binOp = cur.type->isFloat() ? Opcode::FDiv : (cur.type->isSigned ? Opcode::SDiv : Opcode::UDiv);
-                    else if (baseOp == "%") binOp = cur.type->isSigned ? Opcode::SRem : Opcode::URem;
-                    else if (baseOp == "&") binOp = Opcode::And;
-                    else if (baseOp == "|") binOp = Opcode::Or;
-                    else if (baseOp == "^") binOp = Opcode::Xor;
-                    else if (baseOp == "<<") binOp = Opcode::Shl;
-                    else if (baseOp == ">>") binOp = cur.type->isSigned ? Opcode::AShr : Opcode::LShr;
-
-                    emit(Instruction{binOp, resVar, cur.type, {cur, rhs}});
-                    storeBitfield(mem, Operand::var(resVar, cur.type), volatileRooted(mem));
-                    lastValue = Operand::var(resVar, cur.type);
+                    Operand res = compoundOp(baseOp, cur, rhs, cur.type);
+                    storeBitfield(mem, res, volatileRooted(mem));
+                    lastValue = res;
                     return;
                 }
             }
@@ -1360,40 +1323,18 @@ void EIRBuilder::visit(BinaryExpr* node) {
         emit(ld);
 
         Operand rhs = evaluateExpr(node->right);
-        std::string resVar = newVar();
-
-        Opcode binOp = Opcode::Add;
-        if (baseOp == "-") binOp = Opcode::Sub;
-        else if (baseOp == "*") binOp = Opcode::Mul;
-        else if (baseOp == "/") binOp = ty->isFloat() ? Opcode::FDiv : (ty->isSigned ? Opcode::SDiv : Opcode::UDiv);
-        else if (baseOp == "%") binOp = ty->isSigned ? Opcode::SRem : Opcode::URem;
-        else if (baseOp == "&") binOp = Opcode::And;
-        else if (baseOp == "|") binOp = Opcode::Or;
-        else if (baseOp == "^") binOp = Opcode::Xor;
-        else if (baseOp == "<<") binOp = Opcode::Shl;
-        else if (baseOp == ">>") binOp = ty->isSigned ? Opcode::AShr : Opcode::LShr;
-
-        emit(Instruction{binOp, resVar, ty, {Operand::var(curVal, ty), rhs}});
-        Instruction st{Opcode::Store, "", Type::getVoid(), {Operand::var(resVar, ty), lhsAddr}};
+        Operand res = compoundOp(baseOp, Operand::var(curVal, ty), rhs, ty);
+        Instruction st{Opcode::Store, "", Type::getVoid(), {res, lhsAddr}};
         st.isVolatile = volatileRooted(node->left.get());
         emit(st);
-        lastValue = Operand::var(resVar, ty);
+        lastValue = res;
         return;
     }
 
     if (node->op == "&&" || node->op == "||") {
         Operand l = evaluateExpr(node->left);
         Operand lVal = l;
-        if (!l.type || !l.type->isInt() || l.type->bitWidth != 1) {
-            std::string lCond = newVar();
-            if (l.type && l.type->isPointer()) {
-                emit(Instruction{Opcode::ICmp, lCond, Type::getI1(), {l, Operand::constNull()}, ICmpCond::Ne});
-            } else {
-                TypePtr cmpTy = l.type ? l.type : Type::getI32();
-                emit(Instruction{Opcode::ICmp, lCond, Type::getI1(), {l, Operand::constInt(0, cmpTy)}, ICmpCond::Ne});
-            }
-            lVal = Operand::var(lCond, Type::getI1());
-        }
+        lVal = truth(l);
 
         std::string resVar = newVar();
         emit(Instruction{Opcode::Alloca, resVar, Type::getPtr(Type::getI1()), {}});
@@ -1412,16 +1353,7 @@ void EIRBuilder::visit(BinaryExpr* node) {
         setBlock(rhsBB);
         Operand r = evaluateExpr(node->right);
         Operand rVal = r;
-        if (!r.type || !r.type->isInt() || r.type->bitWidth != 1) {
-            std::string rCond = newVar();
-            if (r.type && r.type->isPointer()) {
-                emit(Instruction{Opcode::ICmp, rCond, Type::getI1(), {r, Operand::constNull()}, ICmpCond::Ne});
-            } else {
-                TypePtr cmpTy = r.type ? r.type : Type::getI32();
-                emit(Instruction{Opcode::ICmp, rCond, Type::getI1(), {r, Operand::constInt(0, cmpTy)}, ICmpCond::Ne});
-            }
-            rVal = Operand::var(rCond, Type::getI1());
-        }
+        rVal = truth(r);
         emit(Instruction{Opcode::Store, "", Type::getVoid(), {rVal, Operand::var(resVar, Type::getPtr(Type::getI1()))}});
         emit(Instruction{Opcode::Br, "", Type::getVoid(), {Operand::block(contBB->name)}});
 
@@ -1434,6 +1366,63 @@ void EIRBuilder::visit(BinaryExpr* node) {
 
     Operand lhs = evaluateExpr(node->left);
     Operand rhs = evaluateExpr(node->right);
+    const std::string& op = node->op;
+    bool isCmp = op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=";
+    auto isNum = [](const Operand& o) {
+        return o.kind != OperandKind::ConstantNull && o.type && (o.type->isInt() || o.type->isFloat());
+    };
+
+    // Numbers follow C: narrow integers promote to int, then both operands meet at their
+    // common type, the operation's type; a shift has its promoted left operand's type.
+    if (isNum(lhs) && isNum(rhs) && op != "&&" && op != "||") {
+        std::string dst = newVar();
+        if (op == "<<" || op == ">>") {
+            lhs = promoteInt(lhs);
+            TypePtr t = lhs.type;
+            rhs = coerceNumeric(promoteInt(rhs), t);
+            emit(Instruction{op == "<<" ? Opcode::Shl : (t->isSigned ? Opcode::AShr : Opcode::LShr), dst, t, {lhs, rhs}});
+            lastValue = Operand::var(dst, t);
+            return;
+        }
+        lhs = promoteInt(lhs);
+        rhs = promoteInt(rhs);
+        TypePtr t = commonType(lhs.type, rhs.type);
+        lhs = coerceNumeric(lhs, t);
+        rhs = coerceNumeric(rhs, t);
+        if (isCmp) {
+            if (t->isFloat()) {
+                FCmpCond fc = op == "==" ? FCmpCond::Oeq : op == "!=" ? FCmpCond::One : op == "<" ? FCmpCond::Olt
+                            : op == "<=" ? FCmpCond::Ole : op == ">" ? FCmpCond::Ogt : FCmpCond::Oge;
+                emit(Instruction{Opcode::FCmp, dst, Type::getI1(), {lhs, rhs}, ICmpCond::Eq, fc});
+            } else {
+                bool sg = t->isSigned;
+                ICmpCond ic = op == "==" ? ICmpCond::Eq : op == "!=" ? ICmpCond::Ne
+                            : op == "<" ? (sg ? ICmpCond::Slt : ICmpCond::Ult) : op == "<=" ? (sg ? ICmpCond::Sle : ICmpCond::Ule)
+                            : op == ">" ? (sg ? ICmpCond::Sgt : ICmpCond::Ugt) : (sg ? ICmpCond::Sge : ICmpCond::Uge);
+                emit(Instruction{Opcode::ICmp, dst, Type::getI1(), {lhs, rhs}, ic});
+            }
+            lastValue = Operand::var(dst, Type::getI1());
+            return;
+        }
+        bool f = t->isFloat(), sg = t->isSigned;
+        Opcode opc = Opcode::Add;
+        if (op == "+") opc = f ? Opcode::FAdd : Opcode::Add;
+        else if (op == "-") opc = f ? Opcode::FSub : Opcode::Sub;
+        else if (op == "*") opc = f ? Opcode::FMul : Opcode::Mul;
+        else if (op == "/") opc = f ? Opcode::FDiv : (sg ? Opcode::SDiv : Opcode::UDiv);
+        else if (op == "%") opc = sg ? Opcode::SRem : Opcode::URem;
+        else if (op == "&") opc = Opcode::And;
+        else if (op == "|") opc = Opcode::Or;
+        else if (op == "^") opc = Opcode::Xor;
+        if (f && op == "%") throw std::runtime_error("EIR: `%` on floating-point operands is not supported");
+        emit(Instruction{opc, dst, t, {lhs, rhs}});
+        lastValue = Operand::var(dst, t);
+        return;
+    }
+
+    // Pointers (and the rest): pointer arithmetic steps by elements with a 64-bit index.
+    if (lhs.type && lhs.type->isPointer() && isNum(rhs)) rhs = coerceNumeric(rhs, Type::getI64());
+    if (rhs.type && rhs.type->isPointer() && isNum(lhs)) lhs = coerceNumeric(lhs, Type::getI64());
     TypePtr resTy = getExprEirType(node);
     if (!resTy || (resTy->isInt() && (lhs.type->isFloat() || rhs.type->isFloat()))) {
         resTy = lhs.type->isFloat() ? lhs.type : rhs.type;
@@ -1505,10 +1494,10 @@ void EIRBuilder::visit(BinaryExpr* node) {
 
         ICmpCond icond = ICmpCond::Eq;
         if (node->op == "!=") icond = ICmpCond::Ne;
-        else if (node->op == "<")  icond = lhs.type->isSigned ? ICmpCond::Slt : ICmpCond::Ult;
-        else if (node->op == "<=") icond = lhs.type->isSigned ? ICmpCond::Sle : ICmpCond::Ule;
-        else if (node->op == ">")  icond = lhs.type->isSigned ? ICmpCond::Sgt : ICmpCond::Ugt;
-        else if (node->op == ">=") icond = lhs.type->isSigned ? ICmpCond::Sge : ICmpCond::Uge;
+        else if (node->op == "<")  icond = ICmpCond::Ult;
+        else if (node->op == "<=") icond = ICmpCond::Ule;
+        else if (node->op == ">")  icond = ICmpCond::Ugt;
+        else if (node->op == ">=") icond = ICmpCond::Uge;
 
         emit(Instruction{Opcode::ICmp, dst, Type::getI1(), {lhs, rhs}, icond});
         lastValue = Operand::var(dst, Type::getI1());
@@ -1555,14 +1544,40 @@ void EIRBuilder::visit(UnaryExpr* node) {
     }
 
     Operand val = evaluateExpr(node->operand);
-    std::string dst = newVar();
 
-    if (node->op == "-") {
-        emit(Instruction{val.type->isFloat() ? Opcode::FSub : Opcode::Sub, dst, val.type, {Operand::constInt(0, val.type), val}});
-    } else if (node->op == "!") {
-        emit(Instruction{Opcode::ICmp, dst, Type::getI1(), {val, Operand::constInt(0, val.type)}, ICmpCond::Eq});
-        lastValue = Operand::var(dst, Type::getI1());
+    if (node->op == "!") {
+        Operand b = coerceNumeric(val, Type::getI1());
+        if (b.type && b.type->isInt() && b.type->bitWidth == 1 && b.kind != OperandKind::ConstantNull) {
+            std::string dst = newVar();
+            emit(Instruction{Opcode::Xor, dst, Type::getI1(), {b, Operand::constInt(1, Type::getI1())}});
+            lastValue = Operand::var(dst, Type::getI1());
+        } else {
+            std::string dst = newVar();
+            emit(Instruction{Opcode::ICmp, dst, Type::getI1(), {val, Operand::constNull()}, ICmpCond::Eq});
+            lastValue = Operand::var(dst, Type::getI1());
+        }
         return;
+    }
+
+    // `+`, `-` and `~` work on the promoted operand (C), so `-u8` is an int.
+    val = promoteInt(val);
+    if (node->op == "+") {
+        lastValue = val;
+        return;
+    }
+    if (val.kind == OperandKind::ConstantInt) {
+        int64_t r = node->op == "-" ? static_cast<int64_t>(0ULL - static_cast<uint64_t>(val.intVal)) : ~val.intVal;
+        lastValue = Operand::constInt(truncConst(r, val.type), val.type);
+        return;
+    }
+    if (val.kind == OperandKind::ConstantFloat && node->op == "-") {
+        lastValue = Operand::constFloat(-val.floatVal, val.type);
+        return;
+    }
+    std::string dst = newVar();
+    if (node->op == "-") {
+        if (val.type->isFloat()) emit(Instruction{Opcode::FSub, dst, val.type, {Operand::constFloat(-0.0, val.type), val}});
+        else emit(Instruction{Opcode::Sub, dst, val.type, {Operand::constInt(0, val.type), val}});
     } else if (node->op == "~") {
         emit(Instruction{Opcode::Not, dst, val.type, {val}});
     }
@@ -1607,7 +1622,8 @@ void EIRBuilder::visit(IncDecExpr* node) {
 void EIRBuilder::visit(IdentExpr* node) {
     auto ecIt = enumConstants.find(node->name);
     if (ecIt != enumConstants.end()) {
-        lastValue = Operand::constInt(ecIt->second, Type::getI32());
+        auto ctIt = constTypes.find(node->name);
+        lastValue = Operand::constInt(ecIt->second, ctIt != constTypes.end() ? ctIt->second : Type::getI32());
         lastLValue = lastValue;
         return;
     }
@@ -2051,63 +2067,19 @@ void EIRBuilder::visit(CastExpr* node) {
     Operand val = evaluateExpr(node->expr);
     TypePtr toTy = toEirType(node->targetType);
 
-    if (val.kind == OperandKind::ConstantInt) {
-        if (toTy->isInt()) {
-            int64_t v = val.intVal;
-            if (toTy->bitWidth == 1) v = v ? 1 : 0;
-            else if (toTy->bitWidth == 8) v = toTy->isSigned ? static_cast<int8_t>(v) : static_cast<uint8_t>(v);
-            else if (toTy->bitWidth == 16) v = toTy->isSigned ? static_cast<int16_t>(v) : static_cast<uint16_t>(v);
-            else if (toTy->bitWidth == 32) v = toTy->isSigned ? static_cast<int32_t>(v) : static_cast<uint32_t>(v);
-            lastValue = Operand::constInt(v, toTy);
-            return;
-        } else if (toTy->isFloat()) {
-            lastValue = Operand::constFloat(static_cast<double>(val.intVal), toTy);
-            return;
-        }
-    } else if (val.kind == OperandKind::ConstantFloat) {
-        if (toTy->isInt()) {
-            // Saturating, NaN to 0, as the run-time conversion.
-            double f = val.floatVal;
-            int64_t v = 0;
-            if (f == f) {
-                unsigned bw = toTy->bitWidth <= 1 ? 1 : toTy->bitWidth;
-                double lo = toTy->isSigned ? -std::ldexp(1.0, bw - 1) : 0.0;
-                double hi = toTy->isSigned ? std::ldexp(1.0, bw - 1) : std::ldexp(1.0, bw);
-                if (f <= lo) v = toTy->isSigned ? static_cast<int64_t>(lo) : 0;
-                else if (f >= hi) v = toTy->isSigned ? static_cast<int64_t>(hi - 1) : static_cast<int64_t>(static_cast<uint64_t>(hi - 1));
-                else v = toTy->isSigned ? static_cast<int64_t>(f) : static_cast<int64_t>(static_cast<uint64_t>(f));
-            }
-            lastValue = Operand::constInt(v, toTy);
-            return;
-        } else if (toTy->isFloat()) {
-            lastValue = Operand::constFloat(val.floatVal, toTy);
-            return;
-        }
-    } else if (val.kind == OperandKind::ConstantNull) {
+    if (val.kind == OperandKind::ConstantNull) {
         lastValue = Operand::constNull();
         lastValue.type = toTy;
         return;
     }
+    bool fromNum = val.type && (val.type->isInt() || val.type->isFloat());
+    if (fromNum && (toTy->isInt() || toTy->isFloat())) {
+        lastValue = coerceNumeric(val, toTy);
+        return;
+    }
 
     std::string dst = newVar();
-
-    if (val.type->isInt() && toTy->isInt()) {
-        if (toTy->bitWidth < val.type->bitWidth) {
-            emit(Instruction{Opcode::Trunc, dst, toTy, {val}});
-        } else if (toTy->bitWidth > val.type->bitWidth) {
-            emit(Instruction{val.type->isSigned ? Opcode::SExt : Opcode::ZExt, dst, toTy, {val}});
-        } else {
-            lastValue = val;
-            lastValue.type = toTy;
-            return;
-        }
-    } else if (val.type->isFloat() && toTy->isInt()) {
-        emit(Instruction{Opcode::FPToSI, dst, toTy, {val}});
-    } else if (val.type->isInt() && toTy->isFloat()) {
-        emit(Instruction{Opcode::SIToFP, dst, toTy, {val}});
-    } else if (val.type->isFloat() && toTy->isFloat() && val.type->bitWidth != toTy->bitWidth) {
-        emit(Instruction{toTy->bitWidth < val.type->bitWidth ? Opcode::FPTrunc : Opcode::FPExt, dst, toTy, {val}});
-    } else if (val.type->isPointer() && toTy->isPointer()) {
+    if (val.type->isPointer() && toTy->isPointer()) {
         emit(Instruction{Opcode::Bitcast, dst, toTy, {val}});
     } else if (val.type->isPointer() && toTy->isInt()) {
         emit(Instruction{Opcode::PtrToInt, dst, toTy, {val}});
@@ -2118,17 +2090,12 @@ void EIRBuilder::visit(CastExpr* node) {
         lastValue.type = toTy;
         return;
     }
-
     lastValue = Operand::var(dst, toTy);
 }
 
 void EIRBuilder::visit(TernaryExpr* node) {
     Operand cond = evaluateExpr(node->condition);
-    if (cond.type->kind != TypeKind::Int || cond.type->bitWidth != 1) {
-        std::string cmpDst = newVar();
-        emit(Instruction{Opcode::ICmp, cmpDst, Type::getI1(), {cond, Operand::constInt(0, cond.type)}, ICmpCond::Ne});
-        cond = Operand::var(cmpDst, Type::getI1());
-    }
+    cond = truth(cond);
 
     BasicBlock* thenBB = createBlock("ternary.then");
     BasicBlock* elseBB = createBlock("ternary.else");
@@ -2608,34 +2575,147 @@ Operand EIRBuilder::evalForType(const ExprPtr& e, TypePtr targetType) {
         return Operand::var(dst, targetType);
     }
 
-    return evaluateExpr(e);
+    return coerceNumeric(evaluateExpr(e), targetType);
 }
 
-// A number converted to the numeric type a parameter declares (a closure call's
-// arguments are not coerced by the type checker's call path).
+// A value as a value of type `to`: integers widen by the source's signedness and
+// truncate, a constant is folded to the target type, numbers cross between integer and
+// float, anything becomes a `bool` by comparing with zero. Non-numeric values pass through.
 Operand EIRBuilder::coerceNumeric(const Operand& v, const TypePtr& to) {
-    if (!to || !v.type || !(to->isInt() || to->isFloat()) || !(v.type->isInt() || v.type->isFloat())) return v;
-    if (v.kind == OperandKind::ConstantInt) {
-        if (to->isFloat()) return Operand::constFloat(static_cast<double>(v.intVal), to);
-        return Operand::constInt(v.intVal, to);
-    }
-    if (v.kind == OperandKind::ConstantFloat) {
-        if (to->isFloat()) return Operand::constFloat(v.floatVal, to);
+    if (!to || !(to->isInt() || to->isFloat())) return v;
+    TypePtr from = v.type;
+    bool toBool = to->isInt() && to->bitWidth == 1;
+    if (v.kind == OperandKind::ConstantNull) {
+        if (toBool) return Operand::constInt(0, to);
         return v;
     }
-    Opcode op;
-    if (v.type->isInt() && to->isFloat()) op = Opcode::SIToFP;
-    else if (v.type->isFloat() && to->isInt()) op = Opcode::FPToSI;
-    else if (v.type->isFloat() && to->isFloat()) {
-        if (v.type->bitWidth == to->bitWidth) return v;
-        op = to->bitWidth < v.type->bitWidth ? Opcode::FPTrunc : Opcode::FPExt;
-    } else {
-        if (v.type->bitWidth == to->bitWidth) return v;
-        op = to->bitWidth < v.type->bitWidth ? Opcode::Trunc : (v.type->isSigned ? Opcode::SExt : Opcode::ZExt);
+    if (!from || !(from->isInt() || from->isFloat())) {
+        if (toBool && from && from->isPointer()) {
+            std::string dst = newVar();
+            emit(Instruction{Opcode::ICmp, dst, to, {v, Operand::constNull()}, ICmpCond::Ne});
+            return Operand::var(dst, to);
+        }
+        return v;
     }
+    if (v.kind == OperandKind::ConstantInt) {
+        if (to->isFloat()) {
+            double d = from->isSigned ? static_cast<double>(v.intVal) : static_cast<double>(static_cast<uint64_t>(v.intVal));
+            return Operand::constFloat(d, to);
+        }
+        return Operand::constInt(toBool ? (v.intVal != 0) : truncConst(v.intVal, to), to);
+    }
+    if (v.kind == OperandKind::ConstantFloat) {
+        if (to->isFloat()) return Operand::constFloat(to->bitWidth == 32 ? static_cast<double>(static_cast<float>(v.floatVal)) : v.floatVal, to);
+        if (toBool) return Operand::constInt(v.floatVal != 0.0, to);
+        return Operand::constInt(saturateToInt(v.floatVal, to), to);
+    }
+    if (from->kind == to->kind && from->bitWidth == to->bitWidth && (to->isFloat() || from->isSigned == to->isSigned)) return v;
     std::string dst = newVar();
+    if (toBool) {
+        if (from->isFloat()) {
+            emit(Instruction{Opcode::FCmp, dst, to, {v, Operand::constFloat(0.0, from)}, ICmpCond::Eq, FCmpCond::One});
+        } else {
+            emit(Instruction{Opcode::ICmp, dst, to, {v, Operand::constInt(0, from)}, ICmpCond::Ne});
+        }
+        return Operand::var(dst, to);
+    }
+    Opcode op;
+    if (from->isInt() && to->isFloat()) op = Opcode::SIToFP;
+    else if (from->isFloat() && to->isInt()) op = Opcode::FPToSI;
+    else if (from->isFloat()) op = to->bitWidth < from->bitWidth ? Opcode::FPTrunc : Opcode::FPExt;
+    else if (to->bitWidth < from->bitWidth) op = Opcode::Trunc;
+    else if (to->bitWidth > from->bitWidth) op = from->isSigned ? Opcode::SExt : Opcode::ZExt;
+    else op = Opcode::Trunc;   // same width, other signedness: re-extended as the target
     emit(Instruction{op, dst, to, {v}});
     return Operand::var(dst, to);
+}
+
+// An integer constant as a value of `t` (wrapped to its width, extended by its signedness).
+int64_t EIRBuilder::truncConst(int64_t v, const TypePtr& t) {
+    if (!t || !t->isInt()) return v;
+    switch (t->bitWidth) {
+        case 1: return v & 1;
+        case 8: return t->isSigned ? static_cast<int64_t>(static_cast<int8_t>(v)) : static_cast<int64_t>(static_cast<uint8_t>(v));
+        case 16: return t->isSigned ? static_cast<int64_t>(static_cast<int16_t>(v)) : static_cast<int64_t>(static_cast<uint16_t>(v));
+        case 32: return t->isSigned ? static_cast<int64_t>(static_cast<int32_t>(v)) : static_cast<int64_t>(static_cast<uint32_t>(v));
+        default: return v;
+    }
+}
+
+// A float converted to the integer type `t`: saturating, NaN to 0.
+int64_t EIRBuilder::saturateToInt(double f, const TypePtr& t) {
+    if (f != f) return 0;
+    unsigned bw = t->bitWidth <= 1 ? 1 : t->bitWidth;
+    double lo = t->isSigned ? -std::ldexp(1.0, bw - 1) : 0.0;
+    double hi = t->isSigned ? std::ldexp(1.0, bw - 1) : std::ldexp(1.0, bw);
+    if (f <= lo) return t->isSigned ? static_cast<int64_t>(lo) : 0;
+    if (f >= hi) return t->isSigned ? static_cast<int64_t>(hi - 1) : static_cast<int64_t>(static_cast<uint64_t>(hi - 1));
+    return t->isSigned ? static_cast<int64_t>(f) : static_cast<int64_t>(static_cast<uint64_t>(f));
+}
+
+// `cur op rhs` for a compound assignment, computed as the binary operator would (promoted,
+// at the common type; a shift at the promoted left type) and converted back to `curTy`.
+Operand EIRBuilder::compoundOp(const std::string& baseOp, const Operand& cur, const Operand& rhsIn, const TypePtr& curTy) {
+    Operand l = promoteInt(cur);
+    Operand r = promoteInt(rhsIn);
+    bool numeric = l.type && (l.type->isInt() || l.type->isFloat()) && r.type && (r.type->isInt() || r.type->isFloat());
+    if (curTy && curTy->isPointer() && (baseOp == "+" || baseOp == "-")) {
+        Operand idx = coerceNumeric(r, Type::getI64());
+        if (baseOp == "-") {
+            std::string neg = newVar();
+            emit(Instruction{Opcode::Sub, neg, Type::getI64(), {Operand::constInt(0, Type::getI64()), idx}});
+            idx = Operand::var(neg, Type::getI64());
+        }
+        std::string dst = newVar();
+        emit(Instruction{Opcode::Gep, dst, curTy, {cur, idx}});
+        return Operand::var(dst, curTy);
+    }
+    TypePtr t = (baseOp == "<<" || baseOp == ">>" || !numeric) ? l.type : commonType(l.type, r.type);
+    l = coerceNumeric(l, t);
+    r = coerceNumeric(r, t);
+    bool f = t && t->isFloat(), sg = t && t->isSigned;
+    Opcode opc = Opcode::Add;
+    if (baseOp == "+") opc = f ? Opcode::FAdd : Opcode::Add;
+    else if (baseOp == "-") opc = f ? Opcode::FSub : Opcode::Sub;
+    else if (baseOp == "*") opc = f ? Opcode::FMul : Opcode::Mul;
+    else if (baseOp == "/") opc = f ? Opcode::FDiv : (sg ? Opcode::SDiv : Opcode::UDiv);
+    else if (baseOp == "%") opc = sg ? Opcode::SRem : Opcode::URem;
+    else if (baseOp == "&") opc = Opcode::And;
+    else if (baseOp == "|") opc = Opcode::Or;
+    else if (baseOp == "^") opc = Opcode::Xor;
+    else if (baseOp == "<<") opc = Opcode::Shl;
+    else if (baseOp == ">>") opc = sg ? Opcode::AShr : Opcode::LShr;
+    std::string dst = newVar();
+    emit(Instruction{opc, dst, t, {l, r}});
+    return coerceNumeric(Operand::var(dst, t), curTy);
+}
+
+// A condition as an i1: a number or pointer compared with zero, an interface or closure
+// by its first word.
+Operand EIRBuilder::truth(const Operand& v) {
+    if (v.type && v.type->isInt() && v.type->bitWidth == 1) return v;
+    if (v.type && (v.type->isInt() || v.type->isFloat())) return coerceNumeric(v, Type::getI1());
+    std::string dst = newVar();
+    emit(Instruction{Opcode::ICmp, dst, Type::getI1(), {v, Operand::constNull()}, ICmpCond::Ne});
+    return Operand::var(dst, Type::getI1());
+}
+
+// C's integer promotion: an integer narrower than `int` becomes an `int`.
+Operand EIRBuilder::promoteInt(const Operand& v) {
+    if (v.type && v.type->isInt() && v.type->bitWidth < 32) return coerceNumeric(v, Type::getI32());
+    return v;
+}
+
+// The type two promoted numeric operands meet at (C's usual arithmetic conversions):
+// a float wins (double over float); else the wider integer, and unsigned at equal width.
+TypePtr EIRBuilder::commonType(const TypePtr& a, const TypePtr& b) {
+    if (a && a->isFloat() && b && b->isFloat()) return a->bitWidth >= b->bitWidth ? a : b;
+    if (a && a->isFloat()) return a;
+    if (b && b->isFloat()) return b;
+    if (!a || !a->isInt()) return b;
+    if (!b || !b->isInt()) return a;
+    if (a->bitWidth != b->bitWidth) return a->bitWidth > b->bitWidth ? a : b;
+    return a->isSigned ? b : a;
 }
 
 // A closure's function always takes the env first. A top-level function used as a
@@ -2847,11 +2927,7 @@ void EIRBuilder::visit(DoWhileStmt* node) {
 
     setBlock(condBB);
     Operand cond = evaluateExpr(node->condition);
-    if (cond.type->kind != TypeKind::Int || cond.type->bitWidth != 1) {
-        std::string cmpDst = newVar();
-        emit(Instruction{Opcode::ICmp, cmpDst, Type::getI1(), {cond, Operand::constInt(0, cond.type)}, ICmpCond::Ne});
-        cond = Operand::var(cmpDst, Type::getI1());
-    }
+    cond = truth(cond);
     emit(Instruction{Opcode::BrCond, "", Type::getVoid(), {cond, Operand::block(bodyBB->name), Operand::block(exitBB->name)}});
 
     setBlock(exitBB);

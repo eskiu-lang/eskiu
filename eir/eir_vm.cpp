@@ -53,6 +53,17 @@ void VM::writeMemory(void* ptr, TypePtr type, const VMValue& val) {
     }
 }
 
+int64_t normalizeInt(int64_t v, const TypePtr& t) {
+    if (!t || !t->isInt()) return v;
+    switch (t->bitWidth) {
+        case 1: return v & 1;
+        case 8: return t->isSigned ? static_cast<int64_t>(static_cast<int8_t>(v)) : static_cast<int64_t>(static_cast<uint8_t>(v));
+        case 16: return t->isSigned ? static_cast<int64_t>(static_cast<int16_t>(v)) : static_cast<int64_t>(static_cast<uint16_t>(v));
+        case 32: return t->isSigned ? static_cast<int64_t>(static_cast<int32_t>(v)) : static_cast<int64_t>(static_cast<uint32_t>(v));
+        default: return v;
+    }
+}
+
 VMValue VM::readMemory(void* ptr, TypePtr type) {
     if (!ptr || !type) return VMValue(0);
 
@@ -99,7 +110,7 @@ VMValue VM::getOperand(const Operand& op, StackFrame& frame) {
             return VMValue(0);
         }
         case OperandKind::ConstantInt:
-            return VMValue(op.intVal);
+            return VMValue(normalizeInt(op.intVal, op.type));
         case OperandKind::ConstantFloat:
             return VMValue(op.floatVal);
         case OperandKind::ConstantString: {
@@ -1736,6 +1747,13 @@ VMValue VM::executeFunction(Function* fn, const std::vector<VMValue>& args) {
                     break;
             }
 
+            // Every integer value is held normalized to its type: wrapped to its width,
+            // extended by its signedness.
+            if (!inst->resultVar.empty() && inst->type && inst->type->isInt() && inst->type->bitWidth < 64) {
+                auto rit = frame.registers.find(inst->resultVar);
+                if (rit != frame.registers.end() && rit->second.kind == VMValue::Kind::Int)
+                    rit->second.i = normalizeInt(rit->second.i, inst->type);
+            }
             if (nextBB) break;
         }
 

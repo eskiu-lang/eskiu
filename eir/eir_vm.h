@@ -51,6 +51,9 @@ struct VMValue {
     }
 };
 
+// An integer as a value of type t: wrapped to its width, extended by its signedness.
+int64_t normalizeInt(int64_t v, const TypePtr& t);
+
 // ============================================================================
 // Stack Frame
 // ============================================================================

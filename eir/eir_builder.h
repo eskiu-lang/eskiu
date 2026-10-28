@@ -119,6 +119,7 @@ private:
     std::unordered_map<std::string, EnumDecl*> plainEnums;
     std::unordered_map<std::string, EnumDecl*> adtEnums;
     std::unordered_map<std::string, int64_t> enumConstants;
+    std::unordered_map<std::string, TypePtr> constTypes;   // a `const` global's type (enum members are i32)
     struct InterfaceInfo {
         std::string name;
         std::vector<std::string> methodNames;
@@ -131,6 +132,12 @@ private:
     Operand evalForType(const ExprPtr& e, TypePtr targetType);
     Operand closureTarget(const Operand& fn);
     Operand coerceNumeric(const Operand& v, const TypePtr& to);
+    Operand promoteInt(const Operand& v);
+    Operand truth(const Operand& v);
+    Operand compoundOp(const std::string& baseOp, const Operand& cur, const Operand& rhs, const TypePtr& curTy);
+    static TypePtr commonType(const TypePtr& a, const TypePtr& b);
+    static int64_t truncConst(int64_t v, const TypePtr& t);
+    static int64_t saturateToInt(double f, const TypePtr& t);
     Operand cFnPointer(const ExprPtr& e);
 
     // Template tracking & instantiation
@@ -183,6 +190,7 @@ private:
 
     int nextLambdaId = 0;
     int64_t foldConstInt(const ExprPtr& expr);
+    bool foldCInt(const ExprPtr& expr, ty::CInt& out);
     void emitArrayInitInto(Operand dest, ArrayLitExpr* lit, TypePtr arrTy);
 };
 
