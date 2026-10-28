@@ -279,3 +279,10 @@ jobs:
           tests/selfhost/tc_parity.sh
           tests/selfhost/cg_parity.sh
           tests/selfhost/driver_parity.sh
+
+      # The native EIR backends (no LLVM code generator): ARM64 assembly and C99. A run
+      # test listed in tests/eir/pass_<mode>.txt that stops passing fails the build.
+      - name: EIR backends
+        run: |
+          tests/eir/check.sh asm
+          CC=$CLANG tests/eir/check.sh c
