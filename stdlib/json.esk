@@ -55,8 +55,26 @@ void _Json_sep(Json* self) {
 // \n \t \r \b \f or \u00XX (RFC 8259 §7). Other bytes are copied as they are.
 void _json_escape(String* out, *char s, int64 n) {
     out.reserve(out.len + n + 3);
-    out.push('"');
     int64 i = 0;
+    while (i < n) {
+        const int b = (int)(uint8)s[i];
+        if (b < 32 || b == 34 || b == 92) {
+            break;
+        }
+        i++;
+    }
+    if (i == n) {
+        // Nothing to escape: the quoted bytes go straight into the buffer.
+        *char w = out.data + out.len;
+        w[0] = '"';
+        memcpy(w + 1, s, n);
+        w[n + 1] = '"';
+        w[n + 2] = (char)0;
+        out.len = out.len + n + 2;
+        return;
+    }
+    out.push('"');
+    i = 0;
     while (i < n) {
         // Copy the run of bytes that need no escape in one go.
         int64 j = i;
@@ -1447,7 +1465,7 @@ void _json_number(String* out, double d) {
                 k--;
                 buf[k] = '-';
             }
-            out.append((string)&buf[k]);
+            out.append_bytes(&buf[k], (int64)(23 - k));
             return;
         }
     }
@@ -1478,7 +1496,9 @@ void _json_number(String* out, double d) {
     }
     const int x = n - 1 + e10;
     const int prec = n > 15 ? n : 15;
-    char[48] buf;
+    // At most 24 bytes ("-0.0000" + 17 digits), written straight into `out`.
+    out.reserve(out.len + 32);
+    *char buf = out.data + out.len;
     int p = 0;
     if ((bits >> 63) != 0) {
         buf[p] = '-';
@@ -1534,7 +1554,8 @@ void _json_number(String* out, double d) {
         buf[p + 1] = (char)((int)'0' + ax % 10);
         p += 2;
     }
-    out.append_bytes(&buf[0], (int64)p);
+    out.len = out.len + (int64)p;
+    out.data[out.len] = (char)0;
 }
 
 void _json_newline(String* out, int indent, int depth) {
