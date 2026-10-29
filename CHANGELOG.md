@@ -17,6 +17,8 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   `--safe`, `--freestanding`, ...) are errors under it. See `docs/dev/eir-backends.md`.
 - `tests/eir/check.sh` runs the run tests through a backend (as `tests/run.sh` does, C
   companions included) and fails when a test that passed stops passing; CI runs it on macOS.
+- The self-hosted compiler's `--test-eir` is a port of the C++ EIR builder and prints the
+  same text for 555 of the 563 run tests; `tests/selfhost/eir_parity.sh` gates it in CI.
 - The EIR backends pass structs and unions by value to and from C functions and hand C a
   function taking or returning one (or a `va_list`) through a thunk with the C signature.
 

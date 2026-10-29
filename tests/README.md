@@ -794,8 +794,10 @@ Besides `run.sh`, these run in CI:
   `tests/eir/pass_<mode>.txt` that stops passing fails (`UPDATE=1` rewrites the list). CI
   runs both modes on macOS. See `docs/dev/eir-backends.md`.
 - `tests/selfhost/*.sh`: parity between the self-hosted compiler and the C++ one
-  (lexer, parser, preprocessor, type checker, codegen, C ABI, driver) and the bootstrap
-  fixpoint; see `docs/dev/self-hosting.md`.
+  (lexer, parser, preprocessor, type checker, codegen, C ABI, driver, EIR builder) and the
+  bootstrap fixpoint; see `docs/dev/self-hosting.md`. `eir_parity.sh` compares
+  `--test-eir` byte for byte over the run tests against the list in
+  `eir_parity_pass.txt` (`UPDATE=1` rewrites it); given files, it shows each one's diff.
 
 ## Fuzzers
 

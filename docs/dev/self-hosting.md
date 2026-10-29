@@ -23,6 +23,7 @@ The ground truth differs by pass, so the check does too:
 | Type checker | Same accept or reject verdict as `--test-typechecker`, with the same message and `line:col` |
 | Code generator | Behavioral: build the program with each compiler, run both, compare exit code and output. LLVM renumbers values and folds constants, so the IR itself is not compared |
 | C ABI | The C signatures each compiler lowers for `extern` structs and callbacks, per target |
+| EIR builder | Byte-exact comparison with `--test-eir` over the run tests (`eir_parity.sh`; the tests that match are listed in `eir_parity_pass.txt`, and one that stops matching fails the check) |
 
 The scripts are in `tests/selfhost/` and all run in CI. The code-generator check covers
 every runnable program in `tests/`. The fuzzers in `tests/fuzz/` also run generated

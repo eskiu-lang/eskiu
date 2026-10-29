@@ -34,6 +34,7 @@ the install layout, and uses `$CLANG` (default `clang`) to link.
 | `sema.esk` | Type checker; imports its parts in order: `sema_base` (state, scopes, type helpers), `sema_assign`, `sema_nullable`, `sema_expr`, `sema_stmt` (and the entry point), `sema_flow` (definite return, `-Wall` flow checks), `sema_tooling` (editor modes) |
 | `async_lower.esk` | Rewrites each `async` function into a frame struct and a state machine |
 | `codegen.esk` | Writes LLVM IR as text; imports its parts in order: `codegen_base` (state, target, emission helpers), `codegen_types`, `codegen_ops`, `codegen_lval` (places, calls, builtins), `codegen_expr`, `codegen_stmt`, `codegen_decl` (functions, lambdas, type declarations), `codegen_cabi` (C ABI, program entry) |
+| `eir.esk` | The EIR builder behind `--test-eir`, a port of `eir/eir_builder.cpp`; imports its parts in order: `eir_ty` (type spellings: the `ty::Type` grammar, `mangleTemplate`, `substType`), `eir_ir` (the EIR model and its text form), `eir_b_core` (state, scopes, types, folding, layout, bitfields, captures in generic bodies), `eir_b_conv` (conversions, interfaces, closures, `dbg`, generic instances), `eir_b_stmt`, `eir_b_expr`, `eir_b_build` |
 | `fmt.esk` | The `fmt` subcommand |
 | `esk_main.esk` | The compiler driver (`eskiuc-esk`) |
 | `lex_main.esk`, `pp_main.esk`, `parse_main.esk`, `tc_main.esk`, `cg_main.esk` | Single-pass drivers used by the parity checks |
