@@ -3708,6 +3708,17 @@ void al_lambda_params(string sig, List<string>* out) {
     }
 }
 
+// Is `a` before `b` byte by byte (std::string's order)?
+int al_str_before(string a, string b) {
+    int i = 0;
+    while (a[i] != 0 && a[i] == b[i]) {
+        i = i + 1;
+    }
+    return (int)(uint8)a[i] < (int)(uint8)b[i];
+}
+
+// The frame locals each lambda in `e` captures, in order of the lambdas, a lambda's own
+// by name (the checker's capture list is ordered by name).
 void al_lambda_caps(*AlCtx c, *ExprNode e, List<string>* caps) {
     if (e == null) {
         return;
@@ -3719,13 +3730,28 @@ void al_lambda_caps(*AlCtx c, *ExprNode e, List<string>* caps) {
         List<string> ps;
         List_init<string>(&ps, 2);
         al_lambda_params(e.sval, &ps);
+        List<string> own;
+        List_init<string>(&own, 4);
         int i = 0;
         while (i < List_len<string>(&ids)) {
             string nm = List_get<string>(&ids, i);
             i = i + 1;
-            if (al_in(&c.vars, nm) == 1 && al_in(&ps, nm) == 0 && al_in(caps, nm) == 0) {
-                List_push<string>(caps, nm);
+            if (al_in(&c.vars, nm) == 1 && al_in(&ps, nm) == 0 && al_in(&own, nm) == 0) {
+                int at = List_len<string>(&own);
+                List_push<string>(&own, nm);
+                while (at > 0 && al_str_before(nm, List_get<string>(&own, at - 1)) == 1) {
+                    List_set<string>(&own, at, List_get<string>(&own, at - 1));
+                    at = at - 1;
+                }
+                List_set<string>(&own, at, nm);
             }
+        }
+        i = 0;
+        while (i < List_len<string>(&own)) {
+            if (al_in(caps, List_get<string>(&own, i)) == 0) {
+                List_push<string>(caps, List_get<string>(&own, i));
+            }
+            i = i + 1;
         }
         return;
     }
