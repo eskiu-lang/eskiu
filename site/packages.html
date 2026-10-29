@@ -255,13 +255,13 @@ Bytes ov = rom.overlay(12)?;              <span class="c">// decompressed when c
     </section>
     <section class="pkg" id="location">
       <h2>location</h2>
-      <div class="pkg-meta"><span class="tag">v0.1.1</span><a href="https://github.com/eskiu-lang/ui-location/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/ui-location/actions/workflows/ci.yml/badge.svg" alt="CI status: location" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/ui-location">github.com/eskiu-lang/ui-location</a></div>
+      <div class="pkg-meta"><span class="tag">v0.1.2</span><a href="https://github.com/eskiu-lang/ui-location/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/ui-location/actions/workflows/ci.yml/badge.svg" alt="CI status: location" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/ui-location">github.com/eskiu-lang/ui-location</a></div>
       <p><strong>Where the device is, for apps on eskiu-lang/ui.</strong></p>
       <p>A component calls <code>use_location</code> and gets the latest position while it is mounted, measured by the platform's own service: CoreLocation on iOS, LocationManager on Android and the browser's geolocation on the web. The first use asks for permission, and the package brings the framework, the usage text and the Android permissions through its <code>ui.toml</code>.</p>
       <p class="note">An app made with eskiu-lang/ui (ui new).</p>
       <h3>Install</h3>
       <pre><code>ui new myapp &amp;&amp; cd myapp
-eskiuc add location --git https://github.com/eskiu-lang/ui-location --rev v0.1.1
+eskiuc add location --git https://github.com/eskiu-lang/ui-location --rev v0.1.2
 ui run ios</code></pre>
       <details class="pkg-example"><summary>Example from the README</summary>
       <pre><code>import &lt;location&gt;;
@@ -283,13 +283,13 @@ void Here() {
     </section>
     <section class="pkg" id="notifications">
       <h2>notifications</h2>
-      <div class="pkg-meta"><span class="tag">v0.1.1</span><a href="https://github.com/eskiu-lang/ui-notifications/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/ui-notifications/actions/workflows/ci.yml/badge.svg" alt="CI status: notifications" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/ui-notifications">github.com/eskiu-lang/ui-notifications</a></div>
+      <div class="pkg-meta"><span class="tag">v0.1.2</span><a href="https://github.com/eskiu-lang/ui-notifications/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/ui-notifications/actions/workflows/ci.yml/badge.svg" alt="CI status: notifications" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/ui-notifications">github.com/eskiu-lang/ui-notifications</a></div>
       <p><strong>Local notifications for apps on eskiu-lang/ui.</strong></p>
       <p>The app schedules a notification with a title and a body for a number of seconds from now; the system shows it then, also when the app is closed, and tells the app when the user opens it. UNUserNotificationCenter on iOS, AlarmManager and NotificationManager on Android, the Notification API on the web.</p>
       <p class="note">An app made with eskiu-lang/ui (ui new).</p>
       <h3>Install</h3>
       <pre><code>ui new myapp &amp;&amp; cd myapp
-eskiuc add notifications --git https://github.com/eskiu-lang/ui-notifications --rev v0.1.1
+eskiuc add notifications --git https://github.com/eskiu-lang/ui-notifications --rev v0.1.2
 ui run android</code></pre>
       <details class="pkg-example"><summary>Example from the README</summary>
       <pre><code>import &lt;ui/kit&gt;;
@@ -311,13 +311,13 @@ void Tea() {
     </section>
     <section class="pkg" id="camera">
       <h2>camera</h2>
-      <div class="pkg-meta"><span class="tag">v0.1.1</span><a href="https://github.com/eskiu-lang/ui-camera/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/ui-camera/actions/workflows/ci.yml/badge.svg" alt="CI status: camera" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/ui-camera">github.com/eskiu-lang/ui-camera</a></div>
+      <div class="pkg-meta"><span class="tag">v0.1.2</span><a href="https://github.com/eskiu-lang/ui-camera/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/ui-camera/actions/workflows/ci.yml/badge.svg" alt="CI status: camera" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/ui-camera">github.com/eskiu-lang/ui-camera</a></div>
       <p><strong>Photos for apps on eskiu-lang/ui: the library, the camera and a live view.</strong></p>
       <p>Pick a photo from the library, take one with the system's camera, or show the camera live in a <code>CameraView</code> and capture it. Each photo comes back upright as a JPEG that <code>Image</code> shows. PHPicker and AVFoundation on iOS, the photo picker and Camera2 on Android, a file input and getUserMedia on the web.</p>
       <p class="note">An app made with eskiu-lang/ui (ui new).</p>
       <h3>Install</h3>
       <pre><code>ui new myapp &amp;&amp; cd myapp
-eskiuc add camera --git https://github.com/eskiu-lang/ui-camera --rev v0.1.1
+eskiuc add camera --git https://github.com/eskiu-lang/ui-camera --rev v0.1.2
 ui run android</code></pre>
       <details class="pkg-example"><summary>Example from the README</summary>
       <pre><code>import &lt;camera&gt;;

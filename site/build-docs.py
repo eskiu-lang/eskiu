@@ -621,7 +621,7 @@ PACKAGES_CATALOG = [
     {
         "name": "location",
         "repo": "ui-location",
-        "rev": "v0.1.1",
+        "rev": "v0.1.2",
         "section": None,
         "tag_es": "Dónde está el dispositivo, para apps hechas con eskiu-lang/ui.",
         "note_en": "A component calls <code>use_location</code> and gets the latest position while "
@@ -642,7 +642,7 @@ PACKAGES_CATALOG = [
     {
         "name": "notifications",
         "repo": "ui-notifications",
-        "rev": "v0.1.1",
+        "rev": "v0.1.2",
         "section": None,
         "tag_es": "Notificaciones locales para apps hechas con eskiu-lang/ui.",
         "note_en": "The app schedules a notification with a title and a body for a number of seconds "
@@ -661,7 +661,7 @@ PACKAGES_CATALOG = [
     {
         "name": "camera",
         "repo": "ui-camera",
-        "rev": "v0.1.1",
+        "rev": "v0.1.2",
         "section": None,
         "tag_es": "Fotos para apps hechas con eskiu-lang/ui: la galería, la cámara y una vista en vivo.",
         "note_en": "Pick a photo from the library, take one with the system's camera, or show the camera "
