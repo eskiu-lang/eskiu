@@ -54,9 +54,26 @@ void _Json_sep(Json* self) {
 // are escaped, and every control byte below 0x20 (NUL included) becomes
 // \n \t \r \b \f or \u00XX (RFC 8259 §7). Other bytes are copied as they are.
 void _json_escape(String* out, *char s, int64 n) {
+    out.reserve(out.len + n + 3);
     out.push('"');
-    for (int64 i = 0; i < n; i++) {
-        const char c = s[i];
+    int64 i = 0;
+    while (i < n) {
+        // Copy the run of bytes that need no escape in one go.
+        int64 j = i;
+        while (j < n) {
+            const int b = (int)(uint8)s[j];
+            if (b < 32 || b == 34 || b == 92) {
+                break;
+            }
+            j++;
+        }
+        if (j > i) {
+            out.append_bytes(s + i, j - i);
+        }
+        if (j >= n) {
+            break;
+        }
+        const char c = s[j];
         const int u = (int)(uint8)c;
         if (c == '"' || c == '\\') {
             out.push('\\');
@@ -77,14 +94,12 @@ void _json_escape(String* out, *char s, int64 n) {
         else if (c == '\f') {
             out.append("\\f");
         }
-        else if (u < 32) {
+        else {
             out.append("\\u00");
             out.push("0123456789abcdef"[u >> 4]);
             out.push("0123456789abcdef"[u & 15]);
         }
-        else {
-            out.push(c);
-        }
+        i = j + 1;
     }
     out.push('"');
 }
@@ -778,11 +793,12 @@ int JsonValue_set(JsonValue* obj, string key, JsonValue* val) {
         val.key.free();
     }
     val.key.from(key);
+    const int64 klen = val.key.len;
     val.next = null;
     _json_reset_hints(obj);
     *JsonValue prev = null;
     for (*JsonValue c = obj.child; c != null; c = c.next) {
-        if (c.key.data != null && c.key.eq_cstr(key) == 1) {
+        if (c.key.data != null && c.key.len == klen && memcmp((*void)c.key.data, (*void)val.key.data, klen) == 0) {
             val.next = c.next;
             if (prev == null) {
                 obj.child = val;
@@ -1555,7 +1571,11 @@ void _json_write(JsonValue* v, int indent, String* out) {
                 } else {
                     _json_escape(out, cur.key.data, cur.key.len);
                 }
-                out.append(indent > 0 ? ": " : ":");
+                if (indent > 0) {
+                    out.append(": ");
+                } else {
+                    out.push(':');
+                }
             }
         }
         if ((cur.kind == JArray || cur.kind == JObject) && cur.child != null) {
