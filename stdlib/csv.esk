@@ -38,21 +38,198 @@ struct CsvTable {
     string err_msg;    // static text, or null
 }
 
-void _csv_end_row(CsvTable* t, List<String>* row) {
-    List_push<List<String>>(&t.rows, *row);
-    List_init<String>(row, 8);
-}
-
-void _csv_end_field(List<String>* row, String* field) {
-    List_push<String>(row, *field);
-    field.init(16);
-}
-
 void _csv_fail(CsvTable* t, int line, int64 col, string msg) {
     t.err_line = line;
     t.err_col = (int)col;
     t.err_msg = msg;
 }
+
+// ── Reading row by row ───────────────────────────────────────────────────────
+//
+// CsvReader reads the same format as csv_parse one row at a time, without a String per
+// field: the fields of the current row are copied into one buffer the reader reuses, each
+// NUL-terminated, valid until the next CsvReader_next or CsvReader_free.
+//
+//   let r: CsvReader;
+//   CsvReader_init(&r, (*uint8)text, strlen(text), ',');
+//   while (CsvReader_next(&r) == 1) {
+//       printf("%s\n", CsvReader_field(&r, 0));
+//   }
+//   // CsvReader_next returned 0 at the end, or -1 on an error (CsvReader_error)
+//   CsvReader_free(&r);
+
+struct CsvReader {
+    *char p;          // the input, not owned
+    int64 n;
+    int64 i;
+    char delim;
+    String buf;       // the current row's fields, each NUL-terminated
+    List<int64> offs; // each field's start in buf
+    List<int64> lens; // each field's length (it may hold NULs)
+    int line;
+    int64 line_start;
+    int done;
+    int err_line;     // 1-based position of the error (0 when none)
+    int err_col;
+    string err_msg;   // static text, or null
+}
+
+// Read the `n` bytes at `data` (which may hold NULs, and must outlive the reader) with
+// delimiter `delim`.
+void CsvReader_init(CsvReader* r, *uint8 data, int64 n, char delim) {
+    r.p = (*char)data;
+    r.n = n;
+    r.i = 0;
+    r.delim = delim;
+    r.buf.init(64);
+    List_init<int64>(&r.offs, 8);
+    List_init<int64>(&r.lens, 8);
+    r.line = 1;
+    r.line_start = 0;
+    r.done = 0;
+    r.err_line = 0;
+    r.err_col = 0;
+    r.err_msg = null;
+}
+
+void CsvReader_free(CsvReader* r) {
+    r.buf.free();
+    List_free<int64>(&r.offs);
+    List_free<int64>(&r.lens);
+}
+
+int _csv_reader_fail(CsvReader* r, int line, int64 col, string msg) {
+    r.err_line = line;
+    r.err_col = (int)col;
+    r.err_msg = msg;
+    r.done = 1;
+    return -1;
+}
+
+void _csv_reader_end_field(CsvReader* r, int64 start) {
+    List_push<int64>(&r.offs, start);
+    List_push<int64>(&r.lens, r.buf.len - start);
+    r.buf.push((char)0);
+}
+
+// Read the next row. Returns 1 (its fields are CsvReader_field(r, 0..CsvReader_len(r))),
+// 0 at the end of the input, or -1 on an error, described by CsvReader_error; after 0 or
+// -1 every later call returns 0.
+int CsvReader_next(CsvReader* r) {
+    if (r.done == 1) {
+        return 0;
+    }
+    r.buf.clear();
+    List_clear<int64>(&r.offs);
+    List_clear<int64>(&r.lens);
+    const char delim = r.delim;
+    if (delim == '"' || delim == '\n' || delim == '\r') {
+        return _csv_reader_fail(r, 1, 1, "the delimiter cannot be a quote or a line ending");
+    }
+    *char p = r.p;
+    const int64 n = r.n;
+    int64 i = r.i;
+    if (i >= n) {
+        r.done = 1;
+        return 0;
+    }
+    while (true) {
+        const int64 start = r.buf.len;
+        if (i < n && p[i] == '"') {
+            const int qline = r.line;
+            const int64 qcol = i - r.line_start + 1;
+            i++;
+            while (true) {
+                if (i >= n) {
+                    return _csv_reader_fail(r, qline, qcol, "unterminated quoted field");
+                }
+                const char c = p[i];
+                if (c == '"') {
+                    if (i + 1 < n && p[i + 1] == '"') {
+                        r.buf.push('"');
+                        i += 2;
+                        continue;
+                    }
+                    i++;
+                    break;
+                }
+                if (c == '\n') {
+                    r.line++;
+                    r.line_start = i + 1;
+                }
+                // A run of bytes with no quote is copied at once.
+                int64 e = i + 1;
+                while (e < n && p[e] != '"' && p[e] != '\n') {
+                    e++;
+                }
+                _string_append_bytes(&r.buf, p + i, e - i);
+                i = e;
+            }
+            if (i < n && p[i] != delim && p[i] != '\n' && p[i] != '\r') {
+                return _csv_reader_fail(r, r.line, i - r.line_start + 1,
+                    "unexpected character after a closing quote");
+            }
+        } else {
+            const int64 fs = i;
+            while (i < n && p[i] != delim && p[i] != '\n' && p[i] != '\r') {
+                i++;
+            }
+            _string_append_bytes(&r.buf, p + fs, i - fs);
+        }
+        _csv_reader_end_field(r, start);
+        if (i >= n) {
+            r.i = i;
+            r.done = 1;
+            return 1;
+        }
+        const char c = p[i];
+        i++;
+        if (c == delim) {
+            continue;
+        }
+        if (c == '\r' && i < n && p[i] == '\n') {
+            i++;
+        }
+        r.line++;
+        r.line_start = i;
+        r.i = i;
+        return 1;
+    }
+    return 1;
+}
+
+// Number of fields in the current row.
+int CsvReader_len(CsvReader* r) {
+    return List_len<int64>(&r.offs);
+}
+
+// Field `c` of the current row (NUL-terminated), or null when out of range.
+string CsvReader_field(CsvReader* r, int c) {
+    if (c < 0 || c >= List_len<int64>(&r.offs)) {
+        return null;
+    }
+    return (string)(r.buf.data + List_get<int64>(&r.offs, c));
+}
+
+// Length in bytes of field `c` of the current row (a quoted field may hold NULs), or -1.
+int64 CsvReader_field_len(CsvReader* r, int c) {
+    if (c < 0 || c >= List_len<int64>(&r.lens)) {
+        return -1;
+    }
+    return List_get<int64>(&r.lens, c);
+}
+
+// Describe the error CsvReader_next returned -1 for into `out` (cleared first) as
+// "line L, col C: what"; empty when there was none.
+void CsvReader_error(CsvReader* r, String* out) {
+    out.clear();
+    if (r.err_msg == null) {
+        return;
+    }
+    String_appendf(out, "line %d, col %d: %s", r.err_line, r.err_col, r.err_msg);
+}
+
+// ── Reading a whole table ────────────────────────────────────────────────────
 
 // Parse `n` bytes at `data` (which may hold NULs) with delimiter `delim` into
 // `t`, which this initialises (any previous contents are not freed). Returns 0,
@@ -63,88 +240,28 @@ int csv_parse_buf(*uint8 data, int64 n, char delim, CsvTable* t) {
     t.err_line = 0;
     t.err_col = 0;
     t.err_msg = null;
-    if (delim == '"' || delim == '\n' || delim == '\r') {
-        _csv_fail(t, 1, 1, "the delimiter cannot be a quote or a line ending");
-        return -1;
+    let r: CsvReader;
+    CsvReader_init(&r, data, n, delim);
+    int k = CsvReader_next(&r);
+    while (k == 1) {
+        const int nf = CsvReader_len(&r);
+        let row: List<String>;
+        List_init<String>(&row, nf);
+        for (c in 0..nf) {
+            const int64 fl = List_get<int64>(&r.lens, c);
+            let f: String;
+            f.init(fl + 1);
+            _string_append_bytes(&f, r.buf.data + List_get<int64>(&r.offs, c), fl);
+            List_push<String>(&row, f);
+        }
+        List_push<List<String>>(&t.rows, row);
+        k = CsvReader_next(&r);
     }
-    if (n <= 0) {
-        return 0;
+    if (k < 0) {
+        _csv_fail(t, r.err_line, (int64)r.err_col, r.err_msg);
     }
-    *char p = (*char)data;
-    let row: List<String>;
-    List_init<String>(&row, 8);
-    let field: String;
-    field.init(16);
-    int line = 1;
-    int64 line_start = 0;
-    int64 i = 0;
-    while (true) {
-        if (i < n && p[i] == '"') {
-            const int qline = line;
-            const int64 qcol = i - line_start + 1;
-            i++;
-            while (true) {
-                if (i >= n) {
-                    _csv_fail(t, qline, qcol, "unterminated quoted field");
-                    field.free();
-                    String_split_free(&row);
-                    return -1;
-                }
-                const char c = p[i];
-                if (c == '"') {
-                    if (i + 1 < n && p[i + 1] == '"') {
-                        field.push('"');
-                        i += 2;
-                        continue;
-                    }
-                    i++;
-                    break;
-                }
-                if (c == '\n') {
-                    line++;
-                    line_start = i + 1;
-                }
-                field.push(c);
-                i++;
-            }
-            if (i < n && p[i] != delim && p[i] != '\n' && p[i] != '\r') {
-                _csv_fail(t, line, i - line_start + 1, "unexpected character after a closing quote");
-                field.free();
-                String_split_free(&row);
-                return -1;
-            }
-        } else {
-            const int64 start = i;
-            while (i < n && p[i] != delim && p[i] != '\n' && p[i] != '\r') {
-                i++;
-            }
-            _string_append_bytes(&field, p + start, i - start);
-        }
-        _csv_end_field(&row, &field);
-        if (i >= n) {
-            break;
-        }
-        const char c = p[i];
-        i++;
-        if (c == delim) {
-            continue;
-        }
-        if (c == '\r' && i < n && p[i] == '\n') {
-            i++;
-        }
-        line++;
-        line_start = i;
-        _csv_end_row(t, &row);
-        if (i >= n) {
-            break;
-        }
-    }
-    field.free();
-    if (List_len<String>(&row) > 0) {
-        _csv_end_row(t, &row);
-    }
-    String_split_free(&row);
-    return 0;
+    CsvReader_free(&r);
+    return k < 0 ? -1 : 0;
 }
 
 // csv_parse_buf over the C string `text` with delimiter `delim`.

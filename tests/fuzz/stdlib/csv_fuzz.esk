@@ -38,6 +38,29 @@ void fuzz_one(*uint8 data, int len, string s) {
         out.free();
         CsvTable_get(&t, 1, s);
     }
+    // CsvReader reads the same rows, each field NUL-terminated at its length.
+    let rd: CsvReader;
+    CsvReader_init(&rd, data + 1, (int64)(len - 1), delim);
+    int row = 0;
+    int k = CsvReader_next(&rd);
+    while (k == 1) {
+        if (row >= CsvTable_len(&t)) { fuzz_fail("CsvReader read more rows than csv_parse_buf"); }
+        *List<String> x = CsvTable_row(&t, row);
+        if (CsvReader_len(&rd) != List_len<String>(x)) { fuzz_fail("CsvReader field count differs"); }
+        for (c in 0..CsvReader_len(&rd)) {
+            const int64 fl = CsvReader_field_len(&rd, c);
+            *char f = (*char)CsvReader_field(&rd, c);
+            if (f[fl] != (char)0) { fuzz_fail("CsvReader field not NUL-terminated"); }
+            if (fl != x.data[c].len || memcmp((*void)f, (*void)x.data[c].data, (size_t)fl) != 0) {
+                fuzz_fail("CsvReader field differs");
+            }
+        }
+        row++;
+        k = CsvReader_next(&rd);
+    }
+    if (row != CsvTable_len(&t) || (k < 0) != (rc != 0)) { fuzz_fail("CsvReader result differs"); }
+    if (CsvReader_next(&rd) != 0) { fuzz_fail("CsvReader read past its end"); }
+    CsvReader_free(&rd);
     msg.free();
     CsvTable_free(&t);
 }

@@ -1,0 +1,50 @@
+// CsvReader reads the rows csv_parse would, one at a time, with each field NUL-terminated
+// in a buffer the reader reuses: CRLF and lone CR, quoted fields with "" and line breaks,
+// a NUL inside a quoted field, a blank line, a final line ending, other delimiters,
+// errors with their position (rows before them still read), and reading past the end.
+import <csv>;
+import <string>;
+extern int printf(string fmt, ...);
+
+void dump(string label, *uint8 data, int64 n, char delim) {
+    let r: CsvReader;
+    CsvReader_init(&r, data, n, delim);
+    printf("%s:\n", label);
+    int k = CsvReader_next(&r);
+    while (k == 1) {
+        printf("  [%d]", CsvReader_len(&r));
+        for (int c = 0; c < CsvReader_len(&r); c++) {
+            printf(" <%s>/%lld", CsvReader_field(&r, c), CsvReader_field_len(&r, c));
+        }
+        printf("\n");
+        k = CsvReader_next(&r);
+    }
+    let e: String;
+    e.init(0);
+    CsvReader_error(&r, &e);
+    printf("  end %d '%s' again %d out-of-range %d %lld\n", k, e.cstr(), CsvReader_next(&r),
+        CsvReader_field(&r, 99) == null ? 1 : 0, CsvReader_field_len(&r, -1));
+    e.free();
+    CsvReader_free(&r);
+}
+
+void dumps(string label, string text, char delim) {
+    dump(label, (*uint8)text, (int64)strlen(text), delim);
+}
+
+int main() {
+    dumps("plain", "a,b,c\n1,2,3\n", ',');
+    dumps("crlf and cr", "a,b\r\n1,2\r3,4", ',');
+    dumps("quoted", "\"x,y\",\"say \"\"hi\"\"\",\"two\nlines\"\nend,\"\"\n", ',');
+    dumps("blank line", "a\n\nb\n", ',');
+    dumps("trailing delimiter", "a,\n,b\n", ',');
+    dumps("semicolon", "a;b,c;\"d;e\"\n", ';');
+    dumps("empty", "", ',');
+    dumps("one newline", "\n", ',');
+    dumps("unterminated", "ok,row\nbad,\"open\n", ',');
+    dumps("after quote", "a\n\"q\"x,b\n", ',');
+    dumps("bad delimiter", "a,b", '"');
+    uint8[9] nul = {'"', 'a', (uint8)0, 'b', '"', ',', 'c', '\n', 'd'};
+    dump("nul in quotes", &nul[0], 9, ',');
+    return 0;
+}
