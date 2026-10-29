@@ -1081,7 +1081,7 @@ Available modules:
 | `<http>`     | HTTP/1.1: `HttpRequest`/`HttpResponse`, threaded `http_serve(port, workers, handler)` |
 | `<fetch>`    | HTTP client for `http://` and `https://`: `fetch`, `fetch_with` + `FetchOptions` (method, headers, body, JSON body, timeout, redirects, body cap), `fetch_async`; `Response` with `Response_header`, `Response_text`, `Response_bytes`, `Response_json`, `Response_ok`; `fetch_last_error` |
 | `<json>`     | `Json` builder + `json_parse` → `JsonValue` tree; build and edit with `JsonValue_object`/`_array`/`_set`/`_push`/`_remove`, print with `JsonValue_stringify`/`_pretty`, paths with `json_get` |
-| `<csv>`      | RFC 4180 CSV: `csv_parse` into a `CsvTable` (`CsvTable_get(t, row, "column")`), `csv_write_row` |
+| `<csv>`      | RFC 4180 CSV: `csv_parse` into a `CsvTable` (`CsvTable_get(t, row, "column")`), `CsvReader` row by row, `csv_write_row` |
 | `<dotenv>`   | `.env` files: `dotenv_load`, `dotenv_load_override`, `dotenv_parse` |
 | `<hash>`     | SHA-256, SHA-1, MD5, HMAC-SHA256 (streaming and one-shot), `hash_hex_encode`/`hash_hex_decode`, `hash_equal` |
 | `<multipart>`| extract a named part from a `multipart/form-data` body: `multipart_boundary`, `multipart_part` |

@@ -2548,7 +2548,7 @@ Eskiu ships a set of standard library files in the `stdlib/` directory. Import a
 | `stdlib/atomic.esk`| Atomic intrinsics: `atomic_load`/`atomic_store`/`atomic_swap`/`atomic_cas` and `atomic_fetch_add`/`_sub`/`_and`/`_or`/`_xor` on an `int` cell, the same with a `64` suffix on an `int64` cell, `atomic_load_ptr`/`_store_ptr`/`_swap_ptr`/`_cas_ptr` on a pointer cell, `atomic_fence()`, and a `_relaxed` form of each but the fence; lowered to LLVM atomics with fixed orderings (6.4.1). Declared with the `intrinsic` qualifier |
 | `stdlib/libc.esk`  | The C library for ported code, opt-in: the umbrella over the `stdlib/c/` modules (below) plus the C functions no other module declares: string.h (`strcpy`, `strncpy`, `strcat`, `strrchr`, `strspn`, `strdup`, ...), stdlib.h (`malloc`, `realloc`, `strtol`, `strtoll`, `atol`, `atoll`, `labs`, `llabs`, `qsort`, `bsearch`, `rand`, `system`, `atexit`, ...), stdio.h (`snprintf`, `sscanf`, `fputc`, `perror`, `remove`), ctype.h, the rest of libm (`sin` ... `tanh`, `exp`, `log`, `log2`, `log10`, `cbrt`, `hypot`, `round`, `trunc`, `fmin`, `fmax`, `float` versions), `getppid` and `access`, and `libc_errno()`/`libc_set_errno()` with `LIBC_E*` codes. Through `stdlib/c/` it also declares `strerror`, `strtod`, `atoi`, `atof`, `getenv`, `exit`, `vsnprintf`, `fopen`, `fgets`, `rename`, `time`, `raise`, `signal` and the POSIX unistd calls (`getpid`, `read`, `write`, `close`, `getcwd`, `unlink`, `sleep`, `usleep`). Imports `<mem>`, `<io>` and `<math>`. `long` is `c_long` from `<ctypes>` (32 bits on Windows) |
 | `stdlib/json.esk`     | JSON builder + parser. Builder: `Json` + `Json_init`/`_free`/`_cstr`, `Json_obj_begin`/`_end`, `Json_arr_begin`/`_end`, `Json_key`, `Json_str`, `Json_int`, `Json_bool`, `Json_null` (auto separators). Parser (strict RFC 8259: exact literals, no trailing data, `\uXXXX` escapes decoded; returns `null` on malformed input): `json_parse(src) -> *JsonValue` + `JsonValue_kind`/`_len`/`_at`/`_get`/`_as_int`/`_as_double`/`_as_bool`/`_as_cstr`/`_free`. Documents: `JsonValue_object`/`_array`/`_string`/`_number`/`_int`/`_bool`/`_null`, `JsonValue_set`/`_push`/`_remove`, `JsonValue_stringify`/`_pretty`, `json_get(v, "a.b[0][\"k.x\"]")` |
-| `stdlib/csv.esk`      | RFC 4180 CSV: `csv_parse`/`csv_parse_with`/`csv_parse_buf` into a `CsvTable` (`CsvTable_len`/`_row`/`_cell`/`_col`/`_get`/`_error`/`_write`/`_free`), `csv_write_row`/`csv_write_row_with` |
+| `stdlib/csv.esk`      | RFC 4180 CSV: `csv_parse`/`csv_parse_with`/`csv_parse_buf` into a `CsvTable` (`CsvTable_len`/`_row`/`_cell`/`_col`/`_get`/`_error`/`_write`/`_free`), `CsvReader` row by row (`CsvReader_init`/`_next`/`_len`/`_field`/`_field_len`/`_error`/`_free`), `csv_write_row`/`csv_write_row_with` |
 | `stdlib/dotenv.esk`   | `.env` files: `dotenv_load`, `dotenv_load_override`, `dotenv_parse` into a `Map<string>`, `dotenv_free`, `dotenv_error`/`dotenv_error_line` |
 | `stdlib/hash.esk`     | Pure-Eskiu digests: `Sha256`, `Sha1`, `Md5`, `HmacSha256` (streaming `_init`/`_update`/`_update_str`/`_final`/`_final_hex`) and one-shot `hash_sha256`/`hash_sha256_hex`/`hash_sha256_str` (same for `hash_sha1`, `hash_md5`), `hash_hmac_sha256`/`hash_hmac_sha256_str`, `hash_hex_encode`/`hash_hex_decode`, constant-time `hash_equal`/`hash_equal_str` |
 | `stdlib/args.esk`     | Command-line parsing: `ArgParser` (`_init`/`_parse`/`_parse_or_exit`/`_help`/`_usage`/`_error`/`_free`), declared with `ArgParser_flag`, `ArgParser_option`, `ArgParser_option_int`, `ArgParser_argument`, read with `ArgParser_get`, `ArgParser_get_int`, `ArgParser_get_flag`, `ArgParser_count`, `ArgParser_get_at`, `ArgParser_get_all`, `ArgParser_positional`, `ArgParser_rest` |
@@ -3151,6 +3151,16 @@ row, while a blank line elsewhere is a row with one empty field. They return 0, 
 an unterminated quoted field or text after a closing quote, with `CsvTable_error(&t,
 &out)` giving `line L, col C: ...`. The parse initialises `t`; free it with
 `CsvTable_free` in both cases.
+
+`CsvReader` reads the same format one row at a time without a String per field, for
+input that is only walked once: `CsvReader_init(&r, data, n, delim)`, then
+`CsvReader_next(&r)` returns 1 for each row, 0 at the end and -1 on an error
+(`CsvReader_error(&r, &out)`, the same text as `CsvTable_error`). `CsvReader_len(&r)`
+counts the current row's fields and `CsvReader_field(&r, c)` returns field `c`
+NUL-terminated (`CsvReader_field_len` gives its length, as a quoted field may hold NULs),
+valid until the next `CsvReader_next`; `CsvReader_free` releases the reader. The input
+must outlive the reader. `csv_parse` is built on it, so both read every input the same
+way.
 
 Row indices count every row, so with a header the data starts at row 1.
 `CsvTable_len`, `CsvTable_row(t, r)` (a `*List<String>`), `CsvTable_cell(t, r, c)`,

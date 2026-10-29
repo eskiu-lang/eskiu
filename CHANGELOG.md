@@ -21,6 +21,12 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   same text for every run test; `tests/selfhost/eir_parity.sh` gates it in CI.
 - The EIR backends pass structs and unions by value to and from C functions and hand C a
   function taking or returning one (or a `va_list`) through a thunk with the C signature.
+- `<csv>`: `CsvReader` reads a CSV one row at a time with no String per field
+  (`CsvReader_init`, `CsvReader_next`, `CsvReader_field`, ...): each row's fields are
+  NUL-terminated in a buffer the reader reuses. `csv_parse` is now built on it, so both
+  read every input the same way (checked against the previous `csv_parse` over 300000
+  random inputs). Summing three columns of a 100000-row CSV takes half the time it does
+  through `csv_parse`.
 - `String_append_bytes(s, p, n)` (`s.append_bytes(p, n)`) appends `n` bytes from a
   pointer, NULs included; it was only available as an internal function.
 - `<regex>`: `Regex_search_at(&re, text, len, start, &m)` searches `len` bytes from offset
