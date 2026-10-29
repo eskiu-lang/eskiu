@@ -1292,6 +1292,9 @@ void sema_stmt_k(Sema* s, *StmtNode st) {
         int saved_mc = s.match_col;
         if (k == SK_MATCH) {
             s.match_ty = sema_infer_type(s, st.expr);
+            if (s.stamp_all == 1 && s.in_inst == 0) {
+                st.type = s.match_ty;      // the EIR builder's enum name (C++ MatchStmt::enumName)
+            }
             s.match_line = st.line;
             s.match_col = st.col;
         }

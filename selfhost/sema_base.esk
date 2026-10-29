@@ -172,6 +172,9 @@ struct Sema {
     string addr_fn;         // the function whose locals' addresses are tracked (C++ localAddrFn)
     List<*ExprNode> cap_lams;   // per lambda, the enclosing locals it captures (first use first)
     List<string> cap_names;
+    List<string> cap_tys;        // ... and each one's type
+    int stamp_all;               // --test-eir: stamp every expression's type (ExprNode.aty), as the C++
+                                 // expressionTypes the EIR builder reads, and each lambda's captures
     int match_line;         // position of the `match` whose arms are being checked (its
     int match_col;          // bindings are reported there, as in the C++)
     StrTab gvar_set;        // the global variables' names
@@ -1115,6 +1118,7 @@ void sema_note_capture(Sema* s, string name) {
             if (seen == 0) {
                 List_push<*ExprNode>(&s.cap_lams, lam);
                 List_push<string>(&s.cap_names, name);
+                List_push<string>(&s.cap_tys, sym.type);
             }
         }
         j = j + 1;

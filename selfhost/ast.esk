@@ -943,6 +943,8 @@ struct ExprNode {
     string dbg_text;       // EK_CALL `dbg(e)`: the source text of `e`, whitespace folded
     int dbg_builtin;       // EK_CALL: sema resolved `dbg(e)` to the builtin (no user `dbg`)
     int script_init;       // EK_BINARY `=`: a script global's initializer in the implicit main (checked at the declaration)
+    List<string> caps;     // EK_LAMBDA under --test-eir: its captures by name (sema_stamp_captures) ...
+    List<string> cap_tys;  // ... and their types
 }
 
 struct StmtNode {

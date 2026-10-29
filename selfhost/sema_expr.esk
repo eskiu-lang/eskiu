@@ -24,6 +24,32 @@ string sema_inst_rec(Sema* s, string recs, string t) {
     return sema_cat(r, "\n");
 }
 
+// A lambda's captures for the EIR builder, ordered by name (the C++ capture map).
+void sema_stamp_captures(Sema* s, *ExprNode e) {
+    List<string> ns;
+    List<string> ts;
+    int i = 0;
+    while (i < List_len<*ExprNode>(&s.cap_lams)) {
+        if (List_get<*ExprNode>(&s.cap_lams, i) == e) {
+            string n = List_get<string>(&s.cap_names, i);
+            int at = List_len<string>(&ns);
+            int j = 0;
+            while (j < List_len<string>(&ns)) {
+                if (strcmp(n, List_get<string>(&ns, j)) < 0) {
+                    at = j;
+                    break;
+                }
+                j = j + 1;
+            }
+            List_insert<string>(&ns, at, n);
+            List_insert<string>(&ts, at, List_get<string>(&s.cap_tys, i));
+        }
+        i = i + 1;
+    }
+    e.caps = ns;
+    e.cap_tys = ts;
+}
+
 void sema_binary_chain(Sema* s, *ExprNode e);
 // Check `e` with its position as the current diagnostic location (restored afterwards so
 // the enclosing node's own checks report at the enclosing node).
@@ -45,6 +71,12 @@ void sema_expr(Sema* s, *ExprNode e) {
         e.aty = sema_infer_type(s, e);
         if (s.in_inst == 1) {
             e.ainst = sema_inst_rec(s, e.ainst, e.aty);
+        }
+    } else if (s.stamp_all == 1) {         // the EIR builder's types (a generic instance's apart)
+        if (s.in_inst == 1) {
+            e.ainst = sema_inst_rec(s, e.ainst, sema_infer_type(s, e));
+        } else {
+            e.aty = sema_infer_type(s, e);
         }
     }
     // The callee may assign any global: a global's narrowing ends after the call.
@@ -3426,6 +3458,9 @@ void sema_check_lambda(Sema* s, *ExprNode e) {
     s.param_depth = s.depth;
     sema_stmt(s, e.stmt);
     sema_pop(s);
+    if (s.stamp_all == 1 && s.in_inst == 0) {
+        sema_stamp_captures(s, e);
+    }
     List_remove<int>(&s.lam_bounds, List_len<int>(&s.lam_bounds) - 1);
     List_remove<int>(&s.lam_esc, List_len<int>(&s.lam_esc) - 1);
     List_remove<*ExprNode>(&s.lam_nodes, List_len<*ExprNode>(&s.lam_nodes) - 1);
