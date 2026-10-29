@@ -905,6 +905,9 @@ struct AlCtx {
     List<int> brk_dd;
     List<int> cont_dd;
     int awcount;                   // await counter → __aw0, __aw1, …
+    List<*ExprNode> aw_nodes;      // each `let x = await E` (its await) and its future's field,
+    List<string> aw_fields;        // named when the locals are scanned (as the C++ awIdx)
+    List<string> aw_types;         // ... and its value type
     int tmpn;                      // desugar temp counter → __awt0, …
     *DeclNode curfn;                  // the async function being lowered (for iterable type lookup)
     List<string>* used;            // every name in the function: synthesized names avoid them
@@ -1463,6 +1466,52 @@ int al_has_return(*StmtNode s) {
     return s;     // break/continue/etc.
 }
 
+// The frame field holding the future of `let x = await E` (s), named and added the first
+// time it is asked for: when the locals are scanned, so it follows x as in the C++ frame.
+string al_await_field(*AlCtx c, *StmtNode s) {
+    int i = 0;
+    while (i < List_len<*ExprNode>(&c.aw_nodes)) {
+        if (List_get<*ExprNode>(&c.aw_nodes, i) == s.expr) {
+            return List_get<string>(&c.aw_fields, i);
+        }
+        i = i + 1;
+    }
+    int idx = c.awcount;
+    c.awcount = idx + 1;
+    string awf = fresh_name(str_concat("__aw", int_to_str(idx)), c.used);
+    // The future's value type, as the C++ transform uses it; when it cannot be
+    // resolved, the declared type of the let variable (`let x: T = await E`).
+    string Ti = al_await_type_or(c.prog, c.curfn, s.expr.a);
+    if (Ti[0] == 0 && s.expr.aty != null) {   // sema's (or the hoist's) type
+        Ti = s.expr.aty;
+    }
+    if (Ti[0] == 0) {
+        Ti = s.type;
+    }
+    if (Ti == null || Ti[0] == 0) {
+        Ti = "int";
+    }
+    let af: Param;
+    af.name = awf;
+    af.ty = str_concat("*Future<", str_concat(Ti, ">"));
+    List_push<Param>(&c.fields, af);
+    List_push<*ExprNode>(&c.aw_nodes, s.expr);
+    List_push<string>(&c.aw_fields, awf);
+    List_push<string>(&c.aw_types, Ti);
+    return awf;
+}
+
+int al_await_index(*AlCtx c, *ExprNode aw) {
+    int i = 0;
+    while (i < List_len<*ExprNode>(&c.aw_nodes)) {
+        if (List_get<*ExprNode>(&c.aw_nodes, i) == aw) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
 // Lower a top-level item (a decl or stmt) at state `cur`; returns the continuation state.
 int al_lower_item(*AlCtx c, *StmtNode s, int cur) {
     if (s.kind == SK_VARDECL) {
@@ -1471,25 +1520,8 @@ int al_lower_item(*AlCtx c, *StmtNode s, int cur) {
             return cur;
         }
         if (s.expr.kind == EK_AWAIT) {
-            int idx = c.awcount;
-            c.awcount = idx + 1;
-            string awf = fresh_name(str_concat("__aw", int_to_str(idx)), c.used);
-            // The future's value type, as the C++ transform uses it; when it cannot be
-            // resolved, the declared type of the let variable (`let x: T = await E`).
-            string Ti = al_await_type_or(c.prog, c.curfn, s.expr.a);
-            if (Ti[0] == 0 && s.expr.aty != null) {   // sema's (or the hoist's) type
-                Ti = s.expr.aty;
-            }
-            if (Ti[0] == 0) {
-                Ti = s.type;
-            }
-            if (Ti == null || Ti[0] == 0) {
-                Ti = "int";
-            }
-            let af: Param;
-            af.name = awf;
-            af.ty = str_concat("*Future<", str_concat(Ti, ">"));
-            List_push<Param>(&c.fields, af);
+            string awf = al_await_field(c, s);
+            string Ti = List_get<string>(&c.aw_types, al_await_index(c, s.expr));
             *ExprNode callE = s.expr.a;
             al_rewrite(callE, &c.vars);
             al_push(c, cur, al_assign(al_fr(awf), callE));
@@ -3316,13 +3348,16 @@ void al_scan_locals(*AlCtx c, *StmtNode s) {
             lf.ty = s.type;
             List_push<Param>(&c.fields, lf);
         }
+        if (s.expr != null && s.expr.kind == EK_AWAIT) {   // its future's field follows it
+            al_await_field(c, s);
+        }
         return;
     }
     if (s.kind == SK_IF || s.kind == SK_WHILE || s.kind == SK_FOR || s.kind == SK_DOWHILE
         || s.kind == SK_DEFER || s.kind == SK_ARM || s.kind == SK_CATCH || s.kind == SK_TRY) {
         al_scan_locals(c, s.s1);
     }
-    if (s.kind == SK_IF || s.kind == SK_FOR || s.kind == SK_TRY) {
+    if (s.kind == SK_IF || s.kind == SK_FOR) {
         al_scan_locals(c, s.s2);
     }
     if (s.kind == SK_BLOCK || s.kind == SK_SWITCH || s.kind == SK_CASE || s.kind == SK_MATCH || s.kind == SK_TRY) {
@@ -3331,6 +3366,9 @@ void al_scan_locals(*AlCtx c, *StmtNode s) {
             al_scan_locals(c, List_get<*StmtNode>(&s.items, i));
             i = i + 1;
         }
+    }
+    if (s.kind == SK_TRY) {                // body, catches, then finally (as the C++ scan)
+        al_scan_locals(c, s.s2);
     }
 }
 
