@@ -1641,22 +1641,27 @@ void _re_addthread(_ReVm* vm, int which, int gen, int pc, *int caps, int sp) {
     }
 }
 
-// Search `text` for the leftmost match of `re`. On success fills `m` and
-// returns 1; otherwise returns 0. `m` must be freed with Match_free.
-int Regex_search(Regex* re, string text, Match* m) {
+// Search the `len` bytes of `text` for the leftmost match of `re` that starts
+// at byte offset `start` or later. The bytes before `start` are left context:
+// `^` matches at `start` only when it is 0 (or, with (?m), after a newline),
+// and `\b` / `\B` look at the byte before it. Match offsets are offsets into
+// `text`, not from `start`. `text` needs no terminating NUL. On success fills
+// `m` and returns 1; otherwise returns 0 (also for `start` outside 0..len).
+// `m` must be freed with Match_free.
+int Regex_search_at(Regex* re, string text, int64 len, int64 start, Match* m) {
     m.ok = 0;
     m.ngroup = re.ngroup;
     m.start = -1;
     m.end = -1;
     m.cap = null;
-    if (re.ok == 0) {
+    if (re.ok == 0 || start < 0 || start > len || len > 2147483646) {
         return 0;
     }
 
     let vm: _ReVm;
     vm.prog = re;
     vm.text = text;
-    vm.len = (int)strlen(text);
+    vm.len = (int)len;
     vm.ncap = 2 * (re.ngroup + 1);
     const int ninst = re.ninst;
     vm.visited = alloc<int>(ninst);
@@ -1696,7 +1701,7 @@ int Regex_search(Regex* re, string text, Match* m) {
 
     // One step per code point: every thread reads the one at sp, whose width
     // (1 for a byte that is not valid UTF-8, read as U+FFFD) moves sp.
-    int sp = 0;
+    int sp = (int)start;
     while (sp <= vm.len) {
         int ch = -1;
         w[0] = 1;
@@ -1769,6 +1774,86 @@ int Regex_search(Regex* re, string text, Match* m) {
         m.end = m.cap[1];
     }
     return m.ok;
+}
+
+// Search the NUL-terminated `text` for the leftmost match of `re`. On success
+// fills `m` and returns 1; otherwise returns 0. `m` must be freed with
+// Match_free. To search from an offset, or to find every match, use
+// Regex_search_at or Regex_iter: searching `text + off` loses the left context
+// that `^`, `\b` and `\B` read.
+int Regex_search(Regex* re, string text, Match* m) {
+    return Regex_search_at(re, text, (int64)strlen(text), 0, m);
+}
+
+// Iterates over the successive non-overlapping matches of a Regex in a text,
+// left to right, as Go's FindAll and RE2: after an empty match the search goes
+// on one code point later, and an empty match right where the previous match
+// ended is skipped.
+//
+//   RegexIter it = Regex_iter(&re, text, len);
+//   let m: Match;
+//   while (RegexIter_next(&it, &m) == 1) {
+//       // m.start, m.end, Match_group(&m, text, 1, &out) ...
+//   }
+//   Match_free(&m);
+struct RegexIter {
+    Regex* re;
+    string text;
+    int64 len;
+    int64 pos;        // where the next search starts; len + 1 when done
+    int64 prev_end;   // end of the last match, -1 before the first
+    *int last_cap;    // the groups handed out by the last RegexIter_next
+}
+
+// An iterator over the matches of `re` in the `len` bytes of `text`.
+RegexIter Regex_iter(Regex* re, string text, int64 len) {
+    let it: RegexIter;
+    it.re = re;
+    it.text = text;
+    it.len = len;
+    it.pos = 0;
+    it.prev_end = -1;
+    it.last_cap = null;
+    return it;
+}
+
+// Find the next match: fills `m` and returns 1, or returns 0 when there are no
+// more. The groups of the match the previous call left in `m` are freed here,
+// so only the last one needs a Match_free.
+int RegexIter_next(RegexIter* it, Match* m) {
+    if (it.last_cap != null && m.cap == it.last_cap) {
+        Match_free(m);
+    }
+    it.last_cap = null;
+    while (it.pos <= it.len) {
+        if (Regex_search_at(it.re, it.text, it.len, it.pos, m) == 0) {
+            it.pos = it.len + 1;
+            return 0;
+        }
+        bool accept = true;
+        if ((int64)m.end == it.pos) {
+            // An empty match: the next search starts one code point later.
+            if ((int64)m.start == it.prev_end) {
+                accept = false;
+            }
+            if (it.pos < it.len) {
+                int[1] w;
+                _re_decode(it.text, (int)it.len, (int)it.pos, &w[0]);
+                it.pos += (int64)w[0];
+            } else {
+                it.pos = it.len + 1;
+            }
+        } else {
+            it.pos = (int64)m.end;
+        }
+        it.prev_end = (int64)m.end;
+        if (accept) {
+            it.last_cap = m.cap;
+            return 1;
+        }
+        Match_free(m);
+    }
+    return 0;
 }
 
 void Match_free(Match* m) {
