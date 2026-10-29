@@ -29,6 +29,18 @@ list="tests/eir/pass_$mode.txt"
 work="$(mktemp -d -t eskiu_eir.XXXXXX)"
 trap 'rm -rf "$work"' EXIT
 
+# Run a test for at most 10 seconds. macOS has no `timeout` unless coreutils is installed
+# (the CI runner does not), so fall back to perl, whose alarm survives the exec.
+run10() {
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 10 "$@"
+    elif command -v gtimeout >/dev/null 2>&1; then
+        gtimeout 10 "$@"
+    else
+        perl -e 'alarm shift @ARGV; exec @ARGV or exit 127' 10 "$@"
+    fi
+}
+
 passed=()
 for f in tests/*.esk; do
     n="$(basename "$f" .esk)"
@@ -47,11 +59,11 @@ for f in tests/*.esk; do
         "$BIN" "$f" --emit-c -o "$work/$n.c" >/dev/null 2>&1 || continue
         "$CC" -std=c99 -w -fno-strict-aliasing "$work/$n.c" ${companion[@]+"${companion[@]}"} -o "$exe" -lm -lpthread >/dev/null 2>&1 || continue
     fi
-    timeout 10 "$exe" >"$work/$n.got" 2>&1 || continue
+    run10 "$exe" >"$work/$n.got" 2>&1 || continue
     diff -q "tests/$n.expected" "$work/$n.got" >/dev/null && passed+=("$n")
 done
 
-printf '%s\n' "${passed[@]}" | sort > "$work/now.txt"
+printf '%s\n' ${passed[@]+"${passed[@]}"} | sed '/^$/d' | sort > "$work/now.txt"
 if [ "${UPDATE:-0}" = 1 ]; then
     cp "$work/now.txt" "$list"
     echo "eir/check ($mode): wrote $list (${#passed[@]} passing)"
