@@ -291,7 +291,6 @@ http_recv_trailers
 http_reply_null_body
 http_response_header_inject
 http_rfc9112
-http_serve_slow_reader
 http_serve_split
 http_strict
 http_timeouts
