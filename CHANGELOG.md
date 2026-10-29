@@ -80,9 +80,10 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   reports offsets into the whole text.
 - `<regex>` searches are much faster: the search skips text where no match can start (by
   the bytes a match can begin with, and by a byte every match must contain), its scratch
-  memory is allocated once per compiled regex instead of on every call, and threads that
-  cannot read the next byte are dropped. A log-scanning benchmark went from 25.2 s to 1.8 s
-  and a template one from 7.4 s to 3.1 s.
+  memory is allocated once per compiled regex instead of on every call (a search running
+  while another thread holds it allocates its own, so a `Regex` can still be searched from
+  several threads at once), and threads that cannot read the next byte are dropped. A
+  log-scanning benchmark went from 25.2 s to 1.8 s and a template one from 7.4 s to 3.1 s.
 
 ## [0.14.0] - 2026-10-23
 
