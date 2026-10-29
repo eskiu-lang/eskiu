@@ -39,8 +39,11 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   `-fno-math-errno` and libm never sets it. Not under `--freestanding`.
 - `<json>`: `JsonValue_push` walked the whole array on each call, so building an array of
   n elements took O(n^2) time (80000 elements: 4.3 s, now under 0.1 s). `JsonValue_len` and a
-  loop over `JsonValue_at(v, i)` are linear too. Number output is unchanged and costs one
-  `vsnprintf` instead of two plus an allocation (an integer below 10^15 none).
+  loop over `JsonValue_at(v, i)` are linear too.
+- `<json>` stringifies numbers with its own shortest round-trip algorithm (Ryu) instead of
+  `printf` and `strtod`, and copies plain strings in place: building and stringifying a
+  document is about 2.5 times faster (LangArena Json::Generate 2.2 s to 0.9 s). The text is
+  byte for byte the same as before (checked over 82 million values).
 - `<map>`: `Map<V>` keeps each key's hash, so a lookup compares hashes before strings and
   a removal or a growth no longer rehashes the keys it moves; lookups and removals are up
   to twice as fast. The iteration order is unchanged.
