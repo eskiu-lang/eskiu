@@ -10,8 +10,8 @@ post-json: 200 OK ok=1 type=[] len=22 body=[{"msg":"hi \"there\""}] url=http://1
 307: 200 OK ok=1 type=[] len=9 body=[kept body] url=http://127.0.0.1:18431/echo redirects=1
   method=POST
 header ok=1
-headers: 200 OK ok=1 type=[] len=62 body=[x-custom=one two ua=eskiu/0.14.0 accept=*/* auth=Bearer secret] url=http://127.0.0.1:18431/headers redirects=0
-cross-origin: 200 OK ok=1 type=[] len=43 body=[x-custom=one two ua=eskiu/0.14.0 accept=*/*] url=http://localhost:18431/headers redirects=1
+headers: 200 OK ok=1 type=[] len=62 body=[x-custom=one two ua=eskiu/0.14.1 accept=*/* auth=Bearer secret] url=http://127.0.0.1:18431/headers redirects=0
+cross-origin: 200 OK ok=1 type=[] len=43 body=[x-custom=one two ua=eskiu/0.14.1 accept=*/*] url=http://localhost:18431/headers redirects=1
 agent: 200 OK ok=1 type=[] len=64 body=[x-custom=one two ua=custom-agent/1 accept=*/* auth=Bearer secret] url=http://127.0.0.1:18431/headers redirects=0
 relative: 200 OK ok=1 type=[text/plain] len=11 body=[hello fetch] url=http://127.0.0.1:18431/text redirects=1
 absolute: 200 OK ok=1 type=[application/json] len=39 body=[{"name":"eskiu","tags":["a","b"],"n":3}] url=http://127.0.0.1:18431/json redirects=1

@@ -1,32 +1,49 @@
-# Eskiu 0.14.0
+# Eskiu 0.14.1
 
-Eskiu 0.14 catches any exception and fetches native libraries for phones and cross builds.
+Eskiu 0.14.1 makes optimized code and the standard library much faster, fixes how fields
+of packed structs are accessed, and adds native EIR backends behind a flag. We measured it
+by porting all 50 benchmarks of [LangArena](https://github.com/kostya/LangArena) to Eskiu:
+on the 39 algorithmic ones it now runs as fast as C, and the C++ and the self-hosted
+compiler give the same output on all 50.
 
 ## What is new
 
-- **`catch (_)`** catches any exception without binding it, as the last catch of a `try`.
-  Inside a catch, **`exception_text()`** describes what was caught (`int 7`,
-  `string "boom"`), also across an `await`:
+- **Faster `-O2` and `-O3`.** The optimizer now runs LLVM's loop and SLP vectorizers, as
+  clang does; they were off. CLBG n-body takes half the time it did.
+- **C math functions inline.** An `extern` such as `double sqrt(double)` is declared as not
+  touching memory, so the optimizer can move, merge and inline it (`sqrt` becomes one
+  instruction). The ones that may set `errno` get this only on Apple platforms, where
+  clang does the same and libm never sets it.
+- **Fixed: fields of packed structs.** A field of a `packed` struct, a `#pragma pack(N)`
+  struct or a struct inside one was read and written with its type's alignment, which its
+  address may not have. LLVM could turn that into wider or paired accesses, and on 32-bit
+  ARM it can trap. Each such access now carries the alignment its address is known to
+  have.
+- **A faster standard library.** Times for the LangArena benchmarks that use it:
 
-  ```eskiu
-  try {
-      load_config(path);
-  } catch (string e) {
-      printf("bad config: %s\n", e);
-  } catch (_) {
-      printf("unexpected: %s\n", exception_text());
-  }
-  ```
+  | | 0.14.0 | 0.14.1 |
+  |---|---|---|
+  | Log parsing (`<regex>`) | 26.3 s | 1.8 s |
+  | Template matching (`<regex>`) | 7.7 s | 2.7 s |
+  | JSON building and output (`<json>`) | 2.5 s | 0.85 s |
+  | Base64 encode / decode | 1.54 / 1.44 s | 0.42 / 0.32 s |
+  | CSV summing (`<csv>`, with `CsvReader`) | 1.32 s | 0.65 s |
+  | A string-keyed cache (`<map>`) | 1.80 s | 1.02 s |
 
-- **`[native.NAME]` for iOS, Android and `--target` builds.** A package's prebuilt
-  libraries now have keys for `ios-arm64`, `ios-arm64-simulator`, `ios-x86_64-simulator`,
-  `android-arm64` and `android-x86_64`, and a cross build fetches and links the archive of
-  its target, as a host build does. The `gpu` package uses it for WebGPU on phones.
-- **Fixed:** `--target x86_64-w64-mingw32` passed structs to C functions with the wrong
-  convention, so a call into a DLL could crash; every target triple is now normalized.
+  `JsonValue_push` no longer walks the whole array, so building a large array is linear
+  instead of quadratic. JSON numbers are written by a shortest round-trip algorithm and
+  read without a copy; the text is the same as before. `Map<V>` keeps each key's hash and
+  iterates in the same order.
+- **New functions.** `Regex_search_at` searches from an offset and keeps the text before
+  it as context for `^` and `\b`, and `Regex_iter` walks every match. A compiled `Regex`
+  can still be searched from several threads at once. `CsvReader` reads a CSV one row at
+  a time without allocating per field. `String_append_bytes` appends bytes from a pointer.
+- **Native EIR backends (opt-in).** `--backend=eir` builds through Eskiu's own IR without
+  LLVM's code generator: ARM64 assembly on arm64, C99 elsewhere (`--emit-asm`,
+  `--emit-c`). The default backend is still LLVM.
 
-Code that compiles with 0.13 compiles with 0.14. The full list is in the
-[changelog](https://eskiu-lang.org/changelog.html).
+Code that compiles with 0.14.0 compiles with 0.14.1: the new functions and flags only add
+to what was there. The full list is in the [changelog](https://eskiu-lang.org/changelog.html).
 
 ## Install
 

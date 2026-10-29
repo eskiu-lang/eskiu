@@ -2,7 +2,7 @@
 
 Eskiu is a statically typed systems language with the power of C and the immediacy of a scripting language: it compiles to native code through LLVM, and `eskiuc run file.esk` runs a source file directly, like Python or Ruby. This is the full language reference. New to Eskiu? Start with the [tutorial](getting-started.md).
 
-**Current version: v0.14.0**; 0.13.0 was the first public release. Code that compiles with 0.14.0 keeps
+**Current version: v0.14.1**; 0.13.0 was the first public release. Code that compiles with 0.14.0 keeps
 compiling in every 0.14.x, and later changes are announced by warnings first
 ([stability.md](stability.md)). What the release contains is in the
 [changelog](../../CHANGELOG.md).

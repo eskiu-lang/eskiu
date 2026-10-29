@@ -14,7 +14,7 @@
 
 <p align="center">
   <a href="https://github.com/eskiu-lang/eskiu/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/eskiu/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.14.0-6448d4" alt="Version 0.14.0"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-0.14.1-6448d4" alt="Version 0.14.1"></a>
   <img src="https://img.shields.io/badge/LLVM-21%2B-orange" alt="LLVM 21+">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT"></a>
 </p>

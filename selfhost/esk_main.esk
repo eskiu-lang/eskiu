@@ -1446,7 +1446,7 @@ int esk_main(int argc, string* argv) {
         outfile = null;
     }
     if (cg_streq(mode, "--version") == 1) {
-        printf("Eskiu 0.14.0\n");
+        printf("Eskiu 0.14.1\n");
         return 0;
     }
     if (List_len<string>(&infiles) == 0) {

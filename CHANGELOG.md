@@ -7,7 +7,7 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
-## [Unreleased]
+## [0.14.1] - 2026-10-29
 
 ### Added
 - Native EIR backends that skip LLVM's code generator: `--emit-asm` (ARM64), `--emit-c`
