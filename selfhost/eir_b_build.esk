@@ -39,6 +39,7 @@ int eb_has_global_init(EB* b, Program* prog) {
 }
 
 void eb_build(EB* b, Program* prog) {
+    tc_program(prog);
     // Phase 0: type aliases.
     int i = 0;
     int n = List_len<*DeclNode>(&prog.decls);

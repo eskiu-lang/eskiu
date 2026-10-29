@@ -613,7 +613,7 @@ void eb_for_in(EB* b, *StmtNode node) {
         }
         string sname = "";
         if (base.kind == TYK_TEMPLATE) {
-            sname = ty_mangle(ty_str(base));
+            sname = eb_mangle_note(b, ty_str(base));
         } else {
             sname = ty_nominal(base);
         }
@@ -752,7 +752,7 @@ void eb_match(EB* b, *StmtNode node) {
             enum_name = tyq_strip(al);
         }
         if (et_findc(enum_name, '<') >= 0) {
-            enum_name = ty_mangle(enum_name);
+            enum_name = eb_mangle_note(b, enum_name);
         } else {
             enum_name = eb_strip_struct(enum_name);
         }

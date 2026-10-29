@@ -1181,7 +1181,7 @@ void eb_member(EB* b, *ExprNode node) {
                 st = et_sub(st, 0, et_len(st) - 1);
             }
             if (et_findc(st, '<') >= 0) {
-                sname = ty_mangle(st);
+                sname = eb_mangle_note(b, st);
             } else {
                 sname = ty_nominal(ty_parse(st));
             }
@@ -1398,7 +1398,7 @@ void eb_struct_init(EB* b, *ExprNode node0) {
         if (SMap_len(&b.tpo) > 0) {
             sp = ty_subst_type(sname, &b.tpo);
         }
-        sname = ty_mangle(sp);
+        sname = eb_mangle_note(b, sp);
     }
     *ETy sty = eb_type(b, sname);
     int64 al = et_type_align(sty, null);

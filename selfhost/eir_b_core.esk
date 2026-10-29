@@ -503,6 +503,13 @@ void eb_note_instance(EB* b, string spelled, string mangled) {
     IAMap_set(&b.inst_args, mangled, base, &args);
 }
 
+// The mangled name of a spelled instance `G<args>`, noted for the lookups by name.
+string eb_mangle_note(EB* b, string spelled) {
+    string m = ty_mangle(spelled);
+    eb_note_instance(b, spelled, m);
+    return m;
+}
+
 *ETy eb_type(EB* b, string type_str) {
     string s0 = type_str;
     if (SMap_len(&b.tpo) > 0) {
@@ -1987,4 +1994,285 @@ void eb_zero_fill(EB* b, EOp ptr, *ETy t) {
         i = i + 1;
     }
     return out;
+}
+
+// --- lambda captures in generic bodies (TemplateCapturePass) ---
+// A generic body is checked per instance, which records no captures; they are found here
+// lexically with their source types, as the C++ checker does for each generic function
+// and each method of a generic struct. Like it, the walk does not enter `match` or `defer`.
+
+struct TcScope {
+    List<string> names;
+    List<string> types;
+}
+
+struct TcLam {
+    int boundary;
+    SMap caps;
+}
+
+struct TcPass {
+    List<*TcScope> scopes;
+    List<*TcLam> lams;
+}
+
+void tc_push(TcPass* p) {
+    List_push<*TcScope>(&p.scopes, alloc<TcScope>(1));
+}
+
+void tc_pop(TcPass* p) {
+    List_pop<*TcScope>(&p.scopes);
+}
+
+void tc_define(TcPass* p, string name, string ty) {
+    int n = List_len<*TcScope>(&p.scopes);
+    if (n == 0) {
+        return;
+    }
+    *TcScope s = List_get<*TcScope>(&p.scopes, n - 1);
+    int i = 0;
+    while (i < List_len<string>(&s.names)) {
+        if (et_eq(List_get<string>(&s.names, i), name) == 1) {
+            List_set<string>(&s.types, i, et_s(ty));
+            return;
+        }
+        i = i + 1;
+    }
+    List_push<string>(&s.names, name);
+    List_push<string>(&s.types, et_s(ty));
+}
+
+void tc_expr(TcPass* p, *ExprNode e);
+
+void tc_stmt(TcPass* p, *StmtNode s) {
+    if (s == null) {
+        return;
+    }
+    int k = s.kind;
+    if (k == SK_BLOCK) {
+        tc_push(p);
+        int i = 0;
+        while (i < List_len<*StmtNode>(&s.items)) {
+            *StmtNode it = List_get<*StmtNode>(&s.items, i);
+            if (it.kind == SK_VARDECL) {
+                tc_expr(p, it.expr);
+                tc_define(p, it.name, it.type);
+            } else {
+                tc_stmt(p, it);
+            }
+            i = i + 1;
+        }
+        tc_pop(p);
+    } else if (k == SK_VARDECL) {
+        tc_expr(p, s.expr);
+        tc_define(p, s.name, s.type);
+    } else if (k == SK_IF) {
+        tc_expr(p, s.expr);
+        tc_stmt(p, s.s1);
+        tc_stmt(p, s.s2);
+    } else if (k == SK_WHILE) {
+        tc_expr(p, s.expr);
+        tc_stmt(p, s.s1);
+    } else if (k == SK_DOWHILE) {
+        tc_stmt(p, s.s1);
+        tc_expr(p, s.expr);
+    } else if (k == SK_FOR) {
+        tc_push(p);
+        *StmtNode ib = s.s1;
+        if (ib != null && ib.kind == SK_BLOCK) {
+            tc_stmt(p, ib);
+        } else {
+            tc_stmt(p, ib);
+        }
+        tc_expr(p, s.expr);
+        tc_expr(p, s.expr2);
+        tc_stmt(p, s.s2);
+        tc_pop(p);
+    } else if (k == SK_FORIN) {
+        tc_push(p);
+        tc_expr(p, s.expr);
+        tc_define(p, s.name, "");
+        tc_stmt(p, s.s1);
+        tc_pop(p);
+    } else if (k == SK_RETURN || k == SK_EXPR || k == SK_THROW || k == SK_THREADJOIN) {
+        tc_expr(p, s.expr);
+    } else if (k == SK_SWITCH) {
+        tc_expr(p, s.expr);
+        tc_push(p);
+        int i = 0;
+        while (i < List_len<*StmtNode>(&s.items)) {
+            *StmtNode c = List_get<*StmtNode>(&s.items, i);
+            tc_expr(p, c.expr);
+            int j = 0;
+            while (j < List_len<*StmtNode>(&c.items)) {
+                *StmtNode it = List_get<*StmtNode>(&c.items, j);
+                if (it.kind == SK_VARDECL) {
+                    tc_expr(p, it.expr);
+                    tc_define(p, it.name, it.type);
+                } else {
+                    tc_stmt(p, it);
+                }
+                j = j + 1;
+            }
+            i = i + 1;
+        }
+        tc_pop(p);
+    } else if (k == SK_TRY) {
+        tc_stmt(p, s.s1);
+        int i = 0;
+        while (i < List_len<*StmtNode>(&s.items)) {
+            *StmtNode c = List_get<*StmtNode>(&s.items, i);
+            tc_push(p);
+            string lbl = et_s(c.name);
+            int sp = -1;
+            int q = 0;
+            while (lbl[q] != 0) {
+                if (lbl[q] == ' ') {
+                    sp = q;
+                }
+                q = q + 1;
+            }
+            if (sp > 0) {
+                tc_define(p, et_from(lbl, sp + 1), et_sub(lbl, 0, sp));
+            }
+            tc_stmt(p, c.s1);
+            tc_pop(p);
+            i = i + 1;
+        }
+        tc_stmt(p, s.s2);
+    } else if (k == SK_ASM) {
+        int i = 0;
+        while (i < List_len<*StmtNode>(&s.items)) {
+            tc_expr(p, List_get<*StmtNode>(&s.items, i).expr);
+            i = i + 1;
+        }
+    }
+}
+
+int tc_def_index(TcPass* p, string name, string* ty) {
+    int i = List_len<*TcScope>(&p.scopes) - 1;
+    while (i >= 0) {
+        *TcScope s = List_get<*TcScope>(&p.scopes, i);
+        int j = 0;
+        while (j < List_len<string>(&s.names)) {
+            if (et_eq(List_get<string>(&s.names, j), name) == 1) {
+                *ty = List_get<string>(&s.types, j);
+                return i;
+            }
+            j = j + 1;
+        }
+        i = i - 1;
+    }
+    return -1;
+}
+
+void tc_expr(TcPass* p, *ExprNode e) {
+    if (e == null) {
+        return;
+    }
+    if (e.kind == EK_IDENT) {
+        string ty = "";
+        int di = tc_def_index(p, e.sval, &ty);
+        if (di >= 0) {
+            int i = 0;
+            while (i < List_len<*TcLam>(&p.lams)) {
+                *TcLam l = List_get<*TcLam>(&p.lams, i);
+                if (di < l.boundary) {
+                    SMap_set(&l.caps, e.sval, ty);
+                }
+                i = i + 1;
+            }
+        }
+        return;
+    }
+    if (e.kind == EK_LAMBDA) {
+        *TcLam l = alloc<TcLam>(1);
+        l.boundary = List_len<*TcScope>(&p.scopes);
+        List_push<*TcLam>(&p.lams, l);
+        tc_push(p);
+        List<string> ptys;
+        List<string> pnames;
+        sema_lambda_sig(e.sval, &ptys, &pnames);
+        int i = 0;
+        while (i < List_len<string>(&pnames)) {
+            tc_define(p, List_get<string>(&pnames, i), List_get<string>(&ptys, i));
+            i = i + 1;
+        }
+        tc_stmt(p, e.stmt);
+        tc_pop(p);
+        List_pop<*TcLam>(&p.lams);
+        List<string> ns;
+        List<string> ts;
+        i = 0;
+        while (i < SMap_len(&l.caps)) {
+            string n = List_get<string>(&l.caps.k, i);
+            if (ty_list_has(&pnames, n) == 0) {
+                List_push<string>(&ns, n);
+                List_push<string>(&ts, List_get<string>(&l.caps.v, i));
+            }
+            i = i + 1;
+        }
+        e.caps = ns;
+        e.cap_tys = ts;
+        return;
+    }
+    tc_expr(p, e.a);
+    tc_expr(p, e.b);
+    int i = 0;
+    while (i < List_len<*ExprNode>(&e.kids)) {
+        tc_expr(p, List_get<*ExprNode>(&e.kids, i));
+        i = i + 1;
+    }
+}
+
+void tc_run(*DeclNode fd, string self_type) {
+    if (fd.body == null) {
+        return;
+    }
+    TcPass p;
+    tc_push(&p);
+    if (et_len(self_type) > 0) {
+        tc_define(&p, "self", self_type);
+    }
+    int i = 0;
+    while (i < List_len<Param>(&fd.params)) {
+        Param pm = List_get<Param>(&fd.params, i);
+        tc_define(&p, pm.name, pm.ty);
+        i = i + 1;
+    }
+    tc_stmt(&p, fd.body);
+}
+
+// Every generic function and every method of a generic struct.
+void tc_program(Program* prog) {
+    int i = 0;
+    while (i < List_len<*DeclNode>(&prog.decls)) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        i = i + 1;
+        if (List_len<TypeParam>(&d.type_params) == 0) {
+            continue;
+        }
+        if (d.kind == DK_FUNCTION) {
+            tc_run(d, "");
+        } else if (d.kind == DK_STRUCT) {
+            string self_t = et_cat3("*", d.name, "<");
+            int k = 0;
+            while (k < List_len<TypeParam>(&d.type_params)) {
+                if (k > 0) {
+                    self_t = et_cat(self_t, ",");
+                }
+                self_t = et_cat(self_t, List_get<TypeParam>(&d.type_params, k).name);
+                k = k + 1;
+            }
+            self_t = et_cat(self_t, ">");
+            k = 0;
+            while (k < List_len<*DeclNode>(&d.methods)) {
+                *DeclNode m = List_get<*DeclNode>(&d.methods, k);
+                if (m.kind == DK_FUNCTION) {
+                    tc_run(m, self_t);
+                }
+                k = k + 1;
+            }
+        }
+    }
 }
