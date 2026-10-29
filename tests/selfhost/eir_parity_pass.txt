@@ -58,6 +58,7 @@ async_if
 async_io
 async_join
 async_local_named_fr
+async_locals_forms
 async_loop
 async_multi
 async_multi_io

@@ -4236,8 +4236,14 @@ void al_transform(*Program prog, *DeclNode d, List<*DeclNode>* out) {
 
     int entry = al_newst(&c);                  // state 0
     int exit = al_lower_seq(&c, &dbody, entry);
+    // Falling off the end: `async void` completes with unit 0; a non-void fn that falls
+    // off is a user error, which gets a bare return (as the C++).
     if (exit != 0 - 1) {
-        al_complete(&c, exit, al_int(0));
+        if (str_eq(d.ret_type, "void") == 1) {
+            al_complete(&c, exit, al_int(0));
+        } else {
+            al_push(&c, exit, al_return(null));
+        }
     }
     // Wrapping and the cancellation states can each produce states the other needs.
     string cx = fresh_name("__cx", &used);
