@@ -42,7 +42,7 @@
     <div class="eyebrow">Paquetes</div>
     <h1>Paquetes oficiales</h1>
     <p class="lede">Bibliotecas de la organización <a href="https://github.com/eskiu-lang">eskiu-lang</a> en GitHub. Cada una es un repositorio de git con un <code>eskiu.toml</code>, y se agrega a un proyecto con un solo comando.</p>
-    <nav class="pkg-grid" aria-label="Paquetes"><a href="#gpu"><b>gpu</b><span>Cómputo en GPU, renderizado, modelos 3D y machine learning para Eskiu, sobre WebGPU.</span></a><a href="#onnx"><b>onnx</b><span>Inferencia de modelos ONNX para Eskiu, sobre ONNX Runtime.</span></a><a href="#tflite"><b>tflite</b><span>Inferencia de modelos de TensorFlow Lite para Eskiu.</span></a><a href="#compress"><b>compress</b><span>zlib, gzip, DEFLATE crudo y archivos ZIP para Eskiu, escrito en Eskiu.</span></a><a href="#audio"><b>audio</b><span>Sonido para Eskiu: archivos WAV, un mezclador y salida con SDL3.</span></a><a href="#font"><b>font</b><span>Fuentes TrueType para Eskiu: contornos de glifos, renderizado con antialiasing, acomodo de texto y atlas.</span></a><a href="#jni"><b>jni</b><span>Métodos nativos para Android y la JVM, escritos en Eskiu.</span></a><a href="#nds"><b>nds</b><span>Formatos de archivo de la Nintendo DS para Eskiu: ROMs, archivos NARC, sonido, gráficos 2D y texturas 3D.</span></a><a href="#location"><b>location</b><span>Dónde está el dispositivo, para apps hechas con eskiu-lang/ui.</span><em>ui</em></a><a href="#notifications"><b>notifications</b><span>Notificaciones locales para apps hechas con eskiu-lang/ui.</span><em>ui</em></a><a href="#camera"><b>camera</b><span>Fotos para apps hechas con eskiu-lang/ui: la galería, la cámara y una vista en vivo.</span><em>ui</em></a><a class="pkg-grid-soon" href="#vision"><b>vision</b><span>Visión por computadora, bit por bit con C++.</span><em>privado por ahora</em></a></nav>
+    <nav class="pkg-grid" aria-label="Paquetes"><a href="#gpu"><b>gpu</b><span>Cómputo en GPU, renderizado, modelos 3D y machine learning para Eskiu, sobre WebGPU.</span></a><a href="#onnx"><b>onnx</b><span>Inferencia de modelos ONNX para Eskiu, sobre ONNX Runtime.</span></a><a href="#tflite"><b>tflite</b><span>Inferencia de modelos de TensorFlow Lite para Eskiu.</span></a><a href="#compress"><b>compress</b><span>zlib, gzip, DEFLATE crudo y archivos ZIP para Eskiu, escrito en Eskiu.</span></a><a href="#audio"><b>audio</b><span>Sonido para Eskiu: archivos WAV, un mezclador y salida con SDL3.</span></a><a href="#font"><b>font</b><span>Fuentes TrueType para Eskiu: contornos de glifos, renderizado con antialiasing, acomodo de texto y atlas.</span></a><a href="#jni"><b>jni</b><span>Métodos nativos para Android y la JVM, escritos en Eskiu.</span></a><a href="#nds"><b>nds</b><span>Formatos de archivo de la Nintendo DS para Eskiu: ROMs, archivos NARC, sonido, gráficos 2D y texturas 3D.</span></a><a href="#location"><b>location</b><span>Dónde está el dispositivo, para apps hechas con eskiu-lang/ui.</span><em>ui</em></a><a href="#notifications"><b>notifications</b><span>Notificaciones locales para apps hechas con eskiu-lang/ui.</span><em>ui</em></a><a href="#camera"><b>camera</b><span>Fotos para apps hechas con eskiu-lang/ui: la galería, la cámara y una vista en vivo.</span><em>ui</em></a><a href="#canvas"><b>canvas</b><span>Un canvas 2D para Eskiu, en una app de ui (la GPU en teléfonos, Canvas 2D en la web) o fuera de pantalla.</span><em>ui</em></a><a href="#svg"><b>svg</b><span>Dibujos vectoriales desde texto SVG, para apps hechas con eskiu-lang/ui.</span><em>ui</em></a><a href="#pedometer"><b>pedometer</b><span>Pasos caminados, en vivo y entre dos momentos, para apps de ui en iOS y Android.</span><em>ui</em></a><a href="#barcode"><b>barcode</b><span>Códigos QR y de barras leídos en vivo con la cámara, para apps hechas con eskiu-lang/ui.</span><em>ui</em></a><a href="#securestore"><b>securestore</b><span>Secretos pequeños guardados por el almacenamiento seguro de la plataforma, para apps de ui.</span><em>ui</em></a><a class="pkg-grid-soon" href="#vision"><b>vision</b><span>Visión por computadora, bit por bit con C++.</span><em>privado por ahora</em></a></nav>
     <h2 id="using">Cómo usar un paquete</h2>
     <p><code>eskiuc add</code> escribe la dependencia en <code>eskiu.toml</code>, la descarga con git y guarda su commit en <code>eskiu.lock</code>, así que los builds siguientes la reutilizan sin tocar la red. No hay un registro central: una dependencia es una URL de git con un rev (un tag, una rama o un commit) o una ruta local.</p>
     <pre><code>eskiuc new myapp
@@ -52,12 +52,12 @@ eskiuc run</code></pre>
     <p>Los módulos de un paquete se importan con el nombre del paquete y el del archivo, por ejemplo <code>import &lt;gpu/model&gt;;</code>. El capítulo 13 del <a href="../the-book-of-eskiu.html#sec-13-5">libro</a> explica los manifiestos, el lock y <code>eskiuc test</code>.</p>
     <section class="pkg" id="gpu">
       <h2>gpu</h2>
-      <div class="pkg-meta"><span class="tag">v0.2.0</span><a href="https://github.com/eskiu-lang/gpu/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/gpu/actions/workflows/ci.yml/badge.svg" alt="Estado de CI: gpu" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/gpu">github.com/eskiu-lang/gpu</a></div>
+      <div class="pkg-meta"><span class="tag">v0.3.0</span><a href="https://github.com/eskiu-lang/gpu/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/gpu/actions/workflows/ci.yml/badge.svg" alt="Estado de CI: gpu" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/gpu">github.com/eskiu-lang/gpu</a></div>
       <p><strong>Cómputo en GPU, renderizado, modelos 3D y machine learning para Eskiu, sobre WebGPU.</strong></p>
       <p>Una sola API corre sobre Metal (macOS, iOS), Vulkan (Linux, Android) y DirectX 12 (Windows) a través de wgpu-native, con shaders en WGSL. Dibuja modelos glTF y OBJ con sombreado físico (PBR), corre modelos Llama desde archivos GGUF o safetensors (Llama 2 7B Q4_0 a 45 tokens por segundo en un M4 Pro; llama.cpp da 58 en la misma máquina) y entrena redes pequeñas (97% de precisión en MNIST). En iOS y Android dibuja en un <code>GpuView</code> de una app de ui (Eskiu 0.14). <a href="gpu.html">Qué hace, con sus mediciones →</a></p>
       <p class="note">El primer build descarga wgpu-native 29 por ti. Las ventanas (el módulo <code>&lt;gpu/window&gt;</code>) también necesitan SDL3 del sistema: <code>brew install sdl3</code> en macOS, y compilar con <code>-L/opt/homebrew/lib</code>.</p>
       <h3>Instalación</h3>
-      <pre><code>eskiuc add gpu --git https://github.com/eskiu-lang/gpu --rev v0.2.0
+      <pre><code>eskiuc add gpu --git https://github.com/eskiu-lang/gpu --rev v0.3.0
 eskiuc build</code></pre>
       <details class="pkg-example"><summary>Ejemplo del README</summary>
       <pre><code>Gltf data = model_load("helmet.glb")?;   <span class="c">// or a .gltf, or an .obj</span>
@@ -157,12 +157,12 @@ z.extract_all("out")?;</code></pre>
     </section>
     <section class="pkg" id="audio">
       <h2>audio</h2>
-      <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/audio/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/audio/actions/workflows/ci.yml/badge.svg" alt="Estado de CI: audio" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/audio">github.com/eskiu-lang/audio</a></div>
+      <div class="pkg-meta"><span class="tag">v0.2.0</span><a href="https://github.com/eskiu-lang/audio/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/audio/actions/workflows/ci.yml/badge.svg" alt="Estado de CI: audio" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/audio">github.com/eskiu-lang/audio</a></div>
       <p><strong>Sonido para Eskiu: archivos WAV, un mezclador y salida con SDL3.</strong></p>
-      <p>Lee archivos WAV en todas las codificaciones comunes (PCM, float, ADPCM de IMA y de Microsoft) igual que los decodifica ffmpeg, mezcla todas las voces que quieras con volumen, paneo, tono y loops, y manda la mezcla a la salida de audio predeterminada.</p>
+      <p>Lee archivos WAV en todas las codificaciones comunes (PCM, float, ADPCM de IMA y de Microsoft) igual que los decodifica ffmpeg, mezcla todas las voces que quieras con volumen, paneo, tono, loops y listas de intro y loop sin cortes, y manda la mezcla a la salida de audio predeterminada. En una app de ui en iOS y Android suena a través del sistema (RemoteIO, AAudio) y decodifica MP3, AAC y FLAC con los códecs del sistema.</p>
       <p class="note"><code>&lt;audio/wav&gt;</code> y <code>&lt;audio/mixer&gt;</code> son Eskiu puro; <code>&lt;audio/device&gt;</code> necesita SDL3 (<code>brew install sdl3</code> en macOS).</p>
       <h3>Instalación</h3>
-      <pre><code>eskiuc add audio --git https://github.com/eskiu-lang/audio --rev v0.1.0
+      <pre><code>eskiuc add audio --git https://github.com/eskiu-lang/audio --rev v0.2.0
 eskiuc build -L/opt/homebrew/lib</code></pre>
       <details class="pkg-example"><summary>Ejemplo del README</summary>
       <pre><code>import &lt;time&gt;;
@@ -336,6 +336,114 @@ void Shoot() {
         Button("Choose from the library") { camera_pick_photo(); }
     }
 }</code></pre>
+      </details>
+    </section>
+    <section class="pkg" id="canvas">
+      <h2>canvas</h2>
+      <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/ui-canvas/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/ui-canvas/actions/workflows/ci.yml/badge.svg" alt="Estado de CI: canvas" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/ui-canvas">github.com/eskiu-lang/ui-canvas</a></div>
+      <p><strong>Un canvas 2D para Eskiu, en una app de ui (la GPU en teléfonos, Canvas 2D en la web) o fuera de pantalla.</strong></p>
+      <p>Sprites y pixel art dibujados en cada frame del display en un <code>CanvasView</code>: celdas de un atlas en rects con muestreo nearest o lineal, opacidad, tinte, espejo y una pila de transformaciones, en lotes de una llamada de dibujo por imagen. WebGPU con gpu en iOS y Android, el Canvas 2D del navegador en la web; PNG, JPEG y, en teléfonos, WebP.</p>
+      <p class="note">Una app hecha con eskiu-lang/ui (ui new); el primer build descarga wgpu-native.</p>
+      <h3>Instalación</h3>
+      <pre><code>ui new myapp &amp;&amp; cd myapp
+eskiuc add canvas --git https://github.com/eskiu-lang/ui-canvas --rev v0.1.0
+ui run ios</code></pre>
+      <details class="pkg-example"><summary>Ejemplo del README</summary>
+      <pre><code>import &lt;ui&gt;;
+import &lt;canvas&gt;;
+import &lt;canvas/ui&gt;;
+
+void Game() {
+    *Signal&lt;bool&gt; playing = use_signal&lt;bool&gt;(true);
+    CanvasView(Style{grow: 1}, playing.get(), void(*Canvas canvas, Tick tick) {
+        world_step(&amp;world, tick.delta);
+        canvas.fill_rect(CanvasRect{0, 0, canvas.width(), canvas.height()}, 0x14182aff);
+        canvas.draw_image_rect(&amp;atlas, CanvasRect{16, 0, 16, 16}, CanvasRect{x, y, 64, 64}, Paint{nearest: true});
+    });
+}</code></pre>
+      </details>
+    </section>
+    <section class="pkg" id="svg">
+      <h2>svg</h2>
+      <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/ui-svg/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/ui-svg/actions/workflows/ci.yml/badge.svg" alt="Estado de CI: svg" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/ui-svg">github.com/eskiu-lang/ui-svg</a></div>
+      <p><strong>Dibujos vectoriales desde texto SVG, para apps hechas con eskiu-lang/ui.</strong></p>
+      <p><code>Svg</code> dibuja un documento SVG escalado a su caja: paths con todos los comandos y arcos, las figuras básicas, grupos, transformaciones, relleno y trazo, y <code>currentColor</code> desde el estilo, así que un ícono toma cualquier tinte. El documento se interpreta en Eskiu; lo dibuja Core Graphics, el Canvas de Android o el navegador.</p>
+      <p class="note">Una app hecha con eskiu-lang/ui (ui new).</p>
+      <h3>Instalación</h3>
+      <pre><code>ui new myapp &amp;&amp; cd myapp
+eskiuc add svg --git https://github.com/eskiu-lang/ui-svg --rev v0.1.0
+ui run web</code></pre>
+      <details class="pkg-example"><summary>Ejemplo del README</summary>
+      <pre><code>import &lt;ui&gt;;
+import &lt;svg&gt;;
+
+const string kHeart = "&lt;svg viewBox=\"0 0 24 24\"&gt;&lt;path fill=\"currentColor\" d=\"M12 21 3 12a5 5 0 0 1 9-7 5 5 0 0 1 9 7z\"/&gt;&lt;/svg&gt;";
+
+void Like(bool liked) {
+    Svg(Style{width: 24, height: 24, color: liked ? rgb(230, 57, 70) : rgb(140, 140, 140)}, kHeart);
+}</code></pre>
+      </details>
+    </section>
+    <section class="pkg" id="pedometer">
+      <h2>pedometer</h2>
+      <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/ui-pedometer/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/ui-pedometer/actions/workflows/ci.yml/badge.svg" alt="Estado de CI: pedometer" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/ui-pedometer">github.com/eskiu-lang/ui-pedometer</a></div>
+      <p><strong>Pasos caminados, en vivo y entre dos momentos, para apps de ui en iOS y Android.</strong></p>
+      <p><code>use_steps</code> cuenta los pasos mientras el componente está montado y <code>use_steps_between</code> los que hay entre dos momentos, también los que se dieron con la app cerrada. CMPedometer en iOS; en Android el sensor de pasos, con las muestras que el paquete guarda para responder por momentos pasados.</p>
+      <p class="note">Una app hecha con eskiu-lang/ui (ui new), en un dispositivo.</p>
+      <h3>Instalación</h3>
+      <pre><code>ui new myapp &amp;&amp; cd myapp
+eskiuc add pedometer --git https://github.com/eskiu-lang/ui-pedometer --rev v0.1.0
+ui run ios</code></pre>
+      <details class="pkg-example"><summary>Ejemplo del README</summary>
+      <pre><code>import &lt;ui&gt;;
+import &lt;pedometer&gt;;
+
+void Walk() {
+    Steps now = use_steps();                          <span class="c">// since this mounted, live</span>
+    Steps today = use_steps_between(midnight, now_ms); <span class="c">// the app open or not</span>
+    if (today.status == StepsReady) { ... today.steps ... }
+}</code></pre>
+      </details>
+    </section>
+    <section class="pkg" id="barcode">
+      <h2>barcode</h2>
+      <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/ui-barcode/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/ui-barcode/actions/workflows/ci.yml/badge.svg" alt="Estado de CI: barcode" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/ui-barcode">github.com/eskiu-lang/ui-barcode</a></div>
+      <p><strong>Códigos QR y de barras leídos en vivo con la cámara, para apps hechas con eskiu-lang/ui.</strong></p>
+      <p>Un <code>BarcodeScanner</code> muestra la cámara trasera y le pasa cada código que lee a su handler: QR, Aztec, Data Matrix, PDF417 y los formatos 1D. AVFoundation en iOS, ML Kit empaquetado con la app en Android, el BarcodeDetector del navegador en la web.</p>
+      <p class="note">Una app hecha con eskiu-lang/ui (ui new), en un dispositivo con cámara.</p>
+      <h3>Instalación</h3>
+      <pre><code>ui new myapp &amp;&amp; cd myapp
+eskiuc add barcode --git https://github.com/eskiu-lang/ui-barcode --rev v0.1.0
+ui run android</code></pre>
+      <details class="pkg-example"><summary>Ejemplo del README</summary>
+      <pre><code>import &lt;ui&gt;;
+import &lt;barcode&gt;;
+
+void Scan() {
+    *StringState found = use_string("");
+    BarcodeScanner(Style{grow: 1}, "qr", found.get()[0] == 0, void(Barcode code) {
+        if (code.status == ScanCode) { found.set(code.value); }
+    });
+}</code></pre>
+      </details>
+    </section>
+    <section class="pkg" id="securestore">
+      <h2>securestore</h2>
+      <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/ui-securestore/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/ui-securestore/actions/workflows/ci.yml/badge.svg" alt="Estado de CI: securestore" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/ui-securestore">github.com/eskiu-lang/ui-securestore</a></div>
+      <p><strong>Secretos pequeños guardados por el almacenamiento seguro de la plataforma, para apps de ui.</strong></p>
+      <p><code>secure_set</code>, <code>secure_get</code> y <code>secure_remove</code> guardan un token de sesión o una llave: en el Keychain en iOS, cifrados con una llave del Android Keystore en Android, y en <code>localStorage</code> en la web, que no tiene almacenamiento seguro (<code>secure_is_secure</code> lo dice).</p>
+      <p class="note">Una app hecha con eskiu-lang/ui (ui new).</p>
+      <h3>Instalación</h3>
+      <pre><code>ui new myapp &amp;&amp; cd myapp
+eskiuc add securestore --git https://github.com/eskiu-lang/ui-securestore --rev v0.1.0
+ui run ios</code></pre>
+      <details class="pkg-example"><summary>Ejemplo del README</summary>
+      <pre><code>import &lt;securestore&gt;;
+
+secure_set("session", token);
+string token = secure_get("session");   <span class="c">// null when there is none; free it</span>
+defer free(token);
+secure_remove("session");</code></pre>
       </details>
     </section>
     <section class="pkg pkg-soon" id="vision">

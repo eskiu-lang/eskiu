@@ -463,7 +463,7 @@ PKG_REV = "v0.1.0"   # the release a package is shown at, unless its entry has "
 PACKAGES_CATALOG = [
     {
         "name": "gpu",
-        "rev": "v0.2.0",
+        "rev": "v0.3.0",
         "section": "Models",
         "tag_es": "Cómputo en GPU, renderizado, modelos 3D y machine learning para Eskiu, sobre WebGPU.",
         "note_en": "One API runs on Metal (macOS, iOS), Vulkan (Linux, Android) and DirectX 12 (Windows) through "
@@ -545,15 +545,20 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "audio",
+        "rev": "v0.2.0",
         "section": "Playing a sound",
         "tag_es": "Sonido para Eskiu: archivos WAV, un mezclador y salida con SDL3.",
         "note_en": "Reads WAV files in every common encoding (PCM, float, IMA and Microsoft ADPCM) "
-                   "as ffmpeg decodes them, mixes any number of voices with volume, pan, pitch and "
-                   "loops, and sends the mix to the default output device.",
+                   "as ffmpeg decodes them, mixes any number of voices with volume, pan, pitch, loops "
+                   "and gapless intro-to-loop playlists, and sends the mix to the default output "
+                   "device. In a ui app on iOS and Android it plays through the system (RemoteIO, "
+                   "AAudio) and decodes MP3, AAC and FLAC with the system's codecs.",
         "note_es": "Lee archivos WAV en todas las codificaciones comunes (PCM, float, ADPCM de IMA y "
                    "de Microsoft) igual que los decodifica ffmpeg, mezcla todas las voces que "
-                   "quieras con volumen, paneo, tono y loops, y manda la mezcla a la salida de audio "
-                   "predeterminada.",
+                   "quieras con volumen, paneo, tono, loops y listas de intro y loop sin cortes, y "
+                   "manda la mezcla a la salida de audio predeterminada. En una app de ui en iOS y "
+                   "Android suena a través del sistema (RemoteIO, AAudio) y decodifica MP3, AAC y "
+                   "FLAC con los códecs del sistema.",
         "needs_en": "<code>&lt;audio/wav&gt;</code> and <code>&lt;audio/mixer&gt;</code> are pure "
                     "Eskiu; <code>&lt;audio/device&gt;</code> needs SDL3 (<code>brew install sdl3</code> "
                     "on macOS).",
@@ -671,6 +676,96 @@ PACKAGES_CATALOG = [
         "needs_es": "Una app hecha con eskiu-lang/ui (ui new).",
         "setup": ["ui new myapp && cd myapp"],
         "build": ["ui run android"],
+    },
+    {
+        "name": "canvas",
+        "repo": "ui-canvas",
+        "section": None,
+        "tag_es": "Un canvas 2D para Eskiu, en una app de ui (la GPU en teléfonos, Canvas 2D en la web) o fuera de pantalla.",
+        "note_en": "Sprites and pixel art drawn every display frame in a <code>CanvasView</code>: atlas "
+                   "cells into rects with nearest or linear sampling, opacity, a tint, mirroring and a "
+                   "transform stack, batched into one draw call per image. WebGPU through gpu on iOS "
+                   "and Android, the browser's Canvas 2D on the web; PNG, JPEG and, on phones, WebP.",
+        "note_es": "Sprites y pixel art dibujados en cada frame del display en un <code>CanvasView</code>: "
+                   "celdas de un atlas en rects con muestreo nearest o lineal, opacidad, tinte, espejo y "
+                   "una pila de transformaciones, en lotes de una llamada de dibujo por imagen. WebGPU "
+                   "con gpu en iOS y Android, el Canvas 2D del navegador en la web; PNG, JPEG y, en "
+                   "teléfonos, WebP.",
+        "needs_en": "An app made with eskiu-lang/ui (ui new); the first build downloads wgpu-native.",
+        "needs_es": "Una app hecha con eskiu-lang/ui (ui new); el primer build descarga wgpu-native.",
+        "setup": ["ui new myapp && cd myapp"],
+        "build": ["ui run ios"],
+    },
+    {
+        "name": "svg",
+        "repo": "ui-svg",
+        "section": None,
+        "tag_es": "Dibujos vectoriales desde texto SVG, para apps hechas con eskiu-lang/ui.",
+        "note_en": "<code>Svg</code> draws an SVG document scaled to its box: paths with every command "
+                   "and arcs, the basic shapes, groups, transforms, fill and stroke, and "
+                   "<code>currentColor</code> from the style, so one icon takes any tint. The document "
+                   "is parsed in Eskiu; Core Graphics, Android's Canvas or the browser draws it.",
+        "note_es": "<code>Svg</code> dibuja un documento SVG escalado a su caja: paths con todos los "
+                   "comandos y arcos, las figuras básicas, grupos, transformaciones, relleno y trazo, y "
+                   "<code>currentColor</code> desde el estilo, así que un ícono toma cualquier tinte. El "
+                   "documento se interpreta en Eskiu; lo dibuja Core Graphics, el Canvas de Android o el "
+                   "navegador.",
+        "needs_en": "An app made with eskiu-lang/ui (ui new).",
+        "needs_es": "Una app hecha con eskiu-lang/ui (ui new).",
+        "setup": ["ui new myapp && cd myapp"],
+        "build": ["ui run web"],
+    },
+    {
+        "name": "pedometer",
+        "repo": "ui-pedometer",
+        "section": None,
+        "tag_es": "Pasos caminados, en vivo y entre dos momentos, para apps de ui en iOS y Android.",
+        "note_en": "<code>use_steps</code> counts the steps walked while the component is mounted and "
+                   "<code>use_steps_between</code> the ones between two times, also those walked with "
+                   "the app closed. CMPedometer on iOS; on Android the step counter sensor, with the "
+                   "samples the package keeps to answer for past times.",
+        "note_es": "<code>use_steps</code> cuenta los pasos mientras el componente está montado y "
+                   "<code>use_steps_between</code> los que hay entre dos momentos, también los que se "
+                   "dieron con la app cerrada. CMPedometer en iOS; en Android el sensor de pasos, con las "
+                   "muestras que el paquete guarda para responder por momentos pasados.",
+        "needs_en": "An app made with eskiu-lang/ui (ui new), on a device.",
+        "needs_es": "Una app hecha con eskiu-lang/ui (ui new), en un dispositivo.",
+        "setup": ["ui new myapp && cd myapp"],
+        "build": ["ui run ios"],
+    },
+    {
+        "name": "barcode",
+        "repo": "ui-barcode",
+        "section": None,
+        "tag_es": "Códigos QR y de barras leídos en vivo con la cámara, para apps hechas con eskiu-lang/ui.",
+        "note_en": "A <code>BarcodeScanner</code> shows the back camera and hands each code it reads to "
+                   "its handler: QR, Aztec, Data Matrix, PDF417 and the 1D formats. AVFoundation on iOS, "
+                   "ML Kit bundled with the app on Android, the browser's BarcodeDetector on the web.",
+        "note_es": "Un <code>BarcodeScanner</code> muestra la cámara trasera y le pasa cada código que lee "
+                   "a su handler: QR, Aztec, Data Matrix, PDF417 y los formatos 1D. AVFoundation en iOS, "
+                   "ML Kit empaquetado con la app en Android, el BarcodeDetector del navegador en la web.",
+        "needs_en": "An app made with eskiu-lang/ui (ui new), on a device with a camera.",
+        "needs_es": "Una app hecha con eskiu-lang/ui (ui new), en un dispositivo con cámara.",
+        "setup": ["ui new myapp && cd myapp"],
+        "build": ["ui run android"],
+    },
+    {
+        "name": "securestore",
+        "repo": "ui-securestore",
+        "section": None,
+        "tag_es": "Secretos pequeños guardados por el almacenamiento seguro de la plataforma, para apps de ui.",
+        "note_en": "<code>secure_set</code>, <code>secure_get</code> and <code>secure_remove</code> keep "
+                   "a session token or a key: in the Keychain on iOS, encrypted with a key of the Android "
+                   "Keystore on Android, and in <code>localStorage</code> on the web, which has no secure "
+                   "store (<code>secure_is_secure</code> says so).",
+        "note_es": "<code>secure_set</code>, <code>secure_get</code> y <code>secure_remove</code> guardan "
+                   "un token de sesión o una llave: en el Keychain en iOS, cifrados con una llave del "
+                   "Android Keystore en Android, y en <code>localStorage</code> en la web, que no tiene "
+                   "almacenamiento seguro (<code>secure_is_secure</code> lo dice).",
+        "needs_en": "An app made with eskiu-lang/ui (ui new).",
+        "needs_es": "Una app hecha con eskiu-lang/ui (ui new).",
+        "setup": ["ui new myapp && cd myapp"],
+        "build": ["ui run ios"],
     },
 ]
 
