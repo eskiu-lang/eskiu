@@ -40,6 +40,7 @@ async_cancel
 async_cancel_await_cleanup
 async_case_decl
 async_channel
+async_closure_param
 async_elseif
 async_expr_rewrite
 async_for

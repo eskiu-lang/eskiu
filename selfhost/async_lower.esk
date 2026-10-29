@@ -4322,6 +4322,21 @@ void al_transform(*Program prog, *DeclNode d, List<*DeclNode>* out) {
         List_push<Param>(&ctorFn.params, List_get<Param>(&d.params, pi));
         pi = pi + 1;
     }
+    // The frame retains every closure param (the resume calls it after the call returns),
+    // so each escapes even when the async fn only calls it.
+    List_init<int>(&ctorFn.param_escaping, 2);
+    pi = 0;
+    while (pi < List_len<Param>(&d.params)) {
+        int pesc = 0;
+        if (pi < List_len<int>(&d.param_escaping)) {
+            pesc = List_get<int>(&d.param_escaping, pi);
+        }
+        if (ast_has_prefix(List_get<Param>(&d.params, pi).ty, "fn(") == 1) {
+            pesc = 1;
+        }
+        List_push<int>(&ctorFn.param_escaping, pesc);
+        pi = pi + 1;
+    }
     ctorFn.type_params = d.type_params;
 
     // frame struct
