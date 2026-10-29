@@ -1,0 +1,4 @@
+hello 5
+len 9 nul 0 tail bc
+len 9
+len 192 head abca tail c

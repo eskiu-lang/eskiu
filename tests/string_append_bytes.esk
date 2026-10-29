@@ -1,0 +1,27 @@
+// String_append_bytes appends exactly n bytes from a pointer, NULs included, and
+// works when the source is the String's own buffer (it may move while growing).
+import <string>;
+extern int printf(string fmt, ...);
+
+int main() {
+    String s;
+    s.init(0);
+    s.append_bytes("hello world", 5);
+    printf("%s %lld\n", s.cstr(), s.len);
+    char[4] raw = {'a', (char)0, 'b', 'c'};
+    s.append_bytes(&raw[0], 4);
+    printf("len %lld nul %d tail %c%c\n", s.len, (int)s.data[6], s.data[7], s.data[8]);
+    s.append_bytes("ignored", 0);
+    s.append_bytes("ignored", -3);
+    printf("len %lld\n", s.len);
+    String t;
+    t.init(0);
+    t.append("abc");
+    for (int i = 0; i < 6; i++) {
+        t.append_bytes(t.data, t.len);
+    }
+    printf("len %lld head %c%c%c%c tail %c\n", t.len, t.data[0], t.data[1], t.data[2], t.data[3], t.data[t.len - 1]);
+    s.free();
+    t.free();
+    return 0;
+}

@@ -384,6 +384,12 @@ void String_reserve(String* self, int64 need) {
     self.cap = newcap;
 }
 
+// Append the `n` bytes at `p`, NULs included (`s.append_bytes(p, n)`). `p` may point
+// into `self`'s own buffer.
+void String_append_bytes(String* self, *char p, int64 n) {
+    _string_append_bytes(self, p, n);
+}
+
 // Append `n` bytes starting at `p` (which may hold NULs).
 void _string_append_bytes(String* self, *char p, int64 n) {
     if (n <= 0) {
