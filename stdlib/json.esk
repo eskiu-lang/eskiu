@@ -1234,13 +1234,43 @@ uint64 _json_mulhi(uint64 a, uint64 b) {
     return ah * bh + (lh >> 32) + (hl >> 32) + (mid >> 32);
 }
 
-// floor(m * (hi:lo) / 2^j) for 64 < j < 128, as Ryu's mulShift64.
-uint64 _json_mulshift(uint64 m, uint64 lo, uint64 hi, int j) {
-    const uint64 b2l = m * hi;
-    const uint64 sl = b2l + _json_mulhi(m, lo);
-    const uint64 sh = _json_mulhi(m, hi) + (sl < b2l ? (uint64)1 : (uint64)0);
-    const int s = j - 64;
-    return (sl >> s) | (sh << (64 - s));
+// Bits s..s+63 of the 128-bit value hi:lo (0 <= s < 64).
+uint64 _json_shr128(uint64 lo, uint64 hi, int s) {
+    if (s == 0) {
+        return lo;
+    }
+    return (lo >> s) | (hi << (64 - s));
+}
+
+// Ryu's mulShiftAll64 (the variant without 128-bit integers): with M the 125-bit
+// multiplier hi:lo, returns floor(4 m2 M / 2^j) and sets *vp to
+// floor((4 m2 + 2) M / 2^j) and *vm to floor((4 m2 - 1 - mm_shift) M / 2^j), all
+// from the one product 2 m2 M.
+uint64 _json_mulshift_all(uint64 m2, uint64 mlo, uint64 mhi, int j, uint64 mm_shift, *uint64 vp, *uint64 vm) {
+    const uint64 m = m2 << 1;
+    const uint64 lo = m * mlo;
+    const uint64 tmp = _json_mulhi(m, mlo);
+    const uint64 mid = tmp + m * mhi;
+    const uint64 hi = _json_mulhi(m, mhi) + (mid < tmp ? (uint64)1 : (uint64)0);
+    const uint64 lo2 = lo + mlo;
+    const uint64 mid2 = mid + mhi + (lo2 < lo ? (uint64)1 : (uint64)0);
+    const uint64 hi2 = hi + (mid2 < mid ? (uint64)1 : (uint64)0);
+    *vp = _json_shr128(mid2, hi2, j - 65);
+    if (mm_shift == 1) {
+        const uint64 lo3 = lo - mlo;
+        const uint64 mid3 = mid - mhi - (lo3 > lo ? (uint64)1 : (uint64)0);
+        const uint64 hi3 = hi - (mid3 > mid ? (uint64)1 : (uint64)0);
+        *vm = _json_shr128(mid3, hi3, j - 65);
+    } else {
+        const uint64 lo3 = lo + lo;
+        const uint64 mid3 = mid + mid + (lo3 < lo ? (uint64)1 : (uint64)0);
+        const uint64 hi3 = hi + hi + (mid3 < mid ? (uint64)1 : (uint64)0);
+        const uint64 lo4 = lo3 - mlo;
+        const uint64 mid4 = mid3 - mhi - (lo4 > lo3 ? (uint64)1 : (uint64)0);
+        const uint64 hi4 = hi3 - (mid4 > mid3 ? (uint64)1 : (uint64)0);
+        *vm = _json_shr128(mid4, hi4, j - 64);
+    }
+    return _json_shr128(mid, hi, j - 65);
 }
 
 int _json_pow5bits(int e) {
@@ -1285,9 +1315,7 @@ uint64 _json_ryu(uint64 ieee_m, int ieee_e, *int e10) {
         const int i = -e2 + q + 125 + _json_pow5bits(q) - 1;
         const uint64 lo = _JSON_P5INV[2 * q];
         const uint64 hi = _JSON_P5INV[2 * q + 1];
-        vr = _json_mulshift(mv, lo, hi, i);
-        vp = _json_mulshift(mv + 2, lo, hi, i);
-        vm = _json_mulshift(mv - 1 - mm_shift, lo, hi, i);
+        vr = _json_mulshift_all(m2, lo, hi, i, mm_shift, &vp, &vm);
         if (q <= 21) {
             if (mv % 5 == 0) {
                 vr_tz = _json_pow5_factor(mv) >= q;
@@ -1304,9 +1332,7 @@ uint64 _json_ryu(uint64 ieee_m, int ieee_e, *int e10) {
         const int j = q - (_json_pow5bits(i) - 125);
         const uint64 lo = _JSON_P5[2 * i];
         const uint64 hi = _JSON_P5[2 * i + 1];
-        vr = _json_mulshift(mv, lo, hi, j);
-        vp = _json_mulshift(mv + 2, lo, hi, j);
-        vm = _json_mulshift(mv - 1 - mm_shift, lo, hi, j);
+        vr = _json_mulshift_all(m2, lo, hi, j, mm_shift, &vp, &vm);
         if (q <= 1) {
             vr_tz = true;
             if (even) {
