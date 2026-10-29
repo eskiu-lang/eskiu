@@ -439,15 +439,25 @@ string sema_hint_of(Sema* s, *ExprNode x) {
 
 // Does `e` (a binary, unary or subscript node) resolve to a user operator overload? Then
 // evaluating it is a call (mirrors the C++ operatorCallNodes).
+*DeclNode sema_op_decl(Sema* s, *ExprNode e);
+
 int sema_is_op_call(Sema* s, *ExprNode e) {
+    if (sema_op_decl(s, e) != null) {
+        return 1;
+    }
+    return 0;
+}
+
+// The `operator` declaration `e` calls (null for a built-in operation).
+*DeclNode sema_op_decl(Sema* s, *ExprNode e) {
     if (s.has_ops == 0 || e == null || e.a == null) {
-        return 0;
+        return null;
     }
     string op = "";
     if (e.kind == EK_BINARY && e.b != null) {
         op = e.sval;
         if (sema_streq(op, "&&") == 1 || sema_streq(op, "||") == 1 || sema_streq(op, "=") == 1) {
-            return 0;
+            return null;
         }
         int n = 0;
         while (op[n] != 0) {
@@ -464,7 +474,7 @@ int sema_is_op_call(Sema* s, *ExprNode e) {
     } else if (e.kind == EK_INDEX && e.b != null && List_len<*ExprNode>(&e.kids) == 0) {
         op = "[]";
     } else {
-        return 0;
+        return null;
     }
     List<string> tys;
     List_init<string>(&tys, 2);
@@ -474,10 +484,7 @@ int sema_is_op_call(Sema* s, *ExprNode e) {
     }
     *DeclNode d = sema_find_op(s, op, &tys);
     List_free<string>(&tys);
-    if (d != null) {
-        return 1;
-    }
-    return 0;
+    return d;
 }
 
 // May `name` be narrowed? Not when its address is taken (a write through the pointer can

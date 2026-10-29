@@ -173,6 +173,7 @@ struct Sema {
     List<*ExprNode> cap_lams;   // per lambda, the enclosing locals it captures (first use first)
     List<string> cap_names;
     List<string> cap_tys;        // ... and each one's type
+    int in_sizeof;               // inside a sizeof operand (not evaluated)
     int stamp_all;               // --test-eir: stamp every expression's type (ExprNode.aty), as the C++
                                  // expressionTypes the EIR builder reads, and each lambda's captures
     int match_line;         // position of the `match` whose arms are being checked (its
@@ -1092,7 +1093,7 @@ void sema_define_at(Sema* s, string name, string type, int is_const, int line, i
 // to (a local, not a global or `static`), as the C++ capture map records it.
 void sema_note_capture(Sema* s, string name) {
     int nb = List_len<int>(&s.lam_bounds);
-    if (nb == 0 || s.in_inst == 1) {
+    if (nb == 0 || s.in_inst == 1 || s.in_sizeof > 0) {
         return;
     }
     int i = NameIdx_last(&s.syms_ix, name);

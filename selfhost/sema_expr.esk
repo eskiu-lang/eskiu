@@ -77,6 +77,12 @@ void sema_expr(Sema* s, *ExprNode e) {
             e.ainst = sema_inst_rec(s, e.ainst, sema_infer_type(s, e));
         } else {
             e.aty = sema_infer_type(s, e);
+            if (e.kind != EK_BINARY || sema_streq(e.sval, "=") == 0) {
+                *DeclNode od = sema_op_decl(s, e);   // the C++ opFunc
+                if (od != null) {
+                    e.op_fn = od.name;
+                }
+            }
         }
     }
     // The callee may assign any global: a global's narrowing ends after the call.
@@ -1501,7 +1507,7 @@ void sema_expr_k(Sema* s, *ExprNode e) {
             sema_tool_ident(s, e);
         }
         sema_mark_used(s, e.sval);
-        if (s.wall == 1) {
+        if (s.wall == 1 || s.stamp_all == 1) {
             sema_note_capture(s, e.sval);
         }
         if (sema_find_fn(s, e.sval) >= 0) {
@@ -1558,7 +1564,9 @@ void sema_expr_k(Sema* s, *ExprNode e) {
         return;
     }
     if (k == EK_SIZEOF && e.a != null) {   // sizeof(expr): checked, never evaluated
+        s.in_sizeof = s.in_sizeof + 1;   // not evaluated: nothing in it is captured
         sema_expr(s, e.a);
+        s.in_sizeof = s.in_sizeof - 1;
         string zt = sema_infer_type(s, e.a);
         if (sema_is_void_value(sema_resolve_scalar(s, zt)) == 1) {
             s.had_error = 1;

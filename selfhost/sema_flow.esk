@@ -1942,7 +1942,7 @@ void sema_check_fn(Sema* s, *DeclNode f, string self_type) {
     sema_record_generic_params(s, f);
     int wi = 0;
     int wn = List_len<string>(&s.watched);
-    while (wi < wn && s.in_inst == 0) {   // enforced on non-generic functions (as the C++)
+    while (wi < wn && s.in_inst == 0 && s.stamp_all == 0) {   // enforced on non-generic functions (as the C++), not again on the lowered program
         string wnm = List_get<string>(&s.watched, wi);
         if (sema_in_list(&s.escaped, wnm) == 1) {
             s.had_error = 1;
