@@ -215,6 +215,7 @@ fs_edges
 fs_read_pipe
 fs_tree_fd
 future_polled
+generic_alias_array_ptr
 generic_alias_slice_ptr
 generic_arith_type
 generic_array_targ

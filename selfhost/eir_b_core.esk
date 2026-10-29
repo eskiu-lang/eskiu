@@ -519,10 +519,18 @@ string eb_mangle_note(EB* b, string spelled) {
     if (et_eq(s, "closure") == 1 || et_eq(s, "{ ptr, ptr }") == 1) {
         return et_closure(null);
     }
+    string raw = s;
     if (SMap_len(&b.aliases) > 0) {
         s = ty_dealias_spelling(s, &b.aliases);
     } else if (SMap_len(&g_ty_aliases) > 0) {
         s = ty_dealias_spelling(s, &g_ty_aliases);
+    }
+    // The checker records an instance's args as spelled (`List<*A3>`), aliases included.
+    if (et_eq(raw, s) == 0 && et_findc(raw, '<') >= 0) {
+        *TyT rt = ty_parse(raw);
+        if (rt.kind == TYK_TEMPLATE) {
+            eb_note_instance(b, raw, ty_mangle(s));
+        }
     }
     if (et_eq(s, "closure") == 1 || et_eq(s, "{ ptr, ptr }") == 1) {
         return et_closure(null);
