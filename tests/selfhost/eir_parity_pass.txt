@@ -180,6 +180,7 @@ executor
 executor_cross_thread
 executor_many
 expr_types
+extern_defined_struct
 extern_var_link
 fetch_async
 fetch_basic

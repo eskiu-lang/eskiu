@@ -2960,8 +2960,20 @@ void sema_expr_k(Sema* s, *ExprNode e) {
         if (e.a != null && e.a.kind == EK_IDENT && sema_local_bound(s, e.a.sval) == 0) {
             cfd = sema_find_fndecl(s, e.a.sval);
         }
+        // A lambda argument's env follows the callee's param, also when an `extern`
+        // prototype comes before the program's own definition.
+        *DeclNode lfd = cfd;
         if (cfd != null && cfd.kind != DK_FUNCTION) {
             cfd = null;
+            lfd = null;
+            int fx = NameIdx_first(&s.fndecls_ix, e.a.sval);
+            while (fx >= 0 && lfd == null) {
+                *DeclNode fxd = List_get<*DeclNode>(&s.fndecls, fx);
+                if (fxd.kind == DK_FUNCTION) {
+                    lfd = fxd;
+                }
+                fx = NameIdx_next(&s.fndecls_ix, fx);
+            }
         }
         int i = 0;
         int n = List_len<*ExprNode>(&e.kids);
@@ -2995,20 +3007,20 @@ void sema_expr_k(Sema* s, *ExprNode e) {
                     fwd = 1;
                 }
             }
-            if (ka != null && ka.kind == EK_LAMBDA && cfd != null && i < List_len<Param>(&cfd.params)) {
+            if (ka != null && ka.kind == EK_LAMBDA && lfd != null && i < List_len<Param>(&lfd.params)) {
                 int lesc = 0;
-                if (i < List_len<int>(&cfd.param_escaping)) {
-                    lesc = List_get<int>(&cfd.param_escaping, i);
+                if (i < List_len<int>(&lfd.param_escaping)) {
+                    lesc = List_get<int>(&lfd.param_escaping, i);
                 }
                 if (lesc == 0 && s.in_inst == 0) {
                     s.lam_arg_nonesc = 1;
                 }
-                if (lesc == 0 && s.in_inst == 0 && cfd.is_async == 0) {
+                if (lesc == 0 && s.in_inst == 0 && lfd.is_async == 0) {
                     s.lam_arg_stack = 1;
                 }
                 if (s.in_inst == 1) {   // decided after the instances
                     int desc = lesc;
-                    if (cfd.is_async == 1) {
+                    if (lfd.is_async == 1) {
                         desc = 1;
                     }
                     sema_defer_lambda(s, ka, desc);
