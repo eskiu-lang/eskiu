@@ -1,0 +1,65 @@
+// A compiled Regex can be searched from several threads at once: a search takes
+// the Regex's scratch memory when it is free and allocates its own when another
+// thread holds it. Eight threads search one Regex (and a copy of it, which
+// shares the scratch) over the same text many times; every thread must count
+// the same matches and capture sums as a single-threaded search.
+import <regex>;
+import <atomic>;
+extern int printf(string fmt, ...);
+
+Regex re;
+Regex copy;
+string text = "id=12 x=7 id=345 junk id=6 id=78901 tail id=0 id=42";
+int64 tlen = 0;
+int64[8] counts;
+int64[8] sums;
+int failures = 0;
+
+// Every match and the sum of group 1's lengths, through Regex_iter.
+void scan(Regex* r, *int64 n, *int64 sum) {
+    RegexIter it = Regex_iter(r, text, tlen);
+    let m: Match;
+    while (RegexIter_next(&it, &m) == 1) {
+        n[0] = n[0] + 1;
+        sum[0] = sum[0] + (int64)(m.cap[3] - m.cap[2]);
+    }
+    Match_free(&m);
+}
+
+int main() {
+    while (text[tlen] != 0) { tlen++; }
+    re = regex_compile("id=(\\d+)");
+    copy = re;
+    int64 n0 = 0;
+    int64 s0 = 0;
+    scan(&re, &n0, &s0);
+    printf("single: %lld matches, %lld digits\n", n0, s0);
+
+    *void[8] tids;
+    for (t in 0..8) {
+        int me = t;
+        tids[t] = thread_create(void() {
+            Regex* r = me % 2 == 0 ? &re : &copy;
+            for (k in 0..3000) {
+                int64 n = 0;
+                int64 sum = 0;
+                scan(r, &n, &sum);
+                let m: Match;
+                if (Regex_search_at(r, text, tlen, 20, &m) == 0 || m.start != 22) {
+                    atomic_fetch_add(&failures, 1);
+                }
+                Match_free(&m);
+                counts[me] = counts[me] + n;
+                sums[me] = sums[me] + sum;
+            }
+        });
+    }
+    for (t in 0..8) { thread_join(tids[t]); }
+    int bad = 0;
+    for (t in 0..8) {
+        if (counts[t] != 3000 * n0 || sums[t] != 3000 * s0) { bad++; }
+    }
+    printf("threads: %d wrong totals, %d wrong search_at\n", bad, atomic_load(&failures));
+    Regex_free(&re);
+    return 0;
+}
