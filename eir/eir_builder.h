@@ -4,6 +4,8 @@
 #include "../ast/ast.h"
 #include "../sema/type.h"
 #include <map>
+#include <set>
+#include <unordered_map>
 #include <vector>
 #include <string>
 #include <memory>
