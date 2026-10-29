@@ -1,0 +1,65 @@
+round trips ok: 65 of 65
+all bytes: ok
+large: ok
+large encoded: 133336 522257e4
+bad byte 42: 24 of 24 rejected
+bad byte 45: 24 of 24 rejected
+bad byte 95: 24 of 24 rejected
+bad byte 128: 24 of 24 rejected
+bad byte 255: 24 of 24 rejected
+bad byte 46: 24 of 24 rejected
+[] -> 0 811c9dc5
+[=] -> error
+[==] -> error
+[===] -> error
+[====] -> error
+[Q] -> error
+[QQ] -> 1 c40bf6cc
+[QUI] -> 2 2cd5218a
+[QUJD] -> 3 5c842f6b
+[QQ==] -> 1 c40bf6cc
+[QUI=] -> 2 2cd5218a
+[QQ=] -> error
+[QQ===] -> error
+[QUI==] -> error
+[QUJD=] -> error
+[QUJD====] -> error
+[Q===] -> error
+[=QUJD] -> error
+[QU=JD] -> error
+[QUJD=QUJD] -> error
+[QUJDREVGR0hJSktMTU5PUFFS=] -> error
+[QUJDREVGR0hJSktMTU5PUFFSQQ==] -> 19 af2f82c1
+[QUJDREVGR0hJSktMTU5PUFFSQUI=] -> 20 4aca7439
+[QUJDREVGR0hJSktMTU5PUFFSQ] -> error
+[QUJDREVGR0hJSktMTU5PUFFSQ=] -> error
+[QUJDREVGR0hJSktMTU5PUFFSQQ=A] -> error
+[QUJDREVGR0hJ=SktMTU5PUFFS] -> error
+[QQ== ] -> 1 c40bf6cc
+[QQ=
+=] -> 1 c40bf6cc
+[QQ= =
+] -> 1 c40bf6cc
+[QQ==Q] -> error
+[QQ== Q] -> error
+[ QUJD] -> 3 5c842f6b
+[QUJD ] -> 3 5c842f6b
+[Q UJD] -> 3 5c842f6b
+[QUJDREVGR0hJSktM
+TU5PUFFS] -> 18 531b6e9a
+[QUJDREVGR0hJSktMT
+U5PUFFS] -> 18 531b6e9a
+[QUJDREVGR0hJSkt
+MTU5PUFFS] -> 18 531b6e9a
+[QUJD
+REVG	R0hJ SktM
+TU5PUFFSQUJDREVGR0hJSktMTU5PUFFS] -> 36 56541e69
+[QUJDREVGR0hJSktMTU5PUFFSQUJDREVGR0hJSktMTU5PUFFSQUJDREVGR0hJSktMTU5PUFFS
+QUI=
+] -> 56 5114be5d
+[  
+	 ] -> 0 811c9dc5
+[QUJDR] -> error
+[QUJDREVGR] -> error
+[QUJDREVGR0hJSktMTU5PUFFSQ] -> error
+[QUJDREVGR0hJSktMTU5PUFFSQUJDR] -> error

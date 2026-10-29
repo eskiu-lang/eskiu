@@ -1,0 +1,221 @@
+// base64 edge cases: every tail length at every buffer alignment (the module
+// has word paths for aligned buffers and byte paths otherwise), a bad byte at
+// each position, misplaced and excess padding, whitespace between and inside
+// groups, writes past the result, and a large round trip.
+import <mem>;
+import <base64>;
+extern int printf(string fmt, ...);
+
+uint32 seed = 12345;
+
+uint8 next_byte() {
+    seed = seed * 1103515245 + 12345;
+    return (uint8)(seed >> 16);
+}
+
+// Reference encoder, one bit at a time.
+int ref_encode(*uint8 src, int n, *uint8 out) {
+    string digits = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    int o = 0;
+    int acc = 0;
+    int bits = 0;
+    for (i in 0..n) {
+        acc = (acc << 8) | (int)src[i];
+        bits += 8;
+        while (bits >= 6) {
+            bits -= 6;
+            out[o++] = (uint8)digits[(acc >> bits) & 63];
+        }
+        acc = acc & 255;
+    }
+    if (bits > 0) {
+        out[o++] = (uint8)digits[(acc << (6 - bits)) & 63];
+    }
+    while (o % 4 != 0) {
+        out[o++] = (uint8)'=';
+    }
+    return o;
+}
+
+uint32 hash(*uint8 p, int n) {
+    uint32 h = 2166136261;
+    for (i in 0..n) {
+        h = (h ^ (uint32)p[i]) * 16777619;
+    }
+    return h;
+}
+
+// Decode s copied to offset `off` of a scratch buffer, into an output at
+// offset `oo` filled with canaries; reports the result and checks that a
+// success writes nothing past it (what an error leaves is unspecified).
+int dec_at(string s, int off, int oo, *uint8 res) {
+    const int n = (int)strlen(s);
+    *uint8 inb = alloc<uint8>(n + 8);
+    for (i in 0..n) { inb[off + i] = (uint8)s[i]; }
+    const int cap = base64_decoded_len(n) + 8;
+    *uint8 out = alloc<uint8>(cap + 8);
+    for (i in 0..cap + 8) { out[i] = (uint8)170; }
+    const int m = base64_decode(inb + off, n, out + oo);
+    const int from = m < 0 ? cap + 8 : oo + m;
+    for (i in from..cap + 8) {
+        if (out[i] != (uint8)170) {
+            printf("  write past result: [%s] off=%d oo=%d at %d\n", s, off, oo, i - oo);
+            break;
+        }
+    }
+    if (m > 0) { for (i in 0..m) { res[i] = out[oo + i]; } }
+    free((*void)inb);
+    free((*void)out);
+    return m;
+}
+
+// Decode at all 16 alignments; print one line, or the alignments that differ.
+void dec(string s) {
+    *uint8 first = alloc<uint8>((int)strlen(s) + 8);
+    *uint8 got = alloc<uint8>((int)strlen(s) + 8);
+    const int m0 = dec_at(s, 0, 0, first);
+    for (off in 0..4) {
+        for (oo in 0..4) {
+            const int m = dec_at(s, off, oo, got);
+            bool same = m == m0;
+            if (same && m > 0) {
+                for (i in 0..m) { if (got[i] != first[i]) { same = false; } }
+            }
+            if (!same) { printf("  [%s] differs at off=%d oo=%d\n", s, off, oo); }
+        }
+    }
+    if (m0 < 0) {
+        printf("[%s] -> error\n", s);
+    } else {
+        printf("[%s] -> %d %08x\n", s, m0, hash(first, m0));
+    }
+    free((*void)first);
+    free((*void)got);
+}
+
+// Encode n bytes at every src/out alignment, check against the reference and
+// the NUL terminator, then decode the result back at every alignment.
+bool round_trip(*uint8 data, int n) {
+    const int elen = base64_encoded_len(n);
+    *uint8 want = alloc<uint8>(elen + 8);
+    const int wn = ref_encode(data, n, want);
+    if (wn != elen) { printf("  encoded_len(%d) = %d, reference %d\n", n, elen, wn); return false; }
+    *uint8 src = alloc<uint8>(n + 8);
+    *uint8 out = alloc<uint8>(elen + 16);
+    *uint8 back = alloc<uint8>(base64_decoded_len(elen) + 8);
+    bool ok = true;
+    for (off in 0..4) {
+        for (oo in 0..4) {
+            for (i in 0..n) { src[off + i] = data[i]; }
+            for (i in 0..elen + 16) { out[i] = (uint8)170; }
+            const int m = base64_encode(src + off, n, out + oo);
+            if (m != elen || out[oo + m] != (uint8)0) { ok = false; }
+            for (i in 0..elen) { if (out[oo + i] != want[i]) { ok = false; } }
+            for (i in oo + elen + 1..elen + 16) { if (out[i] != (uint8)170) { ok = false; } }
+            const int d = base64_decode(out + oo, elen, back + ((off + oo) & 3));
+            if (d != n) { ok = false; }
+            for (i in 0..n) { if (back[((off + oo) & 3) + i] != data[i]) { ok = false; } }
+        }
+    }
+    if (!ok) { printf("  round trip failed for n=%d\n", n); }
+    free((*void)want);
+    free((*void)src);
+    free((*void)out);
+    free((*void)back);
+    return ok;
+}
+
+int main() {
+    // Every length up to 64 (all tails, block boundaries), random bytes.
+    *uint8 data = alloc<uint8>(100000);
+    int good = 0;
+    for (n in 0..65) {
+        for (i in 0..n) { data[i] = next_byte(); }
+        if (round_trip(data, n)) { good++; }
+    }
+    printf("round trips ok: %d of 65\n", good);
+
+    // All 256 byte values, and a large input.
+    for (i in 0..256) { data[i] = (uint8)i; }
+    printf("all bytes: %s\n", round_trip(data, 256) ? "ok" : "FAIL");
+    for (i in 0..100000) { data[i] = next_byte(); }
+    printf("large: %s\n", round_trip(data, 99998) ? "ok" : "FAIL");
+    *uint8 big = alloc<uint8>(base64_encoded_len(100000) + 1);
+    const int bn = base64_encode(data, 100000, big);
+    printf("large encoded: %d %08x\n", bn, hash(big, bn));
+    free((*void)big);
+
+    // A bad byte at each position of a 24-character input (block and tail
+    // paths), each kind of bad byte.
+    string ok24 = "QUJDREVGR0hJSktMTU5PUFFS";
+    *uint8 buf = alloc<uint8>(32);
+    for (k in 0..6) {
+        const uint8 bad = k == 0 ? (uint8)'*' : k == 1 ? (uint8)'-' : k == 2 ? (uint8)'_'
+            : k == 3 ? (uint8)128 : k == 4 ? (uint8)255 : (uint8)'.';
+        int errors = 0;
+        for (p in 0..24) {
+            for (i in 0..24) { buf[i] = (uint8)ok24[i]; }
+            buf[p] = bad;
+            buf[24] = (uint8)0;
+            *uint8 out = alloc<uint8>(32);
+            if (base64_decode(buf, 24, out) == -1) { errors++; }
+            free((*void)out);
+        }
+        printf("bad byte %d: %d of 24 rejected\n", (int)bad, errors);
+    }
+    free((*void)buf);
+
+    // Padding.
+    dec("");
+    dec("=");
+    dec("==");
+    dec("===");
+    dec("====");
+    dec("Q");
+    dec("QQ");
+    dec("QUI");
+    dec("QUJD");
+    dec("QQ==");
+    dec("QUI=");
+    dec("QQ=");
+    dec("QQ===");
+    dec("QUI==");
+    dec("QUJD=");
+    dec("QUJD====");
+    dec("Q===");
+    dec("=QUJD");
+    dec("QU=JD");
+    dec("QUJD=QUJD");
+    dec("QUJDREVGR0hJSktMTU5PUFFS=");
+    dec("QUJDREVGR0hJSktMTU5PUFFSQQ==");
+    dec("QUJDREVGR0hJSktMTU5PUFFSQUI=");
+    dec("QUJDREVGR0hJSktMTU5PUFFSQ");
+    dec("QUJDREVGR0hJSktMTU5PUFFSQ=");
+    dec("QUJDREVGR0hJSktMTU5PUFFSQQ=A");
+    dec("QUJDREVGR0hJ=SktMTU5PUFFS");
+    dec("QQ== ");
+    dec("QQ=\n=");
+    dec("QQ= =\n");
+    dec("QQ==Q");
+    dec("QQ== Q");
+
+    // Whitespace between and inside groups, at block boundaries.
+    dec(" QUJD");
+    dec("QUJD ");
+    dec("Q UJD");
+    dec("QUJDREVGR0hJSktM\nTU5PUFFS");
+    dec("QUJDREVGR0hJSktMT\nU5PUFFS");
+    dec("QUJDREVGR0hJSkt\nMTU5PUFFS");
+    dec("QUJD\r\nREVG\tR0hJ SktM\nTU5PUFFSQUJDREVGR0hJSktMTU5PUFFS");
+    dec("QUJDREVGR0hJSktMTU5PUFFSQUJDREVGR0hJSktMTU5PUFFSQUJDREVGR0hJSktMTU5PUFFS\nQUI=\n");
+    dec("  \n\t\r ");
+
+    // Lengths that no byte string encodes to.
+    dec("QUJDR");
+    dec("QUJDREVGR");
+    dec("QUJDREVGR0hJSktMTU5PUFFSQ");
+    dec("QUJDREVGR0hJSktMTU5PUFFSQUJDR");
+
+    free((*void)data);
+    return 0;
+}
