@@ -1970,14 +1970,9 @@ int _re_skip(Regex* re, string text, int len, int sp) {
     return len;
 }
 
-// Search the `len` bytes of `text` for the leftmost match of `re` that starts
-// at byte offset `start` or later. The bytes before `start` are left context:
-// `^` matches at `start` only when it is 0 (or, with (?m), after a newline),
-// and `\b` / `\B` look at the byte before it. Match offsets are offsets into
-// `text`, not from `start`. `text` needs no terminating NUL. On success fills
-// `m` and returns 1; otherwise returns 0 (also for `start` outside 0..len).
-// `m` must be freed with Match_free.
-int Regex_search_at(Regex* re, string text, int64 len, int64 start, Match* m) {
+// Regex_search_at, writing the groups of a match into `buf` (2 * (ngroup + 1)
+// ints, or null to allocate them). `buf` is not freed when there is no match.
+int _re_search(Regex* re, string text, int64 len, int64 start, Match* m, *int buf) {
     m.ok = 0;
     m.ngroup = re.ngroup;
     m.start = -1;
@@ -2143,7 +2138,7 @@ int Regex_search_at(Regex* re, string text, int64 len, int64 start, Match* m) {
 
     if (matched) {
         m.ok = 1;
-        m.cap = alloc<int>(vm.ncap);
+        m.cap = buf != null ? buf : alloc<int>(vm.ncap);
         for (j in 0..vm.ncap) {
             m.cap[j] = bestcaps[j];
         }
@@ -2151,6 +2146,17 @@ int Regex_search_at(Regex* re, string text, int64 len, int64 start, Match* m) {
         m.end = m.cap[1];
     }
     return m.ok;
+}
+
+// Search the `len` bytes of `text` for the leftmost match of `re` that starts
+// at byte offset `start` or later. The bytes before `start` are left context:
+// `^` matches at `start` only when it is 0 (or, with (?m), after a newline),
+// and `\b` / `\B` look at the byte before it. Match offsets are offsets into
+// `text`, not from `start`. `text` needs no terminating NUL. On success fills
+// `m` and returns 1; otherwise returns 0 (also for `start` outside 0..len).
+// `m` must be freed with Match_free.
+int Regex_search_at(Regex* re, string text, int64 len, int64 start, Match* m) {
+    return _re_search(re, text, len, start, m, null);
 }
 
 // Search the NUL-terminated `text` for the leftmost match of `re`. On success
@@ -2198,15 +2204,19 @@ RegexIter Regex_iter(Regex* re, string text, int64 len) {
 // more. The groups of the match the previous call left in `m` are freed here,
 // so only the last one needs a Match_free.
 int RegexIter_next(RegexIter* it, Match* m) {
+    // The groups buffer handed out last time is reused for this match.
+    *int buf = null;
     if (it.last_cap != null && m.cap == it.last_cap) {
-        Match_free(m);
+        buf = m.cap;
     }
     it.last_cap = null;
     while (it.pos <= it.len) {
-        if (Regex_search_at(it.re, it.text, it.len, it.pos, m) == 0) {
+        if (_re_search(it.re, it.text, it.len, it.pos, m, buf) == 0) {
+            free(buf);
             it.pos = it.len + 1;
             return 0;
         }
+        buf = m.cap;
         bool accept = true;
         if ((int64)m.end == it.pos) {
             // An empty match: the next search starts one code point later.
@@ -2228,8 +2238,10 @@ int RegexIter_next(RegexIter* it, Match* m) {
             it.last_cap = m.cap;
             return 1;
         }
-        Match_free(m);
     }
+    free(buf);
+    m.cap = null;
+    m.ok = 0;
     return 0;
 }
 
