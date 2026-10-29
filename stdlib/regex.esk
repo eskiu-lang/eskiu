@@ -12,7 +12,16 @@
 //       String_free(&u);
 //   }
 //   Match_free(&m);
+//
+//   // Every match of a text of `len` bytes (or one search from an offset with
+//   // Regex_search_at, which keeps the text before it as context for ^ and \b):
+//   RegexIter it = Regex_iter(&re, text, len);
+//   while (RegexIter_next(&it, &m) == 1) { ... m.start, m.end ... }
+//   Match_free(&m);
 //   Regex_free(&re);
+//
+// A Regex keeps scratch memory for its searches: do not search one (or copies of
+// it) from two threads at once.
 //
 // Supported syntax (RE2 semantics, as Go's regexp): patterns and texts are UTF-8,
 // and `.`, classes and literals match whole code points (a byte that is not valid
@@ -40,6 +49,11 @@
 // lockstep, so matching is linear in the input length with no catastrophic
 // backtracking (no ReDoS). It reports capture groups for the leftmost match,
 // preferring greedy quantifiers unless they are marked lazy.
+//
+// Before the VM runs, the search skips text where no match can start: compiling
+// records the bytes a match can begin with and an ASCII byte every match
+// contains (when there is one), and the VM drops a thread at once when it
+// cannot read the next byte.
 
 import <mem>;
 import <string>;
