@@ -39,6 +39,11 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 - `<map>`: `Map<V>` keeps each key's hash, so a lookup compares hashes before strings and
   a removal or a growth no longer rehashes the keys it moves; lookups and removals are up
   to twice as fast. The iteration order is unchanged.
+- `<base64>` encodes about 3.6 times and decodes about 4.7 times faster (500 KB buffers:
+  encode 1.53 s to 0.42 s, decode 1.50 s to 0.32 s, ahead of Go's `encoding/base64`). Each
+  character is looked up in tables that give its bits already in place, and word-aligned
+  buffers are read and written a word at a time. Results and errors are the same as before
+  for every input.
 - EIR: a cast between `float` and `double`, or between a pointer and an integer, now emits
   its conversion; a closure call converts its arguments to the parameter types; a top-level
   function used as a closure goes through a `__fnptr_` thunk; an extern's function
