@@ -4256,9 +4256,21 @@ void al_transform(*Program prog, *DeclNode d, List<*DeclNode>* out) {
             wrapped = wrapped + 1;
         }
     }
+    // By region, as the C++ map of the captured exceptions' fields.
     int xi = 0;
+    int last_r = 0 - 1;
     while (xi < List_len<string>(&c.exc_name)) {
-        List_push<*StmtNode>(&al_exc_free.items, al_free_exc(List_get<string>(&c.exc_name, xi)));
+        int best = 0 - 1;
+        int k = 0;
+        while (k < List_len<int>(&c.exc_reg)) {
+            int r = List_get<int>(&c.exc_reg, k);
+            if (r > last_r && (best < 0 || r < List_get<int>(&c.exc_reg, best))) {
+                best = k;
+            }
+            k = k + 1;
+        }
+        last_r = List_get<int>(&c.exc_reg, best);
+        List_push<*StmtNode>(&al_exc_free.items, al_free_exc(List_get<string>(&c.exc_name, best)));
         xi = xi + 1;
     }
     xi = 0;

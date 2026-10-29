@@ -41,10 +41,12 @@ async_cancel
 async_cancel_await_cleanup
 async_case_decl
 async_channel
+async_closure_env
 async_closure_param
 async_dowhile_defer
 async_elseif
 async_expr_rewrite
+async_finally_await
 async_for
 async_for_in
 async_frame_expr
