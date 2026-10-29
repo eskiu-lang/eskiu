@@ -156,13 +156,17 @@ struct Regex {
     // _first[b] is 1 for a byte that can begin a match and is used when _pf is 1
     // (the pattern cannot match empty), _pfbyte being that byte when it is the
     // only one and ASCII (else -1); and _bolonly, 1 when every match starts at
-    // offset 0. _req is an ASCII byte every match contains, or -1.
+    // offset 0. _req is an ASCII byte every match contains, or -1; when no
+    // instruction consumes a non-ASCII code point, _inmatch[b] is 1 for the bytes
+    // a match can contain and _reqscan is 1 (see Regex_search_at).
     *uint64 _amask;
     *uint8 _first;
     int _pf;
     int _pfbyte;
     int _bolonly;
     int _req;
+    int _reqscan;
+    *uint8 _inmatch;
     // Search scratch, allocated by regex_compile and reused by every search (so
     // a Regex, or a copy of it, must not be searched from two threads at once). _visited holds
     // ninst + 1 ints: the generation stamp of each pc and, at [ninst], the last
@@ -1610,6 +1614,7 @@ void Regex_free(Regex* re) {
     free(re.props);
     free(re._amask);
     free(re._first);
+    free(re._inmatch);
     free(re._visited);
     free(re._la);
     free(re._lb);
@@ -1622,6 +1627,7 @@ void Regex_free(Regex* re) {
     re.props = null;
     re._amask = null;
     re._first = null;
+    re._inmatch = null;
     re._visited = null;
     re._la = null;
     re._lb = null;
@@ -1884,6 +1890,24 @@ void _re_analyze(Regex* re) {
             }
         }
     }
+    re._inmatch = alloc<uint8>(256);
+    for (pc in 0..ninst) {
+        const int op = re.inst[pc].op;
+        if (op == OP_CHAR || op == OP_ANY || op == OP_CLASS) {
+            for (ch in 0..128) {
+                if (((re._amask[2 * pc + (ch >> 6)] >> (uint64)(ch & 63)) & (uint64)1) != (uint64)0) {
+                    re._inmatch[ch] = (uint8)1;
+                }
+            }
+            _re_high_bytes(re, &re.inst[pc], re._inmatch);
+        }
+    }
+    re._reqscan = 1;
+    for (b in 0x80..0x100) {
+        if (re._inmatch[b] != (uint8)0) {
+            re._reqscan = 0;
+        }
+    }
     re._first = alloc<uint8>(256);
     *int seen = alloc<int>(ninst);
     defer free(seen);
@@ -1953,9 +1977,6 @@ int Regex_search_at(Regex* re, string text, int64 len, int64 start, Match* m) {
     if (re._bolonly == 1 && start > 0) {
         return 0;
     }
-    if (re._req >= 0 && memchr((*void)((*uint8)text + start), re._req, (size_t)(len - start)) == null) {
-        return 0;
-    }
 
     let vm: _ReVm;
     vm.prog = re;
@@ -1994,6 +2015,9 @@ int Regex_search_at(Regex* re, string text, int64 len, int64 start, Match* m) {
     *uint64 am = re._amask;
     *uint8 fb = re._first;
     const bool pf = re._pf == 1;
+    const int req = re._req;
+    int reqpos = -1;
+    int reqmin = 0;
     int sp = (int)start;
     while (sp <= vm.len) {
         if (!matched && (cur == 0 ? vm.nA : vm.nB) == 0) {
@@ -2002,15 +2026,41 @@ int Regex_search_at(Regex* re, string text, int64 len, int64 start, Match* m) {
             if (re._bolonly == 1 && sp > 0) {
                 break;
             }
+            int nsp = sp;
+            if (req >= 0) {
+                // A match holds a `req` byte at or after its start, so none
+                // starts at sp or later if no `req` byte follows. With _reqscan,
+                // every byte of a match is in _inmatch, so a match starting
+                // before the first `req` byte must cover the run of _inmatch
+                // bytes that ends there: none starts before that run (reqmin).
+                if (sp > reqpos) {
+                    *uint8 base = (*uint8)text;
+                    *void p = memchr((*void)(base + sp), req, (size_t)(vm.len - sp));
+                    if (p == null) {
+                        break;
+                    }
+                    reqpos = (int)((*uint8)p - base);
+                    reqmin = sp;
+                    if (re._reqscan == 1) {
+                        reqmin = reqpos;
+                        while (reqmin > sp && re._inmatch[(int)((uint8)text[reqmin - 1])] != (uint8)0) {
+                            reqmin--;
+                        }
+                    }
+                }
+                if (reqmin > nsp) {
+                    nsp = reqmin;
+                }
+            }
             if (pf) {
-                const int nsp = _re_skip(re, text, vm.len, sp);
+                nsp = _re_skip(re, text, vm.len, nsp);
                 if (nsp >= vm.len) {
                     break;
                 }
-                if (nsp != sp) {
-                    sp = nsp;
-                    curgen = ++glob;
-                }
+            }
+            if (nsp != sp) {
+                sp = nsp;
+                curgen = ++glob;
             }
         }
         int ch = -1;
