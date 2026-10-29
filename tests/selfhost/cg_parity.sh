@@ -82,6 +82,12 @@ if [ "$#" -eq 0 ]; then
     lp_l="$(ESKIU_ROOT="$(pwd)" "$CGBIN" --test-codegen --target aarch64-unknown-linux-gnu tests/run_cmd/libm_pure.esk 2>/dev/null | awk '/^attributes #[0-9]+ = .*memory\(none\)/ { p[$2] = 1 } { l[NR] = $0 } END { c = 0; for (i = 1; i <= NR; i++) if (l[i] ~ /^declare .*@(sqrt|floor|powf|cbrt)\(/) { if (l[i] ~ /memory\(none\)/) c++; else if (match(l[i], /#[0-9]+/) && p[substr(l[i], RSTART, RLENGTH)]) c++ } print c }')"
     if [ "$lp_d" = 3 ] && [ "$lp_l" = 1 ]; then echo "ok    libm_pure  (IR: darwin 3, linux 1)"
     else echo "FAIL  libm_pure  (IR: darwin $lp_d, linux $lp_l; expected 3, 1)"; fail=1; fi
+    # Fields of packed structs keep the alignment their address is known to have (14
+    # accesses below natural alignment; tests/run.sh checks the C++ side).
+    total=$((total + 1))
+    pfa="$(ESKIU_ROOT="$(pwd)" "$CGBIN" --test-codegen tests/packed_field_align.esk 2>/dev/null | grep -E '(= load|store) (volatile )?(i16|i32|i64|double|float)[ ,]' | awk '{ t = ""; for (i = 1; i <= NF; i++) if ($i == "load" || $i == "store") { t = $(i + 1); if (t == "volatile") t = $(i + 2); break } sub(/,/, "", t); nat = (t == "i16") ? 2 : ((t == "i32" || t == "float") ? 4 : 8); al = nat; if (match($0, /align [0-9]+$/)) al = substr($0, RSTART + 6) + 0; if (al < nat) n++ } END { print n + 0 }')"
+    if [ "$pfa" = 14 ]; then echo "ok    packed_field_align  (IR: 14 accesses below natural alignment)"
+    else echo "FAIL  packed_field_align  (IR: $pfa accesses below natural alignment, expected 14)"; fail=1; fi
     # A lambda in a generic body keeps a heap env only where an instance lets it escape
     # (3 in the test's gl_ functions; tests/run.sh checks the C++ side).
     total=$((total + 1))

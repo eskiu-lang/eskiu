@@ -514,6 +514,7 @@ private:
     llvm::Type* cIntType(char kind);
     llvm::Value* widenCResult(const std::string& name, llvm::Value* v);
     void passLargeAggregatesByPointer(llvm::Module& m);
+    void alignPackedAccesses(llvm::Module& m);
     // The declared type of the global whose initializer is being folded: a union literal
     // of that type holding an address narrower than its layout member (a pointer in an
     // int64-laid-out union on a 32-bit target) folds to a `{ ptr, [N x i8] }` literal.

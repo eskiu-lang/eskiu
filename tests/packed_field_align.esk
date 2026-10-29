@@ -1,0 +1,74 @@
+// A field of a packed struct is accessed with the alignment its address is known to have,
+// not its type's: `packed` (1), `#pragma pack(2)` and `pack(4)` (the field offset within
+// the struct's C alignment), a struct nested in a packed one, and array elements. The IR
+// checks (tests/run.sh, cg_parity.sh) count the `align` of these accesses; the values must
+// still read back.
+extern int printf(string fmt, ...);
+
+packed struct P {
+    uint8 a;
+    uint64 b;
+    uint32 c;
+}
+
+#pragma pack(2)
+struct S2 {
+    uint8 a;
+    uint64 b;
+    uint32 c;
+}
+#pragma pack()
+
+#pragma pack(4)
+struct S4 {
+    uint8 a;
+    double d;
+}
+#pragma pack()
+
+struct N {
+    uint8 a;
+    uint64 b;
+}
+
+struct Q {
+    uint8 x;
+    P p;
+    double d;
+}
+
+packed struct R {
+    uint8 t;
+    Q q;
+}
+
+uint64 pk_get(*P p) { return p.b; }
+void pk_set(*P p, uint64 v) { p.b = v; p.c = 3; }
+uint64 s2_get(*S2 s) { return s.b + (uint64)s.c; }
+void s2_set(*S2 s, uint64 v) { s.b = v; s.c = 4; }
+double s4_get(*S4 s) { return s.d; }
+void s4_set(*S4 s, double v) { s.d = v; }
+uint64 n_get(*N n) { return n.b; }
+void q_set(*Q q, uint64 v) { q.p.b = v; q.d = 2.5; }
+double r_get(*R r) { return r.q.d; }
+uint32 arr_get(*P arr, int i) { return arr[i].c; }
+
+int main() {
+    P[3] ps;
+    pk_set(&ps[1], 9);
+    pk_set(&ps[2], 11);
+    S2 s2;
+    s2_set(&s2, 70);
+    S4 s4;
+    s4_set(&s4, 1.25);
+    N n;
+    n.b = 5;
+    Q q;
+    q_set(&q, 6);
+    R r;
+    r.q.d = 7.5;
+    printf("%d %d %d\n", (int)sizeof(P), (int)sizeof(S2), (int)sizeof(S4));
+    printf("%llu %llu %llu %f %llu %llu %f %f %u\n", pk_get(&ps[1]), pk_get(&ps[2]), s2_get(&s2),
+        s4_get(&s4), n_get(&n), q.p.b, q.d, r_get(&r), arr_get(&ps[0], 2));
+    return 0;
+}

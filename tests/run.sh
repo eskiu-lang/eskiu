@@ -525,6 +525,12 @@ lp_d=$(libm_pure arm64-apple-macosx); lp_l=$(libm_pure aarch64-unknown-linux-gnu
 if [[ "$lp_d" == 3 && "$lp_l" == 1 ]]; then ok "codegen/libm-pure-per-target"
 else bad "codegen/libm-pure-per-target" "darwin=$lp_d (want 3) linux=$lp_l (want 1)"; fi
 
+# Fields of packed structs are accessed at the alignment their address is known to have:
+# 14 accesses in the test's functions are below their type's alignment (1, 2 or 4).
+pfa=$("$ESKIUC" "$here/packed_field_align.esk" --test-codegen 2>/dev/null | grep -E '(= load|store) (volatile )?(i16|i32|i64|double|float)[ ,]' | awk '{ t = ""; for (i = 1; i <= NF; i++) if ($i == "load" || $i == "store") { t = $(i + 1); if (t == "volatile") t = $(i + 2); break } sub(/,/, "", t); nat = (t == "i16") ? 2 : ((t == "i32" || t == "float") ? 4 : 8); al = nat; if (match($0, /align [0-9]+$/)) al = substr($0, RSTART + 6) + 0; if (al < nat) n++ } END { print n + 0 }')
+if [[ "$pfa" == 14 ]]; then ok "codegen/packed-field-align"
+else bad "codegen/packed-field-align" "$pfa accesses below natural alignment (want 14)"; fi
+
 # An output named .obj is an object file (Windows spelling), not an executable to link.
 printf 'int main() { return 0; }\n' > "$work/obj.esk"
 if "$ESKIUC" "$work/obj.esk" -o "$work/obj.obj" >/dev/null 2>&1 && [[ -s "$work/obj.obj" ]] \

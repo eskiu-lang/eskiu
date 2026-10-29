@@ -5,6 +5,9 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/GetElementPtrTypeIterator.h"
+#include "llvm/IR/Operator.h"
+#include <functional>
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/FileSystem.h"
@@ -207,6 +210,61 @@ static llvm::FunctionType* byPointerType(llvm::FunctionType* ft) {
     return any ? llvm::FunctionType::get(ft->getReturnType(), ps, ft->isVarArg()) : nullptr;
 }
 
+// A field of a packed struct (packed, #pragma pack, or a struct inside one) may sit at an
+// address its type's alignment does not divide, but the IRBuilder gives each load and store
+// the type's ABI alignment, which LLVM is entitled to rely on (wider or paired accesses; a
+// trap on 32-bit ARM). Each access through a GEP chain that crosses a packed struct gets
+// the alignment the chain proves instead: the base's (its own chain's, else the C alignment
+// of the GEP's source type), lowered by each field offset and element stride. Chains with
+// no packed struct are left alone. selfhost cg_align_packed applies the same rule to its IR.
+void CodeGen::alignPackedAccesses(llvm::Module& m) {
+    const llvm::DataLayout& dl = m.getDataLayout();
+    auto lower = [](uint64_t a, uint64_t off) {
+        return off == 0 ? a : std::min(a, off & (~off + 1));
+    };
+    for (llvm::Function& f : m) {
+        std::map<llvm::Value*, uint64_t> known;
+        std::function<bool(llvm::Value*, uint64_t&)> chainAlign = [&](llvm::Value* v, uint64_t& out) -> bool {
+            auto* gep = llvm::dyn_cast<llvm::GEPOperator>(v);
+            if (!gep) return false;
+            auto hit = known.find(v);
+            if (hit != known.end()) {
+                out = hit->second;
+                return true;
+            }
+            uint64_t a = 0;
+            bool packed = chainAlign(gep->getPointerOperand(), a);
+            if (!packed) a = cAlignOf(gep->getSourceElementType());
+            for (auto it = llvm::gep_type_begin(gep), e = llvm::gep_type_end(gep); it != e; ++it) {
+                auto* ci = llvm::dyn_cast<llvm::ConstantInt>(it.getOperand());
+                if (llvm::StructType* st = it.getStructTypeOrNull()) {
+                    if (st->isPacked()) packed = true;
+                    a = lower(a, dl.getStructLayout(st)->getElementOffset((unsigned)ci->getZExtValue()));
+                } else {
+                    uint64_t stride = it.getSequentialElementStride(dl).getFixedValue();
+                    if (!ci) a = lower(a, stride);
+                    else a = lower(a, stride * (uint64_t)ci->getSExtValue());
+                }
+            }
+            if (!packed) return false;
+            known[v] = a;
+            out = a;
+            return true;
+        };
+        for (llvm::BasicBlock& bb : f)
+            for (llvm::Instruction& inst : bb) {
+                uint64_t a = 0;
+                if (auto* ld = llvm::dyn_cast<llvm::LoadInst>(&inst)) {
+                    if (chainAlign(ld->getPointerOperand(), a) && a < ld->getAlign().value())
+                        ld->setAlignment(llvm::Align(a));
+                } else if (auto* stI = llvm::dyn_cast<llvm::StoreInst>(&inst)) {
+                    if (chainAlign(stI->getPointerOperand(), a) && a < stI->getAlign().value())
+                        stI->setAlignment(llvm::Align(a));
+                }
+            }
+    }
+}
+
 // WebAssembly gives each scalar of an aggregate argument a parameter of its own, and an
 // engine accepts at most 1000 (V8), so a function taking a large struct by value (an
 // `Ok<T>(v)` of a big T) does not load. Such a parameter becomes a pointer to a copy the
@@ -302,6 +360,7 @@ llvm::Module* CodeGen::generateCode(std::shared_ptr<Program> program) {
 
     program->accept(this);
     emitUncaughtReporter();
+    alignPackedAccesses(*module);
     if (triple.isWasm()) passLargeAggregatesByPointer(*module);
 
     std::string errorStr;
