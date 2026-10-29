@@ -444,9 +444,12 @@ regex_depth
 regex_empty_iter
 regex_escapes
 regex_posix_class
+regex_prefilter
 regex_repeat_count
 regex_repeat_groups
+regex_search_at
 regex_space_class
+regex_threads
 regex_unicode
 return_flow
 rvalue_member
