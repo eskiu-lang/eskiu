@@ -249,6 +249,13 @@ ui: built in 0.3 s
             lleva un número a su nuevo valor, para lo que la plataforma no puede animar.
             <code>SwipeToDelete</code> del kit está hecho con los dos.
           </p>
+          <p>
+            Las animaciones corren con el reloj del display (<code>CADisplayLink</code>,
+            <code>Choreographer</code>, <code>requestAnimationFrame</code>): pueden repetirse, ir y
+            volver, encadenar keyframes y avisar cuando terminan. <code>use_frame</code> le da el
+            mismo reloj a un game loop, y el paquete <a href="packages.html#canvas">canvas</a>
+            dibuja sprites con él.
+          </p>
         </div>
         <pre><code>*Signal&lt;int&gt; dx = use_signal&lt;int&gt;(0);
 *Signal&lt;bool&gt; held = use_signal&lt;bool&gt;(false);
@@ -278,7 +285,11 @@ Row(Style{translate_x: dx.get(),
           <div><b>Compartir y portapapeles</b>La hoja para compartir del sistema, copiar y pegar.</div>
           <div><b>Hápticos</b>Vibraciones de selección, impacto y notificación, y una vibración en la web.</div>
           <div><b>Temporizadores</b><code>use_interval</code> y <code>use_timeout</code>, con el reloj de la plataforma.</div>
-          <div><b>Teclado y márgenes</b>El área segura y el teclado, o la pantalla completa de borde a borde.</div>
+          <div><b>Teclado y márgenes</b>El área segura y el teclado, o la pantalla completa de borde a borde; un campo enfocado se desplaza a la vista.</div>
+          <div><b>Ciclo de vida</b><code>use_app_state</code> avisa cuando la app pasa a segundo plano y cuando regresa.</div>
+          <div><b>Pantalla de arranque</b>Un color y una imagen desde <code>ui.toml</code>, que se mantienen mientras cargan las fuentes y el estado guardado.</div>
+          <div><b>Datos de la app</b>La versión y el build, y valores de <code>[env]</code> que cambian entre desarrollo y las tiendas.</div>
+          <div><b>Archivos en caché</b>Una imagen o un sonido remoto descargado una vez y guardado como archivo entre arranques.</div>
         </div>
       </section>
 
@@ -322,7 +333,11 @@ router.back();</code></pre>
           <p>
             Las bibliotecas de terceros se declaran en <code>ui.toml</code>: las dependencias de
             Maven se compilan con Gradle y los paquetes de Swift con Xcode, y un paquete lleva las
-            suyas a cada app que lo usa.
+            suyas a cada app que lo usa. Así están hechos los paquetes de
+            <a href="packages.html#location">ubicación</a>, <a href="packages.html#camera">cámara</a>,
+            <a href="packages.html#barcode">escaneo de códigos</a>, <a href="packages.html#pedometer">conteo
+            de pasos</a>, <a href="packages.html#securestore">almacenamiento seguro</a> y
+            <a href="packages.html#svg">dibujos SVG</a>.
           </p>
         </div>
         <pre><code><span class="c"># ui.toml</span>

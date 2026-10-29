@@ -248,6 +248,13 @@ ui: built in 0.3 s
             to its new value, for what the platform cannot animate. The kit's
             <code>SwipeToDelete</code> is built from the two.
           </p>
+          <p>
+            Animations run on the display's own clock (<code>CADisplayLink</code>,
+            <code>Choreographer</code>, <code>requestAnimationFrame</code>): they can repeat, go
+            back and forth, chain keyframes and say when they end. <code>use_frame</code> hands
+            the same clock to a game loop, and the <a href="packages.html#canvas">canvas</a>
+            package draws sprites on it.
+          </p>
         </div>
         <pre><code>*Signal&lt;int&gt; dx = use_signal&lt;int&gt;(0);
 *Signal&lt;bool&gt; held = use_signal&lt;bool&gt;(false);
@@ -277,7 +284,11 @@ Row(Style{translate_x: dx.get(),
           <div><b>Share and clipboard</b>The system's share sheet, copy and paste.</div>
           <div><b>Haptics</b>Selection, impact and notification feedback, a vibration on the web.</div>
           <div><b>Timers</b><code>use_interval</code> and <code>use_timeout</code>, kept by the platform's clock.</div>
-          <div><b>Keyboard and insets</b>The safe area and the keyboard, or the whole screen edge to edge.</div>
+          <div><b>Keyboard and insets</b>The safe area and the keyboard, or the whole screen edge to edge; a focused field scrolls into view.</div>
+          <div><b>Lifecycle</b><code>use_app_state</code> is told when the app goes to the background and comes back.</div>
+          <div><b>Launch screen</b>A color and an image from <code>ui.toml</code>, held while fonts and saved state load.</div>
+          <div><b>App settings</b>The version and build, and <code>[env]</code> values that differ between development and the stores.</div>
+          <div><b>Cached files</b>A remote image or sound downloaded once, kept as a file across launches.</div>
         </div>
       </section>
 
@@ -320,7 +331,11 @@ router.back();</code></pre>
           <p>
             Third-party libraries come from <code>ui.toml</code>: Maven dependencies build through
             Gradle and Swift packages through Xcode, and a package brings its own to every app
-            that uses it.
+            that uses it. Packages made this way add the
+            <a href="packages.html#location">location</a>, <a href="packages.html#camera">camera</a>,
+            <a href="packages.html#barcode">barcode scanning</a>, <a href="packages.html#pedometer">step
+            counting</a>, <a href="packages.html#securestore">secure storage</a> and
+            <a href="packages.html#svg">SVG drawings</a>.
           </p>
         </div>
         <pre><code><span class="c"># ui.toml</span>
