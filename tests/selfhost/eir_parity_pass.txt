@@ -75,6 +75,7 @@ atomic
 atomic_relaxed
 atomic_wide
 base64
+base64_edges
 base64_strict
 bitfield_bool
 bitfield_c_layout
@@ -345,6 +346,8 @@ json_build
 json_builder_escape
 json_depth
 json_keyword_methods
+json_number_format
+json_push_linear
 json_strict
 labeled_break
 lambda_struct_return
@@ -397,6 +400,7 @@ os_macros
 pack_n
 pack_nested_c
 pack_union_c
+packed_field_align
 param_defaults
 param_defaults_struct
 param_reassign
@@ -485,6 +489,7 @@ static_local
 static_local_closure
 stdlib_after_free
 stdlib_result
+string_append_bytes
 string_equality
 string_int_edges
 string_methods
