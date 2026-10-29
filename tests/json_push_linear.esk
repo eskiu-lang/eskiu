@@ -1,0 +1,75 @@
+// JsonValue_push, JsonValue_len and walking JsonValue_at(v, 0..n) are linear: a
+// 200000-element array builds and walks quickly. The hints stay right after
+// children are appended through `next` by hand and after set/remove, and numbers
+// print as before (integers, -0, fractions, large values).
+import <json>;
+import <string>;
+extern int printf(string fmt, ...);
+
+int main() {
+    *JsonValue arr = JsonValue_array();
+    for (int i = 0; i < 200000; i++) {
+        JsonValue_push(arr, JsonValue_int((int64)i));
+    }
+    int64 sum = 0;
+    const int n = JsonValue_len(arr);
+    for (int i = 0; i < n; i++) {
+        sum += JsonValue_as_int(JsonValue_at(arr, i));
+    }
+    printf("len %d sum %lld at(5) %lld at(-1) %d at(n) %d\n", n, sum,
+        JsonValue_as_int(JsonValue_at(arr, 5)), JsonValue_at(arr, -1) == null ? 1 : 0,
+        JsonValue_at(arr, n) == null ? 1 : 0);
+    JsonValue_free(arr);
+
+    *JsonValue a = JsonValue_array();
+    JsonValue_push(a, JsonValue_int(1));
+    printf("len %d\n", JsonValue_len(a));
+    *JsonValue extra = JsonValue_int(2);
+    JsonValue_at(a, 0).next = extra;
+    extra.next = JsonValue_int(3);
+    printf("len %d at(2) %lld\n", JsonValue_len(a), JsonValue_as_int(JsonValue_at(a, 2)));
+    JsonValue_push(a, JsonValue_int(4));
+    String s;
+    s.init(0);
+    JsonValue_stringify(a, &s);
+    printf("%s\n", s.cstr());
+    JsonValue_free(a);
+
+    *JsonValue o = json_parse("{\"a\":1,\"b\":2,\"c\":3}");
+    printf("len %d at(2) %lld\n", JsonValue_len(o), JsonValue_as_int(JsonValue_at(o, 2)));
+    JsonValue_remove(o, "c");
+    printf("len %d at(2) %d\n", JsonValue_len(o), JsonValue_at(o, 2) == null ? 1 : 0);
+    JsonValue_set(o, "a", JsonValue_int(10));
+    JsonValue_set(o, "d", JsonValue_int(4));
+    printf("len %d at(0) %lld at(2) %lld\n", JsonValue_len(o), JsonValue_as_int(JsonValue_at(o, 0)),
+        JsonValue_as_int(JsonValue_at(o, 2)));
+    JsonValue_free(o);
+
+    *JsonValue p = json_parse("[1,[2,3],4]");
+    printf("len %d inner %d\n", JsonValue_len(p), JsonValue_len(JsonValue_at(p, 1)));
+    JsonValue_push(p, JsonValue_int(5));
+    s.clear();
+    JsonValue_stringify(p, &s);
+    printf("%s\n", s.cstr());
+    JsonValue_free(p);
+
+    *JsonValue nums = JsonValue_array();
+    JsonValue_push(nums, JsonValue_number(0.0));
+    JsonValue_push(nums, JsonValue_number(-0.0));
+    JsonValue_push(nums, JsonValue_number(-42.0));
+    JsonValue_push(nums, JsonValue_number(999999999999999.0));
+    JsonValue_push(nums, JsonValue_number(1e15));
+    JsonValue_push(nums, JsonValue_number(-1e15));
+    JsonValue_push(nums, JsonValue_number(0.1));
+    JsonValue_push(nums, JsonValue_number(1.0 / 3.0));
+    JsonValue_push(nums, JsonValue_number(123.456));
+    JsonValue_push(nums, JsonValue_number(1e300));
+    JsonValue_push(nums, JsonValue_number(5e-324));
+    JsonValue_push(nums, JsonValue_number(9007199254740993.0));
+    s.clear();
+    JsonValue_stringify(nums, &s);
+    printf("%s\n", s.cstr());
+    s.free();
+    JsonValue_free(nums);
+    return 0;
+}

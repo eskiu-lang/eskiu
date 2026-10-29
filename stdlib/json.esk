@@ -162,6 +162,11 @@ enum JsonKind { JNull, JBool, JNumber, JString, JArray, JObject }
 // A node uses first-child / next-sibling links, so arrays and objects need no
 // generic containers. Object members carry their `key`; everything else leaves
 // it empty. `str`/`key` own their buffers (data == null when unused).
+// A container also keeps hints so that appending, `JsonValue_len` and walking
+// `JsonValue_at(v, 0..n)` are linear overall: its last child and the count up to it
+// (`_tail`, `_n`) and the child the last `JsonValue_at` returned (`_at`, `_at_i`).
+// Children appended through `next` by hand are found by walking on from `_tail`;
+// remove children with the JsonValue_ functions, which reset the hints.
 struct JsonValue {
     int kind;
     double num;       // JNumber
@@ -170,6 +175,10 @@ struct JsonValue {
     String key;       // set when this node is an object member
     *JsonValue child;     // first array element / object member
     *JsonValue next;      // next sibling
+    *JsonValue _tail;
+    int _n;
+    *JsonValue _at;
+    int _at_i;
 }
 
 // alloc zero-fills, so num is 0, boolean is 0, and str/key/child/next are null.
@@ -210,25 +219,62 @@ int JsonValue_kind(JsonValue* v) {
     return v.kind;
 }
 
-// Number of array elements / object members.
-int JsonValue_len(JsonValue* v) {
-    int n = 0;
-    for (*JsonValue c = v.child; c != null; c = c.next) {
+// Bring `_tail` / `_n` up to date: walk on from the last known child (or from the
+// first when there is none) to the end.
+void _json_sync_tail(JsonValue* v) {
+    *JsonValue t = v._tail;
+    int n = v._n;
+    if (t == null) {
+        t = v.child;
+        n = t != null ? 1 : 0;
+    }
+    if (t == null) {
+        return;
+    }
+    while (t.next != null) {
+        t = t.next;
         n++;
     }
-    return n;
+    v._tail = t;
+    v._n = n;
 }
 
-// The i-th array element (or object member), or null if out of range.
+// Forget the hints after children were replaced or removed.
+void _json_reset_hints(JsonValue* v) {
+    v._tail = null;
+    v._n = 0;
+    v._at = null;
+    v._at_i = 0;
+}
+
+// Number of array elements / object members.
+int JsonValue_len(JsonValue* v) {
+    _json_sync_tail(v);
+    return v._n;
+}
+
+// The i-th array element (or object member), or null if out of range. Walking
+// i = 0, 1, 2, ... continues from the previous answer, so a loop over a container
+// is linear.
 *JsonValue JsonValue_at(JsonValue* v, int i) {
+    if (i < 0) {
+        return null;
+    }
+    *JsonValue c = v.child;
     int j = 0;
-    for (*JsonValue c = v.child; c != null; c = c.next) {
-        if (j == i) {
-            return c;
-        }
+    if (v._at != null && v._at_i <= i) {
+        c = v._at;
+        j = v._at_i;
+    }
+    while (c != null && j < i) {
+        c = c.next;
         j++;
     }
-    return null;
+    if (c != null) {
+        v._at = c;
+        v._at_i = i;
+    }
+    return c;
 }
 
 // The object member whose key equals `key`, or null.
@@ -495,6 +541,8 @@ void _JParser_word(_JParser* self, string word) {
                 tail.next = elem;
             }
             tail = elem;
+            arr._tail = elem;
+            arr._n++;
         }
         if (self.err == 1) {
             return arr;
@@ -557,6 +605,8 @@ void _JParser_word(_JParser* self, string word) {
             tail.next = val;
         }
         tail = val;
+        obj._tail = val;
+        obj._n++;
         if (self.err == 1) {
             return obj;
         }
@@ -729,6 +779,7 @@ int JsonValue_set(JsonValue* obj, string key, JsonValue* val) {
     }
     val.key.from(key);
     val.next = null;
+    _json_reset_hints(obj);
     *JsonValue prev = null;
     for (*JsonValue c = obj.child; c != null; c = c.next) {
         if (c.key.data != null && c.key.eq_cstr(key) == 1) {
@@ -761,15 +812,14 @@ int JsonValue_push(JsonValue* arr, JsonValue* val) {
         val.key.free();
     }
     val.next = null;
-    if (arr.child == null) {
+    _json_sync_tail(arr);
+    if (arr._tail == null) {
         arr.child = val;
-        return 0;
+    } else {
+        arr._tail.next = val;
     }
-    *JsonValue last = arr.child;
-    while (last.next != null) {
-        last = last.next;
-    }
-    last.next = val;
+    arr._tail = val;
+    arr._n++;
     return 0;
 }
 
@@ -779,6 +829,7 @@ int JsonValue_remove(JsonValue* obj, string key) {
     if (obj == null || obj.kind != JObject) {
         return 0;
     }
+    _json_reset_hints(obj);
     *JsonValue prev = null;
     for (*JsonValue c = obj.child; c != null; c = c.next) {
         if (c.key.data != null && c.key.eq_cstr(key) == 1) {
@@ -803,17 +854,47 @@ void _json_number(String* out, double d) {
         out.append("null");
         return;
     }
-    let t: String;
-    t.init(32);
-    String_format(&t, "%.15g", d);
-    if (strtod((string)t.data, null) != d) {
-        String_format(&t, "%.16g", d);
+    // An integer of up to 15 digits prints as its digits, which is its %.15g text.
+    if (d > -1e15 && d < 1e15) {
+        const int64 iv = (int64)d;
+        if ((double)iv == d) {
+            if (iv == 0 && 1.0 / d < 0.0) {
+                out.append("-0");
+                return;
+            }
+            char[24] buf;
+            uint64 u = iv < 0 ? (uint64)(-iv) : (uint64)iv;
+            int k = 23;
+            buf[k] = (char)0;
+            if (u == 0) {
+                k--;
+                buf[k] = '0';
+            }
+            while (u > 0) {
+                k--;
+                buf[k] = (char)((int)'0' + (int)(u % 10));
+                u = u / 10;
+            }
+            if (iv < 0) {
+                k--;
+                buf[k] = '-';
+            }
+            out.append((string)&buf[k]);
+            return;
+        }
     }
-    if (strtod((string)t.data, null) != d) {
-        String_format(&t, "%.17g", d);
+    // Otherwise the first of %.15g / %.16g / %.17g that reads back as d, written
+    // straight into `out`.
+    const int64 at = out.len;
+    out.appendf("%.15g", d);
+    if (strtod((string)(out.data + at), null) != d) {
+        out.len = at;
+        out.appendf("%.16g", d);
+        if (strtod((string)(out.data + at), null) != d) {
+            out.len = at;
+            out.appendf("%.17g", d);
+        }
     }
-    out.append((string)t.data);
-    t.free();
 }
 
 void _json_newline(String* out, int indent, int depth) {
