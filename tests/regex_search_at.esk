@@ -1,0 +1,81 @@
+// Regex_search_at searches from an offset with the bytes before it as left
+// context (`^`, `\b`, `\B` at the cut), over `len` bytes with no NUL needed, and
+// reports offsets into the whole text. Regex_iter / RegexIter_next find every
+// match as Go's FindAll: an empty match moves the search one code point on, and
+// an empty match where the previous one ended is skipped. Checked against Go.
+import <regex>;
+extern int printf(string fmt, ...);
+
+void at(string p, string s, int64 len, int64 start) {
+    Regex re = regex_compile(p);
+    let m: Match;
+    int r = Regex_search_at(&re, s, len, start, &m);
+    printf("%s @%d/%d: %d", p, (int)start, (int)len, r);
+    if (r == 1) {
+        for (int g = 0; g <= m.ngroup; g++) { printf(" (%d,%d)", m.cap[2 * g], m.cap[2 * g + 1]); }
+    }
+    printf("\n");
+    Match_free(&m);
+    Regex_free(&re);
+}
+
+void all(string p, string s) {
+    Regex re = regex_compile(p);
+    int64 len = 0;
+    while (s[len] != 0) { len++; }
+    RegexIter it = Regex_iter(&re, s, len);
+    let m: Match;
+    printf("%s all:", p);
+    int n = 0;
+    while (RegexIter_next(&it, &m) == 1) {
+        printf(" [%d,%d]", m.start, m.end);
+        if (m.ngroup > 0) { printf("g1=(%d,%d)", m.cap[2], m.cap[3]); }
+        n++;
+    }
+    printf(" n=%d\n", n);
+    Match_free(&m);
+    Regex_free(&re);
+}
+
+int main() {
+    // Offsets are absolute; the search starts at or after `start`.
+    at("b+", "aabbbab", 7, 0);
+    at("b+", "aabbbab", 7, 3);
+    at("b+", "aabbbab", 7, 5);
+    at("b+", "aabbbab", 7, 7);
+    at("b+", "aabbbab", 7, 8);
+    at("b+", "aabbbab", 7, -1);
+    // `len` bounds the text: nothing past it is read, no NUL needed.
+    at("b+", "aabbbab", 3, 0);
+    at("b$", "aabbbab", 3, 0);
+    // ^ matches only at offset 0, not at the cut; (?m)^ after a newline.
+    at("^a", "aaa", 3, 1);
+    at("^a", "aaa", 3, 0);
+    at("(?m)^a", "ba\naa", 5, 1);
+    at("(?m)^a", "ba\naa", 5, 3);
+    at("\\Aa", "aa", 2, 1);
+    // \b and \B read the byte before the cut.
+    at("\\bfoo", "xfoo foo", 8, 1);
+    at("\\Bfoo", "xfoo foo", 8, 1);
+    at("\\b", "ab cd", 5, 1);
+    at("\\B", "ab cd", 5, 2);
+    // $ at the end of the given length.
+    at("a$", "aab", 2, 0);
+    // UTF-8: offsets are bytes, a code point is not split.
+    at(".", "ééx", 5, 2);
+    at("(?i)É+", "xéÉéy", 8, 1);
+    at("\\p{Greek}+", "abαβc", 7, 0);
+    // Every match, with the empty-match rule.
+    all("a*", "baaac");
+    all("a*?", "aa");
+    all("", "éa");
+    all("\\b", "ab cd");
+    all("x*", "éxé");
+    all("(a)|b", "abba");
+    all("^a", "aaa");
+    all("(?m)^\\w+", "one\ntwo\n\nthree");
+    all("\\d+", "a1b22c333");
+    all("\\w+", "");
+    all("[éü]", "aébüé");
+    return 0;
+}
