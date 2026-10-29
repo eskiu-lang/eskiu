@@ -1,3 +1,4 @@
+addr_of_once
 adt_layout
 alias_array_codegen
 alias_in_composite
@@ -21,6 +22,8 @@ array_2d
 array_alias_nested_init
 array_alias_of_alias
 array_dim_compare_ops
+array_dim_const_expr
+array_dim_sizeof
 array_init_large
 array_of_pointers
 array_return_large
@@ -97,6 +100,7 @@ const_fold_typed_c
 const_method
 const_ptr_member
 const_ptr_method
+const_sizeof_struct
 control_flow
 crlf_source
 csv
@@ -157,7 +161,9 @@ fn_type_int32_alias
 fn_type_local
 fnvalue_signatures
 fnvalue_sret
+for_in
 forin_array_alias_deref
+forin_list_ptr
 forin_multidim
 forward_decl
 fs
@@ -266,6 +272,7 @@ list_free_reuse
 list_resize
 list_script
 list_struct
+literal_binary_separators
 literal_unsigned_mix
 local_times_stmt
 log
@@ -298,6 +305,7 @@ nullable_narrow
 nullable_ptr_to_ptr
 numeric_signedness
 octal_literal
+operators
 os_macros
 pack_n
 param_defaults
@@ -333,6 +341,7 @@ ptr_sub_same
 ptr_sum_type_ok
 ptr_trailing_star
 question_op
+question_other_value
 random
 range_bound_once
 range_bound_outer
@@ -362,6 +371,7 @@ short_circuit
 sizeof_case_layouts
 sizeof_expr
 sizeof_mixed_sign
+sizeof_pack_n_fold
 sizeof_union_ptr
 sizeof_var
 slice
@@ -384,6 +394,7 @@ string_int_edges
 string_methods
 string_nul
 string_ops
+string_ptr_arith
 string_script
 strings
 struct_lit_array_field
@@ -413,6 +424,7 @@ thread_handle_ptr
 thread_handles
 thread_owned_env
 threading
+throw_payload_types
 time
 time_format
 time_negative_year

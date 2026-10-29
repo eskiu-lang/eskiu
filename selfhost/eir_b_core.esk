@@ -881,6 +881,17 @@ string eb_targs_name(string sval, List<string>* args) {
 
 // --- constant folding ---
 
+int eb_is_global_name(EB* b, string name) {
+    int i = 0;
+    while (i < List_len<EGlobal>(&b.m.globals)) {
+        if (et_eq(List_get<EGlobal>(&b.m.globals, i).name, name) == 1) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
 int64 et_parse_int(string s, int* ok) {
     *ok = 1;
     int n = et_len(s);
@@ -1015,7 +1026,7 @@ int eb_fold(EB* b, *ExprNode e, AstCInt* out) {
     }
     if (e.kind == EK_SIZEOF) {
         int64 n = (int64)0;
-        if (e.a == null && et_len(e.sval) > 0 && eb_has_var(b, e.sval) == 1) {
+        if (e.a == null && et_len(e.sval) > 0 && (eb_has_var(b, e.sval) == 1 || eb_is_global_name(b, e.sval) == 1)) {
             n = et_type_size(eb_var_type(b, e.sval), b.m);
         } else if (e.a == null && et_len(e.sval) > 0) {
             n = eb_size_of_type(b, e.sval);

@@ -1000,6 +1000,29 @@ void sema_stmt_k(Sema* s, *StmtNode st) {
                     listy = 1;
                 }
             }
+            if (listy == 1 && s.stamp_all == 1 && s.in_inst == 0) {   // the element type, as the C++ stamps it
+                string dt = "";
+                int fj = 0;
+                while (fj < List_len<Param>(&lsd.params)) {
+                    if (sema_streq(List_get<Param>(&lsd.params, fj).name, "data") == 1) {
+                        dt = List_get<Param>(&lsd.params, fj).ty;
+                    }
+                    fj = fj + 1;
+                }
+                if (List_len<TypeParam>(&lsd.type_params) > 0) {
+                    List<string> targs;
+                    List_init<string>(&targs, 2);
+                    sema_parse_targs(itc, &targs);
+                    dt = sema_subst_params(dt, &lsd.type_params, &targs);
+                }
+                while (dt[0] == '*') {
+                    dt = sema_sub_str(dt, 1, sema_slen(dt));
+                }
+                while (sema_slen(dt) > 0 && dt[sema_slen(dt) - 1] == '*') {
+                    dt = sema_sub_str(dt, 0, sema_slen(dt) - 1);
+                }
+                st.resolved_elem = dt;
+            }
             if (listy == 0) {
                 s.had_error = 1;
                 dprintf(2, "error: %s:%d:%d: for-in expects a fixed-size array or a List-like value (with `data` and `size` fields), got %s\n",

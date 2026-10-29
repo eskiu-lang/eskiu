@@ -1815,7 +1815,7 @@ void eb_lambda(EB* b, *ExprNode node) {
 
 void eb_sizeof(EB* b, *ExprNode node) {
     *ETy ty = null;
-    if (node.a == null && et_len(node.sval) > 0 && eb_has_var(b, node.sval) == 1) {
+    if (node.a == null && et_len(node.sval) > 0 && (eb_has_var(b, node.sval) == 1 || eb_is_global(b, node.sval) == 1)) {   // the checker rewrites `sizeof(global)` to its type
         ty = eb_var_type(b, node.sval);
     } else if (node.a == null && et_len(node.sval) > 0) {
         string t = node.sval;

@@ -921,6 +921,9 @@ void eb_match(EB* b, *StmtNode node) {
 
 string eb_exception_type_name(string raw) {
     string t = tyq_strip(raw);
+    while (et_len(t) > 1 && t[et_len(t) - 1] == '*') {   // the checker spells a pointer `*T`
+        t = et_cat("*", et_sub(t, 0, et_len(t) - 1));
+    }
     if (et_len(t) > 0 && t[0] == '?') {
         t = et_from(t, 1);
     }

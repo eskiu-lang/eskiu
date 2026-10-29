@@ -50,6 +50,54 @@ void sema_stamp_captures(Sema* s, *ExprNode e) {
     e.cap_tys = ts;
 }
 
+*DeclNode sema_op_decl(Sema* s, *ExprNode e);
+
+// --test-eir: the type of `e` (a generic instance's apart) and the operator it calls, as
+// the C++ expressionTypes and opFunc the EIR builder reads.
+// The type the C++ checker records where sema_infer_type leaves it open: `r?` is its
+// Result's value type and `*s` of a string a char.
+string sema_eir_type(Sema* s, *ExprNode e) {
+    if (e.kind == EK_QUESTION) {
+        string qt = sema_infer_type(s, e.a);
+        *DeclNode qd = sema_find_struct(s, sema_struct_of_type(qt));
+        if (qd != null) {
+            int qi = 0;
+            while (qi < List_len<Param>(&qd.params)) {
+                Param f = List_get<Param>(&qd.params, qi);
+                if (sema_streq(f.name, "value") == 1) {
+                    string vt = f.ty;
+                    if (List_len<TypeParam>(&qd.type_params) > 0) {
+                        List<string> targs;
+                        List_init<string>(&targs, 2);
+                        sema_parse_targs(qt, &targs);
+                        vt = sema_subst_params(vt, &qd.type_params, &targs);
+                    }
+                    return vt;
+                }
+                qi = qi + 1;
+            }
+        }
+    }
+    if (e.kind == EK_UNARY && sema_streq(e.sval, "*") == 1 && sema_streq(sema_canon(s, sema_infer_type(s, e.a)), "string") == 1) {
+        return "char";
+    }
+    return sema_infer_type(s, e);
+}
+
+void sema_stamp_eir(Sema* s, *ExprNode e) {
+    if (s.in_inst == 1) {
+        e.ainst = sema_inst_rec(s, e.ainst, sema_eir_type(s, e));
+        return;
+    }
+    e.aty = sema_eir_type(s, e);
+    if (e.kind != EK_BINARY || sema_streq(e.sval, "=") == 0) {
+        *DeclNode od = sema_op_decl(s, e);
+        if (od != null) {
+            e.op_fn = od.name;
+        }
+    }
+}
+
 void sema_binary_chain(Sema* s, *ExprNode e);
 // Check `e` with its position as the current diagnostic location (restored afterwards so
 // the enclosing node's own checks report at the enclosing node).
@@ -72,18 +120,8 @@ void sema_expr(Sema* s, *ExprNode e) {
         if (s.in_inst == 1) {
             e.ainst = sema_inst_rec(s, e.ainst, e.aty);
         }
-    } else if (s.stamp_all == 1) {         // the EIR builder's types (a generic instance's apart)
-        if (s.in_inst == 1) {
-            e.ainst = sema_inst_rec(s, e.ainst, sema_infer_type(s, e));
-        } else {
-            e.aty = sema_infer_type(s, e);
-            if (e.kind != EK_BINARY || sema_streq(e.sval, "=") == 0) {
-                *DeclNode od = sema_op_decl(s, e);   // the C++ opFunc
-                if (od != null) {
-                    e.op_fn = od.name;
-                }
-            }
-        }
+    } else if (s.stamp_all == 1) {
+        sema_stamp_eir(s, e);
     }
     // The callee may assign any global: a global's narrowing ends after the call.
     // alloc_with calls the allocator's method and thread_create starts code that may run
@@ -587,6 +625,13 @@ void sema_binary_chain(Sema* s, *ExprNode e) {
         s.col = List_get<int>(&pcs, i);
         sema_binary_checks(s, List_get<*ExprNode>(&spine, i), List_get<string>(&lts, i), List_get<string>(&rts, i));
         i = i + 1;
+    }
+    if (s.stamp_all == 1 && s.in_async == 0) {   // the inner operators of the chain
+        int si = 1;
+        while (si < n) {
+            sema_stamp_eir(s, List_get<*ExprNode>(&spine, si));
+            si = si + 1;
+        }
     }
     if (s.tool == 1) {                     // the inner operators of the chain
         int ti = 1;
