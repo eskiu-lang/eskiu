@@ -151,6 +151,17 @@ struct Regex {
     int ngroup;      // number of capturing groups (group 0 is the whole match)
     int ok;
     string err;         // null when ok
+    // Built by regex_compile for the search: for each instruction, the ASCII
+    // code points it consumes (two words of bits); the start prefilter, where
+    // _first[b] is 1 for a byte that can begin a match and is used when _pf is 1
+    // (the pattern cannot match empty), _pfbyte being that byte when it is the
+    // only one and ASCII (else -1); and _bolonly, 1 when every match starts at
+    // offset 0.
+    *uint64 _amask;
+    *uint8 _first;
+    int _pf;
+    int _pfbyte;
+    int _bolonly;
     // Search scratch, allocated by regex_compile and reused by every search (so
     // a Regex, or a copy of it, must not be searched from two threads at once). _visited holds
     // ninst + 1 ints: the generation stamp of each pc and, at [ninst], the last
@@ -1475,6 +1486,8 @@ void _re_alloc_scratch(Regex* re) {
     re._work = alloc<int>(2 * ncap);
 }
 
+void _re_analyze(Regex* re);
+
 // Compile a pattern. Check the returned Regex.ok before matching; on failure
 // Regex.err holds the reason. Free with Regex_free either way.
 Regex regex_compile(string pattern) {
@@ -1525,6 +1538,7 @@ Regex regex_compile(string pattern) {
         return re;
     }
     _re_alloc_scratch(&re);
+    _re_analyze(&re);
     re.ok = 1;
     return re;
 }
@@ -1534,6 +1548,8 @@ void Regex_free(Regex* re) {
     free(re.classes);
     free(re.ranges);
     free(re.props);
+    free(re._amask);
+    free(re._first);
     free(re._visited);
     free(re._la);
     free(re._lb);
@@ -1544,6 +1560,8 @@ void Regex_free(Regex* re) {
     re.classes = null;
     re.ranges = null;
     re.props = null;
+    re._amask = null;
+    re._first = null;
     re._visited = null;
     re._la = null;
     re._lb = null;
@@ -1683,6 +1701,179 @@ void _re_addthread(_ReVm* vm, int which, int gen, int pc, *int caps, int sp) {
     }
 }
 
+// =========================== search prefilter ==============================
+
+// The first byte of the UTF-8 encoding of r (r >= 0x80).
+int _re_lead_byte(int r) {
+    if (r < 0x800) {
+        return 0xC0 | (r >> 6);
+    }
+    if (r < 0x10000) {
+        return 0xE0 | (r >> 12);
+    }
+    return 0xF0 | (r >> 18);
+}
+
+// Mark in fb the bytes from 0x80 up that can begin a code point the consuming
+// instruction `ins` accepts. A byte that is not valid UTF-8 reads as U+FFFD, so
+// an instruction that may accept U+FFFD marks all of them; so does one whose
+// non-ASCII members are not simply known (a negated or case-folded class, a
+// Unicode property, `.`).
+void _re_high_bytes(Regex* re, _ReInst* ins, *uint8 fb) {
+    bool all = false;
+    if (ins.op == OP_CHAR) {
+        int[8] orb;
+        const int no = _re_orbit(ins.a, ins.b, &orb[0]);
+        for (k in 0..no) {
+            if (orb[k] == 0xFFFD) {
+                all = true;
+            } else if (orb[k] >= 0x80) {
+                fb[_re_lead_byte(orb[k])] = (uint8)1;
+            }
+        }
+    } else if (ins.op == OP_CLASS) {
+        const _ReClassInfo ci = re.classes[ins.a];
+        all = ci.negate == 1 || ci.fold == 1;
+        for (int i = ci.pstart; !all && i < ci.pstart + ci.pcount; i++) {
+            all = re.props[i].kind != P_ASCII || re.props[i].neg == 1;
+        }
+        for (int i = ci.start; !all && i < ci.start + ci.count; i++) {
+            const int lo = re.ranges[i].lo < 0x80 ? 0x80 : re.ranges[i].lo;
+            const int hi = re.ranges[i].hi;
+            if (hi < 0x80) {
+                continue;
+            }
+            if (lo <= 0xFFFD && hi >= 0xFFFD) {
+                all = true;
+            } else {
+                for (int b = _re_lead_byte(lo); b <= _re_lead_byte(hi); b++) {
+                    fb[b] = (uint8)1;
+                }
+            }
+        }
+    } else {
+        all = true;
+    }
+    if (all) {
+        for (b in 0x80..0x100) {
+            fb[b] = (uint8)1;
+        }
+    }
+}
+
+// Walk the instructions reachable from pc without consuming, marking in fb the
+// bytes the consuming ones can start with. flags[0] is set when a MATCH is
+// reachable (the pattern can match empty), flags[1] when a consuming
+// instruction or a MATCH is reachable without passing a `^` that holds only at
+// offset 0 (bol is 1 once the path has passed one). seen holds, per pc, a bit
+// for each bol state already walked.
+void _re_first_walk(Regex* re, int pc, int bol, *int seen, *uint8 fb, *int flags) {
+    const int bit = bol == 1 ? 2 : 1;
+    if ((seen[pc] & bit) != 0) {
+        return;
+    }
+    seen[pc] = seen[pc] | bit;
+    _ReInst* ins = &re.inst[pc];
+    const int op = ins.op;
+    if (op == OP_JMP) {
+        _re_first_walk(re, ins.a, bol, seen, fb, flags);
+    } else if (op == OP_SPLIT) {
+        _re_first_walk(re, ins.a, bol, seen, fb, flags);
+        _re_first_walk(re, ins.b, bol, seen, fb, flags);
+    } else if (op == OP_BOL) {
+        _re_first_walk(re, pc + 1, ins.a == 0 ? 1 : bol, seen, fb, flags);
+    } else if (op == OP_SAVE || op == OP_EOL || op == OP_WORDB) {
+        _re_first_walk(re, pc + 1, bol, seen, fb, flags);
+    } else {
+        if (op == OP_MATCH) {
+            flags[0] = 1;
+        } else {
+            for (ch in 0..128) {
+                if (((re._amask[2 * pc + (ch >> 6)] >> (uint64)(ch & 63)) & (uint64)1) != (uint64)0) {
+                    fb[ch] = (uint8)1;
+                }
+            }
+            _re_high_bytes(re, ins, fb);
+        }
+        if (bol == 0) {
+            flags[1] = 1;
+        }
+    }
+}
+
+// Fill the ASCII masks of the instructions and the start prefilter.
+void _re_analyze(Regex* re) {
+    const int ninst = re.ninst;
+    re._amask = alloc<uint64>(2 * ninst);
+    for (pc in 0..ninst) {
+        const _ReInst ins = re.inst[pc];
+        if (ins.op != OP_CHAR && ins.op != OP_ANY && ins.op != OP_CLASS) {
+            continue;
+        }
+        for (ch in 0..128) {
+            bool step = false;
+            if (ins.op == OP_CHAR) {
+                step = _re_char_eq(ins.a, ins.b, ch) == 1;
+            } else if (ins.op == OP_ANY) {
+                step = ch != '\n' || ins.a == 1;
+            } else {
+                step = _re_in_class(re, ins.a, ch) == 1;
+            }
+            if (step) {
+                re._amask[2 * pc + (ch >> 6)] = re._amask[2 * pc + (ch >> 6)] | ((uint64)1 << (uint64)(ch & 63));
+            }
+        }
+    }
+    re._first = alloc<uint8>(256);
+    *int seen = alloc<int>(ninst);
+    defer free(seen);
+    int[2] flags;
+    flags[0] = 0;
+    flags[1] = 0;
+    _re_first_walk(re, 0, 0, seen, re._first, &flags[0]);
+    int count = 0;
+    int last = -1;
+    for (b in 0..256) {
+        if (re._first[b] != (uint8)0) {
+            count++;
+            last = b;
+        }
+    }
+    re._bolonly = flags[1] == 0 ? 1 : 0;
+    re._pf = flags[0] == 0 && count < 256 ? 1 : 0;
+    re._pfbyte = count == 1 && last < 0x80 ? last : -1;
+}
+
+// The first offset from sp on (sp itself included) where a match can start,
+// by the prefilter (_pf is 1); len when there is none. Only offsets the search
+// would step to are returned: an ASCII byte always starts a code point, and
+// other bytes are passed a whole code point at a time.
+int _re_skip(Regex* re, string text, int len, int sp) {
+    if (re._pfbyte >= 0) {
+        *uint8 base = (*uint8)text;
+        *void p = memchr((*void)(base + sp), re._pfbyte, (size_t)(len - sp));
+        if (p == null) {
+            return len;
+        }
+        return (int)((*uint8)p - base);
+    }
+    *uint8 fb = re._first;
+    int[1] w;
+    while (sp < len) {
+        const int b = (int)((uint8)text[sp]);
+        if (fb[b] != (uint8)0) {
+            return sp;
+        }
+        if (b < 0x80) {
+            sp++;
+        } else {
+            _re_decode(text, len, sp, &w[0]);
+            sp += w[0];
+        }
+    }
+    return len;
+}
+
 // Search the `len` bytes of `text` for the leftmost match of `re` that starts
 // at byte offset `start` or later. The bytes before `start` are left context:
 // `^` matches at `start` only when it is 0 (or, with (?m), after a newline),
@@ -1697,6 +1888,9 @@ int Regex_search_at(Regex* re, string text, int64 len, int64 start, Match* m) {
     m.end = -1;
     m.cap = null;
     if (re.ok == 0 || start < 0 || start > len || len > 2147483646) {
+        return 0;
+    }
+    if (re._bolonly == 1 && start > 0) {
         return 0;
     }
 
@@ -1716,10 +1910,10 @@ int Regex_search_at(Regex* re, string text, int64 len, int64 start, Match* m) {
     *int workcaps = re._work;
     *int bestcaps = &re._work[vm.ncap];
 
-    // Generations count up across searches; a search uses at most len - start
-    // + 2 of them, and the stamps restart when the count could overflow.
+    // Generations count up across searches; a search uses at most two per
+    // step, and the stamps restart when the count could overflow.
     int glob = re._visited[ninst];
-    if ((int64)glob + (len - start) + 4 > (int64)2147483647) {
+    if ((int64)glob + 2 * (len - start) + 8 > (int64)2147483647) {
         for (i in 0..ninst) {
             re._visited[i] = -1;
         }
@@ -1734,8 +1928,28 @@ int Regex_search_at(Regex* re, string text, int64 len, int64 start, Match* m) {
 
     // One step per code point: every thread reads the one at sp, whose width
     // (1 for a byte that is not valid UTF-8, read as U+FFFD) moves sp.
+    *uint64 am = re._amask;
+    *uint8 fb = re._first;
+    const bool pf = re._pf == 1;
     int sp = (int)start;
     while (sp <= vm.len) {
+        if (!matched && (cur == 0 ? vm.nA : vm.nB) == 0) {
+            // No thread is alive: a match can only start where the prefilter
+            // allows (and only at offset 0 when every match starts there).
+            if (re._bolonly == 1 && sp > 0) {
+                break;
+            }
+            if (pf) {
+                const int nsp = _re_skip(re, text, vm.len, sp);
+                if (nsp >= vm.len) {
+                    break;
+                }
+                if (nsp != sp) {
+                    sp = nsp;
+                    curgen = ++glob;
+                }
+            }
+        }
         int ch = -1;
         w[0] = 1;
         if (sp < vm.len) {
@@ -1744,8 +1958,9 @@ int Regex_search_at(Regex* re, string text, int64 len, int64 start, Match* m) {
                 ch = 0xFFFD;
             }
         }
-        // Until a match is found, start a new thread at every position.
-        if (!matched) {
+        // Until a match is found, start a new thread at every position where a
+        // match can start (a thread started elsewhere would die at once).
+        if (!matched && (!pf || (sp < vm.len && fb[(int)((uint8)text[sp])] != (uint8)0)) && (re._bolonly == 0 || sp == 0)) {
             for (k in 0..vm.ncap) {
                 workcaps[k] = -1;
             }
@@ -1779,7 +1994,10 @@ int Regex_search_at(Regex* re, string text, int64 len, int64 start, Match* m) {
                 continue;
             }
             bool step = false;
-            if (op == OP_CHAR) {
+            if (ch < 128) {
+                step = ((am[2 * tpc + (ch >> 6)] >> (uint64)(ch & 63)) & (uint64)1) != (uint64)0;
+            }
+            else if (op == OP_CHAR) {
                 step = _re_char_eq(ins.a, ins.b, ch) == 1;
             }
             else if (op == OP_ANY) {
