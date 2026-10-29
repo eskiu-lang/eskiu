@@ -21,6 +21,8 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   same text for every run test; `tests/selfhost/eir_parity.sh` gates it in CI.
 - The EIR backends pass structs and unions by value to and from C functions and hand C a
   function taking or returning one (or a `va_list`) through a thunk with the C signature.
+- `String_append_bytes(s, p, n)` (`s.append_bytes(p, n)`) appends `n` bytes from a
+  pointer, NULs included; it was only available as an internal function.
 
 ### Fixed
 - `-O2` and `-O3` now run LLVM's loop and SLP vectorizers, as clang does; the pipeline had
@@ -30,6 +32,13 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   merge and inline it (`sqrt` becomes an instruction): `fabs`/`floor`/`fmin`/... on every
   target, the functions that may set `errno` only on Darwin, where clang defaults to
   `-fno-math-errno` and libm never sets it. Not under `--freestanding`.
+- `<json>`: `JsonValue_push` walked the whole array on each call, so building an array of
+  n elements took O(n^2) time (80000 elements: 4.3 s, now under 0.1 s). `JsonValue_len` and a
+  loop over `JsonValue_at(v, i)` are linear too. Number output is unchanged and costs one
+  `vsnprintf` instead of two plus an allocation (an integer below 10^15 none).
+- `<map>`: `Map<V>` keeps each key's hash, so a lookup compares hashes before strings and
+  a removal or a growth no longer rehashes the keys it moves; lookups and removals are up
+  to twice as fast. The iteration order is unchanged.
 - EIR: a cast between `float` and `double`, or between a pointer and an integer, now emits
   its conversion; a closure call converts its arguments to the parameter types; a top-level
   function used as a closure goes through a `__fnptr_` thunk; an extern's function
