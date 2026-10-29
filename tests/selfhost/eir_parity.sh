@@ -9,6 +9,7 @@
 # rewrites the list). With files given, each is compared and its first difference shown.
 
 set -u
+export LC_ALL=C          # one sort order (and comm's) on every host
 cd "$(dirname "$0")/../.." || exit 2
 
 BIN="${ESKIUC:-}"
