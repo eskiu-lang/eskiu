@@ -362,7 +362,13 @@ void CodeGen::optimizeModule() {
         for (llvm::Function& F : *module)
             if (!F.isDeclaration()) F.addFnAttr("no-builtins");
     }
-    llvm::PassBuilder PB(tm.get());
+    // PipelineTuningOptions leaves both vectorizers off; clang enables them from
+    // -O2 (and -Os/-Oz), so do the same.
+    llvm::PipelineTuningOptions pto;
+    pto.LoopVectorization = optLevel >= 2;
+    pto.SLPVectorization = optLevel >= 2;
+    pto.LoopInterleaving = true;
+    llvm::PassBuilder PB(tm.get(), pto);
     PB.registerModuleAnalyses(MAM);
     PB.registerCGSCCAnalyses(CGAM);
     PB.registerFunctionAnalyses(FAM);

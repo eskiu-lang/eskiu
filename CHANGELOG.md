@@ -23,6 +23,8 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   function taking or returning one (or a `va_list`) through a thunk with the C signature.
 
 ### Fixed
+- `-O2` and `-O3` now run LLVM's loop and SLP vectorizers, as clang does; the pipeline had
+  them off. CLBG n-body runs in about half the time.
 - EIR: a cast between `float` and `double`, or between a pointer and an integer, now emits
   its conversion; a closure call converts its arguments to the parameter types; a top-level
   function used as a closure goes through a `__fnptr_` thunk; an extern's function
