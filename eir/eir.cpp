@@ -503,7 +503,11 @@ void Module::dump(std::ostream& os) const {
         os << ";; Globals\n";
         for (const auto& g : globals) {
             os << "global @" << g.name << " : " << g.type->str();
-            if (g.init.kind != OperandKind::Variable) {
+            if (!g.elements.empty()) {
+                os << " = [";
+                for (size_t i = 0; i < g.elements.size(); ++i) os << (i ? ", " : "") << g.elements[i].str();
+                os << "]";
+            } else if (g.init.kind != OperandKind::Variable) {
                 os << " = " << g.init.str();
             }
             os << "\n";

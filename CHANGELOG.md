@@ -26,6 +26,9 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   function used as a closure goes through a `__fnptr_` thunk; an extern's function
   parameter receives a C function pointer; `continue` inside a `switch` no longer crashes
   the compiler; a repeated prototype no longer defines the function twice.
+- `--test-eir` output is deterministic: records are laid out in declaration order and as
+  the program first names them (no longer every generic instance the checker saw, in hash
+  order), and a vtable global prints its functions instead of an uninitialized operand.
 - EVM: integer `/` and `%` by zero stop the program instead of yielding 0, and
   `ptrtoint`, `inttoptr`, `fptrunc` and `fpext` are executed.
 - EIR integers follow C everywhere: the builder makes the promotions and usual arithmetic

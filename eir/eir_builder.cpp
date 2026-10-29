@@ -138,6 +138,7 @@ TypePtr EIRBuilder::toEirType(const std::string& typeStr) {
                 return Type::getInterface(sname);
             }
             if (module) {
+                ensureStructLayout(sname);   // every struct the module names has a layout
                 auto it = module->structLayouts.find(sname);
                 if (it != module->structLayouts.end()) {
                     std::vector<TypePtr> flds;
@@ -741,7 +742,12 @@ void EIRBuilder::ensureLayoutOf(const TypePtr& t) {
 }
 
 void EIRBuilder::ensureStructLayout(const std::string& name) {
-    if (name.empty() || module->structLayouts.count(name)) return;
+    if (name.empty() || module->structLayouts.count(name) || layoutsInProgress.count(name)) return;
+    layoutsInProgress.insert(name);
+    struct Done {
+        std::set<std::string>& s; std::string n;
+        ~Done() { s.erase(n); }
+    } done{layoutsInProgress, name};
     auto tit = templateInstanceArgs.find(name);
     if (tit != templateInstanceArgs.end()) {
         auto geIt = genericEnums.find(tit->second.first);
@@ -999,17 +1005,17 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
         }
     }
 
-    for (const auto& kv : adtEnums) {
-        if (!module->structLayouts.count(kv.first)) layoutAdt(kv.first, kv.second, {});
+    for (auto& decl : program->declarations) {
+        auto e = dynamic_cast<EnumDecl*>(decl.get());
+        if (e && adtEnums.count(e->name) && !module->structLayouts.count(e->name))
+            layoutAdt(e->name, adtEnums[e->name], {});
     }
-    for (const auto& kv : plainStructs) {
-        ensureStructLayout(kv.first);
+    for (auto& decl : program->declarations) {
+        if (auto s = dynamic_cast<StructDecl*>(decl.get()); s && s->typeParams.empty())
+            ensureStructLayout(s->name);
     }
-    for (const auto& kv : unionDecls) {
-        ensureStructLayout(kv.first);
-    }
-    for (const auto& kv : templateInstanceArgs) {
-        ensureStructLayout(kv.first);
+    for (auto& decl : program->declarations) {
+        if (auto u = dynamic_cast<UnionDecl*>(decl.get())) ensureStructLayout(u->name);
     }
 
     // Phase 2: Function prototypes

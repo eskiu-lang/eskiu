@@ -217,6 +217,7 @@ private:
                       const std::vector<StructDecl::Pad>& pads, bool isUnion, int packAlign,
                       const std::map<std::string, std::string>& subs);
     void ensureStructLayout(const std::string& name);
+    std::set<std::string> layoutsInProgress;   // a struct reaching itself through a pointer
     void ensureLayoutOf(const TypePtr& t);
     ExprPtr defaultExprFor(const std::string& t);
     std::shared_ptr<StructInitExpr> withDefaults(StructInitExpr* init);

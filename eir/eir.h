@@ -96,7 +96,7 @@ enum class OperandKind {
 };
 
 struct Operand {
-    OperandKind kind;
+    OperandKind kind = OperandKind::ConstantNull;
     TypePtr type;
     std::string text;
     int64_t intVal = 0;
