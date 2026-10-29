@@ -355,3 +355,42 @@ merge:
 5. **Self-hosted parity**: `selfhost/eir.esk` printing the same `--test-eir` text as the C++
    builder. All 563 run tests are byte-identical, gated in CI by
    `tests/selfhost/eir_parity.sh`. Done.
+
+## 8. Next Steps
+
+Nothing here is scheduled; this is where to pick the work up again.
+
+1. **C backend gate on Linux.** `tests/eir/check.sh` runs only in the macOS job of
+   `ci.yml` ("EIR backends"), while Linux is where `--backend=eir` takes the C99 path by
+   default. The list `tests/eir/pass_c.txt` was made on macOS. Steps: run
+   `UPDATE=1 tests/eir/check.sh c` in the Linux `test` job once (a throwaway CI step that
+   prints the list, since there is no local Docker), look at each test that passes on
+   macOS but not on Linux (libc output differences, `long` and `size_t` widths, the C
+   runtime in `eir_runtime.cpp`), fix what is a backend bug, and keep one list per host
+   (`pass_c_linux.txt`) if some differences are legitimate. Then add the step to the Linux
+   job.
+2. **Back ends in the self-hosted compiler.** `selfhost/eir*.esk` builds the same EIR as the
+   C++ builder but stops at the text form. Porting the C99 emitter (`eir/eir_c.cpp`) first
+   would let `eskiuc-esk` produce a binary through the system C compiler without LLVM,
+   which is one of the two ways to ship the self-hosted compiler (roadmap, 1.0). Same
+   method as the builder: a new `--emit-c` mode in `esk_main.esk`, byte parity over the run
+   tests against the C++ `--emit-c`, a ratchet list, a CI step. The ARM64 emitter
+   (`eir_asm_arm64.cpp`) and the object driver (`eir_obj.cpp`) come after.
+3. **Release.** The EIR is under `[Unreleased]` in the CHANGELOG; it can ship as an
+   experimental `--backend=eir` whenever the next version goes out.
+
+Lessons from the builder port, for the next one:
+
+- Port the C++ structure as it is, file by file, and compare the text output; a diff in
+  the first lines usually comes from state the C++ fills earlier (layouts, instance
+  arguments, sema stamps), not from the line that differs.
+- Iteration order matters for byte parity: the C++ walks `std::map`s (sorted by key) and
+  evaluates constructor arguments left to right under clang; the self-host must follow the
+  same order, and the C++ must not depend on its host compiler (make the order explicit
+  with locals, as in `async_transform.cpp`'s `try` and `if` desugaring).
+- The self-host gets its types from a second sema run after `async_lower` with
+  `Sema.stamp_all`; a field the builder needs from sema is stamped there (`aty`, `ainst`,
+  `op_fn`, lambda `caps`/`cap_tys`/`lam_ret`, ...).
+- Scripts that compare sorted lists set `LC_ALL=C`: macOS and Linux `sort` disagree.
+- Headers include what they use; macOS libc++ pulls in more transitively than Linux
+  libstdc++ and mingw, so a missing `#include` only fails in CI.

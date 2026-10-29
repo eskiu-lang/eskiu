@@ -42,6 +42,10 @@ first-class in the language without giving up general systems use.
   three-stage bootstrap fixpoint, behaves like the C++ compiler over the whole test corpus,
   and is built and checked by CI as `eskiuc-esk`. The C++ `eskiuc` remains the released
   binary because it bundles LLVM. See [`self-hosting.md`](self-hosting.md).
+- **EIR.** An IR of its own and native back ends that skip LLVM's code generator
+  (`--backend=eir`: ARM64 assembly, C99), passing every run test, with the self-hosted
+  compiler building the same EIR byte for byte. What is left:
+  [`eir-spec.md` §8](eir-spec.md#8-next-steps).
 - **Quality.** Every fix ships with a regression test. CI runs the test suite, the parity
   checks between the two compilers, an `-O0` against `-O2` differential, and fuzzers (a C
   oracle checked against clang, a negative-program corpus, and the stdlib parsers under
@@ -74,7 +78,8 @@ first-class in the language without giving up general systems use.
   commit.
 - **Shipping the self-hosted compiler.** It already matches the C++ one. Making it the
   released binary needs either object emission without clang or accepting clang as a
-  runtime requirement.
+  runtime requirement; porting the EIR back ends to it is the first
+  ([`eir-spec.md` §8](eir-spec.md#8-next-steps)).
 
 ## Later, not scheduled
 
