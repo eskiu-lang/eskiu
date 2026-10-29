@@ -100,7 +100,9 @@ void eb_build(EB* b, Program* prog) {
                 while (k < List_len<Param>(&d.params)) {
                     Param pm = List_get<Param>(&d.params, k);
                     *ExprNode ve = null;
-                    if (k < List_len<*ExprNode>(&d.enum_vals)) {
+                    if (k < List_len<*ExprNode>(&d.enum_src)) {
+                        ve = List_get<*ExprNode>(&d.enum_src, k);
+                    } else if (k < List_len<*ExprNode>(&d.enum_vals)) {
                         ve = List_get<*ExprNode>(&d.enum_vals, k);
                     }
                     if (ve != null) {

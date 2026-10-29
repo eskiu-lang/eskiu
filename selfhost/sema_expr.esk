@@ -78,6 +78,15 @@ string sema_eir_type(Sema* s, *ExprNode e) {
             }
         }
     }
+    if (e.kind == EK_TERNARY) {           // bound for an interface: that interface
+        int ti = 0;
+        while (ti < List_len<*ExprNode>(&s.tern_ifn)) {
+            if (List_get<*ExprNode>(&s.tern_ifn, ti) == e) {
+                return List_get<string>(&s.tern_ift, ti);
+            }
+            ti = ti + 1;
+        }
+    }
     if (e.kind == EK_UNARY && sema_streq(e.sval, "*") == 1 && sema_streq(sema_canon(s, sema_infer_type(s, e.a)), "string") == 1) {
         return "char";
     }

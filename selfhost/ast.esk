@@ -943,6 +943,7 @@ struct ExprNode {
     string dbg_text;       // EK_CALL `dbg(e)`: the source text of `e`, whitespace folded
     int dbg_builtin;       // EK_CALL: sema resolved `dbg(e)` to the builtin (no user `dbg`)
     int script_init;       // EK_BINARY `=`: a script global's initializer in the implicit main (checked at the declaration)
+    string lam_ret;        // EK_LAMBDA: the return type of the fn type it initializes (else null)
     List<string> caps;     // EK_LAMBDA under --test-eir: its captures by name (sema_stamp_captures) ...
     List<string> cap_tys;  // ... and their types
 }
@@ -992,6 +993,7 @@ struct DeclNode {
     List<string> pad_tys;          // struct/union unnamed bitfields `T : N;` (layout only, not members):
     List<int> pad_bits;            //   type, width (0 = `: 0`) and the index of the named field it
     List<int> pad_at;              //   precedes (mirrors StructDecl::pads)
+    List<*ExprNode> enum_src;      // enum: the value expressions as written (the EIR builder folds them)
     List<*ExprNode> enum_vals;     // enum: member value expressions (parallel to params; null = a
     // literal or the previous + 1), folded by sema into params' ty
     int is_async;                  // function declared `async` (1) or not (0)

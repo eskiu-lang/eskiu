@@ -865,7 +865,11 @@ EOp eb_eval_for(EB* b, *ExprNode e, *ETy target) {
             while (et_len(st) > 0 && st[et_len(st) - 1] == '*') {
                 st = et_sub(st, 0, et_len(st) - 1);
             }
-            sname = ty_nominal(ty_parse(st));
+            if (et_findc(st, '<') >= 0) {
+                sname = eb_mangle_note(b, st);
+            } else {
+                sname = ty_nominal(ty_parse(st));
+            }
         }
         if (et_len(sname) == 0 && src != null && src.elem != null) {
             sname = et_nominal(src.elem);
@@ -946,6 +950,9 @@ void eb_dbg_format(EB* b, string t0, EOp addr, String* fmt, List<EOp>* args, int
     string key = t;
     if (et_pfx(t, "struct:") == 1) {
         key = et_from(t, 7);
+    }
+    if (et_findc(key, '<') >= 0 && et_findc(key, '[') < 0 && et_findc(key, '*') < 0) {
+        key = eb_mangle_note(b, key);   // the checker's spelling of an instance is its mangled name
     }
     *ETy ty = eb_type(b, t);
     *TyT pt = ty_parse(t);

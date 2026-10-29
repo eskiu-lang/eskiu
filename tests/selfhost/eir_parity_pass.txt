@@ -105,6 +105,7 @@ control_flow
 crlf_source
 csv
 datetime
+dbg
 dead_code_return
 decl_repeats_ok
 defer
@@ -183,6 +184,8 @@ generic_dot_call_rvalue
 generic_enum_alias_arg
 generic_fn_type_arg
 generic_iface_arg
+generic_iface_free_method
+generic_iface_methods
 generic_iface_null_return
 generic_infer_common
 generic_infer_multi
@@ -237,8 +240,10 @@ http_serve_slow_reader
 http_strict
 iface_arg_coerce
 iface_const_self
+iface_null_value
 iface_payload_lambda
 iface_ptr_array
+iface_ternary_box
 import_cast
 import_dedup
 index_result_member
@@ -308,6 +313,8 @@ octal_literal
 operators
 os_macros
 pack_n
+pack_nested_c
+pack_union_c
 param_defaults
 param_defaults_struct
 param_reassign
@@ -364,6 +371,7 @@ rvalue_member
 script_template_call
 script_toplevel
 self_append
+sema_accepts
 shadow_init
 shebang
 shift_count_limits
@@ -416,6 +424,7 @@ templates_result
 term
 ternary
 ternary_fn_value
+ternary_iface_arm
 ternary_narrow_arms
 ternary_null
 ternary_wide

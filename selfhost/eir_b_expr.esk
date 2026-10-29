@@ -1732,7 +1732,11 @@ void eb_lambda(EB* b, *ExprNode node) {
         env = eo_var(es, et_ptr(null));
     }
     string cs = et_cat(eb_new_var(b), ".closure");
-    *ETy lret = eb_type(b, sema_lambda_ret(node.sval));
+    string lrs = sema_lambda_ret(node.sval);
+    if (et_len(node.lam_ret) > 0) {
+        lrs = node.lam_ret;
+    }
+    *ETy lret = eb_type(b, lrs);
     eb_i2(b, EO_MAKECLOSURE, cs, et_closure(lret), eo_global(lname, et_ptr(null)), env);
     EOp caller = eo_var(cs, et_closure(lret));
 

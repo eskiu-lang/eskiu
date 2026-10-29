@@ -537,6 +537,9 @@ void sema_stmt_k(Sema* s, *StmtNode st) {
         if (st.expr != null && st.expr.kind == EK_LAMBDA && sema_is_fn_type(vty) == 1) {
             s.lam_ret = sema_fn_ret(vty);
         }
+        if (st.expr != null && st.expr.kind == EK_LAMBDA && sema_is_fn_type(st.type) == 1) {
+            st.expr.lam_ret = sema_fn_ret(st.type);   // the C++ sets the lambda's return type to the declared one
+        }
         int lam_bound = 0;                 // a lambda bound to a local that is only called does not escape
         if (st.expr != null && st.expr.kind == EK_LAMBDA && st.is_static == 0 && s.in_inst == 0) {
             lam_bound = 1;

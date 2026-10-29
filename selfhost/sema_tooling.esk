@@ -1479,6 +1479,7 @@ int sema_check(Sema* s, *Program prog) {
             // counts), checked before the global itself is declared.
             if (d.init.kind == EK_LAMBDA && sema_is_fn_type(d.ret_type) == 1) {
                 s.lam_ret = sema_fn_ret(d.ret_type);
+                d.init.lam_ret = sema_fn_ret(d.ret_type);
             }
             sema_expr(s, d.init);
             s.lam_ret = "";

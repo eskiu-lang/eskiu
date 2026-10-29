@@ -880,6 +880,16 @@ void sema_fold_enum(Sema* s, *DeclNode d, int report) {
     s.line = sline;
     s.col = scol;
     if (report == 1 && s.had_error == 0) {
+        if (List_len<*ExprNode>(&d.enum_src) == 0) {   // kept for the EIR builder, which folds them again
+            d.enum_src = d.enum_vals;
+            List<*ExprNode> fresh;
+            d.enum_vals = fresh;
+            i = 0;
+            while (i < List_len<*ExprNode>(&d.enum_src)) {
+                List_push<*ExprNode>(&d.enum_vals, List_get<*ExprNode>(&d.enum_src, i));
+                i = i + 1;
+            }
+        }
         i = 0;
         while (i < List_len<*ExprNode>(&d.enum_vals)) {
             List_set<*ExprNode>(&d.enum_vals, i, null);
