@@ -915,6 +915,7 @@ struct AlCtx {
     List<string> aw_fields;        // named when the locals are scanned (as the C++ awIdx)
     List<string> aw_types;         // ... and its value type
     int tmpn;                      // desugar temp counter → __awt0, …
+    int forinseq;                  // for-in index names → __forin_i_0, … (the C++ forinSeq)
     int inittmp;                   // a hoisted local's initializer temporaries → __zero_t0, __init_t1, … (the C++ initTmp)
     *DeclNode curfn;                  // the async function being lowered (for iterable type lookup)
     List<string>* used;            // every name in the function: synthesized names avoid them
@@ -3223,8 +3224,8 @@ void al_desugar_items(*AlCtx c, List<*StmtNode>* inp, List<*StmtNode>* out) {
         if (ty[0] == 0) {
             ty = ity;
         }
-        string fi = fresh_name(str_concat("__fi", int_to_str(c.tmpn)), c.used);
-        c.tmpn = c.tmpn + 1;
+        string fi = fresh_name(str_concat("__forin_i_", int_to_str(c.forinseq)), c.used);
+        c.forinseq = c.forinseq + 1;
         List<*StmtNode> initb;
         List_init<*StmtNode>(&initb, 2);
         if (itname[0] == 0 && s.resolved_iter != null && s.resolved_iter[0] != 0) {
