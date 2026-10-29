@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cmath>
-#include <dlfcn.h>
+#include "llvm/Support/DynamicLibrary.h"
 #include <thread>
 #include <mutex>
 #ifndef _WIN32
@@ -14,6 +14,13 @@
 #endif
 
 namespace eir {
+
+// A symbol of the running process (the C library included), or null, on every host.
+static void* processSymbol(const std::string& name) {
+    static bool loaded = !llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
+    (void)loaded;
+    return llvm::sys::DynamicLibrary::SearchForAddressOfSymbol(name);
+}
 
 VM::VM() = default;
 
@@ -136,7 +143,7 @@ VMValue VM::getOperand(const Operand& op, StackFrame& frame) {
                     return VMValue(static_cast<void*>(fn));
                 }
             }
-            if (void* sym = dlsym(RTLD_DEFAULT, op.text.c_str())) {
+            if (void* sym = processSymbol(op.text)) {
                 return VMValue(sym);
             }
             return VMValue(static_cast<void*>(nullptr));
@@ -832,8 +839,8 @@ VMValue VM::callExtern(const std::string& name, const std::vector<VMValue>& args
         return VMValue(0);
     }
 
-    // Fallback: dynamic lookup via dlsym
-    void* sym = dlsym(RTLD_DEFAULT, name.c_str());
+    // Fallback: a symbol of the running process
+    void* sym = processSymbol(name);
     if (sym) {
         void* res = nullptr;
         switch (args.size()) {
