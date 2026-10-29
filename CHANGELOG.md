@@ -25,6 +25,11 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 ### Fixed
 - `-O2` and `-O3` now run LLVM's loop and SLP vectorizers, as clang does; the pipeline had
   them off. CLBG n-body runs in about half the time.
+- A C math `extern` with the C signature (`double sqrt(double)`, `float powf(float,
+  float)`, ...) is declared as reading and writing no memory, so the optimizer can hoist,
+  merge and inline it (`sqrt` becomes an instruction): `fabs`/`floor`/`fmin`/... on every
+  target, the functions that may set `errno` only on Darwin, where clang defaults to
+  `-fno-math-errno` and libm never sets it. Not under `--freestanding`.
 - EIR: a cast between `float` and `double`, or between a pointer and an integer, now emits
   its conversion; a closure call converts its arguments to the parameter types; a top-level
   function used as a closure goes through a `__fnptr_` thunk; an extern's function
