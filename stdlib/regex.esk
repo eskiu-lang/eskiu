@@ -134,6 +134,11 @@ struct _ReNode {
     _ReNode* right;    // right operand (concat, alt)
 }
 
+struct _ReThread {
+    int pc;
+    *int caps;
+}
+
 struct Regex {
     *_ReInst inst;
     int ninst;
@@ -146,6 +151,16 @@ struct Regex {
     int ngroup;      // number of capturing groups (group 0 is the whole match)
     int ok;
     string err;         // null when ok
+    // Search scratch, allocated by regex_compile and reused by every search (so
+    // a Regex, or a copy of it, must not be searched from two threads at once). _visited holds
+    // ninst + 1 ints: the generation stamp of each pc and, at [ninst], the last
+    // generation used, kept there so that copies of a Regex share it.
+    *int _visited;
+    *_ReThread _la;
+    *_ReThread _lb;
+    *int _capsA;
+    *int _capsB;
+    *int _work;         // 2 * ncap ints: the working and the best captures
 }
 
 struct _ReComp {
@@ -168,11 +183,6 @@ struct Match {
     int start;     // group 0 start (== cap[0])
     int end;       // group 0 end   (== cap[1])
     *int cap;       // 2*(ngroup+1) ints: [start,end] per group, -1 if unset
-}
-
-struct _ReThread {
-    int pc;
-    *int caps;
 }
 
 struct _ReVm {
@@ -1446,6 +1456,25 @@ void _re_compile_node(_ReComp* c, _ReNode* n) {
     }
 }
 
+// Allocate the search scratch of a compiled program. It is allocated here, not
+// by the first search, so that copies of the Regex value share it. Each thread
+// list holds at most one thread per instruction (visited dedups a pc per
+// generation), so ninst + 2 capture slots per list always suffice.
+void _re_alloc_scratch(Regex* re) {
+    const int ninst = re.ninst;
+    const int ncap = 2 * (re.ngroup + 1);
+    const int64 slots = (int64)(ninst + 2) * ncap;
+    re._visited = alloc<int>(ninst + 1);
+    for (i in 0..ninst) {
+        re._visited[i] = -1;
+    }
+    re._la = alloc<_ReThread>(ninst + 2);
+    re._lb = alloc<_ReThread>(ninst + 2);
+    re._capsA = alloc<int>(slots);
+    re._capsB = alloc<int>(slots);
+    re._work = alloc<int>(2 * ncap);
+}
+
 // Compile a pattern. Check the returned Regex.ok before matching; on failure
 // Regex.err holds the reason. Free with Regex_free either way.
 Regex regex_compile(string pattern) {
@@ -1495,6 +1524,7 @@ Regex regex_compile(string pattern) {
         re.err = c.err;
         return re;
     }
+    _re_alloc_scratch(&re);
     re.ok = 1;
     return re;
 }
@@ -1504,10 +1534,22 @@ void Regex_free(Regex* re) {
     free(re.classes);
     free(re.ranges);
     free(re.props);
+    free(re._visited);
+    free(re._la);
+    free(re._lb);
+    free(re._capsA);
+    free(re._capsB);
+    free(re._work);
     re.inst = null;
     re.classes = null;
     re.ranges = null;
     re.props = null;
+    re._visited = null;
+    re._la = null;
+    re._lb = null;
+    re._capsA = null;
+    re._capsB = null;
+    re._work = null;
 }
 
 // =========================== matching (Pike VM) ============================
@@ -1664,38 +1706,29 @@ int Regex_search_at(Regex* re, string text, int64 len, int64 start, Match* m) {
     vm.len = (int)len;
     vm.ncap = 2 * (re.ngroup + 1);
     const int ninst = re.ninst;
-    vm.visited = alloc<int>(ninst);
-    defer free(vm.visited);
-    for (i in 0..ninst) {
-        vm.visited[i] = -1;
-    }
-    vm.la = alloc<_ReThread>(ninst + 2);
-    vm.lb = alloc<_ReThread>(ninst + 2);
-    defer free(vm.la);
-    defer free(vm.lb);
+    vm.visited = re._visited;
+    vm.la = re._la;
+    vm.lb = re._lb;
+    vm.capsA = re._capsA;
+    vm.capsB = re._capsB;
     vm.nA = 0;
     vm.nB = 0;
-    // Each list holds at most one thread per instruction (visited dedups a pc per
-    // generation), so ninst + 2 capture slots per list always suffice.
-    const int64 slots = (int64)(ninst + 2) * vm.ncap;
-    vm.capsA = alloc<int>(slots);
-    vm.capsB = alloc<int>(slots);
-    defer free(vm.capsA);
-    defer free(vm.capsB);
+    *int workcaps = re._work;
+    *int bestcaps = &re._work[vm.ncap];
 
-    *int emptycaps = alloc<int>(vm.ncap);
-    *int workcaps = alloc<int>(vm.ncap);
-    *int bestcaps = alloc<int>(vm.ncap);
-    defer free(emptycaps);
-    defer free(workcaps);
-    defer free(bestcaps);
-    for (i in 0..vm.ncap) {
-        emptycaps[i] = -1;
+    // Generations count up across searches; a search uses at most len - start
+    // + 2 of them, and the stamps restart when the count could overflow.
+    int glob = re._visited[ninst];
+    if ((int64)glob + (len - start) + 4 > (int64)2147483647) {
+        for (i in 0..ninst) {
+            re._visited[i] = -1;
+        }
+        glob = 0;
     }
+    glob++;
 
     bool matched = false;
     int cur = 0;
-    int glob = 1;
     int curgen = glob;
     int[1] w;
 
@@ -1714,7 +1747,7 @@ int Regex_search_at(Regex* re, string text, int64 len, int64 start, Match* m) {
         // Until a match is found, start a new thread at every position.
         if (!matched) {
             for (k in 0..vm.ncap) {
-                workcaps[k] = emptycaps[k];
+                workcaps[k] = -1;
             }
             _re_addthread(&vm, cur, curgen, 0, workcaps, sp);
         }
@@ -1763,6 +1796,7 @@ int Regex_search_at(Regex* re, string text, int64 len, int64 start, Match* m) {
         curgen = nextgen;
         sp += w[0];
     }
+    re._visited[ninst] = glob;
 
     if (matched) {
         m.ok = 1;
