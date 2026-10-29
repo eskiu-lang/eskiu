@@ -145,6 +145,7 @@ const_sizeof_struct
 control_flow
 crlf_source
 csv
+csv_reader
 datetime
 dbg
 dead_code_return
@@ -347,6 +348,7 @@ json_builder_escape
 json_depth
 json_keyword_methods
 json_number_format
+json_parse_numbers
 json_push_linear
 json_strict
 labeled_break
