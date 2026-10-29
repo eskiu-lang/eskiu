@@ -1633,10 +1633,22 @@ int esk_main(int argc, string* argv) {
     async_lower(prog);                 // lower async fns → frame + resume + ctor (after sema)
 
     if (cg_streq(mode, "--test-eir") == 1) {
-        let eb: EirBuilder;
-        eir_init(&eb);
-        eir_program(&eb, prog);
-        printf("%s%s", (string)String_cstr(&eb.globals), (string)String_cstr(&eb.out));
+        // The checker again over the lowered program, stamping each expression's type,
+        // as the C++ driver's post-lowering check feeds its EIR builder.
+        let pt: Sema;
+        sema_init(&pt, infile);
+        pt.wnone = 1;
+        pt.stamp_all = 1;
+        sema_set_target(&pt, triple);
+        if (sema_check(&pt, prog) == 0) {
+            eprint("error: internal: the checker rejected the lowered program\n");
+            return 1;
+        }
+        let eb: EB;
+        eb_init(&eb, triple);
+        eb_build(&eb, prog);
+        string text = eb_module_text(&eb);
+        write(1, (*void)text, (int64)et_len(text));
         return 0;
     }
 

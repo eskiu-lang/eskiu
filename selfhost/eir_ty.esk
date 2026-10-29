@@ -1,0 +1,951 @@
+// Type spellings for the EIR builder: the structured type grammar of sema/type.cpp
+// (ty::Type parse/str/substitute, dealiasSpelling), template_utils.h (mangleTemplate,
+// splitTemplateType, substType) and ast/type_qual.h, so the builder reads a spelling
+// exactly as the C++ one does.
+
+import <list>;
+import <mem>;
+import <string>;
+import "ast.esk";
+import "codegen.esk";
+
+enum TyKind {
+    TYK_VOID, TYK_INT, TYK_FLOAT, TYK_BOOL, TYK_CHAR, TYK_STRING,
+    TYK_POINTER, TYK_ARRAY, TYK_SLICE, TYK_FN,
+    TYK_STRUCT, TYK_INTERFACE, TYK_TEMPLATE,
+    TYK_NAMED, TYK_PARAM,
+    TYK_VALIST, TYK_NULL, TYK_UNKNOWN, TYK_ERROR
+}
+
+struct TyT {
+    int kind;
+    string name;
+    string quals;
+    *TyT pointee;
+    int lead;
+    int bconst;
+    int nullable;
+    List<*TyT> args;
+    List<*TyT> params;
+    *TyT ret;
+    *TyT elem;
+    string dim;
+}
+
+// A string-keyed map ordered as std::map<std::string, std::string>.
+struct SMap {
+    List<string> k;
+    List<string> v;
+}
+
+int et_len(string s) {
+    if (s == null) {
+        return 0;
+    }
+    int n = 0;
+    while (s[n] != 0) {
+        n = n + 1;
+    }
+    return n;
+}
+
+string et_s(string s) {
+    if (s == null) {
+        return "";
+    }
+    return s;
+}
+
+int et_eq(string a, string b) {
+    return cg_streq(et_s(a), et_s(b));
+}
+
+string et_cat(string a, string b) {
+    return cg_cat(et_s(a), et_s(b));
+}
+
+string et_cat3(string a, string b, string c) {
+    return cg_cat(cg_cat(et_s(a), et_s(b)), et_s(c));
+}
+
+string et_sub(string s, int a, int b) {
+    return cg_sub_str(s, a, b);
+}
+
+string et_from(string s, int a) {
+    return cg_sub_str(s, a, et_len(s));
+}
+
+int et_pfx(string s, string p) {
+    return ast_has_prefix(et_s(s), p);
+}
+
+int et_sfx(string s, string x) {
+    int n = et_len(s);
+    int m = et_len(x);
+    if (m > n) {
+        return 0;
+    }
+    int i = 0;
+    while (i < m) {
+        if (s[n - m + i] != x[i]) {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+int et_find(string s, string x, int from) {
+    int n = et_len(s);
+    int m = et_len(x);
+    int i = from;
+    while (i + m <= n) {
+        int j = 0;
+        while (j < m && s[i + j] == x[j]) {
+            j = j + 1;
+        }
+        if (j == m) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+int et_findc(string s, char c) {
+    int i = 0;
+    while (s[i] != 0) {
+        if (s[i] == c) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+int et_cmp(string a, string b) {
+    string x = et_s(a);
+    string y = et_s(b);
+    int i = 0;
+    while (x[i] != 0 && x[i] == y[i]) {
+        i = i + 1;
+    }
+    return (int)(uint8)x[i] - (int)(uint8)y[i];
+}
+
+string et_trim(string s) {
+    int a = 0;
+    int b = et_len(s);
+    while (a < b && (s[a] == ' ' || s[a] == '\t')) {
+        a = a + 1;
+    }
+    while (b > a && (s[b - 1] == ' ' || s[b - 1] == '\t')) {
+        b = b - 1;
+    }
+    return et_sub(s, a, b);
+}
+
+string et_ltoa(int64 v) {
+    return cg_i64toa(v);
+}
+
+string et_itoa(int v) {
+    return cg_i64toa((int64)v);
+}
+
+int SMap_find(SMap* m, string key) {
+    int i = 0;
+    int n = List_len<string>(&m.k);
+    while (i < n) {
+        if (et_eq(List_get<string>(&m.k, i), key) == 1) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+int SMap_has(SMap* m, string key) {
+    if (SMap_find(m, key) >= 0) {
+        return 1;
+    }
+    return 0;
+}
+
+string SMap_get(SMap* m, string key) {
+    int i = SMap_find(m, key);
+    if (i < 0) {
+        return null;
+    }
+    return List_get<string>(&m.v, i);
+}
+
+void SMap_set(SMap* m, string key, string val) {
+    int i = SMap_find(m, key);
+    if (i >= 0) {
+        List_set<string>(&m.v, i, val);
+        return;
+    }
+    int n = List_len<string>(&m.k);
+    int at = n;
+    int j = 0;
+    while (j < n) {
+        if (et_cmp(key, List_get<string>(&m.k, j)) < 0) {
+            at = j;
+            break;
+        }
+        j = j + 1;
+    }
+    List_insert<string>(&m.k, at, key);
+    List_insert<string>(&m.v, at, val);
+}
+
+int SMap_len(SMap* m) {
+    return List_len<string>(&m.k);
+}
+
+void SMap_clear(SMap* m) {
+    List_clear<string>(&m.k);
+    List_clear<string>(&m.v);
+}
+
+SMap SMap_copy(SMap* m) {
+    SMap r;
+    int i = 0;
+    while (i < List_len<string>(&m.k)) {
+        List_push<string>(&r.k, List_get<string>(&m.k, i));
+        List_push<string>(&r.v, List_get<string>(&m.v, i));
+        i = i + 1;
+    }
+    return r;
+}
+
+int SMap_eq(SMap* a, SMap* b) {
+    int n = List_len<string>(&a.k);
+    if (n != List_len<string>(&b.k)) {
+        return 0;
+    }
+    int i = 0;
+    while (i < n) {
+        if (et_eq(List_get<string>(&a.k, i), List_get<string>(&b.k, i)) == 0
+            || et_eq(List_get<string>(&a.v, i), List_get<string>(&b.v, i)) == 0) {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+// --- tyq ---
+
+string tyq_strip(string t0) {
+    string t = et_s(t0);
+    int p = et_find(t, "*const", 0);
+    while (p >= 0) {
+        t = et_cat(et_sub(t, 0, p + 1), et_from(t, p + 6));
+        p = et_find(t, "*const", 0);
+    }
+    if (et_pfx(t, "const ") == 1) {
+        t = et_from(t, 6);
+    }
+    return t;
+}
+
+int tyq_is_ptr(string s) {
+    string t = tyq_strip(s);
+    int n = et_len(t);
+    if (n > 0 && (t[0] == '*' || t[n - 1] == '*')) {
+        return 1;
+    }
+    return 0;
+}
+
+string tyq_pointee(string t) {
+    int n = et_len(t);
+    if (n >= 6 && et_sfx(t, "*const") == 1) {
+        return et_sub(t, 0, n - 6);
+    }
+    if (n > 0 && t[n - 1] == '*') {
+        return et_sub(t, 0, n - 1);
+    }
+    if (n > 0 && t[0] == '*') {
+        return et_from(t, 1);
+    }
+    return t;
+}
+
+string tyq_bitfield_read_type(string t, int width) {
+    if (width <= 0) {
+        return t;
+    }
+    if ((et_eq(t, "uint") == 1 || et_eq(t, "uint32") == 1 || et_eq(t, "uint64") == 1) && width < 32) {
+        return "int";
+    }
+    if (et_eq(t, "int64") == 1 && width <= 32) {
+        return "int";
+    }
+    return t;
+}
+
+// --- ty::Type ---
+
+*TyT ty_new(int kind) {
+    *TyT r = alloc<TyT>(1);
+    r.kind = kind;
+    r.name = "";
+    r.quals = "";
+    r.dim = "";
+    return r;
+}
+
+*TyT ty_clone(*TyT t) {
+    *TyT r = alloc<TyT>(1);
+    *r = *t;
+    return r;
+}
+
+int ty_list_has(List<string>* l, string s) {
+    if (l == null) {
+        return 0;
+    }
+    int i = 0;
+    while (i < List_len<string>(l)) {
+        if (et_eq(List_get<string>(l, i), s) == 1) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+void ty_split_top(string s, char sep, List<string>* out) {
+    int da = 0;
+    int dp = 0;
+    int db = 0;
+    int start = 0;
+    int i = 0;
+    while (s[i] != 0) {
+        char c = s[i];
+        if (c == '<') {
+            da = da + 1;
+        } else if (c == '>') {
+            if (da > 0) {
+                da = da - 1;
+            }
+        } else if (c == '(') {
+            dp = dp + 1;
+        } else if (c == ')') {
+            if (dp > 0) {
+                dp = dp - 1;
+            }
+        } else if (c == '[') {
+            db = db + 1;
+        } else if (c == ']') {
+            if (db > 0) {
+                db = db - 1;
+            }
+        } else if (c == sep && da == 0 && dp == 0 && db == 0) {
+            List_push<string>(out, et_sub(s, start, i));
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    List_push<string>(out, et_from(s, start));
+}
+
+int ty_top_angle(string s) {
+    int dp = 0;
+    int db = 0;
+    int i = 0;
+    while (s[i] != 0) {
+        char c = s[i];
+        if (c == '(') {
+            dp = dp + 1;
+        } else if (c == ')') {
+            if (dp > 0) {
+                dp = dp - 1;
+            }
+        } else if (c == '[') {
+            db = db + 1;
+        } else if (c == ']') {
+            if (db > 0) {
+                db = db - 1;
+            }
+        } else if (c == '<' && dp == 0 && db == 0) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+int ty_first_array_bracket(string s) {
+    int angle = 0;
+    int paren = 0;
+    int bracket = 0;
+    int run = -1;
+    int i = 0;
+    while (s[i] != 0) {
+        char c = s[i];
+        if (c == '<' && bracket == 0) {
+            angle = angle + 1;
+        } else if (c == '>' && bracket == 0 && !(i > 0 && s[i - 1] == '-')) {
+            if (angle > 0) {
+                angle = angle - 1;
+            }
+        } else if (c == '(' && bracket == 0) {
+            paren = paren + 1;
+        } else if (c == ')' && bracket == 0) {
+            if (paren > 0) {
+                paren = paren - 1;
+            }
+        } else if (c == '[' && angle == 0 && paren == 0) {
+            if (bracket == 0 && !(i > 0 && s[i - 1] == ']' && run >= 0)) {
+                run = i;
+            }
+            bracket = bracket + 1;
+        } else if (c == ']' && angle == 0 && paren == 0) {
+            if (bracket > 0) {
+                bracket = bracket - 1;
+            }
+        }
+        i = i + 1;
+    }
+    return run;
+}
+
+int ty_match_close(string s, int open) {
+    int depth = 0;
+    int i = open;
+    while (s[i] != 0) {
+        if (s[i] == '[') {
+            depth = depth + 1;
+        } else if (s[i] == ']') {
+            depth = depth - 1;
+            if (depth == 0) {
+                return i;
+            }
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+int ty_is_int_spelling(string n) {
+    if (et_eq(n, "int") == 1 || et_eq(n, "int8") == 1 || et_eq(n, "int16") == 1
+        || et_eq(n, "int32") == 1 || et_eq(n, "int64") == 1 || et_eq(n, "uint") == 1
+        || et_eq(n, "uint8") == 1 || et_eq(n, "uint16") == 1 || et_eq(n, "uint32") == 1
+        || et_eq(n, "uint64") == 1) {
+        return 1;
+    }
+    return 0;
+}
+
+*TyT ty_core(string src, List<string>* tps);
+
+*TyT ty_parse_tps(string s, List<string>* tps) {
+    string t = et_trim(et_s(s));
+    string quals = "";
+    while (true) {
+        if (et_pfx(t, "const ") == 1) {
+            quals = et_cat(quals, "const ");
+            t = et_trim(et_from(t, 6));
+        } else if (et_pfx(t, "volatile ") == 1) {
+            quals = et_cat(quals, "volatile ");
+            t = et_trim(et_from(t, 9));
+        } else {
+            break;
+        }
+    }
+    *TyT r = ty_core(t, tps);
+    r.quals = quals;
+    return r;
+}
+
+*TyT ty_parse(string s) {
+    return ty_parse_tps(s, null);
+}
+
+*TyT ty_core(string src, List<string>* tps) {
+    string s = et_trim(src);
+    int n = et_len(s);
+    if (n == 0) {
+        return ty_new(TYK_UNKNOWN);
+    }
+    if (s[0] == '?') {
+        *TyT inner = ty_core(et_trim(et_from(s, 1)), tps);
+        inner.nullable = 1;
+        return inner;
+    }
+    if (s[n - 1] == ']') {
+        int open = ty_first_array_bracket(s);
+        int close = -1;
+        if (open >= 0) {
+            close = ty_match_close(s, open);
+        }
+        if (open >= 0 && close >= 0) {
+            string dim = et_sub(s, open + 1, close);
+            *TyT r = ty_new(TYK_ARRAY);
+            if (et_len(dim) == 0) {
+                r.kind = TYK_SLICE;
+            }
+            r.dim = dim;
+            r.elem = ty_parse_tps(et_cat(et_sub(s, 0, open), et_from(s, close + 1)), tps);
+            return r;
+        }
+    }
+    if (et_pfx(s, "fn(") == 1) {
+        int depth = 0;
+        int close = -1;
+        int i = 2;
+        while (i < n) {
+            if (s[i] == '(') {
+                depth = depth + 1;
+            } else if (s[i] == ')') {
+                depth = depth - 1;
+                if (depth == 0) {
+                    close = i;
+                    break;
+                }
+            }
+            i = i + 1;
+        }
+        if (close >= 0 && close + 2 < n + 1 && s[close + 1] == '-' && s[close + 2] == '>') {
+            *TyT r = ty_new(TYK_FN);
+            string inner = et_sub(s, 3, close);
+            if (et_len(et_trim(inner)) > 0) {
+                List<string> parts;
+                ty_split_top(inner, ',', &parts);
+                int k = 0;
+                while (k < List_len<string>(&parts)) {
+                    List_push<*TyT>(&r.params, ty_parse_tps(List_get<string>(&parts, k), tps));
+                    k = k + 1;
+                }
+            }
+            r.ret = ty_parse_tps(et_from(s, close + 3), tps);
+            return r;
+        }
+    }
+    if (s[0] == '*') {
+        *TyT r = ty_new(TYK_POINTER);
+        r.lead = 1;
+        r.pointee = ty_parse_tps(et_from(s, 1), tps);
+        return r;
+    }
+    if (n > 6 && et_sfx(s, "*const") == 1) {
+        *TyT r = ty_new(TYK_POINTER);
+        r.bconst = 1;
+        r.pointee = ty_parse_tps(et_sub(s, 0, n - 6), tps);
+        return r;
+    }
+    if (s[n - 1] == '*') {
+        *TyT r = ty_new(TYK_POINTER);
+        r.pointee = ty_parse_tps(et_sub(s, 0, n - 1), tps);
+        return r;
+    }
+    int lt = ty_top_angle(s);
+    if (lt >= 0 && s[n - 1] == '>') {
+        *TyT r = ty_new(TYK_TEMPLATE);
+        r.name = et_trim(et_sub(s, 0, lt));
+        string inner = et_sub(s, lt + 1, n - 1);
+        if (et_len(et_trim(inner)) > 0) {
+            List<string> parts;
+            ty_split_top(inner, ',', &parts);
+            int k = 0;
+            while (k < List_len<string>(&parts)) {
+                List_push<*TyT>(&r.args, ty_parse_tps(List_get<string>(&parts, k), tps));
+                k = k + 1;
+            }
+        }
+        return r;
+    }
+    if (et_pfx(s, "struct:") == 1) {
+        *TyT r = ty_new(TYK_STRUCT);
+        r.name = et_from(s, 7);
+        return r;
+    }
+    if (et_pfx(s, "interface:") == 1) {
+        *TyT r = ty_new(TYK_INTERFACE);
+        r.name = et_from(s, 10);
+        return r;
+    }
+    *TyT r = ty_new(TYK_NAMED);
+    r.name = s;
+    if (ty_is_int_spelling(s) == 1) {
+        r.kind = TYK_INT;
+    } else if (et_eq(s, "float") == 1 || et_eq(s, "double") == 1) {
+        r.kind = TYK_FLOAT;
+    } else if (et_eq(s, "bool") == 1) {
+        r.kind = TYK_BOOL;
+    } else if (et_eq(s, "char") == 1) {
+        r.kind = TYK_CHAR;
+    } else if (et_eq(s, "string") == 1) {
+        r.kind = TYK_STRING;
+    } else if (et_eq(s, "void") == 1) {
+        r.kind = TYK_VOID;
+    } else if (et_eq(s, "va_list") == 1) {
+        r.kind = TYK_VALIST;
+    } else if (et_eq(s, "null") == 1) {
+        r.kind = TYK_NULL;
+    } else if (et_eq(s, "unknown") == 1) {
+        r.kind = TYK_UNKNOWN;
+    } else if (et_eq(s, "error") == 1) {
+        r.kind = TYK_ERROR;
+    } else if (ty_list_has(tps, s) == 1) {
+        r.kind = TYK_PARAM;
+    }
+    return r;
+}
+
+void ty_append(*TyT t, String* out) {
+    String_append(out, et_s(t.quals));
+    if (t.nullable == 1) {
+        String_append(out, "?");
+    }
+    if (t.kind == TYK_POINTER) {
+        *TyT p = t.pointee;
+        int arr = 0;
+        if ((p.kind == TYK_ARRAY || p.kind == TYK_SLICE) && et_len(p.quals) == 0 && p.nullable == 0) {
+            arr = 1;
+        }
+        if (t.lead == 1 && arr == 0) {
+            String_append(out, "*");
+            ty_append(p, out);
+        } else {
+            ty_append(p, out);
+            if (t.bconst == 1) {
+                String_append(out, "*const");
+            } else {
+                String_append(out, "*");
+            }
+        }
+    } else if (t.kind == TYK_ARRAY || t.kind == TYK_SLICE) {
+        *TyT e = t.elem;
+        while ((e.kind == TYK_ARRAY || e.kind == TYK_SLICE) && et_len(e.quals) == 0 && e.nullable == 0) {
+            e = e.elem;
+        }
+        ty_append(e, out);
+        *TyT d = t;
+        while (d != e) {
+            String_append(out, "[");
+            String_append(out, et_s(d.dim));
+            String_append(out, "]");
+            d = d.elem;
+        }
+    } else if (t.kind == TYK_FN) {
+        String_append(out, "fn(");
+        int i = 0;
+        while (i < List_len<*TyT>(&t.params)) {
+            if (i > 0) {
+                String_append(out, ",");
+            }
+            ty_append(List_get<*TyT>(&t.params, i), out);
+            i = i + 1;
+        }
+        String_append(out, ")->");
+        ty_append(t.ret, out);
+    } else if (t.kind == TYK_TEMPLATE) {
+        String_append(out, et_s(t.name));
+        String_append(out, "<");
+        int i = 0;
+        while (i < List_len<*TyT>(&t.args)) {
+            if (i > 0) {
+                String_append(out, ",");
+            }
+            ty_append(List_get<*TyT>(&t.args, i), out);
+            i = i + 1;
+        }
+        String_append(out, ">");
+    } else if (t.kind == TYK_STRUCT) {
+        String_append(out, "struct:");
+        String_append(out, et_s(t.name));
+    } else if (t.kind == TYK_INTERFACE) {
+        String_append(out, "interface:");
+        String_append(out, et_s(t.name));
+    } else {
+        String_append(out, et_s(t.name));
+    }
+}
+
+string ty_str(*TyT t) {
+    String out;
+    String_init(&out, 32);
+    ty_append(t, &out);
+    return (string)String_cstr(&out);
+}
+
+string ty_nominal(*TyT t) {
+    if (t.kind == TYK_POINTER) {
+        return ty_nominal(t.pointee);
+    }
+    return et_s(t.name);
+}
+
+*TyT ty_substitute(*TyT t, SMap* subs) {
+    string hit = SMap_get(subs, ty_str(t));
+    if (hit != null) {
+        return ty_parse(hit);
+    }
+    *TyT r = ty_clone(t);
+    if (t.kind == TYK_POINTER) {
+        r.pointee = ty_substitute(t.pointee, subs);
+    } else if (t.kind == TYK_ARRAY || t.kind == TYK_SLICE) {
+        r.elem = ty_substitute(t.elem, subs);
+    } else if (t.kind == TYK_FN) {
+        List<*TyT> ps;
+        int i = 0;
+        while (i < List_len<*TyT>(&t.params)) {
+            List_push<*TyT>(&ps, ty_substitute(List_get<*TyT>(&t.params, i), subs));
+            i = i + 1;
+        }
+        r.params = ps;
+        r.ret = ty_substitute(t.ret, subs);
+    } else if (t.kind == TYK_TEMPLATE) {
+        List<*TyT> as;
+        int i = 0;
+        while (i < List_len<*TyT>(&t.args)) {
+            List_push<*TyT>(&as, ty_substitute(List_get<*TyT>(&t.args, i), subs));
+            i = i + 1;
+        }
+        r.args = as;
+    }
+    return r;
+}
+
+int ty_ident_char(char c) {
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+        return 1;
+    }
+    return 0;
+}
+
+int ty_mentions(string s, string name) {
+    int m = et_len(name);
+    int n = et_len(s);
+    int p = et_find(s, name, 0);
+    while (p >= 0) {
+        int startok = 0;
+        if (p == 0 || ty_ident_char(s[p - 1]) == 0) {
+            startok = 1;
+        }
+        int endok = 0;
+        if (p + m >= n || ty_ident_char(s[p + m]) == 0) {
+            endok = 1;
+        }
+        if (startok == 1 && endok == 1) {
+            return 1;
+        }
+        p = et_find(s, name, p + 1);
+    }
+    return 0;
+}
+
+*TyT ty_dealias_t(*TyT t, SMap* aliases, int depth) {
+    if (depth > 32) {
+        return t;
+    }
+    *TyT r = ty_clone(t);
+    if (t.kind == TYK_NAMED) {
+        if (List_len<*TyT>(&t.args) == 0) {
+            string a = SMap_get(aliases, t.name);
+            if (a == null) {
+                return t;
+            }
+            *TyT d = ty_dealias_t(ty_parse(a), aliases, depth + 1);
+            if (t.nullable == 1) {
+                d.nullable = 1;
+            }
+            d.quals = et_cat(t.quals, d.quals);
+            return d;
+        }
+    } else if (t.kind == TYK_POINTER) {
+        if (t.pointee != null) {
+            r.pointee = ty_dealias_t(t.pointee, aliases, depth + 1);
+        }
+    } else if (t.kind == TYK_ARRAY || t.kind == TYK_SLICE) {
+        if (t.elem != null) {
+            r.elem = ty_dealias_t(t.elem, aliases, depth + 1);
+        }
+    } else if (t.kind == TYK_FN) {
+        List<*TyT> ps;
+        int i = 0;
+        while (i < List_len<*TyT>(&t.params)) {
+            List_push<*TyT>(&ps, ty_dealias_t(List_get<*TyT>(&t.params, i), aliases, depth + 1));
+            i = i + 1;
+        }
+        r.params = ps;
+        if (t.ret != null) {
+            r.ret = ty_dealias_t(t.ret, aliases, depth + 1);
+        }
+    } else if (t.kind == TYK_TEMPLATE) {
+        List<*TyT> as;
+        int i = 0;
+        while (i < List_len<*TyT>(&t.args)) {
+            List_push<*TyT>(&as, ty_dealias_t(List_get<*TyT>(&t.args, i), aliases, depth + 1));
+            i = i + 1;
+        }
+        r.args = as;
+    }
+    return r;
+}
+
+string ty_dealias_spelling(string s, SMap* aliases) {
+    int any = 0;
+    int i = 0;
+    while (i < SMap_len(aliases)) {
+        if (ty_mentions(s, List_get<string>(&aliases.k, i)) == 1) {
+            any = 1;
+            break;
+        }
+        i = i + 1;
+    }
+    if (any == 0) {
+        return s;
+    }
+    return ty_str(ty_dealias_t(ty_parse(s), aliases, 0));
+}
+
+int ty_promoted_rank(string t, int* uns) {
+    *uns = 0;
+    if (et_eq(t, "int64") == 1) {
+        return 64;
+    }
+    if (et_eq(t, "uint64") == 1) {
+        *uns = 1;
+        return 64;
+    }
+    if (et_eq(t, "uint") == 1 || et_eq(t, "uint32") == 1) {
+        *uns = 1;
+        return 32;
+    }
+    if (et_eq(t, "int") == 1 || et_eq(t, "int32") == 1 || et_eq(t, "int8") == 1 || et_eq(t, "int16") == 1
+        || et_eq(t, "uint8") == 1 || et_eq(t, "uint16") == 1 || et_eq(t, "char") == 1) {
+        return 32;
+    }
+    return 0;
+}
+
+string ty_range_var_type(string a, string b) {
+    int ua = 0;
+    int ub = 0;
+    int ra = ty_promoted_rank(et_trim(a), &ua);
+    int rb = ty_promoted_rank(et_trim(b), &ub);
+    if (ra == 0 || rb == 0) {
+        return "";
+    }
+    int r = ra;
+    if (rb > ra) {
+        r = rb;
+    }
+    int u = 0;
+    if (ra == rb) {
+        if (ua == 1 || ub == 1) {
+            u = 1;
+        }
+    } else if (ra > rb) {
+        u = ua;
+    } else {
+        u = ub;
+    }
+    if (r == 64) {
+        if (u == 1) {
+            return "uint64";
+        }
+        return "int64";
+    }
+    if (u == 1) {
+        return "uint";
+    }
+    return "int";
+}
+
+// --- template_utils.h ---
+
+SMap g_ty_aliases;   // templateTypeAliases()
+
+string ty_mangle(string type0) {
+    string type = type0;
+    if (SMap_len(&g_ty_aliases) > 0) {
+        type = ty_dealias_spelling(type0, &g_ty_aliases);
+    }
+    String out;
+    String_init(&out, 32);
+    int depth = 0;
+    int after = 0;
+    int n = et_len(type);
+    int i = 0;
+    while (i < n) {
+        char c = type[i];
+        int was = after;
+        after = 0;
+        if (c == '<') {
+            depth = depth + 1;
+        } else if (c == '>' && depth > 0) {
+            depth = depth - 1;
+        }
+        if (depth > 0 && c == '[') {
+            if (i + 1 < n && type[i + 1] == ']') {
+                String_append(&out, "_S");
+                i = i + 1;
+            } else {
+                String_append(&out, "_A");
+            }
+        } else if (depth > 0 && c == ']') {
+            after = 1;
+        } else if (depth > 0 && c == '*' && was == 1) {
+            String_append(&out, "_P");
+            after = 1;
+        } else if (c == '<' || c == '>' || c == ',') {
+            String_push(&out, '_');
+        } else if (c != ' ') {
+            String_push(&out, c);
+        }
+        i = i + 1;
+    }
+    string r = (string)String_cstr(&out);
+    int k = et_len(r);
+    while (k > 0 && r[k - 1] == '_') {
+        k = k - 1;
+    }
+    return et_sub(r, 0, k);
+}
+
+// splitTemplateType: the base name; the arguments go to `args`.
+string ty_split_template(string type, List<string>* args) {
+    int lt = et_findc(type, '<');
+    if (lt < 0) {
+        return type;
+    }
+    string name = et_sub(type, 0, lt);
+    int n = et_len(type);
+    string inner = et_sub(type, lt + 1, n - 1);
+    int depth = 0;
+    String cur;
+    String_init(&cur, 16);
+    int i = 0;
+    int m = et_len(inner);
+    while (i < m) {
+        char c = inner[i];
+        if (c == '<' || c == '(' || c == '[') {
+            depth = depth + 1;
+        } else if ((c == '>' && !(i > 0 && inner[i - 1] == '-')) || c == ')' || c == ']') {
+            depth = depth - 1;
+        }
+        if (c == ',' && depth == 0) {
+            List_push<string>(args, et_s((string)String_cstr(&cur)));
+            String_init(&cur, 16);
+        } else {
+            String_push(&cur, c);
+        }
+        i = i + 1;
+    }
+    if (String_len(&cur) > 0) {
+        List_push<string>(args, et_s((string)String_cstr(&cur)));
+    }
+    return name;
+}
+
+string ty_subst_type(string t, SMap* subs) {
+    return ty_str(ty_substitute(ty_parse_tps(t, &subs.k), subs));
+}

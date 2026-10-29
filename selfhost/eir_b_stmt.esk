@@ -1,0 +1,1376 @@
+// The EIR builder, part 3: functions, local variables and statements.
+
+import "eir_b_conv.esk";
+
+// --- synthesized nodes ---
+
+*ExprNode eb_mk_ident(string name) {
+    *ExprNode e = ast_new_expr();
+    e.kind = EK_IDENT;
+    e.sval = name;
+    e.line = 0;
+    e.col = 0;
+    return e;
+}
+
+*ExprNode eb_mk_int(string v) {
+    *ExprNode e = ast_new_expr();
+    e.kind = EK_LITERAL;
+    e.lit_kind = LIT_INT;
+    e.sval = v;
+    e.line = 0;
+    e.col = 0;
+    return e;
+}
+
+*ExprNode eb_mk_bin(string op, *ExprNode l, *ExprNode r) {
+    *ExprNode e = ast_new_expr();
+    e.kind = EK_BINARY;
+    e.sval = op;
+    e.a = l;
+    e.b = r;
+    e.line = 0;
+    e.col = 0;
+    return e;
+}
+
+*ExprNode eb_mk_un(string op, *ExprNode x) {
+    *ExprNode e = ast_new_expr();
+    e.kind = EK_UNARY;
+    e.sval = op;
+    e.a = x;
+    e.line = 0;
+    e.col = 0;
+    return e;
+}
+
+*ExprNode eb_mk_member(*ExprNode base, string m) {
+    *ExprNode e = ast_new_expr();
+    e.kind = EK_MEMBER;
+    e.sval = m;
+    e.a = base;
+    e.line = 0;
+    e.col = 0;
+    return e;
+}
+
+*ExprNode eb_mk_index(*ExprNode base, *ExprNode idx) {
+    *ExprNode e = ast_new_expr();
+    e.kind = EK_INDEX;
+    e.a = base;
+    e.b = idx;
+    e.line = 0;
+    e.col = 0;
+    return e;
+}
+
+*ExprNode eb_mk_call(*ExprNode callee, List<*ExprNode>* args) {
+    *ExprNode e = ast_new_expr();
+    e.kind = EK_CALL;
+    e.a = callee;
+    int i = 0;
+    while (i < List_len<*ExprNode>(args)) {
+        List_push<*ExprNode>(&e.kids, List_get<*ExprNode>(args, i));
+        i = i + 1;
+    }
+    e.line = 0;
+    e.col = 0;
+    return e;
+}
+
+*StmtNode eb_mk_vardecl(string name, string ty, *ExprNode init) {
+    *StmtNode s = ast_new_stmt();
+    s.kind = SK_VARDECL;
+    s.name = name;
+    s.type = ty;
+    s.expr = init;
+    s.line = 0;
+    s.col = 0;
+    return s;
+}
+
+*StmtNode eb_mk_block() {
+    *StmtNode s = ast_new_stmt();
+    s.kind = SK_BLOCK;
+    s.line = 0;
+    s.col = 0;
+    return s;
+}
+
+// --- functions ---
+
+int64 eb_param_align(*ETy t) {
+    if (t.bits <= 32) {
+        return (int64)4;
+    }
+    return (int64)8;
+}
+
+void eb_save_fn_state(EB* b, List<*EFrame>* cl, List<*ELoop>* lp, List<*EBlock>* us) {
+    *cl = b.cleanups;
+    *lp = b.loops;
+    *us = b.unwind_stack;
+    List<*EFrame> ncl;
+    List<*ELoop> nlp;
+    List<*EBlock> nus;
+    b.cleanups = ncl;
+    b.loops = nlp;
+    b.unwind_stack = nus;
+}
+
+void eb_function(EB* b, *DeclNode node) {
+    if (List_len<TypeParam>(&node.type_params) > 0) {
+        if (DMap_has(&b.fn_tmpl_decls, node.name) == 0 || node.body != null) {
+            DMap_set(&b.fn_tmpl_decls, node.name, node);
+        }
+        return;
+    }
+    b.cur_fn = em_func(b.m, node.name);
+    if (b.cur_fn == null) {
+        *EFunc f = em_create_func(b.m, node.name, eb_type(b, node.ret_type));
+        int i = 0;
+        while (i < List_len<Param>(&node.params)) {
+            Param p = List_get<Param>(&node.params, i);
+            if (et_eq(p.ty, "...") == 1) {
+                f.is_variadic = 1;
+                break;
+            }
+            efn_add_param(f, p.name, eb_type(b, p.ty));
+            i = i + 1;
+        }
+        b.cur_fn = f;
+    }
+    if (node.body == null) {
+        if (List_len<*EBlock>(&b.cur_fn.blocks) == 0) {
+            b.cur_fn.is_extern = 1;
+        }
+        return;
+    }
+    if (List_len<*EBlock>(&b.cur_fn.blocks) > 0) {
+        return;
+    }
+    b.cur_fn.is_extern = 0;
+    b.nv = 0;
+    b.nb = 0;
+    *EBlock entry = efn_create_block(b.cur_fn, "entry");
+    eb_set_block(b, entry);
+
+    List<*EFrame> saved_cl;
+    List<*ELoop> saved_lp;
+    List<*EBlock> saved_us;
+    eb_save_fn_state(b, &saved_cl, &saved_lp, &saved_us);
+    *EBlock saved_unwind = b.unwind;
+    int saved_hdepth = b.hdepth;
+    eb_push_frame(b);
+    b.unwind = null;
+    b.hdepth = 0;
+
+    eb_push_scope(b);
+    int i = 0;
+    while (i < efn_nparams(b.cur_fn)) {
+        string pn = efn_pname(b.cur_fn, i);
+        *ETy pt = efn_ptype(b.cur_fn, i);
+        string slot = et_cat3("%", pn, ".addr");
+        eb_i1(b, EO_ALLOCA, slot, pt, eo_int(eb_param_align(pt), et_i32()));
+        eb_store(b, eo_var(et_cat("%", pn), pt), eo_var(slot, et_ptr(pt)));
+        eb_declare(b, pn, eo_var(slot, et_ptr(pt)), pt);
+        i = i + 1;
+    }
+    if (et_eq(node.name, "main") == 1 && em_func(b.m, "__eir_global_init") != null) {
+        eb_i1(b, EO_CALL, "", et_void(), eo_global("__eir_global_init", et_void()));
+    }
+    eb_stmt(b, node.body);
+    if (b.blk.term == 0) {
+        eb_run_cleanups(b, 0, 0);
+        if (b.blk.term == 0) {
+            if (et_is_void(b.cur_fn.ret) == 1) {
+                eb_i0(b, EO_RET, "", et_void());
+            } else {
+                eb_i0(b, EO_UNREACHABLE, "", et_void());
+            }
+        }
+    }
+    b.cleanups = saved_cl;
+    b.loops = saved_lp;
+    b.unwind = saved_unwind;
+    b.unwind_stack = saved_us;
+    b.hdepth = saved_hdepth;
+    eb_pop_scope(b);
+    b.cur_fn = null;
+    b.blk = null;
+}
+
+void eb_struct_decl(EB* b, *DeclNode node) {
+    if (List_len<TypeParam>(&node.type_params) > 0) {
+        DMap_set(&b.tmpl_decls, node.name, node);
+        return;
+    }
+    int i = 0;
+    while (i < List_len<*DeclNode>(&node.methods)) {
+        *DeclNode mf = List_get<*DeclNode>(&node.methods, i);
+        if (mf.kind == DK_FUNCTION) {
+            List<Param> params;
+            List_push<Param>(&params, eb_param(et_cat("*", node.name), "self"));
+            int k = 0;
+            while (k < List_len<Param>(&mf.params)) {
+                List_push<Param>(&params, List_get<Param>(&mf.params, k));
+                k = k + 1;
+            }
+            eb_function(b, eb_mk_fn(et_cat3(node.name, "_", mf.name), mf.ret_type, &params, mf.body));
+        }
+        i = i + 1;
+    }
+}
+
+// --- local variables ---
+
+StrTab* eb_fn_slots(EB* b) {
+    return &b.cur_fn.slots;
+}
+
+void eb_local_var(EB* b, *StmtNode node) {
+    if (b.cur_fn == null) {
+        return;
+    }
+    if (node.is_vol == 1) {
+        StrTab_set(&b.vol_vars, node.name, 1);
+    }
+    *ETy t = eb_type(b, node.type);
+    if (node.is_static == 1) {
+        string gname = et_cat3(b.cur_fn.name, ".", node.name);
+        string guard = et_cat(gname, ".inited");
+        if (eb_is_global(b, gname) == 0) {
+            EGlobal g;
+            g.name = gname;
+            g.ty = t;
+            g.init = eo_int((int64)0, t);
+            List_push<EGlobal>(&b.m.globals, g);
+            EGlobal gg;
+            gg.name = guard;
+            gg.ty = et_i1();
+            gg.init = eo_int((int64)0, et_i1());
+            List_push<EGlobal>(&b.m.globals, gg);
+        }
+        eb_declare(b, node.name, eo_global(gname, et_ptr(t)), t);
+        if (node.expr != null) {
+            string gv = eb_new_var(b);
+            eb_i1(b, EO_LOAD, gv, et_i1(), eo_global(guard, et_ptr(et_i1())));
+            *EBlock init_bb = eb_block(b, "static.init");
+            *EBlock cont_bb = eb_block(b, "static.cont");
+            eb_br_cond(b, eo_var(gv, et_i1()), cont_bb, init_bb);
+            eb_set_block(b, init_bb);
+            eb_store(b, eo_int((int64)1, et_i1()), eo_global(guard, et_ptr(et_i1())));
+            if (node.expr.kind == EK_ARRAYLIT) {
+                eb_array_init(b, eo_global(gname, et_ptr(t)), node.expr, t);
+            } else {
+                EOp v = eb_eval_for_s(b, node.expr, node.type);
+                if (et_is_struct(t) == 1 || et_is_array(t) == 1) {
+                    v = eo_var(eo_s(v), t);
+                }
+                eb_store(b, v, eo_global(gname, et_ptr(t)));
+            }
+            eb_br(b, cont_bb);
+            eb_set_block(b, cont_bb);
+        }
+        return;
+    }
+    int64 al = et_type_align(t, b.m);
+    if (al < (int64)1) {
+        al = (int64)1;
+    }
+    string slot = et_cat3("%", node.name, ".addr");
+    StrTab* slots = eb_fn_slots(b);
+    if (eb_has_var(b, node.name) == 1 || StrTab_has(slots, slot) == 1) {
+        string n = et_itoa(b.nv);
+        b.nv = b.nv + 1;
+        slot = et_cat3(et_cat3("%", node.name, "."), n, ".addr");
+    }
+    StrTab_set(slots, slot, 1);
+    eb_entry_alloca(b, slot, t, al);
+    int generic = 0;
+    if (SMap_len(&b.tpo) > 0 && et_eq(ty_subst_type(node.type, &b.tpo), node.type) == 0) {
+        generic = 1;
+    }
+    *ExprNode init = node.expr;
+    if (init == null && generic == 0) {
+        init = eb_default_expr(b, node.type);
+    }
+    if (init != null) {
+        if (init.kind == EK_ARRAYLIT) {
+            eb_array_init(b, eo_var(slot, et_ptr(t)), init, t);
+        } else {
+            EOp v = eb_eval_for(b, init, t);
+            eb_store_v(b, v, eo_var(slot, et_ptr(t)), node.is_vol);
+        }
+    } else {
+        eb_zero_fill(b, eo_var(slot, et_ptr(t)), t);
+    }
+    eb_declare(b, node.name, eo_var(slot, et_ptr(t)), t);
+}
+
+// --- statements ---
+
+void eb_block_stmt(EB* b, *StmtNode node) {
+    eb_push_scope(b);
+    eb_push_frame(b);
+    *EBlock saved_unwind = b.unwind;
+    int start_h = b.hdepth;
+    int i = 0;
+    while (i < List_len<*StmtNode>(&node.items)) {
+        if (b.blk != null && b.blk.term == 1) {
+            break;
+        }
+        eb_stmt(b, List_get<*StmtNode>(&node.items, i));
+        i = i + 1;
+    }
+    if (b.blk != null && b.blk.term == 0) {
+        eb_run_cleanups(b, eb_nframes(b) - 1, 0);
+        while (b.hdepth > start_h) {
+            eb_i0(b, EO_POPHANDLER, "", et_void());
+            b.hdepth = b.hdepth - 1;
+        }
+    }
+    b.unwind = saved_unwind;
+    eb_pop_frame(b);
+    eb_pop_scope(b);
+}
+
+void eb_return(EB* b, *StmtNode node) {
+    if (node.expr != null) {
+        *ETy rt = null;
+        if (b.cur_fn != null) {
+            rt = b.cur_fn.ret;
+        }
+        EOp v;
+        if (rt != null && et_is_void(rt) == 0) {
+            v = eb_eval_for(b, node.expr, rt);
+        } else {
+            v = eb_eval(b, node.expr);
+        }
+        eb_run_cleanups(b, 0, 0);
+        if (b.blk != null && b.blk.term == 0) {
+            eb_i1(b, EO_RET, "", v.ty, v);
+        }
+    } else {
+        eb_run_cleanups(b, 0, 0);
+        if (b.blk != null && b.blk.term == 0) {
+            eb_i0(b, EO_RET, "", et_void());
+        }
+    }
+}
+
+void eb_if(EB* b, *StmtNode node) {
+    EOp c = eb_truth(b, eb_eval(b, node.expr));
+    *EBlock then_bb = eb_block(b, "then");
+    *EBlock else_bb = null;
+    if (node.s2 != null) {
+        else_bb = eb_block(b, "else");
+    }
+    *EBlock merge = eb_block(b, "merge");
+    if (else_bb != null) {
+        eb_br_cond(b, c, then_bb, else_bb);
+    } else {
+        eb_br_cond(b, c, then_bb, merge);
+    }
+    eb_set_block(b, then_bb);
+    eb_visit_body(b, node.s1);
+    if (b.blk.term == 0) {
+        eb_br(b, merge);
+    }
+    if (else_bb != null) {
+        eb_set_block(b, else_bb);
+        eb_visit_body(b, node.s2);
+        if (b.blk.term == 0) {
+            eb_br(b, merge);
+        }
+    }
+    eb_set_block(b, merge);
+}
+
+void eb_push_loop(EB* b, *EBlock brk, *EBlock cont, string label) {
+    *ELoop l = alloc<ELoop>(1);
+    l.brk = brk;
+    l.cont = cont;
+    l.cdepth = eb_nframes(b);
+    l.hdepth = b.hdepth;
+    l.label = et_s(label);
+    List_push<*ELoop>(&b.loops, l);
+}
+
+void eb_pop_loop(EB* b) {
+    List_pop<*ELoop>(&b.loops);
+}
+
+void eb_while(EB* b, *StmtNode node) {
+    *EBlock cond_bb = eb_block(b, "while.cond");
+    *EBlock body_bb = eb_block(b, "while.body");
+    *EBlock exit_bb = eb_block(b, "while.exit");
+    eb_br(b, cond_bb);
+    eb_set_block(b, cond_bb);
+    EOp c = eb_truth(b, eb_eval(b, node.expr));
+    eb_br_cond(b, c, body_bb, exit_bb);
+    eb_set_block(b, body_bb);
+    eb_push_loop(b, exit_bb, cond_bb, node.label);
+    eb_visit_body(b, node.s1);
+    if (b.blk.term == 0) {
+        eb_br(b, cond_bb);
+    }
+    eb_pop_loop(b);
+    eb_set_block(b, exit_bb);
+}
+
+void eb_for(EB* b, *StmtNode node) {
+    eb_push_scope(b);
+    *StmtNode ib = node.s1;
+    if (ib != null && ib.kind == SK_BLOCK) {
+        if (SMap_len(&b.tpo) > 0 && List_len<*StmtNode>(&ib.items) == 2) {
+            *StmtNode lo = List_get<*StmtNode>(&ib.items, 0);
+            *StmtNode hi = List_get<*StmtNode>(&ib.items, 1);
+            if (lo.kind == SK_VARDECL && hi.kind == SK_VARDECL && lo.is_range == 1 && hi.is_range == 1
+                && lo.expr != null && hi.expr != null) {
+                string ct = ty_range_var_type(eb_int_spelling(eb_expr_type(b, lo.expr)),
+                                              eb_int_spelling(eb_expr_type(b, hi.expr)));
+                if (et_len(ct) > 0) {
+                    lo.type = ct;
+                    hi.type = ct;
+                }
+            }
+        }
+        int i = 0;
+        while (i < List_len<*StmtNode>(&ib.items)) {
+            eb_stmt(b, List_get<*StmtNode>(&ib.items, i));
+            i = i + 1;
+        }
+    } else if (ib != null) {
+        eb_stmt(b, ib);
+    }
+    *EBlock cond_bb = eb_block(b, "for.cond");
+    *EBlock body_bb = eb_block(b, "for.body");
+    *EBlock step_bb = eb_block(b, "for.step");
+    *EBlock exit_bb = eb_block(b, "for.exit");
+    eb_br(b, cond_bb);
+    eb_set_block(b, cond_bb);
+    if (node.expr != null) {
+        EOp c = eb_truth(b, eb_eval(b, node.expr));
+        eb_br_cond(b, c, body_bb, exit_bb);
+    } else {
+        eb_br(b, body_bb);
+    }
+    eb_set_block(b, body_bb);
+    eb_push_loop(b, exit_bb, step_bb, node.label);
+    eb_visit_body(b, node.s2);
+    if (b.blk.term == 0) {
+        eb_br(b, step_bb);
+    }
+    eb_pop_loop(b);
+    eb_set_block(b, step_bb);
+    if (node.expr2 != null) {
+        eb_eval(b, node.expr2);
+    }
+    eb_br(b, cond_bb);
+    eb_set_block(b, exit_bb);
+    eb_pop_scope(b);
+}
+
+*ELoop eb_jump_target(EB* b, string label, int is_continue) {
+    int i = List_len<*ELoop>(&b.loops) - 1;
+    while (i >= 0) {
+        *ELoop l = List_get<*ELoop>(&b.loops, i);
+        i = i - 1;
+        if (et_len(label) > 0 && et_eq(l.label, label) == 0) {
+            continue;
+        }
+        if (is_continue == 1 && l.cont == null) {
+            continue;
+        }
+        return l;
+    }
+    return null;
+}
+
+void eb_jump_to(EB* b, *ELoop l, int is_continue) {
+    eb_run_cleanups(b, l.cdepth, 0);
+    int h = b.hdepth;
+    while (h > l.hdepth) {
+        eb_i0(b, EO_POPHANDLER, "", et_void());
+        h = h - 1;
+    }
+    if (b.blk != null && b.blk.term == 0) {
+        if (is_continue == 1) {
+            eb_br(b, l.cont);
+        } else {
+            eb_br(b, l.brk);
+        }
+    }
+}
+
+void eb_break(EB* b, *StmtNode node, int is_continue) {
+    *ELoop l = eb_jump_target(b, et_s(node.label), is_continue);
+    if (l != null) {
+        eb_jump_to(b, l, is_continue);
+    }
+}
+
+void eb_do_while(EB* b, *StmtNode node) {
+    *EBlock body_bb = eb_block(b, "dowhile.body");
+    *EBlock cond_bb = eb_block(b, "dowhile.cond");
+    *EBlock exit_bb = eb_block(b, "dowhile.exit");
+    eb_br(b, body_bb);
+    eb_set_block(b, body_bb);
+    eb_push_loop(b, exit_bb, cond_bb, node.label);
+    eb_visit_body(b, node.s1);
+    if (b.blk.term == 0) {
+        eb_br(b, cond_bb);
+    }
+    eb_pop_loop(b);
+    eb_set_block(b, cond_bb);
+    EOp c = eb_truth(b, eb_eval(b, node.expr));
+    eb_br_cond(b, c, body_bb, exit_bb);
+    eb_set_block(b, exit_bb);
+}
+
+int eb_addressable(EB* b, *ExprNode e) {
+    if (e.kind == EK_IDENT) {
+        return 1;
+    }
+    if (e.kind == EK_UNARY) {
+        if (et_eq(e.sval, "*") == 1 && et_len(e.op_fn) == 0) {
+            return 1;
+        }
+        return 0;
+    }
+    if (e.kind == EK_INDEX) {
+        if (et_len(e.op_fn) == 0 && List_len<*ExprNode>(&e.kids) == 0) {
+            return 1;
+        }
+        return 0;
+    }
+    if (e.kind == EK_MEMBER) {
+        *ETy bt = eb_expr_type(b, e.a);
+        if (et_is_ptr(bt) == 1) {
+            return 1;
+        }
+        return eb_addressable(b, e.a);
+    }
+    return 0;
+}
+
+void eb_for_in(EB* b, *StmtNode node) {
+    string idx_name = et_cat("__forin_i_", et_itoa(b.for_in_counter));
+    b.for_in_counter = b.for_in_counter + 1;
+    string it_type = et_s(node.resolved_iter);
+    if (SMap_len(&b.tpo) > 0) {
+        it_type = ty_subst_type(it_type, &b.tpo);
+    }
+    if (SMap_len(&b.tpo) > 0 || et_len(it_type) == 0) {
+        string st = eb_sema_type(b, node.expr);
+        if (et_len(st) > 0) {
+            it_type = st;
+        }
+    }
+    it_type = tyq_strip(it_type);
+    string al = SMap_get(&b.aliases, it_type);
+    if (al != null) {
+        it_type = al;
+    }
+    *ExprNode iterable = node.expr;
+    *StmtNode hold = null;
+    *TyT k = ty_parse(it_type);
+    if (ast_stable_place(node.expr) == 0) {
+        int by_ref = 0;
+        if (k.kind != TYK_ARRAY && k.kind != TYK_SLICE && k.kind != TYK_POINTER && eb_addressable(b, node.expr) == 1) {
+            by_ref = 1;
+        }
+        *ExprNode init = node.expr;
+        string ht = it_type;
+        if (by_ref == 1) {
+            init = eb_mk_un("&", node.expr);
+            ht = et_cat("*", it_type);
+        }
+        hold = eb_mk_vardecl(et_cat(idx_name, "_v"), ht, init);
+        iterable = eb_mk_ident(et_cat(idx_name, "_v"));
+    }
+    string elem_type = "";
+    *ExprNode length = null;
+    *ExprNode elem = null;
+    if (k.kind == TYK_ARRAY && k.elem != null) {
+        elem_type = ty_str(k.elem);
+        *ETy at = eb_type(b, it_type);
+        int64 n = (int64)0;
+        if (et_is_array(at) == 1) {
+            n = at.size;
+        }
+        length = eb_mk_int(et_ltoa(n));
+        elem = eb_mk_index(iterable, eb_mk_ident(idx_name));
+    } else if (k.kind == TYK_SLICE && k.elem != null) {
+        elem_type = ty_str(k.elem);
+        length = eb_mk_member(iterable, "len");
+        elem = eb_mk_index(iterable, eb_mk_ident(idx_name));
+    } else {
+        *TyT base = k;
+        while (base.kind == TYK_POINTER && base.pointee != null) {
+            base = base.pointee;
+        }
+        string sname = "";
+        if (base.kind == TYK_TEMPLATE) {
+            sname = ty_mangle(ty_str(base));
+        } else {
+            sname = ty_nominal(base);
+        }
+        if (k.kind == TYK_POINTER && hold == null) {
+            hold = eb_mk_vardecl(et_cat(idx_name, "_p"), it_type, node.expr);
+            iterable = eb_mk_ident(et_cat(idx_name, "_p"));
+        }
+        eb_ensure_layout(b, sname);
+        *EStruct st = em_layout(b.m, sname);
+        if (st != null && es_field(st, "size") != null) {
+            elem_type = et_s(node.resolved_elem);
+            if (SMap_len(&b.tpo) > 0) {
+                elem_type = ty_subst_type(elem_type, &b.tpo);
+            }
+        }
+        if (et_len(elem_type) == 0) {
+            dprintf(2, "EIR: for-in over unsupported type: %s\n", it_type);
+            return;
+        }
+        length = eb_mk_member(iterable, "size");
+        elem = eb_mk_index(eb_mk_member(iterable, "data"), eb_mk_ident(idx_name));
+    }
+    *StmtNode init_b = eb_mk_block();
+    if (hold != null) {
+        List_push<*StmtNode>(&init_b.items, hold);
+    }
+    List_push<*StmtNode>(&init_b.items, eb_mk_vardecl(idx_name, "int", eb_mk_int("0")));
+    *StmtNode loop = ast_new_stmt();
+    loop.kind = SK_FOR;
+    loop.s1 = init_b;
+    loop.expr = eb_mk_bin("<", eb_mk_ident(idx_name), length);
+    loop.expr2 = eb_mk_bin("=", eb_mk_ident(idx_name), eb_mk_bin("+", eb_mk_ident(idx_name), eb_mk_int("1")));
+    *StmtNode body = eb_mk_block();
+    List_push<*StmtNode>(&body.items, eb_mk_vardecl(node.name, elem_type, elem));
+    List_push<*StmtNode>(&body.items, node.s1);
+    loop.s2 = body;
+    loop.label = node.label;
+    eb_for(b, loop);
+}
+
+void eb_switch(EB* b, *StmtNode node) {
+    EOp subj = eb_eval(b, node.expr);
+    *EBlock end_bb = eb_block(b, "switch.end");
+    List<*EBlock> case_bbs;
+    List<int64> vals;
+    *EBlock dflt = end_bb;
+    int n = List_len<*StmtNode>(&node.items);
+    int i = 0;
+    while (i < n) {
+        *StmtNode c = List_get<*StmtNode>(&node.items, i);
+        string lbl = "switch.default";
+        if (c.expr != null) {
+            lbl = et_cat("switch.case.", et_itoa(i));
+        }
+        *EBlock bb = eb_block(b, lbl);
+        List_push<*EBlock>(&case_bbs, bb);
+        if (c.expr == null) {
+            dflt = bb;
+            List_push<int64>(&vals, (int64)0);
+        } else {
+            List_push<int64>(&vals, eb_fold_int(b, c.expr));
+        }
+        i = i + 1;
+    }
+    EInst sw = ei_make(EO_SWITCH, "", et_void());
+    ei_add(&sw, subj);
+    sw.dflt = dflt.name;
+    i = 0;
+    while (i < n) {
+        if (List_get<*StmtNode>(&node.items, i).expr != null) {
+            List_push<int64>(&sw.case_vals, List_get<int64>(&vals, i));
+            List_push<string>(&sw.case_lbls, List_get<*EBlock>(&case_bbs, i).name);
+        }
+        i = i + 1;
+    }
+    eb_emit(b, sw);
+    eb_push_loop(b, end_bb, null, "");
+    eb_push_scope(b);
+    i = 0;
+    while (i < n) {
+        *StmtNode c = List_get<*StmtNode>(&node.items, i);
+        eb_set_block(b, List_get<*EBlock>(&case_bbs, i));
+        eb_push_frame(b);
+        int depth = eb_nframes(b) - 1;
+        int j = 0;
+        while (j < List_len<*StmtNode>(&c.items)) {
+            if (b.blk.term == 1) {
+                break;
+            }
+            eb_stmt(b, List_get<*StmtNode>(&c.items, j));
+            j = j + 1;
+        }
+        if (b.blk.term == 0) {
+            eb_run_cleanups(b, depth, 0);
+        }
+        eb_pop_frame(b);
+        if (b.blk.term == 0) {
+            *EBlock nx = end_bb;
+            if (i + 1 < n) {
+                nx = List_get<*EBlock>(&case_bbs, i + 1);
+            }
+            eb_br(b, nx);
+        }
+        i = i + 1;
+    }
+    eb_pop_scope(b);
+    eb_pop_loop(b);
+    eb_set_block(b, end_bb);
+}
+
+// An arm's label: `V(a, b)` -> V and the bindings; `_` the default.
+string eb_arm_variant(string label, List<string>* binds) {
+    int p = et_findc(label, '(');
+    if (p < 0) {
+        return label;
+    }
+    string inner = et_sub(label, p + 1, et_len(label) - 1);
+    List<string> parts;
+    ty_split_top(inner, ',', &parts);
+    int i = 0;
+    while (i < List_len<string>(&parts)) {
+        string t = et_trim(List_get<string>(&parts, i));
+        if (et_len(t) > 0) {
+            List_push<string>(binds, t);
+        }
+        i = i + 1;
+    }
+    return et_sub(label, 0, p);
+}
+
+void eb_match(EB* b, *StmtNode node) {
+    string enum_name = tyq_strip(et_s(node.type));
+    if (et_len(enum_name) > 0) {
+        string al = SMap_get(&b.aliases, enum_name);
+        if (al != null) {
+            enum_name = tyq_strip(al);
+        }
+        if (et_findc(enum_name, '<') >= 0) {
+            enum_name = ty_mangle(enum_name);
+        } else {
+            enum_name = eb_strip_struct(enum_name);
+        }
+    }
+    if (et_len(enum_name) == 0) {
+        *ETy st = eb_expr_type(b, node.expr);
+        if (st != null) {
+            enum_name = et_nominal(st);
+        }
+    }
+    int n = List_len<*StmtNode>(&node.items);
+    *DeclNode ped = DMap_get(&b.plain_enums, enum_name);
+    if (ped != null) {
+        EOp subj = eb_eval(b, node.expr);
+        *EBlock end_bb = eb_block(b, "match.end");
+        List<*EBlock> arms;
+        *EBlock dflt = end_bb;
+        int i = 0;
+        while (i < n) {
+            *EBlock ab = eb_block(b, "match.arm");
+            List_push<*EBlock>(&arms, ab);
+            List<string> bs;
+            string v = eb_arm_variant(List_get<*StmtNode>(&node.items, i).name, &bs);
+            if (et_len(v) == 0 || et_eq(v, "_") == 1) {
+                dflt = ab;
+            }
+            i = i + 1;
+        }
+        EInst sw = ei_make(EO_SWITCH, "", et_void());
+        ei_add(&sw, subj);
+        sw.dflt = dflt.name;
+        i = 0;
+        while (i < n) {
+            List<string> bs;
+            string v = eb_arm_variant(List_get<*StmtNode>(&node.items, i).name, &bs);
+            if (et_len(v) > 0 && et_eq(v, "_") == 0) {
+                int64 val = (int64)0;
+                if (IMap_has(&b.enum_consts, v) == 1) {
+                    val = IMap_get(&b.enum_consts, v);
+                } else {
+                    int k = 0;
+                    while (k < List_len<Param>(&ped.params)) {
+                        Param pm = List_get<Param>(&ped.params, k);
+                        if (et_eq(pm.name, v) == 1) {
+                            val = et_parse_signed(pm.ty);
+                            break;
+                        }
+                        k = k + 1;
+                    }
+                }
+                List_push<int64>(&sw.case_vals, val);
+                List_push<string>(&sw.case_lbls, List_get<*EBlock>(&arms, i).name);
+            }
+            i = i + 1;
+        }
+        eb_emit(b, sw);
+        i = 0;
+        while (i < n) {
+            eb_set_block(b, List_get<*EBlock>(&arms, i));
+            eb_push_scope(b);
+            eb_visit_body(b, List_get<*StmtNode>(&node.items, i).s1);
+            eb_pop_scope(b);
+            if (b.blk.term == 0) {
+                eb_br(b, end_bb);
+            }
+            i = i + 1;
+        }
+        eb_set_block(b, end_bb);
+        return;
+    }
+    EOp subj = eb_eval(b, node.expr);
+    EOp addr = subj;
+    *ETy enum_ty = et_struct(enum_name, null);
+    if (et_is_ptr(subj.ty) == 0) {
+        string tmp = et_cat(eb_new_var(b), ".match_subj");
+        eb_i1(b, EO_ALLOCA, tmp, enum_ty, eo_int((int64)8, et_i32()));
+        eb_store(b, subj, eo_var(tmp, et_ptr(enum_ty)));
+        addr = eo_var(tmp, et_ptr(enum_ty));
+    }
+    string tag = et_cat(eb_new_var(b), ".tag");
+    eb_i1(b, EO_LOAD, tag, et_i32(), addr);
+    EOp tag_op = eo_var(tag, et_i32());
+    *EBlock end_bb = eb_block(b, "match.end");
+    List<*EBlock> arms;
+    *EBlock dflt = end_bb;
+    int i = 0;
+    while (i < n) {
+        *EBlock ab = eb_block(b, "match.arm");
+        List_push<*EBlock>(&arms, ab);
+        List<string> bs;
+        string v = eb_arm_variant(List_get<*StmtNode>(&node.items, i).name, &bs);
+        if (et_len(v) == 0 || et_eq(v, "_") == 1) {
+            dflt = ab;
+        }
+        i = i + 1;
+    }
+    EInst sw = ei_make(EO_SWITCH, "", et_void());
+    ei_add(&sw, tag_op);
+    sw.dflt = dflt.name;
+    string inst = "";
+    *ETy sty = eb_expr_type(b, node.expr);
+    if (sty != null) {
+        inst = et_nominal(sty);
+        if (IAMap_get(&b.inst_args, inst) == null) {
+            inst = "";
+        }
+    }
+    i = 0;
+    while (i < n) {
+        List<string> bs;
+        string v = eb_arm_variant(List_get<*StmtNode>(&node.items, i).name, &bs);
+        if (et_len(v) > 0 && et_eq(v, "_") == 0) {
+            int vidx = 0;
+            *EVariant var = eb_variant_for(b, v, inst);
+            if (var != null) {
+                vidx = var.idx;
+            }
+            List_push<int64>(&sw.case_vals, (int64)vidx);
+            List_push<string>(&sw.case_lbls, List_get<*EBlock>(&arms, i).name);
+        }
+        i = i + 1;
+    }
+    eb_emit(b, sw);
+    i = 0;
+    while (i < n) {
+        *StmtNode arm = List_get<*StmtNode>(&node.items, i);
+        eb_set_block(b, List_get<*EBlock>(&arms, i));
+        eb_push_scope(b);
+        List<string> binds;
+        string v = eb_arm_variant(arm.name, &binds);
+        if (et_len(v) > 0 && et_eq(v, "_") == 0 && List_len<string>(&binds) > 0) {
+            *EVariant vp = eb_variant_for(b, v, inst);
+            if (vp != null) {
+                int64 off = (int64)8;
+                int k = 0;
+                while (k < List_len<string>(&binds) && k < List_len<*ETy>(&vp.payload)) {
+                    *ETy bt = List_get<*ETy>(&vp.payload, k);
+                    string bn = List_get<string>(&binds, k);
+                    int64 ba = et_type_align(bt, b.m);
+                    off = (off + ba - (int64)1) & ~(ba - (int64)1);
+                    string fp = et_cat3(eb_new_var(b), ".", bn);
+                    fp = et_cat(fp, ".ptr");
+                    eb_i2(b, EO_OFFSETPTR, fp, et_ptr(bt), addr, eo_int(off, et_i64()));
+                    string lv = et_cat3(eb_new_var(b), ".", bn);
+                    eb_i1(b, EO_LOAD, lv, bt, eo_var(fp, et_ptr(bt)));
+                    string slot = et_cat3("%", bn, ".addr");
+                    eb_i1(b, EO_ALLOCA, slot, bt, eo_int(et_type_align(bt, null), et_i32()));
+                    eb_store(b, eo_var(lv, bt), eo_var(slot, et_ptr(bt)));
+                    eb_declare(b, bn, eo_var(slot, et_ptr(bt)), bt);
+                    off = off + et_type_size(bt, b.m);
+                    k = k + 1;
+                }
+            }
+        }
+        eb_visit_body(b, arm.s1);
+        eb_pop_scope(b);
+        if (b.blk.term == 0) {
+            eb_br(b, end_bb);
+        }
+        i = i + 1;
+    }
+    eb_set_block(b, end_bb);
+}
+
+// --- exceptions ---
+
+string eb_exception_type_name(string raw) {
+    string t = tyq_strip(raw);
+    if (et_len(t) > 0 && t[0] == '?') {
+        t = et_from(t, 1);
+    }
+    int p = et_find(t, "struct:", 0);
+    while (p >= 0) {
+        t = et_cat(et_sub(t, 0, p), et_from(t, p + 7));
+        p = et_find(t, "struct:", 0);
+    }
+    p = et_find(t, "interface:", 0);
+    while (p >= 0) {
+        t = et_cat(et_sub(t, 0, p), et_from(t, p + 10));
+        p = et_find(t, "interface:", 0);
+    }
+    if (et_findc(t, '<') >= 0) {
+        t = ty_mangle(t);
+    }
+    if (et_eq(t, "int32") == 1) {
+        t = "int";
+    }
+    if (et_eq(t, "uint32") == 1) {
+        t = "uint";
+    }
+    if (et_len(t) == 0) {
+        return "unknown";
+    }
+    return t;
+}
+
+void eb_defer_pad(EB* b, *StmtNode body) {
+    if (b.cur_fn == null || b.blk == null) {
+        return;
+    }
+    *EBlock saved = b.blk;
+    *EBlock pad = eb_block(b, "defer.lpad");
+    eb_set_block(b, pad);
+    string ex = eb_new_var(b);
+    eb_i0(b, EO_LANDINGPAD, ex, et_ptr(null));
+    EOp exo = eo_var(ex, et_ptr(null));
+    if (body != null) {
+        eb_stmt(b, body);
+    }
+    if (b.blk != null && b.blk.term == 0) {
+        eb_i1(b, EO_THROW, "", et_void(), exo);
+    }
+    eb_set_block(b, saved);
+    b.unwind = pad;
+    b.hdepth = b.hdepth + 1;
+    eb_i1(b, EO_PUSHHANDLER, "", et_void(), eo_block(pad.name));
+}
+
+void eb_throw(EB* b, *StmtNode node) {
+    if (node.expr == null) {
+        return;
+    }
+    EOp v = eb_eval(b, node.expr);
+    EOp ex;
+    if (node.is_err == 1) {
+        ex = v;
+    } else {
+        string tt = "";
+        if (SMap_len(&b.tpo) == 0) {
+            tt = et_s(node.expr.aty);
+        }
+        if (et_len(tt) == 0) {
+            *ETy vt = v.ty;
+            if (vt == null) {
+                vt = eb_expr_type(b, node.expr);
+            }
+            tt = eb_eskiu_spelling(vt);
+        }
+        tt = eb_exception_type_name(tt);
+        int64 pay = (int64)8;
+        if (v.ty != null) {
+            if (et_is_struct(v.ty) == 1) {
+                pay = em_struct_size(b.m, et_nominal(v.ty));
+            } else {
+                pay = et_type_size(v.ty, b.m);
+            }
+        }
+        if (pay == (int64)0) {
+            pay = (int64)8;
+        }
+        string exv = eb_new_var(b);
+        eb_i3(b, EO_CALL, exv, et_ptr(null), eo_global("__eir_alloc_exception", et_ptr(null)),
+              eo_int((int64)16 + pay, et_i64()), eo_str(tt));
+        ex = eo_var(exv, et_ptr(null));
+        string sl = eb_new_var(b);
+        eb_i2(b, EO_OFFSETPTR, sl, et_ptr(null), ex, eo_int((int64)16, et_i64()));
+        eb_store(b, v, eo_var(sl, et_ptr(null)));
+    }
+    eb_i1(b, EO_THROW, "", et_void(), ex);
+}
+
+void eb_add_cleanup(EB* b, *StmtNode body, int is_err, *EScopes snap) {
+    *EFrame fr = List_get<*EFrame>(&b.cleanups, eb_nframes(b) - 1);
+    *EDefer d = alloc<EDefer>(1);
+    d.body = body;
+    d.is_err = is_err;
+    d.snap = snap;
+    List_push<*EDefer>(&fr.items, d);
+}
+
+void eb_catch_parts(*StmtNode c, string* ty, string* name) {
+    string lbl = et_s(c.name);
+    if (et_eq(lbl, "_") == 1) {
+        *ty = "";
+        *name = "_";
+        return;
+    }
+    int sp = -1;
+    int i = 0;
+    while (lbl[i] != 0) {
+        if (lbl[i] == ' ') {
+            sp = i;
+        }
+        i = i + 1;
+    }
+    if (sp < 0) {
+        *ty = "";
+        *name = lbl;
+        return;
+    }
+    *ty = et_sub(lbl, 0, sp);
+    *name = et_from(lbl, sp + 1);
+}
+
+void eb_try(EB* b, *StmtNode node) {
+    if (b.cur_fn == null) {
+        return;
+    }
+    *EBlock lpad = eb_block(b, "try.lpad");
+    *EBlock dispatch = eb_block(b, "try.dispatch");
+    *EBlock fin_bb = eb_block(b, "try.finally");
+    *EBlock done = eb_block(b, "try.done");
+    *EBlock saved_unwind = b.unwind;
+    b.unwind = lpad;
+    int saved_h = b.hdepth;
+    int unwind_only = node.is_err;
+    eb_push_frame(b);
+    if (node.s2 != null && unwind_only == 0) {
+        eb_add_cleanup(b, node.s2, 0, null);
+    }
+    b.hdepth = b.hdepth + 1;
+    eb_i1(b, EO_PUSHHANDLER, "", et_void(), eo_block(lpad.name));
+    if (node.s1 != null) {
+        eb_stmt(b, node.s1);
+    }
+    if (b.blk != null && b.blk.term == 0) {
+        while (b.hdepth > saved_h) {
+            eb_i0(b, EO_POPHANDLER, "", et_void());
+            b.hdepth = b.hdepth - 1;
+        }
+        eb_br(b, fin_bb);
+    }
+    eb_pop_frame(b);
+    b.unwind = saved_unwind;
+    b.hdepth = saved_h;
+    eb_set_block(b, lpad);
+    string exv = eb_new_var(b);
+    eb_i0(b, EO_LANDINGPAD, exv, et_ptr(null));
+    EOp exo = eo_var(exv, et_ptr(null));
+    eb_br(b, dispatch);
+    eb_set_block(b, dispatch);
+    string tsv = eb_new_var(b);
+    eb_i2(b, EO_OFFSETPTR, tsv, et_ptr(null), exo, eo_int((int64)8, et_i64()));
+    string etv = eb_new_var(b);
+    eb_i1(b, EO_LOAD, etv, et_ptr(et_u8()), eo_var(tsv, et_ptr(null)));
+    EOp ext = eo_var(etv, et_ptr(et_u8()));
+    int i = 0;
+    while (i < List_len<*StmtNode>(&node.items)) {
+        *StmtNode c = List_get<*StmtNode>(&node.items, i);
+        i = i + 1;
+        string cty = "";
+        string cname = "";
+        eb_catch_parts(c, &cty, &cname);
+        int capture_all = c.is_err;
+        int catch_all = 0;
+        if (capture_all == 1 || et_len(cty) == 0 || et_eq(cty, "_") == 1 || et_eq(cname, "_") == 1) {
+            catch_all = 1;
+        }
+        string hn = "catch.any";
+        if (et_len(cty) > 0) {
+            hn = et_cat("catch.", cty);
+        }
+        *EBlock handler = eb_block(b, hn);
+        *EBlock next_bb = null;
+        if (catch_all == 0) {
+            next_bb = eb_block(b, "catch.next");
+        }
+        if (catch_all == 1) {
+            eb_br(b, handler);
+        } else {
+            string ct = cty;
+            if (SMap_len(&b.tpo) > 0) {
+                ct = ty_subst_type(cty, &b.tpo);
+            }
+            string ctn = eb_exception_type_name(ct);
+            string cmp = eb_new_var(b);
+            eb_i3(b, EO_CALL, cmp, et_i32(), eo_global("strcmp", et_i32()), ext, eo_str(ctn));
+            string mv = eb_new_var(b);
+            eb_icmp(b, mv, et_i1(), eo_var(cmp, et_i32()), eo_int((int64)0, et_i32()), EIC_EQ);
+            eb_br_cond(b, eo_var(mv, et_i1()), handler, next_bb);
+        }
+        eb_set_block(b, handler);
+        eb_push_scope(b);
+        eb_i2(b, EO_CALL, "", et_void(), eo_global("__eir_push_caught", et_void()), exo);
+        string ts = et_cat(eb_new_var(b), ".exc_text");
+        eb_entry_alloca(b, ts, et_array(et_u8(), (int64)512), (int64)8);
+        List_push<string>(&b.catch_text, ts);
+        eb_i1(b, EO_CALL, "", et_void(), eo_global("__eir_clear_exception", et_void()));
+        if (capture_all == 1 && et_len(cname) > 0) {
+            string ls = eb_new_var(b);
+            eb_i0(b, EO_ALLOCA, ls, et_ptr(null));
+            eb_store(b, exo, eo_var(ls, et_ptr(et_ptr(null))));
+            eb_declare(b, cname, eo_var(ls, et_ptr(et_ptr(null))), et_ptr(null));
+        }
+        if (catch_all == 0 && et_len(cname) > 0) {
+            string ct = cty;
+            if (SMap_len(&b.tpo) > 0) {
+                ct = ty_subst_type(cty, &b.tpo);
+            }
+            *ETy cet = eb_type(b, ct);
+            string ps = eb_new_var(b);
+            eb_i2(b, EO_OFFSETPTR, ps, et_ptr(null), exo, eo_int((int64)16, et_i64()));
+            string pv = eb_new_var(b);
+            eb_i1(b, EO_LOAD, pv, cet, eo_var(ps, et_ptr(null)));
+            string ls = eb_new_var(b);
+            eb_i0(b, EO_ALLOCA, ls, cet);
+            eb_store(b, eo_var(pv, cet), eo_var(ls, et_ptr(cet)));
+            eb_declare(b, cname, eo_var(ls, et_ptr(cet)), cet);
+        }
+        eb_push_frame(b);
+        int catch_h = b.hdepth;
+        *EBlock saved_cu = b.unwind;
+        if (node.s2 != null && unwind_only == 0) {
+            eb_add_cleanup(b, node.s2, 0, null);
+            eb_defer_pad(b, node.s2);
+        }
+        if (c.s1 != null) {
+            eb_stmt(b, c.s1);
+        }
+        if (b.blk != null && b.blk.term == 0) {
+            while (b.hdepth > catch_h) {
+                eb_i0(b, EO_POPHANDLER, "", et_void());
+                b.hdepth = b.hdepth - 1;
+            }
+            eb_i1(b, EO_CALL, "", et_void(), eo_global("__eir_pop_caught", et_void()));
+            eb_br(b, fin_bb);
+        }
+        b.unwind = saved_cu;
+        List_pop<string>(&b.catch_text);
+        eb_pop_frame(b);
+        eb_pop_scope(b);
+        if (next_bb != null) {
+            eb_set_block(b, next_bb);
+        }
+    }
+    if (b.blk != null && b.blk.term == 0) {
+        if (node.s2 != null) {
+            eb_stmt(b, node.s2);
+        }
+        if (b.blk != null && b.blk.term == 0) {
+            eb_i1(b, EO_THROW, "", et_void(), exo);
+        }
+    }
+    eb_set_block(b, fin_bb);
+    if (node.s2 != null && unwind_only == 0) {
+        eb_stmt(b, node.s2);
+    }
+    if (b.blk != null && b.blk.term == 0) {
+        eb_br(b, done);
+    }
+    b.unwind = saved_unwind;
+    b.hdepth = saved_h;
+    eb_set_block(b, done);
+}
+
+void eb_defer(EB* b, *StmtNode node) {
+    if (node.s1 != null && eb_nframes(b) > 0) {
+        eb_add_cleanup(b, node.s1, node.is_err, eb_snapshot(b));
+        if (node.is_err == 0 && b.cur_fn != null) {
+            eb_defer_pad(b, node.s1);
+        }
+    }
+}
+
+// --- inline assembly ---
+
+void eb_asm(EB* b, *StmtNode node) {
+    List<EOp> ops;
+    String cons;
+    String_init(&cons, 32);
+    List<EOp> reg_addr;
+    List<*ETy> reg_ty;
+    List<int> reg_vol;
+    List<string> tied_c;
+    List<EOp> tied_v;
+    int oi = 0;
+    int i = 0;
+    while (i < List_len<*StmtNode>(&node.items)) {
+        *StmtNode o = List_get<*StmtNode>(&node.items, i);
+        i = i + 1;
+        if (o.kind != SK_ASMOUTPUT) {
+            continue;
+        }
+        string c = et_s(o.name);
+        int rw = 0;
+        if (et_len(c) > 0 && c[0] == '+') {
+            rw = 1;
+        }
+        string body = et_from(c, 1);
+        *ETy ty = eb_expr_type(b, o.expr);
+        EOp addr = eb_lvalue(b, o.expr);
+        int vol = eb_vol_rooted(b, o.expr);
+        if (et_eq(body, "m") == 1) {
+            if (String_len(&cons) > 0) {
+                String_append(&cons, ",");
+            }
+            String_append(&cons, "=*m");
+            List_push<EOp>(&ops, addr);
+            if (rw == 1) {
+                List_push<string>(&tied_c, "*m");
+                List_push<EOp>(&tied_v, addr);
+            }
+        } else {
+            if (String_len(&cons) > 0) {
+                String_append(&cons, ",");
+            }
+            String_append(&cons, et_cat("=", body));
+            List_push<EOp>(&reg_addr, addr);
+            List_push<*ETy>(&reg_ty, ty);
+            List_push<int>(&reg_vol, vol);
+            if (rw == 1) {
+                string cur = eb_new_var(b);
+                eb_load_v(b, cur, ty, addr, vol);
+                List_push<string>(&tied_c, et_itoa(oi));
+                List_push<EOp>(&tied_v, eo_var(cur, ty));
+            }
+        }
+        oi = oi + 1;
+    }
+    i = 0;
+    while (i < List_len<*StmtNode>(&node.items)) {
+        *StmtNode o = List_get<*StmtNode>(&node.items, i);
+        i = i + 1;
+        if (o.kind != SK_ASMINPUT) {
+            continue;
+        }
+        List_push<EOp>(&ops, eb_eval(b, o.expr));
+        if (String_len(&cons) > 0) {
+            String_append(&cons, ",");
+        }
+        String_append(&cons, et_s(o.name));
+    }
+    i = 0;
+    while (i < List_len<string>(&tied_c)) {
+        List_push<EOp>(&ops, List_get<EOp>(&tied_v, i));
+        if (String_len(&cons) > 0) {
+            String_append(&cons, ",");
+        }
+        String_append(&cons, List_get<string>(&tied_c, i));
+        i = i + 1;
+    }
+    List<string> clobbers;
+    string cl = et_s(node.type);
+    if (et_len(cl) > 0) {
+        if (String_len(&cons) > 0) {
+            String_append(&cons, ",");
+        }
+        String_append(&cons, cl);
+        List<string> parts;
+        ty_split_top(cl, ',', &parts);
+        int k = 0;
+        while (k < List_len<string>(&parts)) {
+            string p = List_get<string>(&parts, k);
+            List_push<string>(&clobbers, et_sub(p, 2, et_len(p) - 1));
+            k = k + 1;
+        }
+    }
+    EInst ins = ei_make(EO_INLINEASM, "", et_void());
+    ins.asm_str = node.name;
+    ins.asm_cons = (string)String_cstr(&cons);
+    ins.clobbers = clobbers;
+    ins.ops = ops;
+    int nr = List_len<EOp>(&reg_addr);
+    if (nr == 1) {
+        ins.ty = List_get<*ETy>(&reg_ty, 0);
+        ins.res = eb_new_var(b);
+        eb_emit(b, ins);
+        eb_store_v(b, eo_var(ins.res, ins.ty), List_get<EOp>(&reg_addr, 0), List_get<int>(&reg_vol, 0));
+    } else if (nr > 1) {
+        ins.ty = et_struct("asm_out", &reg_ty);
+        ins.res = eb_new_var(b);
+        eb_emit(b, ins);
+        int k = 0;
+        while (k < nr) {
+            string ev = eb_new_var(b);
+            *ETy rt = List_get<*ETy>(&reg_ty, k);
+            eb_i2(b, EO_EXTRACTFAT, ev, rt, eo_var(ins.res, ins.ty), eo_int((int64)k, et_i32()));
+            eb_store_v(b, eo_var(ev, rt), List_get<EOp>(&reg_addr, k), List_get<int>(&reg_vol, k));
+            k = k + 1;
+        }
+    } else {
+        eb_emit(b, ins);
+    }
+}
+
+void eb_stmt(EB* b, *StmtNode s) {
+    if (s == null) {
+        return;
+    }
+    int k = s.kind;
+    if (k == SK_BLOCK) {
+        eb_block_stmt(b, s);
+    } else if (k == SK_VARDECL) {
+        eb_local_var(b, s);
+    } else if (k == SK_RETURN) {
+        eb_return(b, s);
+    } else if (k == SK_IF) {
+        eb_if(b, s);
+    } else if (k == SK_WHILE) {
+        eb_while(b, s);
+    } else if (k == SK_FOR) {
+        eb_for(b, s);
+    } else if (k == SK_FORIN) {
+        eb_for_in(b, s);
+    } else if (k == SK_DOWHILE) {
+        eb_do_while(b, s);
+    } else if (k == SK_BREAK) {
+        eb_break(b, s, 0);
+    } else if (k == SK_CONTINUE) {
+        eb_break(b, s, 1);
+    } else if (k == SK_EXPR) {
+        if (s.expr != null) {
+            eb_eval(b, s.expr);
+        }
+    } else if (k == SK_SWITCH) {
+        eb_switch(b, s);
+    } else if (k == SK_MATCH) {
+        eb_match(b, s);
+    } else if (k == SK_TRY) {
+        eb_try(b, s);
+    } else if (k == SK_THROW) {
+        eb_throw(b, s);
+    } else if (k == SK_DEFER) {
+        eb_defer(b, s);
+    } else if (k == SK_THREADJOIN) {
+        EOp tid = eb_eval(b, s.expr);
+        eb_i2(b, EO_CALL, "", et_void(), eo_global("__eir_thread_join", et_void()), tid);
+    } else if (k == SK_ASM) {
+        eb_asm(b, s);
+    }
+}

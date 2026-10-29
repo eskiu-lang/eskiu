@@ -1,0 +1,1130 @@
+// The EIR model and its text form, as eir/eir.h and eir/eir.cpp define them. An
+// instruction is rendered when it is emitted (nothing reads one back), so a block holds
+// its lines and whether each is an alloca.
+
+import <io>;
+import <list>;
+import <mem>;
+import <string>;
+import "ast.esk";
+import "eir_ty.esk";
+
+enum ETyKind {
+    ETK_VOID, ETK_INT, ETK_FLOAT, ETK_POINTER, ETK_STRUCT, ETK_ARRAY, ETK_FUNCTION,
+    ETK_INTERFACE, ETK_CLOSURE, ETK_SLICE
+}
+
+struct ETy {
+    int kind;
+    string name;
+    int bits;
+    int sgn;
+    *ETy elem;          // pointee (Pointer) or element (Array, Slice)
+    int64 size;         // Array
+    List<*ETy> members; // Struct fields, Function params
+    *ETy ret;           // Closure, Function
+}
+
+*ETy et_mk(int kind, string name, int bits, int sgn) {
+    *ETy t = alloc<ETy>(1);
+    t.kind = kind;
+    t.name = name;
+    t.bits = bits;
+    t.sgn = sgn;
+    return t;
+}
+
+*ETy g_et_void;
+*ETy g_et_i1;
+*ETy g_et_i8;
+*ETy g_et_i16;
+*ETy g_et_i32;
+*ETy g_et_i64;
+*ETy g_et_u8;
+*ETy g_et_u16;
+*ETy g_et_u32;
+*ETy g_et_u64;
+*ETy g_et_f32;
+*ETy g_et_f64;
+*ETy g_et_closure;
+
+void et_init_types() {
+    if (g_et_void != null) {
+        return;
+    }
+    g_et_void = et_mk(ETK_VOID, "void", 0, 0);
+    g_et_i1 = et_mk(ETK_INT, "i1", 1, 0);
+    g_et_i8 = et_mk(ETK_INT, "i8", 8, 1);
+    g_et_i16 = et_mk(ETK_INT, "i16", 16, 1);
+    g_et_i32 = et_mk(ETK_INT, "i32", 32, 1);
+    g_et_i64 = et_mk(ETK_INT, "i64", 64, 1);
+    g_et_u8 = et_mk(ETK_INT, "u8", 8, 0);
+    g_et_u16 = et_mk(ETK_INT, "u16", 16, 0);
+    g_et_u32 = et_mk(ETK_INT, "u32", 32, 0);
+    g_et_u64 = et_mk(ETK_INT, "u64", 64, 0);
+    g_et_f32 = et_mk(ETK_FLOAT, "f32", 32, 1);
+    g_et_f64 = et_mk(ETK_FLOAT, "f64", 64, 1);
+    g_et_closure = et_mk(ETK_CLOSURE, "closure", 0, 0);
+}
+
+*ETy et_void() { return g_et_void; }
+*ETy et_i1() { return g_et_i1; }
+*ETy et_i8() { return g_et_i8; }
+*ETy et_i16() { return g_et_i16; }
+*ETy et_i32() { return g_et_i32; }
+*ETy et_i64() { return g_et_i64; }
+*ETy et_u8() { return g_et_u8; }
+*ETy et_u16() { return g_et_u16; }
+*ETy et_u32() { return g_et_u32; }
+*ETy et_u64() { return g_et_u64; }
+*ETy et_f32() { return g_et_f32; }
+*ETy et_f64() { return g_et_f64; }
+
+*ETy et_ptr(*ETy pointee) {
+    *ETy t = et_mk(ETK_POINTER, "ptr", 64, 0);
+    t.elem = pointee;
+    return t;
+}
+
+*ETy et_struct(string name, List<*ETy>* fields) {
+    *ETy t = et_mk(ETK_STRUCT, name, 0, 0);
+    if (fields != null) {
+        int i = 0;
+        while (i < List_len<*ETy>(fields)) {
+            List_push<*ETy>(&t.members, List_get<*ETy>(fields, i));
+            i = i + 1;
+        }
+    }
+    return t;
+}
+
+*ETy et_array(*ETy elem, int64 size) {
+    *ETy t = et_mk(ETK_ARRAY, "array", 0, 0);
+    t.elem = elem;
+    t.size = size;
+    return t;
+}
+
+*ETy et_slice(*ETy elem) {
+    *ETy t = et_mk(ETK_SLICE, "slice", 0, 0);
+    t.elem = elem;
+    return t;
+}
+
+*ETy et_iface(string name) {
+    return et_mk(ETK_INTERFACE, name, 0, 0);
+}
+
+*ETy et_closure(*ETy ret) {
+    if (ret == null) {
+        return g_et_closure;
+    }
+    *ETy t = et_mk(ETK_CLOSURE, "closure", 0, 0);
+    t.ret = ret;
+    return t;
+}
+
+int et_is(*ETy t, int k) {
+    if (t != null && t.kind == k) {
+        return 1;
+    }
+    return 0;
+}
+
+int et_is_int(*ETy t) { return et_is(t, ETK_INT); }
+int et_is_float(*ETy t) { return et_is(t, ETK_FLOAT); }
+int et_is_ptr(*ETy t) { return et_is(t, ETK_POINTER); }
+int et_is_struct(*ETy t) { return et_is(t, ETK_STRUCT); }
+int et_is_array(*ETy t) { return et_is(t, ETK_ARRAY); }
+int et_is_slice(*ETy t) { return et_is(t, ETK_SLICE); }
+int et_is_closure(*ETy t) { return et_is(t, ETK_CLOSURE); }
+int et_is_iface(*ETy t) { return et_is(t, ETK_INTERFACE); }
+int et_is_void(*ETy t) { return et_is(t, ETK_VOID); }
+
+// Struct, array, closure, interface or slice: a value that is the address of its bytes.
+int et_is_agg(*ETy t) {
+    if (t == null) {
+        return 0;
+    }
+    if (t.kind == ETK_STRUCT || t.kind == ETK_ARRAY || t.kind == ETK_INTERFACE || t.kind == ETK_CLOSURE
+        || t.kind == ETK_SLICE) {
+        return 1;
+    }
+    return 0;
+}
+
+string et_nominal(*ETy t) {
+    if (t.kind == ETK_POINTER && t.elem != null) {
+        return et_nominal(t.elem);
+    }
+    return et_s(t.name);
+}
+
+string et_str(*ETy t) {
+    if (t == null) {
+        return "void";
+    }
+    int k = t.kind;
+    if (k == ETK_VOID) {
+        return "void";
+    }
+    if (k == ETK_INT) {
+        if (t.bits == 1) {
+            return "i1";
+        }
+        if (t.sgn == 1) {
+            return et_cat("i", et_itoa(t.bits));
+        }
+        return et_cat("u", et_itoa(t.bits));
+    }
+    if (k == ETK_FLOAT) {
+        if (t.bits == 32) {
+            return "f32";
+        }
+        return "f64";
+    }
+    if (k == ETK_POINTER) {
+        return "ptr";
+    }
+    if (k == ETK_STRUCT) {
+        return et_cat("struct @", t.name);
+    }
+    if (k == ETK_ARRAY) {
+        string e = "void";
+        if (t.elem != null) {
+            e = et_str(t.elem);
+        }
+        return et_cat3(et_cat3("[", et_ltoa(t.size), " x "), e, "]");
+    }
+    if (k == ETK_FUNCTION) {
+        String s;
+        String_init(&s, 32);
+        String_append(&s, "fn(");
+        int i = 0;
+        while (i < List_len<*ETy>(&t.members)) {
+            if (i > 0) {
+                String_append(&s, ", ");
+            }
+            String_append(&s, et_str(List_get<*ETy>(&t.members, i)));
+            i = i + 1;
+        }
+        String_append(&s, ") -> ");
+        if (t.ret != null) {
+            String_append(&s, et_str(t.ret));
+        } else {
+            String_append(&s, "void");
+        }
+        return (string)String_cstr(&s);
+    }
+    if (k == ETK_INTERFACE || k == ETK_CLOSURE) {
+        return "{ ptr, ptr }";
+    }
+    if (k == ETK_SLICE) {
+        return "{ ptr, i64 }";
+    }
+    return "unknown";
+}
+
+// --- operands ---
+
+enum EOpKind { EOK_NULL, EOK_VAR, EOK_INT, EOK_FLOAT, EOK_STR, EOK_GLOBAL, EOK_BLOCK }   // zero = null, as Operand's default
+
+struct EOp {
+    int kind;
+    *ETy ty;
+    string text;
+    int64 iv;
+    double fv;
+    int slen;           // EOK_STR: byte length (the text may hold NULs)
+}
+
+EOp eo_var(string name, *ETy t) {
+    EOp o;
+    o.kind = EOK_VAR;
+    o.ty = t;
+    o.text = name;
+    return o;
+}
+
+EOp eo_int(int64 v, *ETy t) {
+    EOp o;
+    o.kind = EOK_INT;
+    o.ty = t;
+    o.text = "";
+    o.iv = v;
+    return o;
+}
+
+EOp eo_float(double v, *ETy t) {
+    EOp o;
+    o.kind = EOK_FLOAT;
+    o.ty = t;
+    o.text = "";
+    o.fv = v;
+    return o;
+}
+
+EOp eo_str_n(string s, int n) {
+    EOp o;
+    o.kind = EOK_STR;
+    o.ty = et_ptr(et_u8());
+    o.text = s;
+    o.slen = n;
+    return o;
+}
+
+EOp eo_str(string s) {
+    return eo_str_n(et_s(s), et_len(s));
+}
+
+EOp eo_null() {
+    EOp o;
+    o.kind = EOK_NULL;
+    o.ty = et_ptr(null);
+    o.text = "null";
+    return o;
+}
+
+EOp eo_global(string name, *ETy t) {
+    EOp o;
+    o.kind = EOK_GLOBAL;
+    o.ty = t;
+    o.text = name;
+    return o;
+}
+
+EOp eo_block(string label) {
+    EOp o;
+    o.kind = EOK_BLOCK;
+    o.text = label;
+    return o;
+}
+
+string eo_fmt_double(double v) {
+    uint8[64] buf;
+    sprintf((string)&buf[0], "%g", v);
+    string s = et_cat("", (string)&buf[0]);
+    if (et_findc(s, '.') < 0 && et_findc(s, 'e') < 0) {
+        s = et_cat(s, ".0");
+    }
+    return s;
+}
+
+string eo_str_of(EOp* o) {
+    int k = o.kind;
+    if (k == EOK_VAR) {
+        return et_s(o.text);
+    }
+    if (k == EOK_INT) {
+        if (o.ty != null && o.ty.bits == 1) {
+            if (o.iv != 0) {
+                return "true";
+            }
+            return "false";
+        }
+        return et_ltoa(o.iv);
+    }
+    if (k == EOK_FLOAT) {
+        return eo_fmt_double(o.fv);
+    }
+    if (k == EOK_STR) {
+        String s;
+        String_init(&s, o.slen + 3);
+        String_push(&s, '"');
+        int i = 0;
+        while (i < o.slen) {
+            char c = o.text[i];
+            if (c == '\n') {
+                String_append(&s, "\\n");
+            } else if (c == '\r') {
+                String_append(&s, "\\r");
+            } else if (c == '\t') {
+                String_append(&s, "\\t");
+            } else if (c == '"') {
+                String_append(&s, "\\\"");
+            } else if (c == '\\') {
+                String_append(&s, "\\\\");
+            } else {
+                String_push(&s, c);
+            }
+            i = i + 1;
+        }
+        String_push(&s, '"');
+        return (string)String_cstr(&s);
+    }
+    if (k == EOK_NULL) {
+        return "null";
+    }
+    if (k == EOK_GLOBAL) {
+        return et_cat("@", o.text);
+    }
+    if (k == EOK_BLOCK) {
+        return et_cat("$", o.text);
+    }
+    return "<operand>";
+}
+
+string eo_s(EOp o) {
+    return eo_str_of(&o);
+}
+
+string eo_tys(EOp o) {
+    return et_str(o.ty);
+}
+
+// --- instructions ---
+
+enum EOpc {
+    EO_ALLOCA, EO_LOAD, EO_STORE, EO_GEP, EO_FIELDPTR, EO_OFFSETPTR,
+    EO_ADD, EO_SUB, EO_MUL, EO_SDIV, EO_UDIV, EO_SREM, EO_UREM,
+    EO_FADD, EO_FSUB, EO_FMUL, EO_FDIV, EO_NEG,
+    EO_AND, EO_OR, EO_XOR, EO_SHL, EO_LSHR, EO_ASHR, EO_NOT,
+    EO_ICMP, EO_FCMP,
+    EO_TRUNC, EO_ZEXT, EO_SEXT, EO_FPTRUNC, EO_FPEXT, EO_FPTOSI, EO_SITOFP, EO_BITCAST, EO_PTRTOINT, EO_INTTOPTR,
+    EO_BR, EO_BRCOND, EO_SWITCH, EO_RET, EO_UNREACHABLE,
+    EO_CALL, EO_CALLINDIRECT, EO_MAKEIFACE, EO_MAKECLOSURE, EO_MAKESLICE, EO_EXTRACTFAT,
+    EO_THROW, EO_INVOKE, EO_LANDINGPAD, EO_PUSHHANDLER, EO_POPHANDLER,
+    EO_INLINEASM
+}
+
+enum EICond { EIC_EQ, EIC_NE, EIC_SLT, EIC_SLE, EIC_SGT, EIC_SGE, EIC_ULT, EIC_ULE, EIC_UGT, EIC_UGE }
+enum EFCond { EFC_OEQ, EFC_ONE, EFC_OLT, EFC_OLE, EFC_OGT, EFC_OGE }
+
+string ei_icond_str(int c) {
+    if (c == EIC_NE) { return "ne"; }
+    if (c == EIC_SLT) { return "slt"; }
+    if (c == EIC_SLE) { return "sle"; }
+    if (c == EIC_SGT) { return "sgt"; }
+    if (c == EIC_SGE) { return "sge"; }
+    if (c == EIC_ULT) { return "ult"; }
+    if (c == EIC_ULE) { return "ule"; }
+    if (c == EIC_UGT) { return "ugt"; }
+    if (c == EIC_UGE) { return "uge"; }
+    return "eq";
+}
+
+string ei_fcond_str(int c) {
+    if (c == EFC_ONE) { return "one"; }
+    if (c == EFC_OLT) { return "olt"; }
+    if (c == EFC_OLE) { return "ole"; }
+    if (c == EFC_OGT) { return "ogt"; }
+    if (c == EFC_OGE) { return "oge"; }
+    return "oeq";
+}
+
+struct EInst {
+    int op;
+    string res;
+    *ETy ty;
+    List<EOp> ops;
+    int icmp;
+    int fcmp;
+    int vol;
+    string asm_str;
+    string asm_cons;
+    List<string> clobbers;
+    List<int64> case_vals;
+    List<string> case_lbls;
+    string dflt;
+}
+
+EInst ei_make(int op, string res, *ETy ty) {
+    EInst i;
+    i.op = op;
+    i.res = res;
+    i.ty = ty;
+    return i;
+}
+
+void ei_add(EInst* i, EOp o) {
+    List_push<EOp>(&i.ops, o);
+}
+
+EOp ei_op(EInst* i, int k) {
+    return List_get<EOp>(&i.ops, k);
+}
+
+int ei_is_term(int op) {
+    if (op == EO_RET || op == EO_BR || op == EO_BRCOND || op == EO_SWITCH || op == EO_UNREACHABLE || op == EO_THROW) {
+        return 1;
+    }
+    return 0;
+}
+
+string ei_binop_name(int op) {
+    if (op == EO_ADD) { return "add"; }
+    if (op == EO_SUB) { return "sub"; }
+    if (op == EO_MUL) { return "mul"; }
+    if (op == EO_SDIV) { return "sdiv"; }
+    if (op == EO_UDIV) { return "udiv"; }
+    if (op == EO_SREM) { return "srem"; }
+    if (op == EO_UREM) { return "urem"; }
+    if (op == EO_FADD) { return "fadd"; }
+    if (op == EO_FSUB) { return "fsub"; }
+    if (op == EO_FMUL) { return "fmul"; }
+    if (op == EO_FDIV) { return "fdiv"; }
+    if (op == EO_AND) { return "and"; }
+    if (op == EO_OR) { return "or"; }
+    if (op == EO_XOR) { return "xor"; }
+    if (op == EO_SHL) { return "shl"; }
+    if (op == EO_LSHR) { return "lshr"; }
+    if (op == EO_ASHR) { return "ashr"; }
+    return "";
+}
+
+string ei_cast_name(int op) {
+    if (op == EO_TRUNC) { return "trunc"; }
+    if (op == EO_ZEXT) { return "zext"; }
+    if (op == EO_SEXT) { return "sext"; }
+    if (op == EO_FPTRUNC) { return "fptrunc"; }
+    if (op == EO_FPEXT) { return "fpext"; }
+    if (op == EO_FPTOSI) { return "fptosi"; }
+    if (op == EO_SITOFP) { return "sitofp"; }
+    if (op == EO_BITCAST) { return "bitcast"; }
+    return "";
+}
+
+void ei_args(String* s, EInst* ins) {
+    int i = 1;
+    while (i < List_len<EOp>(&ins.ops)) {
+        if (i > 1) {
+            String_append(s, ", ");
+        }
+        EOp o = ei_op(ins, i);
+        String_append(s, eo_tys(o));
+        String_append(s, " ");
+        String_append(s, eo_s(o));
+        i = i + 1;
+    }
+}
+
+string ei_render(EInst* ins) {
+    String s;
+    String_init(&s, 64);
+    if (et_len(ins.res) > 0) {
+        String_append(&s, ins.res);
+        String_append(&s, " = ");
+    }
+    int op = ins.op;
+    string ty = et_str(ins.ty);
+    if (op == EO_ALLOCA) {
+        String_append(&s, "alloca ");
+        String_append(&s, ty);
+        if (List_len<EOp>(&ins.ops) > 0) {
+            String_append(&s, ", align ");
+            String_append(&s, eo_s(ei_op(ins, 0)));
+        }
+    } else if (op == EO_LOAD) {
+        if (ins.vol == 1) {
+            String_append(&s, "load volatile ");
+        } else {
+            String_append(&s, "load ");
+        }
+        String_append(&s, ty);
+        String_append(&s, ", ptr ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+    } else if (op == EO_STORE) {
+        if (ins.vol == 1) {
+            String_append(&s, "store volatile ");
+        } else {
+            String_append(&s, "store ");
+        }
+        String_append(&s, eo_tys(ei_op(ins, 0)));
+        String_append(&s, " ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, ", ptr ");
+        String_append(&s, eo_s(ei_op(ins, 1)));
+    } else if (op == EO_GEP) {
+        String_append(&s, "gep ");
+        String_append(&s, eo_tys(ei_op(ins, 0)));
+        String_append(&s, ", ptr ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, ", ");
+        String_append(&s, eo_tys(ei_op(ins, 1)));
+        String_append(&s, " ");
+        String_append(&s, eo_s(ei_op(ins, 1)));
+    } else if (op == EO_FIELDPTR) {
+        String_append(&s, "field_ptr @");
+        String_append(&s, et_s(ei_op(ins, 0).text));
+        String_append(&s, ", ptr ");
+        String_append(&s, eo_s(ei_op(ins, 1)));
+        String_append(&s, ", ");
+        String_append(&s, eo_s(ei_op(ins, 2)));
+    } else if (op == EO_OFFSETPTR) {
+        String_append(&s, "offset_ptr ptr ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, ", i64 ");
+        String_append(&s, eo_s(ei_op(ins, 1)));
+    } else if (et_len(ei_binop_name(op)) > 0) {
+        String_append(&s, ei_binop_name(op));
+        String_append(&s, " ");
+        String_append(&s, ty);
+        String_append(&s, " ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, ", ");
+        String_append(&s, eo_s(ei_op(ins, 1)));
+    } else if (op == EO_NEG || op == EO_NOT) {
+        if (op == EO_NEG) {
+            String_append(&s, "neg ");
+        } else {
+            String_append(&s, "not ");
+        }
+        String_append(&s, ty);
+        String_append(&s, " ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+    } else if (op == EO_ICMP || op == EO_FCMP) {
+        if (op == EO_ICMP) {
+            String_append(&s, "icmp ");
+            String_append(&s, ei_icond_str(ins.icmp));
+        } else {
+            String_append(&s, "fcmp ");
+            String_append(&s, ei_fcond_str(ins.fcmp));
+        }
+        String_append(&s, " ");
+        String_append(&s, eo_tys(ei_op(ins, 0)));
+        String_append(&s, " ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, ", ");
+        String_append(&s, eo_s(ei_op(ins, 1)));
+    } else if (et_len(ei_cast_name(op)) > 0) {
+        String_append(&s, ei_cast_name(op));
+        String_append(&s, " ");
+        String_append(&s, eo_tys(ei_op(ins, 0)));
+        String_append(&s, " ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, " to ");
+        String_append(&s, ty);
+    } else if (op == EO_PTRTOINT) {
+        String_append(&s, "ptrtoint ptr ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, " to ");
+        String_append(&s, ty);
+    } else if (op == EO_INTTOPTR) {
+        String_append(&s, "inttoptr ");
+        String_append(&s, eo_tys(ei_op(ins, 0)));
+        String_append(&s, " ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, " to ptr");
+    } else if (op == EO_BR) {
+        String_append(&s, "br ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+    } else if (op == EO_BRCOND) {
+        String_append(&s, "br_cond i1 ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, ", ");
+        String_append(&s, eo_s(ei_op(ins, 1)));
+        String_append(&s, ", ");
+        String_append(&s, eo_s(ei_op(ins, 2)));
+    } else if (op == EO_SWITCH) {
+        String_append(&s, "switch ");
+        String_append(&s, eo_tys(ei_op(ins, 0)));
+        String_append(&s, " ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, ", $");
+        String_append(&s, et_s(ins.dflt));
+        String_append(&s, " [");
+        int i = 0;
+        while (i < List_len<int64>(&ins.case_vals)) {
+            if (i > 0) {
+                String_append(&s, ", ");
+            }
+            String_append(&s, et_ltoa(List_get<int64>(&ins.case_vals, i)));
+            String_append(&s, ": $");
+            String_append(&s, List_get<string>(&ins.case_lbls, i));
+            i = i + 1;
+        }
+        String_append(&s, "]");
+    } else if (op == EO_RET) {
+        if (List_len<EOp>(&ins.ops) == 0 || et_is_void(ei_op(ins, 0).ty) == 1) {
+            String_append(&s, "ret void");
+        } else {
+            String_append(&s, "ret ");
+            String_append(&s, eo_tys(ei_op(ins, 0)));
+            String_append(&s, " ");
+            String_append(&s, eo_s(ei_op(ins, 0)));
+        }
+    } else if (op == EO_UNREACHABLE) {
+        String_append(&s, "unreachable");
+    } else if (op == EO_CALL || op == EO_CALLINDIRECT) {
+        if (op == EO_CALL) {
+            String_append(&s, "call ");
+        } else {
+            String_append(&s, "call_indirect ");
+        }
+        String_append(&s, ty);
+        String_append(&s, " ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, "(");
+        ei_args(&s, ins);
+        String_append(&s, ")");
+    } else if (op == EO_MAKEIFACE || op == EO_MAKECLOSURE || op == EO_MAKESLICE) {
+        if (op == EO_MAKEIFACE) {
+            String_append(&s, "make_interface ptr ");
+        } else if (op == EO_MAKECLOSURE) {
+            String_append(&s, "make_closure ptr ");
+        } else {
+            String_append(&s, "make_slice ptr ");
+        }
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        if (op == EO_MAKESLICE) {
+            String_append(&s, ", i64 ");
+        } else {
+            String_append(&s, ", ptr ");
+        }
+        String_append(&s, eo_s(ei_op(ins, 1)));
+    } else if (op == EO_EXTRACTFAT) {
+        String_append(&s, "extract_fat ");
+        String_append(&s, eo_tys(ei_op(ins, 0)));
+        String_append(&s, " ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, ", ");
+        String_append(&s, eo_s(ei_op(ins, 1)));
+    } else if (op == EO_THROW) {
+        String_append(&s, "throw ptr ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+    } else if (op == EO_INVOKE) {
+        String_append(&s, "invoke ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, " to ");
+        String_append(&s, eo_s(ei_op(ins, 1)));
+        String_append(&s, " unwind ");
+        String_append(&s, eo_s(ei_op(ins, 2)));
+    } else if (op == EO_LANDINGPAD) {
+        String_append(&s, "landingpad");
+    } else if (op == EO_PUSHHANDLER) {
+        String_append(&s, "push_handler ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+    } else if (op == EO_POPHANDLER) {
+        String_append(&s, "pop_handler");
+    } else if (op == EO_INLINEASM) {
+        String_append(&s, "inline_asm \"");
+        String_append(&s, et_s(ins.asm_str));
+        String_append(&s, "\", \"");
+        String_append(&s, et_s(ins.asm_cons));
+        String_append(&s, "\"");
+        int i = 0;
+        while (i < List_len<EOp>(&ins.ops)) {
+            EOp o = ei_op(ins, i);
+            String_append(&s, ", ");
+            String_append(&s, eo_tys(o));
+            String_append(&s, " ");
+            String_append(&s, eo_s(o));
+            i = i + 1;
+        }
+        if (List_len<string>(&ins.clobbers) > 0) {
+            String_append(&s, " ~[");
+            int j = 0;
+            while (j < List_len<string>(&ins.clobbers)) {
+                if (j > 0) {
+                    String_append(&s, ", ");
+                }
+                String_append(&s, "\"");
+                String_append(&s, List_get<string>(&ins.clobbers, j));
+                String_append(&s, "\"");
+                j = j + 1;
+            }
+            String_append(&s, "]");
+        }
+    }
+    return (string)String_cstr(&s);
+}
+
+// --- blocks, functions, module ---
+
+struct EBlock {
+    string name;
+    List<string> lines;
+    List<int> allocas;
+    int term;
+}
+
+struct EFunc {
+    string name;
+    *ETy ret;
+    List<string> pnames;
+    List<*ETy> ptypes;
+    List<*EBlock> blocks;
+    int is_extern;
+    int is_variadic;
+    StrTab slots;       // the variable slots named so far (EIRBuilder::functionSlots)
+}
+
+*EBlock efn_create_block(*EFunc f, string name) {
+    *EBlock b = alloc<EBlock>(1);
+    if (et_len(name) == 0) {
+        b.name = et_cat("bb.", et_itoa(List_len<*EBlock>(&f.blocks)));
+    } else {
+        b.name = name;
+    }
+    List_push<*EBlock>(&f.blocks, b);
+    return b;
+}
+
+int efn_nparams(*EFunc f) {
+    return List_len<string>(&f.pnames);
+}
+
+*ETy efn_ptype(*EFunc f, int i) {
+    return List_get<*ETy>(&f.ptypes, i);
+}
+
+string efn_pname(*EFunc f, int i) {
+    return List_get<string>(&f.pnames, i);
+}
+
+void efn_add_param(*EFunc f, string name, *ETy t) {
+    List_push<string>(&f.pnames, name);
+    List_push<*ETy>(&f.ptypes, t);
+}
+
+void efn_dump(*EFunc f, String* os) {
+    if (f.is_extern == 1) {
+        String_append(os, "extern fn @");
+        String_append(os, f.name);
+        String_append(os, "(");
+        int i = 0;
+        while (i < efn_nparams(f)) {
+            if (i > 0) {
+                String_append(os, ", ");
+            }
+            String_append(os, et_str(efn_ptype(f, i)));
+            i = i + 1;
+        }
+        if (f.is_variadic == 1) {
+            if (efn_nparams(f) > 0) {
+                String_append(os, ", ");
+            }
+            String_append(os, "...");
+        }
+        String_append(os, ") -> ");
+        String_append(os, et_str(f.ret));
+        String_append(os, "\n\n");
+        return;
+    }
+    String_append(os, "fn @");
+    String_append(os, f.name);
+    String_append(os, "(");
+    int i = 0;
+    while (i < efn_nparams(f)) {
+        if (i > 0) {
+            String_append(os, ", ");
+        }
+        String_append(os, et_str(efn_ptype(f, i)));
+        String_append(os, " %");
+        String_append(os, efn_pname(f, i));
+        i = i + 1;
+    }
+    String_append(os, ") -> ");
+    String_append(os, et_str(f.ret));
+    String_append(os, " {\n");
+    int b = 0;
+    while (b < List_len<*EBlock>(&f.blocks)) {
+        *EBlock bb = List_get<*EBlock>(&f.blocks, b);
+        String_append(os, bb.name);
+        String_append(os, ":\n");
+        int k = 0;
+        while (k < List_len<string>(&bb.lines)) {
+            String_append(os, "    ");
+            String_append(os, List_get<string>(&bb.lines, k));
+            String_append(os, "\n");
+            k = k + 1;
+        }
+        b = b + 1;
+    }
+    String_append(os, "}\n\n");
+}
+
+struct EField {
+    string name;
+    *ETy ty;
+    int64 offset;
+    int64 size;
+    int is_bf;
+    int bit_off;
+    int bit_w;
+    int sgn;
+    *ETy storage;
+    int64 storage_off;
+}
+
+struct EPad {
+    *ETy ty;
+    int width;
+    int64 before;
+}
+
+struct EStruct {
+    string name;
+    List<*EField> fields;
+    int64 total;
+    int64 align;
+    int is_union;
+    int pack;
+    List<EPad> pads;
+}
+
+*EField es_field(*EStruct s, string fname) {
+    int i = 0;
+    while (i < List_len<*EField>(&s.fields)) {
+        *EField f = List_get<*EField>(&s.fields, i);
+        if (et_eq(f.name, fname) == 1) {
+            return f;
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+struct EGlobal {
+    string name;
+    *ETy ty;
+    EOp init;
+    int is_const;
+    List<EOp> elems;
+}
+
+struct EModule {
+    string name;
+    string triple;
+    List<*ETy> struct_types;
+    StrTab layout_idx;
+    List<*EStruct> layouts;
+    List<EGlobal> globals;
+    List<*EFunc> funcs;
+    StrTab fn_idx;
+}
+
+*EStruct em_layout(*EModule m, string name) {
+    int i = StrTab_get(&m.layout_idx, name, -1);
+    if (i < 0) {
+        return null;
+    }
+    return List_get<*EStruct>(&m.layouts, i);
+}
+
+int em_has_layout(*EModule m, string name) {
+    if (StrTab_get(&m.layout_idx, name, -1) >= 0) {
+        return 1;
+    }
+    return 0;
+}
+
+// structLayouts[name] (default-constructed on first use).
+*EStruct em_layout_ref(*EModule m, string name) {
+    *EStruct s = em_layout(m, name);
+    if (s != null) {
+        return s;
+    }
+    s = alloc<EStruct>(1);
+    s.name = "";
+    s.align = 1;
+    StrTab_set(&m.layout_idx, name, List_len<*EStruct>(&m.layouts));
+    List_push<*EStruct>(&m.layouts, s);
+    return s;
+}
+
+*EFunc em_func(*EModule m, string name) {
+    int i = StrTab_get(&m.fn_idx, name, -1);
+    if (i < 0) {
+        return null;
+    }
+    return List_get<*EFunc>(&m.funcs, i);
+}
+
+*EFunc em_create_func(*EModule m, string name, *ETy ret) {
+    *EFunc f = alloc<EFunc>(1);
+    f.name = name;
+    f.ret = ret;
+    if (StrTab_get(&m.fn_idx, name, -1) < 0) {
+        StrTab_set(&m.fn_idx, name, List_len<*EFunc>(&m.funcs));
+    }
+    List_push<*EFunc>(&m.funcs, f);
+    return f;
+}
+
+int64 em_struct_size(*EModule m, string sname) {
+    *EStruct s = em_layout(m, sname);
+    if (s != null) {
+        return s.total;
+    }
+    int u = et_findc(sname, '_');
+    if (u >= 0) {
+        s = em_layout(m, et_sub(sname, 0, u));
+        if (s != null) {
+            return s.total;
+        }
+    }
+    return 0;
+}
+
+int64 et_type_align(*ETy t, *EModule m);
+
+int64 et_type_size(*ETy t, *EModule m) {
+    if (t == null) {
+        return 0;
+    }
+    int k = t.kind;
+    if (k == ETK_VOID) {
+        return 0;
+    }
+    if (k == ETK_INT) {
+        if (t.bits == 1) {
+            return 1;
+        }
+        return (int64)((t.bits + 7) / 8);
+    }
+    if (k == ETK_FLOAT) {
+        if (t.bits == 32) {
+            return 4;
+        }
+        return 8;
+    }
+    if (k == ETK_POINTER) {
+        return 8;
+    }
+    if (k == ETK_ARRAY) {
+        return t.size * et_type_size(t.elem, m);
+    }
+    if (k == ETK_SLICE || k == ETK_INTERFACE || k == ETK_CLOSURE) {
+        return 16;
+    }
+    if (k == ETK_STRUCT) {
+        if (m != null) {
+            int64 sz = em_struct_size(m, et_nominal(t));
+            if (sz > 0) {
+                return sz;
+            }
+        }
+        int64 total = 0;
+        int i = 0;
+        while (i < List_len<*ETy>(&t.members)) {
+            *ETy mt = List_get<*ETy>(&t.members, i);
+            int64 al = et_type_align(mt, m);
+            total = (total + al - 1) & ~(al - 1);
+            total = total + et_type_size(mt, m);
+            i = i + 1;
+        }
+        int64 mal = et_type_align(t, m);
+        return (total + mal - 1) & ~(mal - 1);
+    }
+    return 8;
+}
+
+int64 et_type_align(*ETy t, *EModule m) {
+    if (t == null) {
+        return 1;
+    }
+    int k = t.kind;
+    if (k == ETK_VOID) {
+        return 1;
+    }
+    if (k == ETK_INT) {
+        int64 sz = et_type_size(t, m);
+        if (sz > 8) {
+            return 8;
+        }
+        if (sz == 0) {
+            return 1;
+        }
+        return sz;
+    }
+    if (k == ETK_FLOAT) {
+        if (t.bits == 32) {
+            return 4;
+        }
+        return 8;
+    }
+    if (k == ETK_ARRAY) {
+        return et_type_align(t.elem, m);
+    }
+    if (k == ETK_STRUCT) {
+        if (m != null) {
+            *EStruct s = em_layout(m, et_nominal(t));
+            if (s != null && s.align > 0) {
+                return s.align;
+            }
+        }
+        int64 mal = 1;
+        int i = 0;
+        while (i < List_len<*ETy>(&t.members)) {
+            int64 al = et_type_align(List_get<*ETy>(&t.members, i), m);
+            if (al > mal) {
+                mal = al;
+            }
+            i = i + 1;
+        }
+        return mal;
+    }
+    return 8;
+}
+
+void em_dump(*EModule m, String* os) {
+    String_append(os, ";; EIR Module: ");
+    if (et_len(m.name) == 0) {
+        String_append(os, "eskiu");
+    } else {
+        String_append(os, m.name);
+    }
+    String_append(os, "\n");
+    if (et_len(m.triple) > 0) {
+        String_append(os, ";; Target: ");
+        String_append(os, m.triple);
+        String_append(os, "\n");
+    }
+    String_append(os, "\n");
+    if (List_len<*ETy>(&m.struct_types) > 0) {
+        String_append(os, ";; Type definitions\n");
+        int i = 0;
+        while (i < List_len<*ETy>(&m.struct_types)) {
+            *ETy st = List_get<*ETy>(&m.struct_types, i);
+            String_append(os, "type @");
+            String_append(os, st.name);
+            String_append(os, " = { ");
+            int j = 0;
+            while (j < List_len<*ETy>(&st.members)) {
+                if (j > 0) {
+                    String_append(os, ", ");
+                }
+                String_append(os, et_str(List_get<*ETy>(&st.members, j)));
+                j = j + 1;
+            }
+            String_append(os, " }\n");
+            i = i + 1;
+        }
+        String_append(os, "\n");
+    }
+    if (List_len<EGlobal>(&m.globals) > 0) {
+        String_append(os, ";; Globals\n");
+        int i = 0;
+        while (i < List_len<EGlobal>(&m.globals)) {
+            EGlobal g = List_get<EGlobal>(&m.globals, i);
+            String_append(os, "global @");
+            String_append(os, g.name);
+            String_append(os, " : ");
+            String_append(os, et_str(g.ty));
+            if (List_len<EOp>(&g.elems) > 0) {
+                String_append(os, " = [");
+                int j = 0;
+                while (j < List_len<EOp>(&g.elems)) {
+                    if (j > 0) {
+                        String_append(os, ", ");
+                    }
+                    String_append(os, eo_s(List_get<EOp>(&g.elems, j)));
+                    j = j + 1;
+                }
+                String_append(os, "]");
+            } else if (g.init.kind != EOK_VAR) {
+                String_append(os, " = ");
+                String_append(os, eo_s(g.init));
+            }
+            String_append(os, "\n");
+            i = i + 1;
+        }
+        String_append(os, "\n");
+    }
+    int f = 0;
+    while (f < List_len<*EFunc>(&m.funcs)) {
+        efn_dump(List_get<*EFunc>(&m.funcs, f), os);
+        f = f + 1;
+    }
+}

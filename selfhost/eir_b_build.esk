@@ -1,0 +1,383 @@
+// The EIR builder, part 5: EIRBuilder::build, the module from a checked program.
+
+import "eir_b_expr.esk";
+
+void eb_init(EB* b, string triple) {
+    et_init_types();
+    b.m = alloc<EModule>(1);
+    b.m.name = "main";
+    b.m.triple = et_s(triple);
+    b.triple = et_s(triple);
+    b.inst_key = "";
+    b.msbf = 0;
+#ifdef _WIN32
+    if (et_len(triple) == 0) {
+        b.msbf = 1;
+    }
+#endif
+    if (et_len(triple) > 0) {
+        b.msbf = ast_has_sub(triple, "windows") | ast_has_sub(triple, "win32") | ast_has_sub(triple, "mingw");
+    }
+    ast_target_bf(et_s(triple), &b.bfal, &b.msvc);
+}
+
+// The generic struct and enum instances the checker resolved: name -> (generic, args).
+void eb_add_instance(EB* b, string mangled, string base, List<string>* args) {
+    IAMap_set(&b.inst_args, mangled, base, args);
+}
+
+int eb_has_global_init(EB* b, Program* prog) {
+    int i = 0;
+    while (i < List_len<*DeclNode>(&prog.decls)) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        i = i + 1;
+        if (d.kind == DK_VARDECL && d.is_extern == 0 && (d.init != null || eb_default_expr(b, d.ret_type) != null)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void eb_build(EB* b, Program* prog) {
+    // Phase 0: type aliases.
+    int i = 0;
+    int n = List_len<*DeclNode>(&prog.decls);
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        if (d.kind == DK_TYPEALIAS) {
+            SMap_set(&b.aliases, d.name, d.ret_type);
+            SMap_set(&g_ty_aliases, d.name, d.ret_type);
+        }
+        i = i + 1;
+    }
+    // Phase 1: structs, enums, interfaces, globals.
+    i = 0;
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        i = i + 1;
+        if (d.kind == DK_INTERFACE) {
+            *EIface inf = alloc<EIface>(1);
+            inf.name = d.name;
+            int m = 0;
+            while (m < List_len<*DeclNode>(&d.methods)) {
+                *DeclNode md = List_get<*DeclNode>(&d.methods, m);
+                List_push<string>(&inf.mnames, md.name);
+                List_push<string>(&inf.mrets, md.ret_type);
+                List<string> pts;
+                int k = 0;
+                while (k < List_len<Param>(&md.params)) {
+                    List_push<string>(&pts, List_get<Param>(&md.params, k).ty);
+                    k = k + 1;
+                }
+                List_push<List<string>>(&inf.mparams, pts);
+                m = m + 1;
+            }
+            int at = StrTab_get(&b.iface_ix, d.name, -1);
+            if (at >= 0) {
+                List_set<*EIface>(&b.ifaces, at, inf);
+            } else {
+                StrTab_set(&b.iface_ix, d.name, List_len<*EIface>(&b.ifaces));
+                List_push<*EIface>(&b.ifaces, inf);
+            }
+        } else if (d.kind == DK_ENUM) {
+            if (List_len<TypeParam>(&d.type_params) > 0) {
+                DMap_set(&b.generic_enums, d.name, d);
+                int k = 0;
+                while (k < List_len<Param>(&d.params)) {
+                    *EVariant v = alloc<EVariant>(1);
+                    v.en = d.name;
+                    v.idx = k;
+                    VMap_set(&b.adt_vars, List_get<Param>(&d.params, k).name, v);
+                    k = k + 1;
+                }
+            } else if (ast_enum_has_payload(d) == 1) {
+                DMap_set(&b.adt_enums, d.name, d);
+            } else {
+                DMap_set(&b.plain_enums, d.name, d);
+                int64 nv = (int64)0;
+                int k = 0;
+                while (k < List_len<Param>(&d.params)) {
+                    Param pm = List_get<Param>(&d.params, k);
+                    *ExprNode ve = null;
+                    if (k < List_len<*ExprNode>(&d.enum_vals)) {
+                        ve = List_get<*ExprNode>(&d.enum_vals, k);
+                    }
+                    if (ve != null) {
+                        nv = eb_fold_int(b, ve);
+                    } else {
+                        nv = et_parse_signed(pm.ty);
+                    }
+                    IMap_set(&b.enum_consts, pm.name, nv);
+                    nv = nv + (int64)1;
+                    k = k + 1;
+                }
+            }
+        } else if (d.kind == DK_STRUCT) {
+            if (List_len<TypeParam>(&d.type_params) > 0) {
+                DMap_set(&b.tmpl_decls, d.name, d);
+            } else {
+                DMap_set(&b.plain_structs, d.name, d);
+            }
+        } else if (d.kind == DK_UNION) {
+            DMap_set(&b.union_decls, d.name, d);
+        } else if (d.kind == DK_FUNCTION) {
+            if (List_len<TypeParam>(&d.type_params) > 0) {
+                if (DMap_has(&b.fn_tmpl_decls, d.name) == 0 || d.body != null) {
+                    DMap_set(&b.fn_tmpl_decls, d.name, d);
+                }
+            }
+        } else if (d.kind == DK_VARDECL) {
+            if (d.is_extern == 1) {
+                continue;
+            }
+            if (d.is_vol == 1) {
+                StrTab_set(&b.vol_vars, d.name, 1);
+            }
+            *ETy t = eb_type(b, d.ret_type);
+            EOp init = eo_int((int64)0, t);
+            if (d.init != null) {
+                int global_ref = 0;
+                if (d.init.kind == EK_UNARY && et_eq(d.init.sval, "&") == 1 && d.init.a != null && d.init.a.kind == EK_IDENT) {
+                    init = eo_global(d.init.a.sval, t);
+                    global_ref = 1;
+                }
+                if (global_ref == 0) {
+                    if (et_is_int(t) == 1) {
+                        AstCInt f;
+                        if (eb_fold(b, d.init, &f) == 1) {
+                            int64 cv = eb_trunc_const(f.v, t);
+                            if (d.is_const == 1) {
+                                IMap_set(&b.enum_consts, d.name, cv);
+                                TMap_set(&b.const_types, d.name, t);
+                            }
+                            init = eo_int(cv, t);
+                        } else {
+                            init = eo_int((int64)0, t);
+                        }
+                    } else if (et_is_float(t) == 1) {
+                        double fv = 0.0;
+                        if (d.init.kind == EK_LITERAL) {
+                            fv = strtod(d.init.sval, null);
+                        }
+                        init = eo_float(fv, t);
+                    } else {
+                        init = eo_null();
+                    }
+                }
+            }
+            EGlobal g;
+            g.name = d.name;
+            g.ty = t;
+            g.init = init;
+            g.is_const = d.is_const;
+            List_push<EGlobal>(&b.m.globals, g);
+        }
+    }
+    i = 0;
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        if (d.kind == DK_ENUM && DMap_has(&b.adt_enums, d.name) == 1 && em_has_layout(b.m, d.name) == 0) {
+            SMap none;
+            eb_layout_adt(b, d.name, DMap_get(&b.adt_enums, d.name), &none);
+        }
+        i = i + 1;
+    }
+    i = 0;
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        if (d.kind == DK_STRUCT && List_len<TypeParam>(&d.type_params) == 0) {
+            eb_ensure_layout(b, d.name);
+        }
+        i = i + 1;
+    }
+    i = 0;
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        if (d.kind == DK_UNION) {
+            eb_ensure_layout(b, d.name);
+        }
+        i = i + 1;
+    }
+    // Phase 2: prototypes.
+    i = 0;
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        i = i + 1;
+        if (d.kind == DK_FUNCTION) {
+            if (List_len<TypeParam>(&d.type_params) > 0) {
+                continue;
+            }
+            List<string> pn;
+            List<*ETy> pt;
+            int variadic = 0;
+            int k = 0;
+            while (k < List_len<Param>(&d.params)) {
+                Param p = List_get<Param>(&d.params, k);
+                if (et_eq(p.ty, "...") == 1) {
+                    variadic = 1;
+                    break;
+                }
+                List_push<string>(&pn, p.name);
+                List_push<*ETy>(&pt, eb_type(b, p.ty));
+                k = k + 1;
+            }
+            if (em_func(b.m, d.name) != null) {
+                continue;
+            }
+            *EFunc f = em_create_func(b.m, d.name, eb_type(b, d.ret_type));
+            f.pnames = pn;
+            f.ptypes = pt;
+            f.is_variadic = variadic;
+        } else if (d.kind == DK_EXTERN) {
+            if (em_func(b.m, d.name) != null) {
+                continue;
+            }
+            List<string> pn;
+            List<*ETy> pt;
+            int variadic = 0;
+            int k = 0;
+            while (k < List_len<Param>(&d.params)) {
+                Param p = List_get<Param>(&d.params, k);
+                k = k + 1;
+                if (et_eq(p.ty, "...") == 1) {
+                    variadic = 1;
+                    continue;
+                }
+                List_push<string>(&pn, p.name);
+                List_push<*ETy>(&pt, eb_type(b, p.ty));
+            }
+            *EFunc f = em_create_func(b.m, d.name, eb_type(b, d.ret_type));
+            f.pnames = pn;
+            f.ptypes = pt;
+            f.is_extern = 1;
+            f.is_variadic = variadic;
+        } else if (d.kind == DK_STRUCT) {
+            if (List_len<TypeParam>(&d.type_params) > 0) {
+                continue;
+            }
+            int m = 0;
+            while (m < List_len<*DeclNode>(&d.methods)) {
+                *DeclNode mf = List_get<*DeclNode>(&d.methods, m);
+                m = m + 1;
+                if (mf.kind != DK_FUNCTION) {
+                    continue;
+                }
+                List<string> pn;
+                List<*ETy> pt;
+                List_push<string>(&pn, "self");
+                List_push<*ETy>(&pt, et_ptr(et_struct(d.name, null)));
+                int k = 0;
+                while (k < List_len<Param>(&mf.params)) {
+                    Param p = List_get<Param>(&mf.params, k);
+                    List_push<string>(&pn, p.name);
+                    List_push<*ETy>(&pt, eb_type(b, p.ty));
+                    k = k + 1;
+                }
+                string mname = et_cat3(d.name, "_", mf.name);
+                if (em_func(b.m, mname) != null) {
+                    continue;
+                }
+                *EFunc f = em_create_func(b.m, mname, eb_type(b, mf.ret_type));
+                f.pnames = pn;
+                f.ptypes = pt;
+            }
+        }
+    }
+    int has_inits = eb_has_global_init(b, prog);
+    if (has_inits == 1) {
+        em_create_func(b.m, "__eir_global_init", et_void());
+        EGlobal g;
+        g.name = "__eir_inited";
+        g.ty = et_i1();
+        g.init = eo_int((int64)0, et_i1());
+        List_push<EGlobal>(&b.m.globals, g);
+    }
+    // Phase 3: bodies.
+    i = 0;
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        if (d.kind == DK_INTERFACE) {
+            *EIface inf = alloc<EIface>(1);
+            inf.name = d.name;
+            int m = 0;
+            while (m < List_len<*DeclNode>(&d.methods)) {
+                List_push<string>(&inf.mnames, List_get<*DeclNode>(&d.methods, m).name);
+                m = m + 1;
+            }
+            List_set<*EIface>(&b.ifaces, StrTab_get(&b.iface_ix, d.name, 0), inf);
+        }
+        i = i + 1;
+    }
+    i = 0;
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        i = i + 1;
+        b.cur_fn = null;
+        b.blk = null;
+        if (d.kind == DK_FUNCTION) {
+            eb_function(b, d);
+        } else if (d.kind == DK_STRUCT) {
+            eb_struct_decl(b, d);
+        } else if (d.kind == DK_TYPEALIAS) {
+            SMap_set(&b.aliases, d.name, d.ret_type);
+            SMap_set(&g_ty_aliases, d.name, d.ret_type);
+        }
+    }
+    // Phase 4: global initializers.
+    if (has_inits == 1) {
+        *EFunc initf = em_func(b.m, "__eir_global_init");
+        b.cur_fn = initf;
+        b.nv = 0;
+        b.nb = 0;
+        *EBlock entry = efn_create_block(initf, "entry");
+        eb_set_block(b, entry);
+        string fv = eb_new_var(b);
+        eb_i1(b, EO_LOAD, fv, et_i1(), eo_global("__eir_inited", et_ptr(et_i1())));
+        *EBlock do_init = efn_create_block(initf, "do_init");
+        *EBlock exit_bb = efn_create_block(initf, "already_inited");
+        eb_br_cond(b, eo_var(fv, et_i1()), exit_bb, do_init);
+        eb_set_block(b, do_init);
+        eb_store(b, eo_int((int64)1, et_i1()), eo_global("__eir_inited", et_ptr(et_i1())));
+        i = 0;
+        while (i < n) {
+            *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+            i = i + 1;
+            if (d.kind != DK_VARDECL) {
+                continue;
+            }
+            *ExprNode init = null;
+            if (d.is_extern == 0) {
+                init = d.init;
+                if (init == null) {
+                    init = eb_default_expr(b, d.ret_type);
+                }
+            }
+            if (init == null) {
+                continue;
+            }
+            *ETy t = eb_type(b, d.ret_type);
+            EOp target = eo_global(d.name, et_ptr(t));
+            if (init.kind == EK_ARRAYLIT) {
+                eb_array_init(b, target, init, t);
+            } else {
+                EOp v = eb_eval_for_s(b, init, d.ret_type);
+                if (et_is_struct(t) == 1 || et_is_array(t) == 1) {
+                    v = eo_var(eo_s(v), t);
+                }
+                eb_store_v(b, v, target, d.is_vol);
+            }
+        }
+        eb_br(b, exit_bb);
+        eb_set_block(b, exit_bb);
+        eb_i0(b, EO_RET, "", et_void());
+        b.cur_fn = null;
+        b.blk = null;
+    }
+}
+
+string eb_module_text(EB* b) {
+    String out;
+    String_init(&out, 65536);
+    em_dump(b.m, &out);
+    return (string)String_cstr(&out);
+}
