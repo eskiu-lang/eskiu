@@ -83,6 +83,13 @@ first-class in the language without giving up general systems use.
 
 ## Later, not scheduled
 
+- **Errors that point at the spec.** A rejection whose reason is not obvious from the
+  message alone (a closure that escapes, an `escaping` parameter, a `?*T` used without a
+  check, a capture written inside its lambda) ends with the section of
+  [`spec.md`](../lang/spec.md) that states the rule, such as `(spec §3.2)`. Section numbers
+  move when the spec grows, so the messages need anchors that stay put. Both compilers
+  print the same text, which `tc_parity.sh` compares byte for byte.
+
 - **Leaner async frames.** Today every local of an async function is stored in its frame;
   storing only the locals that live across an `await` would make frames smaller. This is
   an optimization, not a correctness issue.
