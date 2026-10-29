@@ -20,6 +20,7 @@ struct Map<V> {
     *V vals;
     int cap;     // bucket count
     int count;   // live entries
+    *int _hs;    // each slot's key hash (_map_hash), so probes and moves skip rehashing
 }
 
 // djb2 in wrapping uint32 arithmetic, folded to a non-negative int (used only
@@ -62,6 +63,7 @@ void Map_init<V>(Map<V>* m, int cap) {
     }
     m.keys = alloc<*char>(cap);   // zeroed: every slot starts empty (null)
     m.vals = alloc<V>(cap);
+    m._hs = alloc<int>(cap);
     m.cap = cap;
     m.count = 0;
 }
@@ -74,8 +76,10 @@ void Map_free<V>(Map<V>* m) {
     }
     free((*void)m.keys);
     free((*void)m.vals);
+    free((*void)m._hs);
     m.keys = null;
     m.vals = null;
+    m._hs = null;
     m.cap = 0;
     m.count = 0;
 }
@@ -86,22 +90,28 @@ void _Map_grow<V>(Map<V>* m) {
     **char oldk = m.keys;
     *V oldv = m.vals;
     const int newcap = oldcap < 4 ? 8 : oldcap * 2;   // a freed map (cap 0) starts over
+    *int oldh = m._hs;
     **char nk = alloc<*char>(newcap);   // zeroed: all slots empty
     *V nv = alloc<V>(newcap);
+    *int nh = alloc<int>(newcap);
     for (i in 0..oldcap) {
         if (oldk[i] != null) {
-            int j = _map_hash(oldk[i]) % newcap;
+            const int h = oldh != null ? oldh[i] : _map_hash(oldk[i]);
+            int j = h % newcap;
             while (nk[j] != null) {
-                j = (j + 1) % newcap;
+                j = j + 1 == newcap ? 0 : j + 1;
             }
             nk[j] = oldk[i];
             nv[j] = oldv[i];
+            nh[j] = h;
         }
     }
     free((*void)oldk);
     free((*void)oldv);
+    free((*void)oldh);
     m.keys = nk;
     m.vals = nv;
+    m._hs = nh;
     m.cap = newcap;
 }
 
@@ -113,15 +123,17 @@ void _Map_grow<V>(Map<V>* m) {
     if ((m.count + 1) * 4 >= m.cap * 3) {   // load factor 0.75
         _Map_grow<V>(m);
     }
-    int i = _map_hash(key) % m.cap;
+    const int h = _map_hash(key);
+    int i = h % m.cap;
     while (m.keys[i] != null) {
-        if (_map_streq(m.keys[i], key) == 1) {
+        if (m._hs[i] == h && _map_streq(m.keys[i], key) == 1) {
             created[0] = 0;
             return &m.vals[i];
         }
-        i = (i + 1) % m.cap;
+        i = i + 1 == m.cap ? 0 : i + 1;
     }
     m.keys[i] = map_dup(key);
+    m._hs[i] = h;
     m.count++;
     created[0] = 1;
     return &m.vals[i];
@@ -129,18 +141,12 @@ void _Map_grow<V>(Map<V>* m) {
 
 // Read-only lookup. Copies the value into *out and returns 1, or returns 0.
 int Map_get<V>(Map<V>* m, string key, *V out) {
-    if (m.cap == 0) {                     // freed (or never grown): empty
+    const int i = _map_slot<V>(m, key);
+    if (i < 0) {                          // absent, or a freed (never grown) map
         return 0;
     }
-    int i = _map_hash(key) % m.cap;
-    for (int n = 0; m.keys[i] != null && n < m.cap; n++) {
-        if (_map_streq(m.keys[i], key) == 1) {
-            out[0] = m.vals[i];
-            return 1;
-        }
-        i = (i + 1) % m.cap;
-    }
-    return 0;
+    out[0] = m.vals[i];
+    return 1;
 }
 
 // Slot index of `key`, or -1.
@@ -148,12 +154,13 @@ int _map_slot<V>(Map<V>* m, string key) {
     if (m.cap == 0) {
         return -1;
     }
-    int i = _map_hash(key) % m.cap;
+    const int h = _map_hash(key);
+    int i = h % m.cap;
     for (int n = 0; m.keys[i] != null && n < m.cap; n++) {
-        if (_map_streq(m.keys[i], key) == 1) {
+        if (m._hs[i] == h && _map_streq(m.keys[i], key) == 1) {
             return i;
         }
-        i = (i + 1) % m.cap;
+        i = i + 1 == m.cap ? 0 : i + 1;
     }
     return -1;
 }
@@ -198,16 +205,17 @@ int Map_remove<V>(Map<V>* m, string key) {
     free((*void)m.keys[hole]);
     m.keys[hole] = null;
     m.count--;
-    int j = (hole + 1) % m.cap;
+    int j = hole + 1 == m.cap ? 0 : hole + 1;
     while (m.keys[j] != null) {
-        const int home = _map_hash(m.keys[j]) % m.cap;
+        const int home = m._hs[j] % m.cap;
         if (_map_home_between(home, hole, j) == 0) {
             m.keys[hole] = m.keys[j];
             m.vals[hole] = m.vals[j];
+            m._hs[hole] = m._hs[j];
             m.keys[j] = null;
             hole = j;
         }
-        j = (j + 1) % m.cap;
+        j = j + 1 == m.cap ? 0 : j + 1;
     }
     return 1;
 }
