@@ -1,0 +1,51 @@
+// The search skips text where no match can start (the bytes a match can begin
+// with, and a byte every match contains) and drops threads that cannot read the
+// next byte. These cases sit at its edges: case folding to and from non-ASCII
+// code points (U+212A, U+017F), U+FFFD and bytes that are not valid UTF-8,
+// non-ASCII classes and properties, anchors, word boundaries and required
+// bytes. Each line lists every match, as Go's FindAllStringIndex prints them.
+import <regex>;
+extern int printf(string fmt, ...);
+
+void all(string p, string s) {
+    Regex re = regex_compile(p);
+    if (re.ok == 0) { printf("%s: error %s\n", p, re.err); Regex_free(&re); return; }
+    int64 len = 0;
+    while (s[len] != 0) { len++; }
+    RegexIter it = Regex_iter(&re, s, len);
+    let m: Match;
+    printf("%s:", p);
+    while (RegexIter_next(&it, &m) == 1) { printf(" [%d,%d]", m.start, m.end); }
+    printf("\n");
+    Match_free(&m);
+    Regex_free(&re);
+}
+
+int main() {
+    all("(?i)k", "xxK k K");
+    all("(?i)s+", "abſS s");
+    all("(?i)\\x{212A}", "aKkK");
+    all("\\x{FFFD}", "a\xffb�");
+    all("[^a]", "aa\xe2\x82a");
+    all("[\\x{e9}-\\x{fc}]+", "abcéüÿ");
+    all("\\pL+", "12 αβ x");
+    all(".", "\n\n\xc3\xa9");
+    all("^ab", "xab\nab");
+    all("(?m)^ab", "xab\nab");
+    all("\\bfoo\\b", "afoo foo_ foo");
+    all("a@b", "a@c a@b");
+    all("[a-z]+@[a-z]+\\.com", "x y@z.org bob@ex.com");
+    all("\\d+\\.\\d+", "v 12 3.4 56.78");
+    all("x+@", "xéx@");
+    all("(?i)caf\\x{c9}", "CAFé cafÉ");
+    all("a|b@", "zzb@a");
+    all("(?:ab)+c", "ababxababc");
+    all("a\\B", "a ab");
+    all("$", "ab");
+    all("(?m)$", "a\nb");
+    all("\\z", "ab");
+    all("[[:^alpha:]]", "abé1");
+    all("\\S+", "  été ");
+    all("(?i)[a-c]+", "xxABCK");
+    return 0;
+}
