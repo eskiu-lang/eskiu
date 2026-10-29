@@ -344,6 +344,8 @@ string eo_str_of(EOp* o) {
                 String_append(&s, "\\\"");
             } else if (c == '\\') {
                 String_append(&s, "\\\\");
+            } else if (c == (char)0) {
+                String_append(&s, "\\0");
             } else {
                 String_push(&s, c);
             }

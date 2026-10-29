@@ -163,6 +163,7 @@ std::string Operand::str() const {
                 else if (c == '\t') ss << "\\t";
                 else if (c == '\"') ss << "\\\"";
                 else if (c == '\\') ss << "\\\\";
+                else if (c == '\0') ss << "\\0";
                 else ss << c;
             }
             ss << "\"";
