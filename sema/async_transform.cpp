@@ -895,7 +895,9 @@ void AsyncTransform::run(Program* program) {
             if (auto* i = dynamic_cast<IfStmt*>(s.get())) {
                 ExprPtr c = i->condition;
                 if (hasAwait(c)) hoist(c, pre);
-                return withPre(std::make_shared<IfStmt>(c, desugarStmt(i->thenBranch), desugarStmt(i->elseBranch)));
+                StmtPtr th = desugarStmt(i->thenBranch);   // in this order on every host compiler
+                StmtPtr el = desugarStmt(i->elseBranch);
+                return withPre(std::make_shared<IfStmt>(c, th, el));
             }
             if (auto* w = dynamic_cast<WhileStmt*>(s.get())) {
                 if (!hasAwait(w->condition))
@@ -1031,7 +1033,9 @@ void AsyncTransform::run(Program* program) {
                     nc.body = desugarStmt(c.body);
                     cs.push_back(nc);
                 }
-                auto nt = std::make_shared<TryStmt>(desugarStmt(t->body), cs, desugarStmt(t->finally));
+                StmtPtr body = desugarStmt(t->body);   // in this order on every host compiler
+                StmtPtr fin = desugarStmt(t->finally);
+                auto nt = std::make_shared<TryStmt>(body, cs, fin);
                 nt->line = t->line; nt->col = t->col;
                 return nt;
             }
@@ -1418,8 +1422,9 @@ void AsyncTransform::run(Program* program) {
                     nc.body = c.body ? rewritePlain(c.body) : nullptr;
                     cs.push_back(nc);
                 }
-                return std::make_shared<TryStmt>(rewritePlain(t->body), cs,
-                    t->finally ? rewritePlain(t->finally) : nullptr);
+                StmtPtr body = rewritePlain(t->body);   // in this order on every host compiler
+                StmtPtr fin = t->finally ? rewritePlain(t->finally) : nullptr;
+                return std::make_shared<TryStmt>(body, cs, fin);
             }
             if (auto* rs = dynamic_cast<ReturnStmt*>(s.get())) {
                 ExprPtr v = rs->value ? rs->value : intlit(0); rewrite(v, vars);

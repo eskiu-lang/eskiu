@@ -1389,15 +1389,16 @@ int al_has_return(*StmtNode s) {
     if (s.kind == SK_TRY || s.kind == SK_MATCH) {
         // try: s1 body, items = catch clauses (s1 each), s2 finally. match: expr subject,
         // items = arms (s1 each). Rewritten in place.
+        // Catches (arms), body, then finally, as the C++.
         al_rewrite(s.expr, &c.vars);
-        s.s1 = al_rewrite_plain(c, s.s1);
-        s.s2 = al_rewrite_plain(c, s.s2);
         int k = 0;
         while (k < List_len<*StmtNode>(&s.items)) {
             *StmtNode cl = List_get<*StmtNode>(&s.items, k);
             k = k + 1;
             cl.s1 = al_rewrite_plain(c, cl.s1);
         }
+        s.s1 = al_rewrite_plain(c, s.s1);
+        s.s2 = al_rewrite_plain(c, s.s2);
         return s;
     }
     if (s.kind == SK_RETURN) {
@@ -3323,14 +3324,14 @@ void al_desugar_items(*AlCtx c, List<*StmtNode>* inp, List<*StmtNode>* out) {
         }
         return al_with_pre(&pre, s);
     }
-    if (s.kind == SK_TRY) {
-        s.s1 = al_desugar_stmt(c, s.s1);
+    if (s.kind == SK_TRY) {                // catches, body, then finally (as the C++)
         int k = 0;
         while (k < List_len<*StmtNode>(&s.items)) {
             *StmtNode cl = List_get<*StmtNode>(&s.items, k);
             k = k + 1;
             cl.s1 = al_desugar_stmt(c, cl.s1);
         }
+        s.s1 = al_desugar_stmt(c, s.s1);
         s.s2 = al_desugar_stmt(c, s.s2);
         return s;
     }

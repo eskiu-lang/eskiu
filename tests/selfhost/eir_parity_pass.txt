@@ -30,6 +30,7 @@ array_return_large
 asm_async_locals
 assign_eval_order
 async_arm_locals
+async_await_edges
 async_await_positions
 async_await_struct
 async_await_types
