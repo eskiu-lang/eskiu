@@ -47,6 +47,11 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   `printf` and `strtod`, and copies plain strings in place: building and stringifying a
   document is about 2.5 times faster (LangArena Json::Generate 2.2 s to 0.9 s). The text is
   byte for byte the same as before (checked over 82 million values).
+- `json_parse` reads a number of up to 15 significant digits with a decimal exponent within
+  10^±22 straight from the text with one exact multiplication or division (the double
+  `strtod` gives), and the rest with `strtod` in place, instead of copying each number
+  into a String for `atof`; plain runs inside strings are copied at once. Parsing a
+  document of numbers is about 1.4 times faster.
 - `<map>`: `Map<V>` keeps each key's hash, so a lookup compares hashes before strings and
   a removal or a growth no longer rehashes the keys it moves; lookups and removals are up
   to twice as fast. The iteration order is unchanged.
