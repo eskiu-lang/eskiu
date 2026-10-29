@@ -3,6 +3,7 @@
 #include "../ast/ast_walk.h"
 #include "llvm/TargetParser/Triple.h"
 #include <algorithm>
+#include <map>
 #include <functional>
 #include "../sema/type.h"
 
@@ -856,6 +857,41 @@ void CodeGen::visit(StructDecl* node) {
     }
 }
 
+// A C math function that reads and writes no memory: one that never sets errno, or
+// (`errnoFree`, Apple targets, where clang defaults to -fno-math-errno) one that
+// only would. Matched by name and an all-double (or, with an `f` suffix, all-float)
+// signature, so it can be hoisted, merged and turned into an instruction (`sqrt`).
+static bool pureLibm(const std::string& name, llvm::FunctionType* ft, bool errnoFree) {
+    static const std::map<std::string, std::pair<unsigned, bool>> fns = {
+        {"fabs", {1, false}}, {"floor", {1, false}}, {"ceil", {1, false}},
+        {"trunc", {1, false}}, {"round", {1, false}}, {"rint", {1, false}},
+        {"nearbyint", {1, false}}, {"fmin", {2, false}}, {"fmax", {2, false}},
+        {"copysign", {2, false}},
+        {"sqrt", {1, true}}, {"cbrt", {1, true}}, {"exp", {1, true}}, {"exp2", {1, true}},
+        {"expm1", {1, true}}, {"log", {1, true}}, {"log2", {1, true}}, {"log10", {1, true}},
+        {"log1p", {1, true}}, {"sin", {1, true}}, {"cos", {1, true}}, {"tan", {1, true}},
+        {"asin", {1, true}}, {"acos", {1, true}}, {"atan", {1, true}}, {"sinh", {1, true}},
+        {"cosh", {1, true}}, {"tanh", {1, true}}, {"asinh", {1, true}}, {"acosh", {1, true}},
+        {"atanh", {1, true}}, {"atan2", {2, true}}, {"pow", {2, true}}, {"hypot", {2, true}},
+        {"fmod", {2, true}}, {"remainder", {2, true}},
+    };
+    std::string base = name;
+    bool isFloat = false;
+    auto it = fns.find(base);
+    if (it == fns.end() && !base.empty() && base.back() == 'f') {
+        base.pop_back();
+        isFloat = true;
+        it = fns.find(base);
+    }
+    if (it == fns.end() || (it->second.second && !errnoFree)) return false;
+    if (ft->isVarArg() || ft->getNumParams() != it->second.first) return false;
+    auto ok = [&](llvm::Type* t) { return isFloat ? t->isFloatTy() : t->isDoubleTy(); };
+    if (!ok(ft->getReturnType())) return false;
+    for (llvm::Type* p : ft->params())
+        if (!ok(p)) return false;
+    return true;
+}
+
 void CodeGen::visit(ExternDecl* node) {
     // An `extern` the program also defines is an Eskiu function: its definition
     // declares the prototype (Eskiu convention, not the C ABI lowering below).
@@ -927,6 +963,11 @@ void CodeGen::visit(ExternDecl* node) {
     for (size_t i = 0; i < pext.size(); ++i)
         if (pext[i] != llvm::Attribute::None) fn->addParamAttr((unsigned)i, pext[i]);
     if (rext != llvm::Attribute::None) fn->addRetAttr(rext);
+    if (!freestanding && pureLibm(node->name, funcType, module->getTargetTriple().isOSDarwin())) {
+        fn->setDoesNotAccessMemory();
+        fn->setDoesNotThrow();
+        fn->setWillReturn();
+    }
 }
 
 void CodeGen::visit(IntrinsicDecl* node) {

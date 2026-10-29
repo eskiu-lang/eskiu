@@ -281,6 +281,64 @@ int cg_is_unsigned(string t) {
         || cg_streq(t, "char") == 1;
 }
 
+// The arity of C math function `base` that reads and writes no memory, 0 if it is not
+// one: one that never sets errno, or (`errno_free`, Apple targets, where clang defaults
+// to -fno-math-errno) one that only would (C++ pureLibm).
+int cg_libm_arity(string base, int errno_free) {
+    if (cg_streq(base, "fabs") == 1 || cg_streq(base, "floor") == 1 || cg_streq(base, "ceil") == 1
+        || cg_streq(base, "trunc") == 1 || cg_streq(base, "round") == 1 || cg_streq(base, "rint") == 1
+        || cg_streq(base, "nearbyint") == 1) {
+        return 1;
+    }
+    if (cg_streq(base, "fmin") == 1 || cg_streq(base, "fmax") == 1 || cg_streq(base, "copysign") == 1) {
+        return 2;
+    }
+    if (errno_free == 0) {
+        return 0;
+    }
+    if (cg_streq(base, "atan2") == 1 || cg_streq(base, "pow") == 1 || cg_streq(base, "hypot") == 1
+        || cg_streq(base, "fmod") == 1 || cg_streq(base, "remainder") == 1) {
+        return 2;
+    }
+    if (cg_streq(base, "sqrt") == 1 || cg_streq(base, "cbrt") == 1 || cg_streq(base, "exp") == 1
+        || cg_streq(base, "exp2") == 1 || cg_streq(base, "expm1") == 1 || cg_streq(base, "log") == 1
+        || cg_streq(base, "log2") == 1 || cg_streq(base, "log10") == 1 || cg_streq(base, "log1p") == 1
+        || cg_streq(base, "sin") == 1 || cg_streq(base, "cos") == 1 || cg_streq(base, "tan") == 1
+        || cg_streq(base, "asin") == 1 || cg_streq(base, "acos") == 1 || cg_streq(base, "atan") == 1
+        || cg_streq(base, "sinh") == 1 || cg_streq(base, "cosh") == 1 || cg_streq(base, "tanh") == 1
+        || cg_streq(base, "asinh") == 1 || cg_streq(base, "acosh") == 1 || cg_streq(base, "atanh") == 1) {
+        return 1;
+    }
+    return 0;
+}
+
+// The attributes (" memory(none) nounwind willreturn" or "") of an extern's declare line:
+// a C math function with an all-double (or, with an `f` suffix, all-float) signature
+// `retty (fixed)` that reads and writes no memory.
+string cg_libm_attrs(Codegen* g, string name, string retty, string fixed, int variadic) {
+    if (g.freestanding == 1 || variadic == 1) {
+        return "";
+    }
+    string fty = "double";
+    int arity = cg_libm_arity(name, g.darwin);
+    if (arity == 0) {
+        int n = (int)strlen(name);
+        if (n < 2 || name[n - 1] != 'f') {
+            return "";
+        }
+        arity = cg_libm_arity(cg_sub_str(name, 0, n - 1), g.darwin);
+        fty = "float";
+    }
+    if (arity == 0 || cg_streq(retty, fty) == 0) {
+        return "";
+    }
+    string want = arity == 1 ? fty : cg_cat(fty, cg_cat(", ", fty));
+    if (cg_streq(fixed, want) == 0) {
+        return "";
+    }
+    return " memory(none) nounwind willreturn";
+}
+
 // The C extension attribute (" signext" / " zeroext" / "") of a narrow integer argument
 // or result of Eskiu type `t` (C++ CodeGen::cabiExtAttr). `char` follows the target's C
 // `char`: unsigned on AArch64 (not Darwin) and 32-bit ARM, outside Windows.

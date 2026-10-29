@@ -2594,7 +2594,9 @@ void cg_program(Codegen* g, *Program prog) {
                 else {
                     String_append(&g.globals, fixedx);
                 }
-                String_append(&g.globals, ")\n");
+                String_append(&g.globals, ")");
+                String_append(&g.globals, cg_libm_attrs(g, f.name, f.retty, fixed, f.variadic));
+                String_append(&g.globals, "\n");
             } else if (d.kind == DK_FUNCTION && d.body == null && cg_prog_defines(prog, d.name) == 0
                        && cg_seen_inst(g, cg_cat("decl:", d.name)) == 0) {
                 // A prototype defined in another object file: declare it (Eskiu convention).

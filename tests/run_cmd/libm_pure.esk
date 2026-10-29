@@ -1,0 +1,11 @@
+// C math externs that read and write no memory are declared memory(none): floor on every
+// target, sqrt and powf only where clang defaults to -fno-math-errno (Darwin). cbrt is
+// declared with an int parameter, so it is not the C function and stays as written.
+extern double sqrt(double x);
+extern double floor(double x);
+extern float powf(float x, float y);
+extern double cbrt(int x);
+
+int main() {
+    return (int)(sqrt(4.0) + floor(1.5) + (double)powf(2.0, 1.0) + cbrt(8));
+}

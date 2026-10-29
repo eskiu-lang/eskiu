@@ -518,6 +518,13 @@ na_d=$("$ESKIUC" "$here/c_abi_narrow.esk" --target arm64-apple-macosx --test-cod
 if [[ "$na_l" == 0 && "$na_w" == 0 && "$na_d" -gt 0 ]]; then ok "codegen/narrow-int-ext-per-target"
 else bad "codegen/narrow-int-ext-per-target" "aarch64-linux=$na_l win64=$na_w darwin=$na_d"; fi
 
+# C math externs that touch no memory are memory(none): floor everywhere, sqrt and powf
+# only on Darwin (clang's -fno-math-errno default there); an int-typed cbrt never.
+libm_pure() { "$ESKIUC" "$here/run_cmd/libm_pure.esk" --target "$1" --test-codegen 2>/dev/null | awk '/^attributes #[0-9]+ = .*memory\(none\)/ { p[$2] = 1 } { l[NR] = $0 } END { c = 0; for (i = 1; i <= NR; i++) if (l[i] ~ /^declare .*@(sqrt|floor|powf|cbrt)\(/) { if (l[i] ~ /memory\(none\)/) c++; else if (match(l[i], /#[0-9]+/) && p[substr(l[i], RSTART, RLENGTH)]) c++ } print c }'; }
+lp_d=$(libm_pure arm64-apple-macosx); lp_l=$(libm_pure aarch64-unknown-linux-gnu)
+if [[ "$lp_d" == 3 && "$lp_l" == 1 ]]; then ok "codegen/libm-pure-per-target"
+else bad "codegen/libm-pure-per-target" "darwin=$lp_d (want 3) linux=$lp_l (want 1)"; fi
+
 # An output named .obj is an object file (Windows spelling), not an executable to link.
 printf 'int main() { return 0; }\n' > "$work/obj.esk"
 if "$ESKIUC" "$work/obj.esk" -o "$work/obj.obj" >/dev/null 2>&1 && [[ -s "$work/obj.obj" ]] \

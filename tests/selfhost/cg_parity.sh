@@ -75,6 +75,13 @@ if [ "$#" -eq 0 ]; then
     vb="$(ESKIU_ROOT="$(pwd)" "$CGBIN" --test-codegen tests/volatile_bitfield.esk 2>/dev/null | grep -c 'volatile i16')"
     if [ "$vb" = 12 ]; then echo "ok    volatile_bitfield  (IR: 12 volatile accesses)"
     else echo "FAIL  volatile_bitfield  (IR: $vb volatile i16 accesses, expected 12)"; fail=1; fi
+    # C math externs that touch no memory are memory(none): 3 on Darwin, 1 on Linux
+    # (tests/run.sh checks the C++ side).
+    total=$((total + 1))
+    lp_d="$(ESKIU_ROOT="$(pwd)" "$CGBIN" --test-codegen --target arm64-apple-macosx tests/run_cmd/libm_pure.esk 2>/dev/null | awk '/^attributes #[0-9]+ = .*memory\(none\)/ { p[$2] = 1 } { l[NR] = $0 } END { c = 0; for (i = 1; i <= NR; i++) if (l[i] ~ /^declare .*@(sqrt|floor|powf|cbrt)\(/) { if (l[i] ~ /memory\(none\)/) c++; else if (match(l[i], /#[0-9]+/) && p[substr(l[i], RSTART, RLENGTH)]) c++ } print c }')"
+    lp_l="$(ESKIU_ROOT="$(pwd)" "$CGBIN" --test-codegen --target aarch64-unknown-linux-gnu tests/run_cmd/libm_pure.esk 2>/dev/null | awk '/^attributes #[0-9]+ = .*memory\(none\)/ { p[$2] = 1 } { l[NR] = $0 } END { c = 0; for (i = 1; i <= NR; i++) if (l[i] ~ /^declare .*@(sqrt|floor|powf|cbrt)\(/) { if (l[i] ~ /memory\(none\)/) c++; else if (match(l[i], /#[0-9]+/) && p[substr(l[i], RSTART, RLENGTH)]) c++ } print c }')"
+    if [ "$lp_d" = 3 ] && [ "$lp_l" = 1 ]; then echo "ok    libm_pure  (IR: darwin 3, linux 1)"
+    else echo "FAIL  libm_pure  (IR: darwin $lp_d, linux $lp_l; expected 3, 1)"; fail=1; fi
     # A lambda in a generic body keeps a heap env only where an instance lets it escape
     # (3 in the test's gl_ functions; tests/run.sh checks the C++ side).
     total=$((total + 1))
