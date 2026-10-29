@@ -1754,7 +1754,19 @@ void _re_addthread(_ReVm* vm, int which, int gen, int pc, *int caps, int sp) {
         }
         break;
         default:
-        // CHAR / ANY / CLASS / MATCH: a thread that consumes (or accepts)
+        // CHAR / ANY / CLASS / MATCH: a thread that consumes (or accepts). One
+        // that cannot consume what is at sp (the end, or an ASCII byte it does
+        // not accept) would die at the next step: it is not enqueued (its pc
+        // stays marked, which changes nothing since it adds no thread).
+        if (ins.op != OP_MATCH) {
+            if (sp >= vm.len) {
+                return;
+            }
+            const int b = (int)((uint8)vm.text[sp]);
+            if (b < 128 && ((vm.prog._amask[2 * pc + (b >> 6)] >> (uint64)(b & 63)) & (uint64)1) == (uint64)0) {
+                return;
+            }
+        }
         if (which == 0) {
             vm.la[vm.nA].pc = pc;
             vm.la[vm.nA].caps = _re_slotcaps(vm, 0, vm.nA, caps);
