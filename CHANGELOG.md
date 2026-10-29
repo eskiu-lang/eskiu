@@ -25,6 +25,11 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   pointer, NULs included; it was only available as an internal function.
 
 ### Fixed
+- A field of a packed struct (`packed`, `#pragma pack(N)`, or a struct inside one) was read
+  and written with its type's alignment although its address may not have it, which LLVM
+  may turn into wider or paired accesses (and which traps on 32-bit ARM). Each such access
+  now carries the alignment its address is known to have (1 under `packed`, at most N under
+  `pack(N)`), in both compilers.
 - `-O2` and `-O3` now run LLVM's loop and SLP vectorizers, as clang does; the pipeline had
   them off. CLBG n-body runs in about half the time.
 - A C math `extern` with the C signature (`double sqrt(double)`, `float powf(float,
