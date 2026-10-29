@@ -39,10 +39,18 @@ if ! "$BIN" "$DRIVER" -o "$PBIN" >/dev/null 2>/tmp/parsebuild.$$; then
 fi
 rm -f /tmp/parsebuild.$$
 
-# The C++ --test-parser wraps the AST dump in a banner; strip those format-only
-# lines (anchored at column 0 — AST lines are indented, so they're untouched).
+# The C++ --test-parser wraps the AST dump in a banner: `Parsing: FILE` and a rule of
+# `=` before it, a rule and `Parse succeeded!` after it. Strip only those lines, so a
+# string literal whose text has a line of `=` inside the dump is kept.
 strip_banner() {
-    LC_ALL=C sed -E '/^Parsing: /d; /^=+$/d; /^Parse succeeded!$/d'
+    LC_ALL=C awk '{ l[NR] = $0 } END {
+        s = 1; e = NR
+        if (s <= e && l[s] ~ /^Parsing: /) s++
+        if (s <= e && l[s] ~ /^=+$/) s++
+        if (e >= s && l[e] == "Parse succeeded!") e--
+        if (e >= s && l[e] ~ /^=+$/) e--
+        for (i = s; i <= e; i++) print l[i]
+    }'
 }
 
 
