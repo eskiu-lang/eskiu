@@ -23,6 +23,9 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   function taking or returning one (or a `va_list`) through a thunk with the C signature.
 - `String_append_bytes(s, p, n)` (`s.append_bytes(p, n)`) appends `n` bytes from a
   pointer, NULs included; it was only available as an internal function.
+- `<regex>`: `Regex_search_at(&re, text, len, start, &m)` searches `len` bytes from offset
+  `start`, and `Regex_iter` / `RegexIter_next` go through every match as Go's `FindAll`
+  does (after an empty match the search moves on one code point).
 
 ### Fixed
 - A field of a packed struct (`packed`, `#pragma pack(N)`, or a struct inside one) was read
@@ -71,6 +74,15 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   unnamed bitfields, `#pragma pack`), generic enum instances, field defaults, `for-in`,
   labeled `break`/`continue`, `defer` scoping, `errdefer` on `?`, `dbg`, operators and
   locals inside generic instances, and evaluates an assignment's target once and first.
+- `<regex>` had no way to search from an offset: searching `text + off` ran `strlen` on
+  every call, so finding all matches was quadratic, and it lost the text before the cut, so
+  `^`, `\b` and `\B` were wrong there. `Regex_search_at` keeps that text as context and
+  reports offsets into the whole text.
+- `<regex>` searches are much faster: the search skips text where no match can start (by
+  the bytes a match can begin with, and by a byte every match must contain), its scratch
+  memory is allocated once per compiled regex instead of on every call, and threads that
+  cannot read the next byte are dropped. A log-scanning benchmark went from 25.2 s to 1.8 s
+  and a template one from 7.4 s to 3.1 s.
 
 ## [0.14.0] - 2026-10-23
 
