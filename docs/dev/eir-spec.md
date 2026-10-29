@@ -353,7 +353,5 @@ merge:
    see [`eir-backends.md`](eir-backends.md); both pass the run-test corpus, gated by
    `tests/eir/check.sh`. Done.
 5. **Self-hosted parity**: `selfhost/eir.esk` printing the same `--test-eir` text as the C++
-   builder. 555 of the 563 run tests are byte-identical, gated in CI by
-   `tests/selfhost/eir_parity.sh`; the rest differ in a few async lowering details (the
-   order of some frame fields and temporaries, one closure environment) and in the
-   spelling of a pointer-to-array type argument.
+   builder. All 563 run tests are byte-identical, gated in CI by
+   `tests/selfhost/eir_parity.sh`. Done.
