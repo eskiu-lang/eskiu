@@ -162,6 +162,11 @@ jobs:
       - name: Codegen self-host parity
         run: CLANG=clang-22 tests/selfhost/cg_parity.sh
 
+      # Self-hosted EIR builder (selfhost/eir.esk): `--test-eir` byte-identical to the
+      # C++ one for every test listed in tests/selfhost/eir_parity_pass.txt.
+      - name: EIR self-host parity
+        run: tests/selfhost/eir_parity.sh
+
       # Phase D bootstrap gate: cg_main emits valid IR for the WHOLE self-hosted
       # compiler (lexer→codegen + drivers), and cg_main compiled by ITSELF reproduces
       # the C++-built codegen's IR byte-for-byte (a self-consistent fixpoint).

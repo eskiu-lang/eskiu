@@ -30,6 +30,7 @@ array_return_large
 asm_async_locals
 assign_eval_order
 async_arm_locals
+async_await_positions
 async_await_struct
 async_await_types
 async_await_var
@@ -42,6 +43,7 @@ async_channel
 async_elseif
 async_expr_rewrite
 async_for
+async_for_in
 async_frame_expr
 async_generic
 async_generic_positions
@@ -54,6 +56,7 @@ async_local_named_fr
 async_loop
 async_multi
 async_multi_io
+async_name_collisions
 async_range_wide
 async_return_await
 async_select
@@ -166,6 +169,7 @@ env_get_int
 env_set
 errdefer
 escape_octal
+escapes
 escapes_hex
 eventloop_edges
 eventloop_resources
@@ -199,6 +203,7 @@ fn_type_local
 fnvalue_signatures
 fnvalue_sret
 for_in
+for_in_once
 forin_array_alias_deref
 forin_list_ptr
 forin_multidim
@@ -286,6 +291,7 @@ http2_chunking
 http2_conn
 http2_field_rules
 http2_fill_request_leak
+http2_flow_control
 http2_frame
 http2_frame_rules
 http2_handshake
