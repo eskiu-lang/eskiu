@@ -1,0 +1,26 @@
+// json_parse reads a number of up to 15 significant digits with a decimal exponent within
+// 10^±22 without strtod (an exact power of ten times or divided into the digits); the
+// rest goes to strtod. Both give the same double: each value prints with its bits.
+import <json>;
+extern int printf(string fmt, ...);
+
+int main() {
+    string src = "[0, -0, 1, -1, 0.1, 0.5, 1.5e3, 1E22, 1e23, 1e-22, 1e-23, 123456789012345, 1234567890123456,"
+        "123456789012345.6, 0.000123456789012345, 9007199254740993, 9007199254740992, 18446744073709551616,"
+        "1.7976931348623157e308, 2.2250738585072014e-308, 4.9406564584124654e-324, 1e-400, 1e400,"
+        "0.30000000000000004, 3.14159265358979323846, 100000000000000000000000, 1.000000000000000000001,"
+        "0.000000000000000000000000000001, -12.5e-1, 7e+0, 0e5, 0.0e-7, 123.456e2, 999999999999999,"
+        "0.1234567890123456789, 1e22, 1.0e22, 10e21, 100e20, 0.0000000000000000000001e44]";
+    *JsonValue v = json_parse(src);
+    if (v == null) {
+        printf("parse failed\n");
+        return 1;
+    }
+    const int n = JsonValue_len(v);
+    for (int i = 0; i < n; i++) {
+        double d = JsonValue_as_double(JsonValue_at(v, i));
+        printf("%d %.17g %llx\n", i, d, *(*uint64)&d);
+    }
+    JsonValue_free(v);
+    return 0;
+}

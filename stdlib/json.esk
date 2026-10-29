@@ -430,8 +430,17 @@ void _JParser_read_string(_JParser* self, String* out) {
             return;
         }
         if (c != '\\') {
-            out.push((char)c);
-            self.pos++;
+            // A run of plain bytes is copied at once.
+            int e = self.pos + 1;
+            while (true) {
+                const int d = (int)(uint8)self.src[e];
+                if (d == '"' || d == '\\' || d < 32) {
+                    break;
+                }
+                e++;
+            }
+            _string_append_bytes(out, (*char)self.src + self.pos, (int64)(e - self.pos));
+            self.pos = e;
             continue;
         }
         // A backslash escape.
@@ -492,16 +501,39 @@ int _JParser_is_digit(char c) {
 }
 
 // Read a number per the JSON grammar: -? (0 | [1-9][0-9]*) (.[0-9]+)? ([eE][+-]?[0-9]+)?
+// 10^0 .. 10^22, each exactly representable as a double.
+const double[23] _json_pow10 = {1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11,
+    1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22};
+
+// Read a JSON number. While checking its syntax the digits are gathered into an integer:
+// with at most 15 significant digits and a decimal exponent within 10^±22 the value is that
+// integer times or divided by an exact power of ten, a single correctly rounded operation,
+// so it is the double strtod gives (Clinger's fast path). Anything else goes to strtod,
+// which reads the number in place.
 double _JParser_read_number(_JParser* self) {
     const int start = self.pos;
+    bool neg = false;
     if (self.src[self.pos] == '-') {
+        neg = true;
         self.pos++;
     }
+    uint64 mant = 0;
+    int sig = 0;          // significant digits gathered (leading zeros skipped)
+    int scale = 0;        // decimal exponent of the last gathered digit
+    bool slow = false;    // more digits than the fast path takes
     if (self.src[self.pos] == '0') {
         self.pos++;
     }
     else if (_JParser_is_digit(self.src[self.pos]) == 1) {
         while (_JParser_is_digit(self.src[self.pos]) == 1) {
+            if (sig < 19) {
+                mant = mant * 10 + (uint64)((int)self.src[self.pos] - (int)'0');
+                if (mant != 0) {
+                    sig++;
+                }
+            } else {
+                slow = true;
+            }
             self.pos++;
         }
     } else {
@@ -515,30 +547,48 @@ double _JParser_read_number(_JParser* self) {
             return 0.0;
         }
         while (_JParser_is_digit(self.src[self.pos]) == 1) {
+            if (sig < 19) {
+                mant = mant * 10 + (uint64)((int)self.src[self.pos] - (int)'0');
+                if (mant != 0) {
+                    sig++;
+                }
+                scale--;
+            } else {
+                slow = true;
+            }
             self.pos++;
         }
     }
     if (self.src[self.pos] == 'e' || self.src[self.pos] == 'E') {
         self.pos++;
+        bool eneg = false;
         if (self.src[self.pos] == '+' || self.src[self.pos] == '-') {
+            eneg = self.src[self.pos] == '-';
             self.pos++;
         }
         if (_JParser_is_digit(self.src[self.pos]) == 0) {
             self.err = 1;
             return 0.0;
         }
+        int ev = 0;
         while (_JParser_is_digit(self.src[self.pos]) == 1) {
+            if (ev < 100000) {
+                ev = ev * 10 + ((int)self.src[self.pos] - (int)'0');
+            }
             self.pos++;
         }
+        scale = eneg ? scale - ev : scale + ev;
     }
-    // atof needs a NUL-terminated copy of just the number's text.
-    let text: String;
-    text.init(self.pos - start + 1);
-    defer text.free();
-    for (i in start..self.pos) {
-        text.push(self.src[i]);
+    if (!slow && sig <= 15 && scale >= -22 && scale <= 22) {
+        double d = (double)mant;
+        if (scale >= 0) {
+            d = d * _json_pow10[scale];
+        } else {
+            d = d / _json_pow10[-scale];
+        }
+        return neg ? -d : d;
     }
-    return atof((string)text.cstr());
+    return strtod((string)(self.src + start), null);
 }
 
 // Consume the exact literal `word` (true / false / null); sets err otherwise.
