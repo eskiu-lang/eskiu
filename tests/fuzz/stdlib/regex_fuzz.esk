@@ -29,6 +29,20 @@ void fuzz_one(*uint8 data, int len, string s) {
             }
         }
         Match_free(&m);
+        // Every match, in order and in bounds, with the text's own length (no NUL
+        // read), and a search from the middle that cannot start before it.
+        const int64 tlen = (int64)(len - nl - 1 > 0 ? len - nl - 1 : 0);
+        RegexIter it = Regex_iter(&re, text, tlen);
+        int64 last = 0;
+        while (RegexIter_next(&it, &m) == 1) {
+            if ((int64)m.start < last || m.end < m.start || (int64)m.end > tlen) { fuzz_fail("iter bounds"); }
+            last = (int64)m.end;
+        }
+        Match_free(&m);
+        if (Regex_search_at(&re, text, tlen, tlen / 2, &m) == 1) {
+            if ((int64)m.start < tlen / 2 || m.end < m.start || (int64)m.end > tlen) { fuzz_fail("search_at bounds"); }
+        }
+        Match_free(&m);
     }
     Regex_free(&re);
     free(pat);
