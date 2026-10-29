@@ -1,0 +1,106 @@
+// JsonValue_stringify of numbers: the text is what the first of %.15g / %.16g /
+// %.17g that reads back as the double prints. The expected output was produced
+// by the printf-based formatter; the Ryu-based one must match it byte for byte.
+import <json>;
+
+extern int printf(string fmt, ...);
+extern double strtod(string s, *string end);
+extern int snprintf(*char buf, uint64 n, string fmt, ...);
+
+String out;
+
+double from_bits(uint64 u) {
+    return *(*double)&u;
+}
+
+uint64 to_bits(double d) {
+    return *(*uint64)&d;
+}
+
+void show(double d) {
+    *JsonValue v = JsonValue_number(d);
+    JsonValue_stringify(v, &out);
+    printf("%016llx %s\n", to_bits(d), out.cstr());
+    JsonValue_free(v);
+}
+
+void show_near(uint64 u, int w) {
+    for (int i = -w; i <= w; i++) {
+        show(from_bits(u + (uint64)(int64)i));
+    }
+}
+
+uint64 rs = 0x2545F4914F6CDD1D;
+
+uint64 rnd() {
+    rs = rs ^ (rs << 13);
+    rs = rs ^ (rs >> 7);
+    rs = rs ^ (rs << 17);
+    return rs;
+}
+
+int main() {
+    out.init(64);
+    show(0.0);
+    show(-0.0);
+    show(1.0 / 0.0);
+    show(-1.0 / 0.0);
+    show(from_bits(0x7FF8000000000000));
+    show(from_bits(0xFFF8000000000001));
+    show(from_bits(0x7FEFFFFFFFFFFFFF));
+    show(from_bits(0xFFEFFFFFFFFFFFFF));
+    show(from_bits(0x0010000000000000));
+    show(from_bits(0x000FFFFFFFFFFFFF));
+    show(from_bits(1));
+    show(from_bits(0x8000000000000001));
+    show(0.1);
+    show(0.2 + 0.1);
+    show(1e15);
+    show(-1e15);
+    show(1e16);
+    show(123456789012345.6);
+    show(0.0001);
+    show(0.00001);
+    show(1e-5 * 1.5);
+    show(5e-324);
+    // Powers of two, with bit neighbours.
+    for (int e = 1; e < 2047; e += 11) {
+        show_near((uint64)e << 52, 1);
+    }
+    // Powers of ten.
+    char[64] t;
+    for (int e = -324; e <= 308; e += 3) {
+        snprintf(&t[0], 64, "1e%d", e);
+        show_near(to_bits(strtod((string)&t[0], null)), 1);
+    }
+    // Subnormals.
+    for (uint64 u = 1; u < 40; u++) {
+        show(from_bits(u * 0x3333333));
+    }
+    for (int i = 0; i < 100; i++) {
+        show(from_bits(rnd() & 0x000FFFFFFFFFFFFF));
+    }
+    // Integers around 1e15 and 2^53, and halves.
+    for (int64 i = -20; i <= 20; i++) {
+        show((double)(1000000000000000 + i));
+        show((double)(9007199254740992 + i * 3));
+        show((double)(999999999999999 + i) + 0.5);
+    }
+    // Decimals with 1 to 17 digits.
+    for (int i = 0; i < 1500; i++) {
+        const int nd = 1 + i % 17;
+        uint64 m = 1 + rnd() % 9;
+        for (int j = 1; j < nd; j++) {
+            m = m * 10 + rnd() % 10;
+        }
+        const int e = (int)(rnd() % 60) - 30 - nd;
+        snprintf(&t[0], 64, "%s%llue%d", (rnd() & 1) != 0 ? "-" : "", m, e);
+        show(strtod((string)&t[0], null));
+    }
+    // Random bit patterns.
+    for (int i = 0; i < 1000; i++) {
+        show(from_bits(rnd()));
+    }
+    out.free();
+    return 0;
+}
