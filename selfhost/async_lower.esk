@@ -272,6 +272,12 @@ void al_rewrite(*ExprNode e, List<string>* vars) {
         }
         return;
     }
+    // `x += y` shares its target `x` with `x + y`; the C++ rewrite gives each frame-local
+    // name a node of its own, so the two uses become two `fr.x` nodes.
+    if (e.kind == EK_BINARY && e.b != null && e.b.kind == EK_BINARY && e.b.a == e.a && e.a != null
+        && e.a.kind == EK_IDENT && al_in(vars, e.a.sval) == 1) {
+        e.b.a = mk_ident(e.a.sval);
+    }
     if (e.kind == EK_SIZEOF && e.a != null) {   // sizeof(expr)
         al_rewrite(e.a, vars);
         return;
@@ -909,6 +915,7 @@ struct AlCtx {
     List<string> aw_fields;        // named when the locals are scanned (as the C++ awIdx)
     List<string> aw_types;         // ... and its value type
     int tmpn;                      // desugar temp counter → __awt0, …
+    int inittmp;                   // a hoisted local's initializer temporaries → __zero_t0, __init_t1, … (the C++ initTmp)
     *DeclNode curfn;                  // the async function being lowered (for iterable type lookup)
     List<string>* used;            // every name in the function: synthesized names avoid them
     // A `try` split into states (mirrors the C++ Region): the states of its body form one
@@ -1337,8 +1344,8 @@ int al_has_return(*StmtNode s) {
     // `T x;` resets its field to zero at each declaration (a loop iteration), as a local
     // does: a fresh local of the type (zeroed by codegen) is copied in (as the C++ initField).
     if (vd.expr == null) {
-        string zn = fresh_name(str_concat("__zero_t", int_to_str(c.tmpn)), c.used);
-        c.tmpn = c.tmpn + 1;
+        string zn = fresh_name(str_concat("__zero_t", int_to_str(c.inittmp)), c.used);
+        c.inittmp = c.inittmp + 1;
         List<*StmtNode> zb;
         List_init<*StmtNode>(&zb, 2);
         List_push<*StmtNode>(&zb, mk_vardecl(zn, vd.type, null, 0));
@@ -1349,8 +1356,8 @@ int al_has_return(*StmtNode s) {
     if (vd.expr.kind != EK_ARRAYLIT) {
         return al_assign(al_fr(vd.name), vd.expr);
     }
-    string tn = fresh_name(str_concat("__init_t", int_to_str(c.tmpn)), c.used);
-    c.tmpn = c.tmpn + 1;
+    string tn = fresh_name(str_concat("__init_t", int_to_str(c.inittmp)), c.used);
+    c.inittmp = c.inittmp + 1;
     List<*StmtNode> blk;
     List_init<*StmtNode>(&blk, 2);
     List_push<*StmtNode>(&blk, mk_vardecl(tn, vd.type, vd.expr, 0));
