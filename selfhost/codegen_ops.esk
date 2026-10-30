@@ -410,9 +410,7 @@ int cg_fn_exists(Codegen* g, string name) {
     return NameIdx_first(&g.fns_ix, name) >= 0;
 }
 
-// Resolve a binary/index `op` over operand types to its overload fn name (exact mangled-name
-// match), or "". Operand numeric coercion is not mirrored (a C++-only nicety): declare the
-// operator with the operand's exact type.
+// Whether `t` is an integer or floating-point type.
 int cg_is_num_ty(Codegen* g, string t) {
     string ll = cg_lltype(g, t);
     if (cg_is_float(ll) == 1) {
@@ -465,6 +463,9 @@ string cg_op_try(Codegen* g, string op, string a, string b) {
     return cg_op_lookup(g, op, &tys);
 }
 
+// Resolve a binary/index `op` over operand types to its overload fn name, or "": an exact
+// mangled-name match first, then a numeric operand converted to the standard numeric
+// parameter spellings, as the C++ resolver's assignability does (test operator_coerce).
 string cg_op_resolve(Codegen* g, string op, string ta, string tb) {
     if (ta[0] == 0 || tb[0] == 0) {
         return "";

@@ -1,0 +1,18 @@
+// An overloaded operator's numeric operand converts to the declared parameter type, in
+// both compilers: an int literal to float, to int64, and a narrow int8 to float.
+import <io>;
+
+struct V { float x; }
+
+V operator *(V a, float s) { let r: V; r.x = a.x * s; return r; }
+V operator +(V a, int64 s) { let r: V; r.x = a.x + (float)s; return r; }
+
+int main() {
+    let v: V;
+    v.x = 1.5;
+    V a = v * 2;
+    V b = v + 3;
+    V c = v * (int8)4;
+    printf("%.1f %.1f %.1f\n", a.x, b.x, c.x);
+    return 0;
+}
