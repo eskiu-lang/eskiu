@@ -360,15 +360,14 @@ merge:
 
 Nothing here is scheduled; this is where to pick the work up again.
 
-1. **C backend gate on Linux.** `tests/eir/check.sh` runs only in the macOS job of
-   `ci.yml` ("EIR backends"), while Linux is where `--backend=eir` takes the C99 path by
-   default. The list `tests/eir/pass_c.txt` was made on macOS. Steps: run
-   `UPDATE=1 tests/eir/check.sh c` in the Linux `test` job once (a throwaway CI step that
-   prints the list, since there is no local Docker), look at each test that passes on
-   macOS but not on Linux (libc output differences, `long` and `size_t` widths, the C
-   runtime in `eir_runtime.cpp`), fix what is a backend bug, and keep one list per host
-   (`pass_c_linux.txt`) if some differences are legitimate. Then add the step to the Linux
-   job.
+1. **C backend gate on Linux.** The Linux `test` job of `ci.yml` runs
+   `tests/eir/check.sh c` against its own list, `tests/eir/pass_c_linux.txt` (macOS keeps
+   `pass_c.txt`: libc output and type widths may differ). The generated C is compiled at
+   `-O1` in the gate, as `eskiuc -O1 --backend=eir` builds it (the driver passes its `-O`
+   level to the C compiler, with `-fno-strict-aliasing`). The Linux list starts empty: the
+   first CI run prints every passing test as "newly passing"; record them with
+   `UPDATE=1`, and look at each test that passes on macOS but not on Linux (a backend bug,
+   or a legitimate difference that stays off the Linux list).
 2. **Back ends in the self-hosted compiler.** `selfhost/eir*.esk` builds the same EIR as the
    C++ builder but stops at the text form. Porting the C99 emitter (`eir/eir_c.cpp`) first
    would let `eskiuc-esk` produce a binary through the system C compiler without LLVM,

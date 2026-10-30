@@ -81,9 +81,6 @@ first-class in the language without giving up general systems use.
   every node, key and string is its own allocation. A per-document arena would remove most of
   them, but it changes what can be freed on its own (a child taken out of a parsed document),
   so it needs an API decision first.
-- **The EIR C gate's optimization level.** `tests/eir/check.sh c` compiles the generated C
-  without optimization, and `http_serve_slow_reader` misses its 1.5 s deadline that way (it
-  passes at `-O1`), so it is out of `pass_c.txt`. Decide whether the gate builds at `-O1`.
 - **Eskiu in LangArena.** All 50 benchmarks of
   [LangArena](https://github.com/kostya/LangArena) are ported with matching checksums: Eskiu
   runs at C's speed on the 39 algorithmic ones and at about 1.28 times C's time over all 50,
