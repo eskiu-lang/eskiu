@@ -1116,6 +1116,8 @@ NAV = [
          "Hecho con Eskiu", "Lo que corre con Eskiu hoy"),
         ("case-study-reactvision.html", "ReactVision", "Eskiu across an AR stack, in production",
          "ReactVision", "Eskiu en todo un stack de AR, en producción"),
+        ("case-study-identity.html", "Digital identity", "An ISO/IEC 39794-5 core for the web and the phone",
+         "Identidad digital", "Un núcleo ISO/IEC 39794-5 para la web y el teléfono"),
         ("index.html#labs", "Labs", "A UI framework, a Nintendo 3DS and a kernel",
          "Labs", "Un framework de UI, una Nintendo 3DS y un kernel"),
     ]),
@@ -1123,6 +1125,7 @@ NAV = [
 NAV_CURRENT = {"quickstart.html": "learn", "docs/": "learn", "packages.html": "packages",
                "vision.html": "packages", "gpu.html": "packages", "platforms.html": "platforms", "showcase.html": "showcase",
                "case-study-reactvision.html": "showcase", "case-study-3ds.html": "showcase",
+               "case-study-identity.html": "showcase",
                "ui.html": "ui", "ui-components.html": "ui"}
 CHEVRON = ('<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" '
            'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
@@ -1192,7 +1195,7 @@ def apply_nav():
 
 # The closing call to action of the article pages, between the article and the footer.
 CTA_PAGES = ("showcase.html", "platforms.html", "packages.html", "vision.html",
-             "case-study-reactvision.html", "case-study-3ds.html")
+             "case-study-reactvision.html", "case-study-3ds.html", "case-study-identity.html")
 CTA_BAND = {
     "en": """  <section class="cta-band" aria-label="Get started">
     <div class="bar cta-in">

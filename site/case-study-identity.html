@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script>try{if(localStorage.getItem("eskiu-lang")==="es")location.replace("es/case-study-identity.html"+location.hash);}catch(e){}</script>
+  <title>Case study: an ISO/IEC 39794-5 core · Eskiu</title>
+  <meta name="description" content="How a digital identity company builds and validates ISO/IEC 39794-5 face records with one Eskiu core: WebAssembly in its web capture SDK, native libraries with a C ABI for Android and iOS, everything on the user's device." />
+  <link rel="canonical" href="https://eskiu-lang.org/case-study-identity.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Eskiu" />
+  <meta property="og:title" content="Case study: an ISO/IEC 39794-5 core · Eskiu" />
+  <meta property="og:description" content="How a digital identity company builds and validates ISO/IEC 39794-5 face records with one Eskiu core: WebAssembly in its web capture SDK, native libraries with a C ABI for Android and iOS, everything on the user's device." />
+  <meta property="og:url" content="https://eskiu-lang.org/case-study-identity.html" />
+  <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="alternate" hreflang="en" href="https://eskiu-lang.org/case-study-identity.html" />
+  <link rel="alternate" hreflang="es" href="https://eskiu-lang.org/es/case-study-identity.html" />
+  <link rel="icon" type="image/png" href="../assets/logo.png" />
+  <meta name="theme-color" content="#fbf8f3" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&amp;family=DM+Sans:wght@400;500;700&amp;family=DM+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="page.css?v=406c48f622" />
+</head>
+<body>
+  <header class="top">
+    <div class="bar top-in">
+      <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.14.1</span></a>
+      <nav class="nav" aria-label="Main"><div class="nav-g"><button type="button" class="nav-t">Learn<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="quickstart.html"><b>Get started</b><span>Install it and run a first program</span></a><a href="index.html#playground"><b>Playground</b><span>Run code in the browser</span></a><a href="the-book-of-eskiu.html"><b>The Book of Eskiu</b><span>The language, chapter by chapter</span></a><a href="docs/index.html"><b>Docs</b><span>The specification, the standard library and the compiler</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Packages<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="packages.html"><b>All packages</b><span>Each one is one eskiuc add away</span></a><a href="vision.html"><b>vision</b><span>Computer vision, bit for bit with C++</span></a><a href="gpu.html"><b>gpu</b><span>WebGPU compute, 3D models and Llama</span></a><a href="packages.html#onnx"><b>onnx</b><span>ONNX Runtime inference</span></a><a href="packages.html#jni"><b>jni</b><span>Java and Android with no C glue</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Platforms<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="platforms.html"><b>Overview</b><span>One compiler, every target</span></a><a href="platforms.html#wasm"><b>WebAssembly</b><span>The browser, through emscripten</span></a><a href="platforms.html#ios"><b>iOS</b><span>Static libraries for Swift and Objective-C</span></a><a href="platforms.html#android"><b>Android</b><span>Shared libraries for Kotlin and Java</span></a><a href="platforms.html#bare-metal"><b>Bare metal</b><span>Kernels and boards with no operating system</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">UI<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="ui.html"><b>Overview</b><span>Native apps for iOS, Android and the web</span></a><a href="ui-components.html"><b>Components and APIs</b><span>Every element, hook and service</span></a><a href="ui.html#dev"><b>Developer loop</b><span>Each change on screen in a third of a second</span></a><a href="ui.html#navigation"><b>Navigation</b><span>Screens on the phone, pages on the web</span></a><a href="ui.html#native"><b>Native code</b><span>Swift, Kotlin, Gradle and Swift packages</span></a><a href="ui.html#ship"><b>To the stores</b><span>Xcode, Android Studio, the App Store and Google Play</span></a><a href="ui.html#start"><b>Get started</b><span>The ui tool and a first app</span></a></div></div><div class="nav-g cur"><button type="button" class="nav-t">Showcase<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="showcase.html"><b>Built with Eskiu</b><span>What runs on it today</span></a><a href="case-study-reactvision.html"><b>ReactVision</b><span>Eskiu across an AR stack, in production</span></a><a href="case-study-identity.html" aria-current="page"><b>Digital identity</b><span>An ISO/IEC 39794-5 core for the web and the phone</span></a><a href="index.html#labs"><b>Labs</b><span>A UI framework, a Nintendo 3DS and a kernel</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+      <div class="top-right">
+        <span class="lang"><span aria-current="page">EN</span> / <a href="es/case-study-identity.html" onclick="try{localStorage.setItem('eskiu-lang','es')}catch(e){}">ES</a></span>
+        <a class="btn-install" href="index.html#install">Install 0.14.1</a>
+        <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="drawer"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg></button>
+      </div>
+    </div>
+    <nav class="drawer" id="drawer" aria-label="Main"><div class="dr-g"><span class="dr-h">Learn</span><a href="quickstart.html">Get started</a><a href="index.html#playground">Playground</a><a href="the-book-of-eskiu.html">The Book of Eskiu</a><a href="docs/index.html">Docs</a></div><div class="dr-g"><span class="dr-h">Packages</span><a href="packages.html">All packages</a><a href="vision.html">vision</a><a href="gpu.html">gpu</a><a href="packages.html#onnx">onnx</a><a href="packages.html#jni">jni</a></div><div class="dr-g"><span class="dr-h">Platforms</span><a href="platforms.html">Overview</a><a href="platforms.html#wasm">WebAssembly</a><a href="platforms.html#ios">iOS</a><a href="platforms.html#android">Android</a><a href="platforms.html#bare-metal">Bare metal</a></div><div class="dr-g"><span class="dr-h">UI</span><a href="ui.html">Overview</a><a href="ui-components.html">Components and APIs</a><a href="ui.html#dev">Developer loop</a><a href="ui.html#navigation">Navigation</a><a href="ui.html#native">Native code</a><a href="ui.html#ship">To the stores</a><a href="ui.html#start">Get started</a></div><div class="dr-g"><span class="dr-h">Showcase</span><a href="showcase.html">Built with Eskiu</a><a href="case-study-reactvision.html">ReactVision</a><a href="case-study-identity.html" aria-current="page">Digital identity</a><a href="index.html#labs">Labs</a></div><a class="dr-gh" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+  </header>
+  <main class="bar article">
+    <div class="eyebrow">Case study</div>
+    <h1>Digital identity: an ISO/IEC 39794-5 core in Eskiu</h1>
+
+    <div class="pull">
+      A digital identity company builds and checks the ISO/IEC 39794-5 face record of every
+      capture with one Eskiu core. The same source runs as WebAssembly in its browser SDK and
+      compiles to native libraries with a C ABI for Android and iOS.
+      <span class="stat">About 2,500 lines of Eskiu replace logic that each platform would otherwise implement on its own.</span>
+    </div>
+
+    <h2>The setup</h2>
+    <p>
+      The company makes a web SDK for biometric capture during customer onboarding: a face
+      capture with a liveness check, and the capture of official identity documents and
+      passports. The SDK runs in the user's browser. Images and measurements stay on the
+      device; nothing is sent to a server for processing.
+    </p>
+    <p>
+      Its output follows <strong>ISO/IEC 39794-5</strong>, the standard for exchanging face
+      image data. Producing it takes more than saving a photo: the SDK builds the record and
+      its JSON and XML forms, encodes it in ASN.1 and wraps it in a CBEFF block, measures the
+      image's quality and lighting, extracts the face geometry and eye openness from the
+      landmarks, checks the result against configurable profiles, and writes a validation
+      report. All of this was TypeScript, and the native SDKs for Android and iOS would have
+      needed it again in Kotlin and Swift.
+    </p>
+
+    <h2>Why Eskiu fit</h2>
+    <ul>
+      <li><strong>One source for the web and the phone.</strong> Eskiu compiles the same files
+        to WebAssembly through emscripten and to static libraries with a C ABI for
+        <code>aarch64-linux-android</code> and <code>arm64-apple-ios</code>, so the record a
+        browser produces and the record a native app produces come from the same code.</li>
+      <li><strong>No runtime to carry.</strong> There is no garbage collector or virtual
+        machine in the WebAssembly module, and the native libraries are plain objects for the
+        platform's linker.</li>
+      <li><strong>Buffers in, buffers out.</strong> The core takes images and requests as byte
+        buffers and returns its results the same way. A JPEG is not expanded into an array of
+        numbers to cross into the module, and the per-frame checks take a few numbers, not the
+        478-point face mesh.</li>
+      <li><strong>Memory you can bound.</strong> Every result belongs to the core and is
+        released exactly once, and the limits are explicit: a maximum module memory, a maximum
+        image and a maximum request size, each rejected with an error when exceeded.</li>
+    </ul>
+
+    <h2>What moved into Eskiu</h2>
+    <div class="tablewrap"><table>
+      <tr><th>Area</th><th>In the core</th></tr>
+      <tr><td>Record</td><td>The public record and its JSON and XML serialization</td></tr>
+      <tr><td>Encodings</td><td>The ASN.1 TLV writer and the CBEFF block</td></tr>
+      <tr><td>Image analysis</td><td>Quality and lighting, computed over the RGBA pixels</td></tr>
+      <tr><td>Face</td><td>Geometry, eye openness and detection confidence</td></tr>
+      <tr><td>Policy</td><td>Profiles, compliance rules and validation reports</td></tr>
+    </table></div>
+    <p>
+      The core is about 2,500 lines of Eskiu in 18 files, split by responsibility. TypeScript
+      keeps the public API and its types and becomes an adapter for what belongs to the
+      browser: the camera, Canvas and pixel reads, clocks, the platform's XML parser, Web
+      Crypto, caching and workers. The quality worker loads the same core and the same
+      profiles as the main thread. The WebAssembly module is embedded in a hashed JavaScript
+      chunk, so integrators deploy the SDK exactly as before.
+    </p>
+
+    <h2>How it was checked</h2>
+    <p>
+      The migration kept the existing behavior where it was right and the existing bytes
+      where they were defined: records match the golden samples of the previous encoder, and
+      the image measurements match the previous TypeScript implementation on deterministic
+      pixel fixtures. 210 tests cover the record, the encodings, the worker, the final capture
+      checks and the eye measurements, another 81 load every bundle the SDK ships, and the
+      native build is exercised through its C ABI with no browser involved. Reformatting the
+      Eskiu sources with <code>eskiuc fmt</code> leaves the compiled object identical byte for
+      byte, which the team uses to keep style changes from hiding behavior changes.
+    </p>
+    <p>
+      The same sources cross-compile to ARM64 objects for Android and iOS. Linking them into
+      the native apps is the next step of the integration.
+    </p>
+
+    <h2>The numbers</h2>
+    <div class="tablewrap"><table>
+      <tr><th>Image</th><th>Operation</th><th>Median</th><th>95th percentile</th></tr>
+      <tr><td>640×800</td><td>Quality</td><td>3.07 ms</td><td>3.34 ms</td></tr>
+      <tr><td>640×800</td><td>Lighting</td><td>2.45 ms</td><td>2.46 ms</td></tr>
+      <tr><td>1920×2400</td><td>Quality</td><td>27.15 ms</td><td>27.29 ms</td></tr>
+      <tr><td>1920×2400</td><td>Lighting</td><td>22.19 ms</td><td>22.72 ms</td></tr>
+    </table></div>
+    <p>
+      Starting the WebAssembly module takes 2 ms, and the memory it keeps reserved after a
+      full analysis went from 52.9 MiB to 23.1 MiB, because the lighting pass no longer stores
+      a double per pixel and recomputes it instead. These are synthetic measurements on an
+      Apple Silicon machine under Node, including copying the pixels in and reading the result
+      out; measurements on entry-level phones are still to come.
+    </p>
+
+    <p>
+      Identity checks are a domain where a record has to be the same wherever it is produced.
+      With the logic written once in Eskiu, the browser and the native apps share it instead
+      of keeping three implementations in step.
+    </p>
+  </main>
+  <section class="cta-band" aria-label="Get started">
+    <div class="bar cta-in">
+      <div class="cta-txt">
+        <h2>Start in a minute.</h2>
+        <p>Install the compiler with one command, or run a program in the browser first.</p>
+      </div>
+      <div class="cta-btns">
+        <a class="cta-dark" href="quickstart.html">Get started</a>
+        <a class="cta-line" href="index.html#playground">Try it in the browser</a>
+      </div>
+    </div>
+  </section>
+  <footer class="foot">
+    <div class="bar foot-in">
+      <span class="brand">eskiu</span>
+      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family · MIT</span>
+      <nav class="foot-links" aria-label="Footer"><a href="docs/index.html">Docs</a><a href="the-book-of-eskiu.html">Book</a><a href="docs/internals.html">Internals</a><a href="changelog.html">Changelog</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a><a href="https://reactvision.xyz">ReactVision</a></nav>
+    </div>
+  </footer>
+  <script>(function(){var t=document.querySelector(".top"),b=document.querySelector(".menu-btn");if(!t||!b)return;b.addEventListener("click",function(){var o=t.classList.toggle("open");b.setAttribute("aria-expanded",o?"true":"false");});})();</script>
+</body>
+</html>
