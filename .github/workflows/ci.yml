@@ -78,16 +78,10 @@ jobs:
         run: CC=clang-22 python3 tests/fuzz/stdlib_fuzz.py --inputs 1500 --seed 1
 
       # How long the editor modes take on a script with a dozen stdlib imports (what an
-      # editor waits for on each keystroke). Reported, not enforced.
+      # editor waits for on each keystroke), against a budget of about four times the
+      # usual time on this runner.
       - name: Editor timing
-        run: |
-          f=examples/scripts/organize.esk
-          for mode in "--test-typechecker" "--complete-at 79:20" "--symbols"; do
-            s=$(date +%s%N); ./build/eskiuc $f $mode > /dev/null 2>&1; e=$(date +%s%N)
-            echo "eskiuc $mode: $(( (e - s) / 1000000 )) ms"
-          done
-          s=$(date +%s%N); ./build/eskiuc fmt --check $f > /dev/null 2>&1; e=$(date +%s%N)
-          echo "eskiuc fmt --check: $(( (e - s) / 1000000 )) ms"
+        run: tests/editor_timing.sh
 
       # The inputs a fuzz step flagged, to reproduce a finding locally.
       - name: Fuzz findings

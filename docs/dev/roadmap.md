@@ -58,7 +58,6 @@ first-class in the language without giving up general systems use.
   throws, with `ErrorBoundary` and `ui_on_error`. The plan:
   [`ui-error-recovery.md`](ui-error-recovery.md).
 
-- **Formatter.** Breaking lines that are too long.
 - **Build times.** Measure a package with several dependencies, then decide whether
   modules need a cache.
 - **Native WebAssembly exceptions.** On emscripten, exceptions run through its
