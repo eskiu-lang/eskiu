@@ -1,13 +1,14 @@
 name: Windows build
 
 # Windows x86-64 build of eskiuc plus the Windows checks of the stdlib, on every
-# push to develop (and ci/windows, used to iterate on it) or on demand. Also
-# produces a .zip that can be attached to a release. Kept separate from
-# release.yml so it can run without cutting a release.
+# push to main and develop (and ci/windows, used to iterate on it), on every pull
+# request, or on demand. Also produces a .zip that can be attached to a release. Kept
+# separate from release.yml so it can run without cutting a release.
 on:
   workflow_dispatch:
   push:
-    branches: [develop, ci/windows]
+    branches: [main, develop, ci/windows]
+  pull_request:
 
 jobs:
   build-windows-x86_64:

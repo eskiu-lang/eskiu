@@ -172,14 +172,12 @@ jobs:
 
   # ── Windows x86_64 ─────────────────────────────────────────────────────
   # Built under MSYS2/MinGW, whose LLVM package ships the dev libraries + CMake
-  # config the tool links against. ESKIU_STATIC pulls LLVM in statically, and the
-  # static libgcc/libstdc++/winpthread flags keep the .exe free of MSYS runtime DLLs.
+  # config the tool links against. LLVM is linked dynamically (libLLVM.dll and the DLLs
+  # it needs are bundled next to the .exe); libgcc and libstdc++ are linked statically.
   build-windows-x86_64:
     runs-on: windows-latest
-    # Unverified until this runs on CI: don't let a Windows build failure block the
-    # macOS/Linux release. If it succeeds, the .zip is attached; if not, the release
-    # still publishes (action-gh-release skips a missing file in `files:`).
-    continue-on-error: true
+    # Windows is a supported host with a prebuilt binary (README), and windows.yml runs
+    # the same build on every push and pull request, so a failure here fails the release.
     defaults:
       run:
         shell: msys2 {0}
