@@ -20,7 +20,8 @@ std::string resolveStdlibPath();
 std::string readFile(const std::string& filename);
 std::string dirOf(const std::string& path);
 std::string formatSource(const std::string& src);
-int runFmt(const std::vector<std::string>& files, bool check);
+std::string wrapLongLines(const std::string& text, int width);
+int runFmt(const std::vector<std::string>& files, bool check, int width = 0);
 // Seed the predefined macros every compile mode shares: the platform macro that
 // follows `triple` (or the build host when empty) and __ESKIU_FREESTANDING__.
 void seedPredefinedMacros(std::map<std::string, Macro>& macros, const std::string& triple,

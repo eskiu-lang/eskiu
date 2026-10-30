@@ -3500,6 +3500,7 @@ Sections are separated by `:`. Trailing sections may be omitted if empty.
 | `eskiuc repl [file.esk …]` | Interactive session: each input is JIT-compiled and run; the files are loaded first |
 | `eskiuc fmt file.esk …` | Reformat files in place (one statement per line, spacing, indentation; preserves tokens and comments) |
 | `eskiuc fmt --check file.esk …` | Report files that are not formatted (exit non-zero); write nothing |
+| `eskiuc fmt --width N file.esk …` | Also break code lines longer than N bytes (see Formatting) |
 | `eskiuc file.esk --asan -o prog` | Instrument with AddressSanitizer (memory errors) and link its runtime |
 | `eskiuc file.esk --ubsan -o prog` | Insert trapping bounds checks (traps on out-of-bounds; no runtime) |
 | `eskiuc file.esk --safe -o prog` | Run-time safety checks that trap instead of continuing: every array and slice index is bounds-checked, a signed `+`, `-` or `*` on `int`/`int64` that overflows traps (instead of wrapping), and dereferencing a null pointer (`*p`, `p.f`, `p[i]`) traps; off by default |
@@ -3567,7 +3568,7 @@ invocation in `kernel/Makefile`).
 - Indentation: four spaces per brace level. A line that continues a statement (inside open parentheses, or after a line that does not end one) keeps its indentation relative to the statement's first line, at least four more.
 - A blank line after each top-level definition; other blank lines are kept, those at the end of the file dropped, and the file ends with one newline. Trailing whitespace is trimmed, except after a trailing `\`.
 - Comments, every byte of a string or character literal (every line of a string that spans lines too), lines continued with `\` and preprocessor lines (at column 0) keep their bytes.
-- Long lines are not broken: a line only gets shorter when it holds several statements.
+- Long lines are not broken unless `--width N` is given (N at least 20): then a code line longer than N bytes is broken after the commas of its outermost bracketed list (the argument list of a call or a declaration, an initializer), filling each line up to N, with the lines after the first indented 8 more than it; a line still too long is broken the same way at its own outermost commas. A line with a comment, a preprocessor line, a line inside a string or a block comment, and a line with no comma inside brackets keep their bytes. The output with a given width is idempotent too.
 
 `--check` makes it report (and exit non-zero on) files that would change, without writing. Useful in CI.
 

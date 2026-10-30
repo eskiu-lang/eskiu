@@ -1,0 +1,13 @@
+// FMT-WIDTH: 60
+// `fmt --width 60` breaks the long code lines after the commas of their outermost list,
+// fills each line, and indents the rest 8 more; comments, strings and short lines stay.
+extern int printf(string fmt, ...);
+int add3(int first_value, int second_value, int third_value) { return first_value + second_value + third_value; }
+int main() {
+    int total = add3(100000, 200000, 300000) + add3(400000, 500000, 600000) + add3(1, 2, 3);
+    printf("%d %d %d\n", total, add3(1, 2, 3), add3(total, total, total) - total * 3 + 7);
+    printf("a string, with commas, that is long enough to pass the width on its own\n");   // kept
+    int[8] values = {1000000, 2000000, 3000000, 4000000, 5000000, 6000000, 7000000, 8000000};
+    printf("%d\n", values[7]);
+    return 0;
+}

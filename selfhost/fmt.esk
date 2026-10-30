@@ -1314,3 +1314,206 @@ String format_source(*uint8 src, int n) {
     }
     return out;
 }
+
+// ── `fmt --width N`: the wrap pass, a byte-for-byte mirror of the C++ wrapLongLines ──
+// A code line longer than `width` bytes is broken after the commas of its outermost
+// bracketed list (the commas at the smallest depth of `(`, `[` or `{` inside the line,
+// at least 1): the pieces fill each line up to the width, and the lines after the
+// first are indented 8 more than it. A resulting line that is still too long is broken
+// the same way. A line with a comment, a directive, or one that starts or ends inside a
+// string or a block comment is left as written.
+
+// Append the bytes [a, b) of `s` to `out`.
+void fmt_put(String* out, *uint8 s, int a, int b) {
+    int i = a;
+    while (i < b) {
+        String_push(out, (char)s[i]);
+        i = i + 1;
+    }
+}
+
+// Break the line s[0, n) as wrapLine does, appending the resulting lines to `out`.
+void fmt_wrap_line(*uint8 s, int n, int width, List<String>* out) {
+    if (n <= width) {
+        let keep: String;
+        String_init(&keep, n + 1);
+        fmt_put(&keep, s, 0, n);
+        List_push<String>(out, keep);
+        return;
+    }
+    int indent = 0;
+    while (indent < n && (int)s[indent] == 32) {
+        indent = indent + 1;
+    }
+    List<int> cpos;
+    List_init<int>(&cpos, 8);
+    List<int> cdep;
+    List_init<int>(&cdep, 8);
+    int depth = 0;
+    int quote = 0;
+    int i = indent;
+    while (i < n) {
+        int c = (int)s[i];
+        if (quote != 0) {
+            if (c == 92) {
+                i = i + 1;
+            } else if (c == quote) {
+                quote = 0;
+            }
+        } else if (c == 34 || c == 39) {
+            quote = c;
+        } else if (c == 40 || c == 91 || c == 123) {
+            depth = depth + 1;
+        } else if (c == 41 || c == 93 || c == 125) {
+            depth = depth - 1;
+        } else if (c == 44 && depth >= 1) {
+            List_push<int>(&cpos, i);
+            List_push<int>(&cdep, depth);
+        }
+        i = i + 1;
+    }
+    int least = 0;
+    for (k in 0..List_len<int>(&cdep)) {
+        int d = List_get<int>(&cdep, k);
+        if (least == 0 || d < least) {
+            least = d;
+        }
+    }
+    List<int> starts;
+    List_init<int>(&starts, 8);
+    List<int> ends;
+    List_init<int>(&ends, 8);
+    int start = 0;
+    for (k in 0..List_len<int>(&cpos)) {
+        if (List_get<int>(&cdep, k) != least) {
+            continue;
+        }
+        List_push<int>(&starts, start);
+        List_push<int>(&ends, List_get<int>(&cpos, k) + 1);
+        start = List_get<int>(&cpos, k) + 1;
+    }
+    if (List_len<int>(&starts) == 0) {
+        let keep: String;
+        String_init(&keep, n + 1);
+        fmt_put(&keep, s, 0, n);
+        List_push<String>(out, keep);
+        return;
+    }
+    List_push<int>(&starts, start);
+    List_push<int>(&ends, n);
+    List<String> lines;
+    List_init<String>(&lines, 4);
+    let cur: String;
+    String_init(&cur, n + 1);
+    fmt_put(&cur, s, List_get<int>(&starts, 0), List_get<int>(&ends, 0));
+    for (k in 1..List_len<int>(&starts)) {
+        int a = List_get<int>(&starts, k);
+        int b = List_get<int>(&ends, k);
+        while (a < b && (int)s[a] == 32) {
+            a = a + 1;
+        }
+        if (a == b) {
+            continue;
+        }
+        if ((int)cur.len + 1 + (b - a) <= width) {
+            String_push(&cur, ' ');
+            fmt_put(&cur, s, a, b);
+        } else {
+            List_push<String>(&lines, cur);
+            let next: String;
+            String_init(&next, n + 1);
+            for (sp in 0..indent + 8) {
+                String_push(&next, ' ');
+            }
+            fmt_put(&next, s, a, b);
+            cur = next;
+        }
+    }
+    List_push<String>(&lines, cur);
+    if (List_len<String>(&lines) == 1) {
+        let keep: String;
+        String_init(&keep, n + 1);
+        fmt_put(&keep, s, 0, n);
+        List_push<String>(out, keep);
+        return;
+    }
+    for (k in 0..List_len<String>(&lines)) {
+        String l = List_get<String>(&lines, k);
+        fmt_wrap_line((*uint8)String_cstr(&l), (int)l.len, width, out);
+    }
+}
+
+String fmt_wrap(String* text, int width) {
+    let out: String;
+    String_init(&out, (int)text.len + 64);
+    *uint8 t = (*uint8)String_cstr(text);
+    int tn = (int)text.len;
+    int in_block = 0;
+    int quote = 0;
+    int pos = 0;
+    while (pos < tn) {
+        int e = pos;
+        while (e < tn && (int)t[e] != 10) {
+            e = e + 1;
+        }
+        int has_nl = e < tn ? 1 : 0;
+        int plain = in_block == 0 && quote == 0 ? 1 : 0;
+        int comment = 0;
+        int i = pos;
+        while (i < e) {
+            int c = (int)t[i];
+            int nx = i + 1 < e ? (int)t[i + 1] : 0;
+            if (in_block == 1) {
+                if (c == 42 && nx == 47) {
+                    in_block = 0;
+                    i = i + 1;
+                }
+            } else if (quote != 0) {
+                if (c == 92) {
+                    i = i + 1;
+                } else if (c == quote) {
+                    quote = 0;
+                }
+            } else if (c == 47 && nx == 47) {
+                comment = 1;
+                break;
+            } else if (c == 47 && nx == 42) {
+                in_block = 1;
+                comment = 1;
+                i = i + 1;
+            } else if (c == 34 || c == 39) {
+                quote = c;
+            }
+            i = i + 1;
+        }
+        if (quote == 39) {
+            quote = 0;
+        }
+        int first = pos;
+        while (first < e && (int)t[first] == 32) {
+            first = first + 1;
+        }
+        int directive = first < e && (int)t[first] == 35 ? 1 : 0;
+        if (plain == 1 && comment == 0 && directive == 0 && in_block == 0 && quote == 0 && e - pos > width) {
+            List<String> parts;
+            List_init<String>(&parts, 4);
+            fmt_wrap_line((*uint8)((*uint8)t + pos), e - pos, width, &parts);
+            for (k in 0..List_len<String>(&parts)) {
+                String p = List_get<String>(&parts, k);
+                String_append(&out, String_cstr(&p));
+                if (k + 1 < List_len<String>(&parts)) {
+                    String_push(&out, '\n');
+                }
+            }
+        } else {
+            fmt_put(&out, t, pos, e);
+        }
+        if (has_nl == 1) {
+            String_push(&out, '\n');
+            pos = e + 1;
+        } else {
+            pos = e;
+        }
+    }
+    return out;
+}

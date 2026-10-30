@@ -46,7 +46,7 @@ static const char* OVERVIEW =
     "  eskiuc file.esk [more.esk ...] -o prog   compile and link an executable\n"
     "  eskiuc file.esk -c -o file.o             compile to an object file\n"
     "  eskiuc run [flags] file.esk [--] [args]  compile to a temp executable and run it\n"
-    "  eskiuc fmt [--check] file.esk ...        reindent files in place\n"
+    "  eskiuc fmt [--check] [--width N] file.esk ...  reindent files in place\n"
     "  eskiuc repl [file.esk ...]               interactive session (JIT)\n";
 static llvm::cl::opt<std::string> InputFilename(llvm::cl::Positional,
                                                  llvm::cl::desc("<input .esk file>"),
@@ -565,13 +565,27 @@ static int compilerMain(int argc, char** argv) {
     // option parsing; it does not use the compiler pipeline.
     if (argc >= 2 && std::string(argv[1]) == "fmt") {
         bool check = false;
+        int width = 0;
         std::vector<std::string> files;
         for (int i = 2; i < argc; ++i) {
             std::string a = argv[i];
-            if (a == "--check") check = true;
+            std::string val;
+            bool isWidth = false;
+            if (a == "--width" && i + 1 < argc) { val = argv[++i]; isWidth = true; }
+            else if (a.rfind("--width=", 0) == 0) { val = a.substr(8); isWidth = true; }
+            if (isWidth) {
+                width = val.empty() || val.size() > 5 ? -1 : 0;
+                for (char c : val)
+                    if (width >= 0) width = std::isdigit((unsigned char)c) ? width * 10 + (c - '0') : -1;
+                if (width < 20) {
+                    std::cerr << "error: fmt: --width needs a number of at least 20, not '" << val << "'\n";
+                    return 1;
+                }
+            }
+            else if (a == "--check") check = true;
             else files.push_back(a);
         }
-        return runFmt(files, check);
+        return runFmt(files, check, width);
     }
 
     // `eskiuc repl [file.esk ...]`: the interactive session (repl.cpp). The files are

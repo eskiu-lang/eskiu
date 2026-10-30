@@ -729,7 +729,9 @@ for esk in "$here"/fmt_cases/*.esk; do
     [[ -e "$esk" ]] || continue
     name="fmt_cases/$(basename "$esk" .esk)"
     cp "$esk" "$work/fmtcase.esk"
-    "$ESKIUC" fmt "$work/fmtcase.esk" >/dev/null 2>&1
+    # A case whose first line is `// FMT-WIDTH: N` is formatted with `--width N`.
+    fw="$(head -1 "$esk" | sed -n 's|^// FMT-WIDTH: \([0-9]*\)$|\1|p')"
+    "$ESKIUC" fmt ${fw:+--width "$fw"} "$work/fmtcase.esk" >/dev/null 2>&1
     if cmp -s "$work/fmtcase.esk" "${esk%.esk}.formatted"; then ok "$name"
     else bad "$name" "formatted output differs from ${name}.formatted"; fi
 done

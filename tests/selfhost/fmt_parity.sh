@@ -50,6 +50,13 @@ for f in "${files[@]}"; do
     if ! diff -q "$WORK/a.esk" "$WORK/b.esk" >/dev/null; then
         echo "FAIL  $f"; diff "$WORK/a.esk" "$WORK/b.esk" | head -6; fail=1
     fi
+    # The wrap pass (`fmt --width 80`) is byte-identical too.
+    cp "$f" "$WORK/a.esk"; cp "$f" "$WORK/b.esk"
+    "$BIN"     fmt --width 80 "$WORK/a.esk" >/dev/null 2>&1
+    "$ESKMAIN" fmt --width 80 "$WORK/b.esk" >/dev/null 2>&1
+    if ! diff -q "$WORK/a.esk" "$WORK/b.esk" >/dev/null; then
+        echo "FAIL  $f (--width 80)"; diff "$WORK/a.esk" "$WORK/b.esk" | head -6; fail=1
+    fi
 done
 
 echo "----"

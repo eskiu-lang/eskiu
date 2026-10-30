@@ -774,10 +774,111 @@ std::string formatSource(const std::string& src) {
     return out;
 }
 
-// `eskiuc fmt [--check] file.esk …` — reformat each file in place. With --check,
-// don't write; exit non-zero if any file is not already formatted. Returns the
-// process exit code.
-int runFmt(const std::vector<std::string>& files, bool check) {
+// The wrap pass of `eskiuc fmt --width N` (selfhost fmt_wrap is the same). A code line
+// longer than `width` bytes is broken after the commas of its outermost bracketed list
+// (the commas at the smallest depth of `(`, `[` or `{` inside the line, at least 1): the
+// pieces fill each line up to the width, and the lines after the first are indented 8
+// more than it. A resulting line that is still too long is broken the same way, so
+// the output is a fixed point. A line is left as written when it holds a comment, is a
+// directive, or starts or ends inside a string or a block comment.
+static void wrapLine(const std::string& line, int width, std::vector<std::string>& out) {
+    if ((int)line.size() <= width) { out.push_back(line); return; }
+    size_t indent = 0;
+    while (indent < line.size() && line[indent] == ' ') indent++;
+    std::vector<std::pair<size_t, int>> commas;
+    int depth = 0;
+    char quote = 0;
+    for (size_t i = indent; i < line.size(); ++i) {
+        char c = line[i];
+        if (quote) {
+            if (c == '\\') i++;
+            else if (c == quote) quote = 0;
+            continue;
+        }
+        if (c == '"' || c == '\'') quote = c;
+        else if (c == '(' || c == '[' || c == '{') depth++;
+        else if (c == ')' || c == ']' || c == '}') depth--;
+        else if (c == ',' && depth >= 1) commas.push_back({i, depth});
+    }
+    int least = 0;
+    for (const auto& cm : commas) if (least == 0 || cm.second < least) least = cm.second;
+    std::vector<std::string> pieces;
+    size_t start = 0;
+    for (const auto& cm : commas) {
+        if (cm.second != least) continue;
+        pieces.push_back(line.substr(start, cm.first + 1 - start));
+        start = cm.first + 1;
+    }
+    if (pieces.empty()) { out.push_back(line); return; }
+    pieces.push_back(line.substr(start));
+    std::string cont(indent + 8, ' ');
+    std::vector<std::string> lines;
+    std::string cur = pieces[0];
+    for (size_t k = 1; k < pieces.size(); ++k) {
+        std::string p = pieces[k];
+        size_t lead = 0;
+        while (lead < p.size() && p[lead] == ' ') lead++;
+        p = p.substr(lead);
+        if (p.empty()) continue;
+        if ((int)(cur.size() + 1 + p.size()) <= width) cur += " " + p;
+        else { lines.push_back(cur); cur = cont + p; }
+    }
+    lines.push_back(cur);
+    if (lines.size() == 1) { out.push_back(line); return; }
+    for (const auto& l : lines) wrapLine(l, width, out);
+}
+
+std::string wrapLongLines(const std::string& text, int width) {
+    std::string out;
+    bool inBlock = false;
+    char quote = 0;
+    size_t pos = 0;
+    while (pos < text.size()) {
+        size_t nl = text.find('\n', pos);
+        bool hasNl = nl != std::string::npos;
+        std::string line = text.substr(pos, (hasNl ? nl : text.size()) - pos);
+        pos = hasNl ? nl + 1 : text.size();
+        bool plain = !inBlock && quote == 0;
+        bool comment = false;
+        for (size_t i = 0; i < line.size(); ++i) {
+            char c = line[i];
+            char n = i + 1 < line.size() ? line[i + 1] : 0;
+            if (inBlock) {
+                if (c == '*' && n == '/') { inBlock = false; i++; }
+                continue;
+            }
+            if (quote) {
+                if (c == '\\') i++;
+                else if (c == quote) quote = 0;
+                continue;
+            }
+            if (c == '/' && n == '/') { comment = true; break; }
+            if (c == '/' && n == '*') { inBlock = true; comment = true; i++; continue; }
+            if (c == '"' || c == '\'') quote = c;
+        }
+        if (quote == '\'') quote = 0;
+        size_t first = line.find_first_not_of(' ');
+        bool directive = first != std::string::npos && line[first] == '#';
+        if (plain && !comment && !directive && !inBlock && quote == 0 && (int)line.size() > width) {
+            std::vector<std::string> parts;
+            wrapLine(line, width, parts);
+            for (size_t k = 0; k < parts.size(); ++k) {
+                out += parts[k];
+                if (k + 1 < parts.size()) out += '\n';
+            }
+        } else {
+            out += line;
+        }
+        if (hasNl) out += '\n';
+    }
+    return out;
+}
+
+// `eskiuc fmt [--check] [--width N] file.esk …` — reformat each file in place. With
+// --check, don't write; exit non-zero if any file is not already formatted. With
+// --width, also break code lines longer than N (wrapLongLines). Returns the process
+// exit code.
+int runFmt(const std::vector<std::string>& files, bool check, int width) {
     if (files.empty()) { std::cerr << "error: fmt: no input files\n"; return 1; }
     int changed = 0, failed = 0;
     for (const auto& f : files) {
@@ -786,6 +887,7 @@ int runFmt(const std::vector<std::string>& files, bool check) {
         std::stringstream buf; buf << in.rdbuf(); in.close();
         std::string original = buf.str();
         std::string formatted = formatSource(original);
+        if (width > 0) formatted = wrapLongLines(formatted, width);
         if (formatted == original) continue;
         changed++;
         if (check) { std::cout << f << "\n"; continue; }
