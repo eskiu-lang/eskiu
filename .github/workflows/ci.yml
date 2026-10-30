@@ -31,7 +31,8 @@ jobs:
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
             -DLLVM_DIR=$LLVM_DIR \
-            -DCMAKE_CXX_COMPILER=clang++-22
+            -DCMAKE_CXX_COMPILER=clang++-22 \
+            -DESKIU_WERROR=ON
           cmake --build build --target eskiuc -j"$(nproc)"
           # Dual-build (promotion P4): the C++ seed builds the Eskiu-written compiler too.
           cmake --build build --target eskiuc-selfhost -j"$(nproc)"
@@ -271,7 +272,7 @@ jobs:
 
       - name: Configure & build
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR=$LLVM_DIR -DESKIU_SELFHOST_CLANG=$CLANG
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR=$LLVM_DIR -DESKIU_SELFHOST_CLANG=$CLANG -DESKIU_WERROR=ON
           cmake --build build --target eskiuc -j"$(sysctl -n hw.ncpu)"
           cmake --build build --target eskiuc-selfhost -j"$(sysctl -n hw.ncpu)"
 

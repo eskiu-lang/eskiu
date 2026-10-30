@@ -9,7 +9,7 @@
 | C++ compiler | C++17 (clang++ recommended, g++ works) | clang++ 17+ |
 | git          | any                                    | n/a         |
 
-LLVM is the only non-trivial dependency. The compiler links the `support`, `core`, `irreader` and native code generation components, plus the AArch64, X86, ARM and WebAssembly backends used for cross-compilation.
+LLVM is the only non-trivial dependency. It must be built with RTTI (`LLVM_ENABLE_RTTI=ON`), as the packaged LLVMs below are (apt.llvm.org, Homebrew, Alpine, MSYS2). The release tarballs on the llvm-project GitHub page are built without RTTI and cannot be used: configuring against one stops with an error (see [Troubleshooting](#llvm-built-without-rtti)). The compiler links the `support`, `core`, `irreader` and native code generation components, plus the AArch64, X86, ARM and WebAssembly backends used for cross-compilation.
 
 To use a prebuilt compiler instead, see the install instructions in the [README](../../README.md#install). A built `eskiuc` calls the system C compiler (`cc`, `clang` or `gcc`) to link executables, so one must be installed.
 
@@ -150,6 +150,16 @@ After changing source files, just re-run the build step; CMake tracks dependenci
 cmake --build build -- -j$(nproc)
 ```
 
+### Warnings as errors
+
+The compiler's own sources build without warnings under `-Wall -Wextra -Wpedantic` (LLVM's
+headers are included as system headers, so their warnings are not reported). CI keeps it
+that way with `-DESKIU_WERROR=ON`, which adds `-Werror` (`/WX` with MSVC):
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DESKIU_WERROR=ON
+```
+
 ### Clean rebuild
 
 Delete the build directory and start over:
@@ -260,6 +270,20 @@ If you see undefined symbols from LLVM:
 1. Confirm the installed LLVM version matches the headers used at configure time (`llvm-config --version`).
 2. On Ubuntu, ensure you installed `llvm-22-dev` (not just `llvm-22`); the `-dev` package contains the static libraries.
 3. On Alpine, `llvm22-dev` is the correct package name; `llvm22` alone does not ship the `.a` archives.
+
+### LLVM built without RTTI
+
+```
+CMake Error: LLVM at ... was built without RTTI (LLVM_ENABLE_RTTI=OFF), which eskiuc needs.
+```
+
+The compiler uses `dynamic_cast` and derives from LLVM classes (`llvm::cl::opt`), so it
+needs the type information an RTTI build of LLVM exports. The release tarballs on the
+llvm-project GitHub page (`clang+llvm-22.x-*.tar.xz`) are built without it; linking against
+one would fail with `undefined symbol: typeinfo for llvm::cl::GenericOptionValue`, so the
+configure step stops first. Use a packaged LLVM instead (apt.llvm.org `llvm-22-dev`,
+Homebrew `llvm@22`, Alpine `llvm22-dev`, MSYS2 `mingw-w64-x86_64-llvm`) and point
+`LLVM_DIR` at it.
 
 ---
 

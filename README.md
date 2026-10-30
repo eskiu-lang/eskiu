@@ -171,8 +171,9 @@ verifies its checksum and installs it. The Windows x86-64 build and the tarballs
 [releases page](https://github.com/eskiu-lang/eskiu/releases). `eskiuc` links programs
 with your system C toolchain (`cc`, `clang` or `gcc`), so have one installed.
 
-To build from source you need LLVM 21 or newer (22 recommended), CMake 3.20+ and a C++17
-compiler:
+To build from source you need LLVM 21 or newer (22 recommended) built with RTTI, which the
+packaged ones are (apt.llvm.org, Homebrew, your distribution; not the llvm-project release
+tarballs), CMake 3.20+ and a C++17 compiler:
 
 ```bash
 git clone https://github.com/eskiu-lang/eskiu && cd eskiu
