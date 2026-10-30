@@ -1,40 +1,54 @@
 // alloc.esk: the kernel heap
 //
 // <mem>'s alloc<T>/free call esk_alloc/esk_free under --freestanding. They are built
-// on `Bump` from <alloc>, which hands out 8-byte aligned pieces of the region
-// [__heap_start, __heap_end) that linker.ld reserves.
+// on `FirstFit` from <alloc> over the region [__heap_start, __heap_end) that linker.ld
+// reserves: each block has a 16-byte header, and free returns it to an address-ordered
+// free list that merges neighbours, so memory freed by `free` (or `defer free`) is
+// reused.
 
 import <alloc>;
 
 extern uint8 __heap_start;
 extern uint8 __heap_end;
 
-Bump heap;   // in .bss: zeroed by kernel_main before heap_init runs
+FirstFit heap;   // in .bss: zeroed by kernel_main before heap_init runs
+int64 used;      // bytes of the live blocks, headers included
 
 void heap_init() {
-    Bump_init(&heap, &__heap_start, &__heap_end - &__heap_start);
+    FirstFit_init(&heap, &__heap_start, &__heap_end - &__heap_start);
 }
 
 int64 heap_used() {
-    return heap.off;
+    return used;
 }
 
 int64 heap_size() {
     return heap.cap;
 }
 
+// The size FirstFit recorded in a block's header (at least the request, rounded up).
+int64 block_bytes(*void p) {
+    return *(*int64)((*uint8)p - _FF_HDR) + _FF_HDR;
+}
+
 // <mem>'s contract is zeroed memory. A byte loop rather than memset, since no C
 // library is linked.
 *void esk_alloc(int64 size) {
-    *uint8 p = (*uint8)Bump_alloc(&heap, size);
+    *uint8 p = (*uint8)FirstFit_alloc(&heap, size);
     if (p == null) {
         return null;
     }
+    used += block_bytes((*void)p);
     for (i in 0..size) {
         p[i] = 0;
     }
     return (*void)p;
 }
 
-// A bump allocator releases everything at once (Bump_reset), so one free is a no-op.
-void esk_free(*void p) {}
+void esk_free(*void p) {
+    if (p == null) {
+        return;
+    }
+    used -= block_bytes(p);
+    FirstFit_free(&heap, p);
+}

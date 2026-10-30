@@ -32,7 +32,8 @@ kept building with every release.
 - `extern` globals: the linker-script symbols `__bss_start`/`__bss_end` and
   `__heap_start`/`__heap_end`, and the vector table `exception_vectors`.
 - `--freestanding`: `alloc<T>`/`free` from `<mem>` call `esk_alloc`/`esk_free`, which
-  wrap the stdlib `Bump` allocator from `<alloc>` over the linker-defined heap.
+  wrap the stdlib `FirstFit` allocator from `<alloc>` over the linker-defined heap, so
+  `free` (and `defer free`) gives the block back for reuse.
 - Inline-asm output and input operands for the system registers, and PSCI
   `SYSTEM_OFF` through `hvc #0`, so QEMU exits by itself.
 
@@ -44,7 +45,7 @@ vectors.s    exception vector table, register save/restore, eret
 kernel.esk   kernel_main: clears .bss, runs the boot demos, starts the shell
 uart.esk     PL011 UART driver (volatile MMIO)
 cpu.esk      system registers, IRQ masking, PSCI power off (inline asm)
-alloc.esk    esk_alloc / esk_free over a stdlib Bump allocator
+alloc.esk    esk_alloc / esk_free over a stdlib FirstFit allocator
 trap.esk     exception handlers: ESR decoding, recovery, IRQ dispatch
 gic.esk      GICv2 distributor and CPU interface
 timer.esk    the 100 Hz tick from the virtual timer
@@ -139,7 +140,9 @@ counts, only have to be numbers. CI runs it on Linux.
 `make` builds at `-O0`; `make OPT=2` builds at `-O2`, and `make check` boots both.
 The kernel is compiled with `--mattr=-fp-armv8,-neon` so that no FP/SIMD register is
 used: the exception entry code then only has to save the general registers, and
-FP/SIMD stays disabled in `CPACR_EL1`.
+FP/SIMD stays disabled in `CPACR_EL1`. A `float` or `double` in the kernel does not
+reach the hardware: LLVM lowers it to soft-float calls (`__muldf3`, `__floatsidf`, ...)
+that nothing defines here, so `ld.lld` fails with an undefined symbol.
 
 ## Memory layout
 

@@ -48,10 +48,10 @@ Tick:       100 Hz on IRQ 27
 10 ticks:   [0-9]+ ms
 UART base:  0x0000000009000000
 Heap:       0x0000000040300000 - 0x0000000040400000
-alloc\(64\): 0x0000000040300000
-alloc\(4096\): 0x0000000040300040
+alloc\(64\): 0x0000000040300010
+alloc\(4096\): 0x0000000040300010
 alloc\(4194304\): out of memory
-Heap used:  4160 bytes
+Heap used:  0 bytes
 Boot time:  [0-9]+ us
 ping: round 1 of 3
 pong: round 1 of 3

@@ -2292,7 +2292,7 @@ Passing `--freestanding` predefines the macro `__ESKIU_FREESTANDING__`, which `<
 | `alloc<T>(n)`    | `calloc`         | `esk_alloc` (must zero)          |
 | `free(p)`        | `free`           | `esk_free`                      |
 
-In freestanding mode the user must provide `esk_alloc` and `esk_free` in their own code (typically in a kernel or bare-metal runtime); `<mem>` declares them `extern` and the linker resolves them from the user-supplied object file. To keep `alloc<T>`'s zero-initialization guarantee, `esk_alloc` must return zeroed memory (the bump allocator in the repository's `kernel/alloc.esk` does this). Code that needs heap allocation still just writes `import <mem>` and calls `alloc<T>`/`free`. The same source compiles for both modes.
+In freestanding mode the user must provide `esk_alloc` and `esk_free` in their own code (typically in a kernel or bare-metal runtime); `<mem>` declares them `extern` and the linker resolves them from the user-supplied object file. To keep `alloc<T>`'s zero-initialization guarantee, `esk_alloc` must return zeroed memory (the first-fit heap in the repository's `kernel/alloc.esk` does this). Code that needs heap allocation still just writes `import <mem>` and calls `alloc<T>`/`free`. The same source compiles for both modes.
 
 ```eskiu
 // user-provided in kernel.esk or a C shim
