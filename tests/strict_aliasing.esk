@@ -1,0 +1,29 @@
+// -fstrict-aliasing: an int store may be assumed not to change a double, but a union is
+// still read through another member (directly, through a pointer, and through a struct
+// inside it), a variable read as another type through a pointer cast keeps working, and
+// bytes alias everything. The output is the same with and without the flag; run.sh also
+// builds it with -O2 -fstrict-aliasing in both compilers and checks the IR is tagged.
+extern int printf(string f, ...);
+
+union U { int i; float f; }
+struct In { int x; }
+struct Fl { float y; }
+union N { In a; Fl b; }
+
+int store_both(*int p, *double q) { *p = 1; *q = 2.0; return *p; }
+int through_ptr(*U u) { u.f = 1.0; return u.i; }
+int nested(*N n) { n.b.y = 1.0; return n.a.x; }
+int bits_of(double d) { return (int)(*(*int64)&d >> 52); }
+int bytes(*int p) { *(*uint8)p = 7; return *p & 255; }
+
+int main() {
+    let a: int = 0;
+    let d: double = 0.0;
+    let u: U;
+    let n: N;
+    let w: int = 0x100;
+    u.f = 2.0;
+    printf("%d %d %d %d %d %d\n", store_both(&a, &d), u.i, through_ptr(&u), nested(&n),
+           bits_of(1.0), bytes(&w));
+    return 0;
+}

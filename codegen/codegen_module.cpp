@@ -7,6 +7,7 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/IR/Operator.h"
+#include "llvm/IR/MDBuilder.h"
 #include <functional>
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Support/TargetSelect.h"
@@ -265,6 +266,81 @@ void CodeGen::alignPackedAccesses(llvm::Module& m) {
     }
 }
 
+llvm::Value* CodeGen::unionMemberPtr(llvm::Value* base) {
+    if (!strictAliasing || !builder->GetInsertBlock()) return base;
+    llvm::Value* zero = builder->getInt64(0);
+    auto* gep = llvm::GetElementPtrInst::Create(builder->getInt8Ty(), base,
+                                                llvm::ArrayRef<llvm::Value*>(zero),
+                                                llvm::Twine("union.member"));
+    builder->Insert(gep);
+    return gep;
+}
+
+// -fstrict-aliasing: scalar type-based alias information (C's rule, as clang's scalar
+// TBAA): a load or store of an i16, i32, i64, float, double or pointer gets the tag of that
+// type, all under "omnipotent char", which i8 and i1 accesses keep (bytes alias anything).
+// Only an access whose pointer is typed for it is tagged: a GEP whose indexed type is the
+// accessed one, an alloca or global of that type, or a pointer whose target the IR does
+// not show (a parameter, a loaded pointer, a call result), which is the promise the flag
+// makes. A GEP chain that starts at a union member (unionMemberPtr's i8 GEP), byte-offset
+// arithmetic and a variable read as another type (the C ABI's coercions, `*(*uint64)&d`)
+// stay untagged, so they keep aliasing everything.
+void CodeGen::addTypeBasedAliasInfo(llvm::Module& m) {
+    llvm::MDBuilder md(m.getContext());
+    llvm::MDNode* root = md.createTBAARoot("Eskiu TBAA");
+    llvm::MDNode* charTy = md.createTBAAScalarTypeNode("omnipotent char", root);
+    std::map<std::string, llvm::MDNode*> tags;
+    auto tagFor = [&](llvm::Type* t) -> llvm::MDNode* {
+        const char* name = nullptr;
+        if (t->isIntegerTy(16)) name = "short";
+        else if (t->isIntegerTy(32)) name = "int";
+        else if (t->isIntegerTy(64)) name = "long long";
+        else if (t->isFloatTy()) name = "float";
+        else if (t->isDoubleTy()) name = "double";
+        else if (t->isPointerTy()) name = "any pointer";
+        if (!name) return nullptr;
+        llvm::MDNode*& tag = tags[name];
+        if (!tag) {
+            llvm::MDNode* ty = md.createTBAAScalarTypeNode(name, charTy);
+            tag = md.createTBAAStructTagNode(ty, ty, 0);
+        }
+        return tag;
+    };
+    auto typedFor = [](llvm::Value* p, llvm::Type* acc) {
+        if (auto* gep = llvm::dyn_cast<llvm::GEPOperator>(p)) {
+            if (gep->getResultElementType() != acc) return false;
+            for (llvm::Value* b = gep->getPointerOperand();;) {
+                auto* inner = llvm::dyn_cast<llvm::GEPOperator>(b);
+                if (!inner) return true;
+                if (inner->getSourceElementType()->isIntegerTy(8)) return false;
+                b = inner->getPointerOperand();
+            }
+        }
+        if (auto* a = llvm::dyn_cast<llvm::AllocaInst>(p)) return a->getAllocatedType() == acc;
+        if (auto* g = llvm::dyn_cast<llvm::GlobalVariable>(p)) return g->getValueType() == acc;
+        return true;
+    };
+    for (llvm::Function& f : m)
+        for (llvm::BasicBlock& bb : f)
+            for (llvm::Instruction& inst : bb) {
+                llvm::Type* acc = nullptr;
+                llvm::Value* ptr = nullptr;
+                if (auto* ld = llvm::dyn_cast<llvm::LoadInst>(&inst)) {
+                    if (ld->isAtomic()) continue;
+                    acc = ld->getType();
+                    ptr = ld->getPointerOperand();
+                } else if (auto* st = llvm::dyn_cast<llvm::StoreInst>(&inst)) {
+                    if (st->isAtomic()) continue;
+                    acc = st->getValueOperand()->getType();
+                    ptr = st->getPointerOperand();
+                } else {
+                    continue;
+                }
+                llvm::MDNode* tag = tagFor(acc);
+                if (tag && typedFor(ptr, acc)) inst.setMetadata(llvm::LLVMContext::MD_tbaa, tag);
+            }
+}
+
 // WebAssembly gives each scalar of an aggregate argument a parameter of its own, and an
 // engine accepts at most 1000 (V8), so a function taking a large struct by value (an
 // `Ok<T>(v)` of a big T) does not load. Such a parameter becomes a pointer to a copy the
@@ -366,6 +442,7 @@ llvm::Module* CodeGen::generateCode(std::shared_ptr<Program> program) {
     program->accept(this);
     emitUncaughtReporter();
     alignPackedAccesses(*module);
+    if (strictAliasing) addTypeBasedAliasInfo(*module);
     if (triple.isWasm()) passLargeAggregatesByPointer(*module);
 
     std::string errorStr;

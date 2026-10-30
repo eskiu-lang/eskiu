@@ -180,13 +180,22 @@ CgVal cg_lval_k(Codegen* g, *ExprNode e) {
         string t = cg_tmp(g);
         cg_emit(g, "  ");
         cg_emit(g, t);
-        cg_emit(g, " = getelementptr inbounds %");
-        cg_emit(g, s.name);
-        cg_emit(g, ", ptr ");
-        cg_emit(g, sptr);
-        cg_emit(g, ", i32 0, i32 ");
-        cg_emit(g, cg_itoa(gepidx));
-        cg_emit(g, "\n");
+        if (g.strict_alias == 1 && cg_is_union(g, s.name) == 1) {
+            // -fstrict-aliasing: an i8 GEP keeps the member's accesses untagged (cg_tbaa),
+            // so a union may be read through another member (C++ unionMemberPtr).
+            cg_emit(g, " = getelementptr i8, ptr ");
+            cg_emit(g, sptr);
+            cg_emit(g, ", i64 0\n");
+        }
+        else {
+            cg_emit(g, " = getelementptr inbounds %");
+            cg_emit(g, s.name);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, sptr);
+            cg_emit(g, ", i32 0, i32 ");
+            cg_emit(g, cg_itoa(gepidx));
+            cg_emit(g, "\n");
+        }
         v.op = t;
         if (idx >= 0) {
             v.ety = List_get<string>(&s.fetys, idx);

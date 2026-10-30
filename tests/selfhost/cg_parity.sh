@@ -82,6 +82,13 @@ if [ "$#" -eq 0 ]; then
     fc_off="$(ESKIU_ROOT="$(pwd)" "$CGBIN" --test-codegen tests/fp_contract.esk 2>/dev/null | grep -c ' contract ')"
     if [ "$fc_on" = 4 ] && [ "$fc_off" = 0 ]; then echo "ok    fp_contract  (IR: 4 contract ops)"
     else echo "FAIL  fp_contract  (IR: $fc_on contract ops with the flag, $fc_off without)"; fail=1; fi
+    # -fstrict-aliasing: typed accesses are tagged, and the test keeps its output at -O2.
+    total=$((total + 1))
+    sa_on="$(ESKIU_ROOT="$(pwd)" "$CGBIN" --test-codegen -fstrict-aliasing tests/strict_aliasing.esk 2>/dev/null | grep -c '!tbaa')"
+    if [ "$sa_on" -gt 0 ] && ESKIU_ROOT="$(pwd)" CLANG="$CLANG" "$CGBIN" tests/strict_aliasing.esk -O2 -fstrict-aliasing -o "$WORK/sa" >/dev/null 2>&1 \
+       && "$WORK/sa" 2>&1 | diff -q - tests/strict_aliasing.expected >/dev/null; then
+        echo "ok    strict_aliasing  (IR: $sa_on tagged accesses, -O2 output)"
+    else echo "FAIL  strict_aliasing  (IR: $sa_on tagged accesses, or a wrong -O2 result)"; fail=1; fi
     # C math externs that touch no memory are memory(none): 3 on Darwin, 1 on Linux
     # (tests/run.sh checks the C++ side).
     total=$((total + 1))

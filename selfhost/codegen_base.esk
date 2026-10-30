@@ -229,6 +229,7 @@ struct Codegen {
     int safe;                // --safe[=LIST]: run-time checks, 1 bounds | 2 overflow | 4 null
     int freestanding;        // --freestanding: closure envs use esk_alloc/esk_free, not malloc/free
     int fp_contract;         // -ffp-contract=fast: fadd/fsub/fmul carry `contract` (C++ fpContract)
+    int strict_alias;        // -fstrict-aliasing: scalar !tbaa on typed accesses (cg_tbaa; C++ strictAliasing)
     int no_split;            // folding a byte image: arrays keep their `[N x T]` constant form
     string split_union_top;  // the LLVM type of the global being folded (C++ splitUnionTop)
     int uses_trap;           // a bounds check was emitted → declare @llvm.trap once

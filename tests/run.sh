@@ -344,6 +344,17 @@ fc_on="$("$ESKIUC" --test-codegen -ffp-contract=fast "$here/fp_contract.esk" 2>/
 fc_off="$("$ESKIUC" --test-codegen "$here/fp_contract.esk" 2>/dev/null | grep -c ' contract ')"
 if [[ "$fc_on" -eq 4 && "$fc_off" -eq 0 ]]; then ok "codegen/fp-contract"
 else bad "codegen/fp-contract" "$fc_on contract ops with the flag (want 4), $fc_off without (want 0)"; fi
+# -fstrict-aliasing tags the typed scalar accesses (none without the flag), and the test
+# keeps its output at -O2 with it: unions, pointer casts and bytes still alias.
+sa_on="$("$ESKIUC" --test-codegen -fstrict-aliasing "$here/strict_aliasing.esk" 2>/dev/null | grep -c '!tbaa')"
+sa_off="$("$ESKIUC" --test-codegen "$here/strict_aliasing.esk" 2>/dev/null | grep -c '!tbaa')"
+if [[ "$sa_on" -gt 0 && "$sa_off" -eq 0 ]] \
+   && "$ESKIUC" "$here/strict_aliasing.esk" -O2 -fstrict-aliasing -o "$work/sa" >/dev/null 2>&1 \
+   && "$work/sa" 2>&1 | diff -q - "$here/strict_aliasing.expected" >/dev/null; then
+    ok "codegen/strict-aliasing"
+else
+    bad "codegen/strict-aliasing" "$sa_on tagged accesses with the flag, $sa_off without, or a wrong -O2 result"
+fi
 # A lambda in a generic body keeps a heap env only where an instance lets it escape (3).
 gl_n="$("$ESKIUC" --test-codegen "$here/generic_lambda_env.esk" 2>/dev/null |
     awk '/^define/{fn=$0} /env.heap = /{print fn}' | grep -c '@gl_')"

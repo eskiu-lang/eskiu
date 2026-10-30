@@ -83,6 +83,14 @@ public:
     // the backend may fuse a multiply and an add (FMA). Off: results are the same on every
     // target.
     bool fpContract = false;
+    // -fstrict-aliasing: loads and stores of scalars carry type-based alias information
+    // (addTypeBasedAliasInfo), so the optimizer may assume an `int` store does not change
+    // a `double`. Off: a pointer cast may read one type through another.
+    bool strictAliasing = false;
+    // A union member's address: the union's own under -fstrict-aliasing, through an i8
+    // GEP so that addTypeBasedAliasInfo leaves the member's accesses untyped (a union
+    // may be read through another member, as in C).
+    llvm::Value* unionMemberPtr(llvm::Value* base);
 
     // Single-resolver table: post-AsyncTransform type checker's expressionTypeMap.
     // When set, getExprEskiuType returns these resolved types instead of re-deriving.
@@ -519,6 +527,7 @@ private:
     llvm::Value* widenCResult(const std::string& name, llvm::Value* v);
     void passLargeAggregatesByPointer(llvm::Module& m);
     void alignPackedAccesses(llvm::Module& m);
+    void addTypeBasedAliasInfo(llvm::Module& m);
     // The declared type of the global whose initializer is being folded: a union literal
     // of that type holding an address narrower than its layout member (a pointer in an
     // int64-laid-out union on a 32-bit target) folds to a `{ ptr, [N x i8] }` literal.

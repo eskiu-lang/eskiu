@@ -147,6 +147,16 @@ static llvm::cl::opt<std::string> FpContract("ffp-contract",
     llvm::cl::init("off"),
     llvm::cl::cat(EskiuCat));
 
+// -fstrict-aliasing: C's aliasing rule for the optimizer (scalar type-based alias
+// information). Off by default: a pointer cast that reads one type through another is
+// defined.
+static llvm::cl::opt<bool> StrictAliasing("fstrict-aliasing",
+    llvm::cl::desc("Assume an access of one scalar type does not alias another (C's rule)"),
+    llvm::cl::cat(EskiuCat));
+static llvm::cl::opt<bool> NoStrictAliasing("fno-strict-aliasing",
+    llvm::cl::desc("Allow reading one type through a pointer to another (the default)"),
+    llvm::cl::cat(EskiuCat));
+
 static llvm::cl::opt<bool> Freestanding("freestanding",
     llvm::cl::desc("Compile without libc — alloc/free use esk_alloc/esk_free"),
     llvm::cl::cat(EskiuCat));
@@ -406,6 +416,7 @@ static int testCodegen(const std::string& filename) {
         { unsigned m = 0; safeChecksFromFlag(m); codegen.safeChecks = m; }
         codegen.optLevel = OptLevel;
         codegen.fpContract = FpContract == "fast";
+        codegen.strictAliasing = StrictAliasing && !NoStrictAliasing;
         llvm::Module* module = codegen.generateCode(program);
 
         if (!module) {
@@ -945,7 +956,7 @@ static int compilerMain(int argc, char** argv) {
             codegen.ubsan = Ubsan;
             codegen.optLevel = OptLevel;
             codegen.fpContract = FpContract == "fast";
-        codegen.fpContract = FpContract == "fast";
+            codegen.strictAliasing = StrictAliasing && !NoStrictAliasing;
             if (!codegen.generateCode(program)) {
                 std::cerr << "error: code generation failed" << std::endl;
                 return 1;
