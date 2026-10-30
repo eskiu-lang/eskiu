@@ -663,7 +663,7 @@ void TypeChecker::checkPendingInstances() {
 }
 
 // Declaration visitors
-void TypeChecker::visit(Program* node) {
+void TypeChecker::visit(Program*) {
     // Program node is handled by check() method
     // This is called if someone visits it directly
 }

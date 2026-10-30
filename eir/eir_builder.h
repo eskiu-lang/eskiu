@@ -177,8 +177,8 @@ private:
     struct DeferEntry {
         StmtPtr body;
         bool isErr = false;
-        std::vector<std::map<std::string, Operand>> scopes;   // the names visible at the defer
-        std::vector<std::map<std::string, TypePtr>> varTypes;
+        std::vector<std::map<std::string, Operand>> scopes = {};   // the names visible at the defer
+        std::vector<std::map<std::string, TypePtr>> varTypes = {};
     };
     void visitBody(const StmtPtr& body);
     void entryAlloca(const std::string& name, const TypePtr& type, size_t align);
@@ -193,7 +193,7 @@ private:
         BasicBlock* continueTarget = nullptr;
         size_t cleanupDepth = 0;
         size_t handlerDepth = 0;
-        std::string label;   // `outer: for ...`; "" for a switch or an unlabeled loop
+        std::string label = "";   // `outer: for ...`; "" for a switch or an unlabeled loop
     };
     const LoopContext* jumpTarget(const std::string& label, bool isContinue) const;
     void jumpTo(const LoopContext* loop, bool isContinue);

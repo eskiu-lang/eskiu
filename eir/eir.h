@@ -244,7 +244,7 @@ struct GlobalVar {
     TypePtr type;
     Operand init;
     bool isConst = false;
-    std::vector<Operand> elements;
+    std::vector<Operand> elements = {};
 };
 
 struct StructFieldInfo {

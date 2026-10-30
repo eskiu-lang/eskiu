@@ -369,9 +369,11 @@ std::string CodeGen::getExprEskiuTypeRaw(const ExprPtr& expr) const {
                     }
                     return s;
                 };
-                if (!d.empty() && d != "unknown" && norm(d) != norm(it->second))
+                if (!d.empty() && d != "unknown" && norm(d) != norm(it->second)) {
+                    const Expr& node = *expr;
                     fprintf(stderr, "[resolver-disagree] table=%s derive=%s %s\n",
-                            it->second.c_str(), d.c_str(), typeid(*expr).name());
+                            it->second.c_str(), d.c_str(), typeid(node).name());
+                }
             }
             // Codegen treats a nullable `?*T` exactly like `*T` (same repr); the `?`
             // only governs sema deref-safety, so strip it here. Likewise const (a

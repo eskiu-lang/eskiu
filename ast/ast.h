@@ -182,7 +182,7 @@ public:
         int bitWidth = 0;   // >0 for a bitfield (e.g. `uint32 x : 1;`), 0 otherwise, -1 for `: 0`
         bool unnamed = false;   // only in layoutFields(): an unnamed bitfield (width 0 = `: 0`)
         int line = 0, col = 0;  // the field name's position (editor tooling)
-        ExprPtr defaultValue;   // `int t = 30;`: the value an omitted or unset field takes
+        ExprPtr defaultValue = nullptr;   // `int t = 30;`: the value an omitted or unset field takes
     };
     // An unnamed bitfield `T : N;`: padding laid out like a bitfield of type T, where
     // N = 0 moves the next bitfield to a new unit of T. It is not a member, so it is kept

@@ -7,9 +7,25 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # -DESKIU_STATIC=ON links LLVM statically (used for release binaries)
 option(ESKIU_STATIC "Link LLVM libraries statically" OFF)
 
+# -DESKIU_WERROR=ON turns the compiler's own warnings into errors (CI)
+option(ESKIU_WERROR "Treat warnings in the eskiuc sources as errors" OFF)
+
 find_package(LLVM REQUIRED CONFIG)
 
-include_directories(${LLVM_INCLUDE_DIRS})
+# The compiler uses dynamic_cast throughout (AST dispatch), and its TUs derive from LLVM
+# classes (cl::opt, passes), so they need the typeinfo an RTTI build of LLVM exports. The
+# llvm-project release tarballs are built without RTTI and fail at link time with
+# "undefined symbol: typeinfo for llvm::cl::GenericOptionValue": stop here instead.
+if(NOT LLVM_ENABLE_RTTI)
+    message(FATAL_ERROR
+        "LLVM at ${LLVM_DIR} was built without RTTI (LLVM_ENABLE_RTTI=OFF), which eskiuc "
+        "needs. Use a packaged LLVM (apt.llvm.org, Homebrew, your distribution, MSYS2) "
+        "instead of the llvm-project release tarball. See docs/lang/build.md.")
+endif()
+
+# SYSTEM: LLVM's headers are not ours, so their -Wunused-parameter and
+# -Wmissing-field-initializers do not bury the compiler's own warnings.
+include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
 # LLVM_DEFINITIONS is a single space-separated string. Split it into a list so a
 # define carrying a value (e.g. MinGW's `-D_GLIBCXX_USE_CXX11_ABI=1`) stays one
 # token instead of being mangled with the defs that follow (which made the compiler
@@ -106,8 +122,14 @@ target_compile_definitions(eskiuc PRIVATE
 
 if(MSVC)
     target_compile_options(eskiuc PRIVATE /W4)
+    if(ESKIU_WERROR)
+        target_compile_options(eskiuc PRIVATE /WX)
+    endif()
 else()
     target_compile_options(eskiuc PRIVATE -Wall -Wextra -Wpedantic)
+    if(ESKIU_WERROR)
+        target_compile_options(eskiuc PRIVATE -Werror)
+    endif()
 endif()
 
 # ── Dual-build: the Eskiu-written compiler ────────────────────────────
