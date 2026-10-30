@@ -1,3 +1,4 @@
+// `?` postfix error-propagation operator.
 import <result>;
 
 extern int printf(string fmt, ...);

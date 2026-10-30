@@ -1,3 +1,4 @@
+// Integer arithmetic, precedence, `/` `%`, comparison, `&&`/`||`.
 extern int printf(string fmt, ...);
 
 int main() {

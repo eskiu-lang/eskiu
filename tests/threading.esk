@@ -1,3 +1,4 @@
+// `<threading>` `Mutex`/`Cond`/`Sem`; shared state captured by pointer.
 import <threading>;
 
 extern int printf(string fmt, ...);

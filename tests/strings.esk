@@ -1,3 +1,4 @@
+// `%s`, `string[i] -> char`, char codes.
 extern int printf(string fmt, ...);
 
 int main() {

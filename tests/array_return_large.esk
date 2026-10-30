@@ -1,3 +1,5 @@
+// A function returning an array wider than 16 bytes (`int64[4]`, an array of interface
+// values) goes through the hidden return pointer.
 extern int printf(string fmt, ...);
 interface Counter { int get(); }
 struct C1 { int n; int get() { return self.n; } }

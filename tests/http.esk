@@ -1,3 +1,4 @@
+// `<http>` request parser + response builder.
 import <mem>;
 import <http>;
 

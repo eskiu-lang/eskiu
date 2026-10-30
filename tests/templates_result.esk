@@ -1,3 +1,4 @@
+// `Result<int,string>` monomorphization, `Ok`/`Err`.
 import <result>;
 
 extern int printf(string fmt, ...);

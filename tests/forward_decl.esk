@@ -1,3 +1,4 @@
+// Forward declarations, call-before-define, mutual recursion.
 extern int printf(string fmt, ...);
 
 // Explicit forward declaration: defined further down.

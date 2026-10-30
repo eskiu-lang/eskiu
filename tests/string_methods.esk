@@ -1,3 +1,4 @@
+// `<string>` builder ops (`push`, `char_at`, `len`).
 import <string>;
 
 extern int printf(string fmt, ...);

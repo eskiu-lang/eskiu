@@ -1,3 +1,4 @@
+// A pointer to a sum type: match through *p, and a round trip through *void.
 extern int printf(string f, ...);
 enum Opt { Some(int), None }
 int get(*Opt p) { match *p { Some(v) -> return v; None -> return 0; } }

@@ -1,3 +1,4 @@
+// Named initializers, field access, method calls, `self` mutation.
 extern int printf(string fmt, ...);
 
 struct Counter {

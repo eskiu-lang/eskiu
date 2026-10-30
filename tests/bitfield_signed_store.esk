@@ -1,3 +1,5 @@
+// A narrower signed value stored into a wide bitfield sign-extends (assignment, struct
+// literal, `+=`); an unsigned one zero-extends.
 extern int printf(string fmt, ...);
 struct B { int64 a : 40; uint64 u : 40; int16 s : 10; }
 int main() {

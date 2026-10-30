@@ -1,3 +1,4 @@
+// Minimal struct field access.
 struct Point {
     float x;
     float y;

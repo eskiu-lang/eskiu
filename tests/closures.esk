@@ -1,3 +1,4 @@
+// Capturing & non-capturing lambdas through higher-order functions.
 extern int printf(string fmt, ...);
 
 int apply(fn(int)->int f, int x) {

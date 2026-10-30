@@ -1,3 +1,4 @@
+// `<json>` builder + recursive-descent parser.
 import <json>;
 
 extern int printf(string fmt, ...);

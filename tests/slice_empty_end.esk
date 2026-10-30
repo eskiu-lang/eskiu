@@ -1,3 +1,4 @@
+// An empty slice `s[len..len]` at the end is valid; a mid slice reads the right element.
 extern int printf(string fmt, ...);
 int main() {
     int[5] a; for (i in 0..5) { a[i] = i; }

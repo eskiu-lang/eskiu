@@ -1,3 +1,4 @@
+// A backslash-newline inside a string or char literal in a #define body is spliced like any other continuation.
 extern int printf(string fmt, ...);
 #define STR "a {  b\
    c }"

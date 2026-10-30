@@ -1,3 +1,5 @@
+// An array of closures `fn(int)->int[3]` (indexed and called) and a pointer to a closure
+// `*fn(int)->int` (`&f`, `*pf`, store through it).
 extern int printf(string fmt, ...);
 int dbl(int x) { return x * 2; }
 int inc(int x) { return x + 1; }

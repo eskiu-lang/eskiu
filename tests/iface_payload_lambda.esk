@@ -1,3 +1,5 @@
+// A struct pointer boxed into an interface as a variant payload (generic or not) and as a
+// lambda's return value.
 extern int printf(string fmt, ...);
 // A struct pointer boxes into an interface wherever an interface value is expected:
 // a variant payload (generic or not) and a lambda's return value.

@@ -1,3 +1,4 @@
+// `for x in …` over a fixed-size array.
 extern int printf(string fmt, ...);
 
 import <list>;

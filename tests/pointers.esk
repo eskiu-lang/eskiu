@@ -1,3 +1,4 @@
+// `&`/`*`, deref, write-through, indexing, typed pointer arithmetic.
 import <mem>;
 
 extern int printf(string fmt, ...);

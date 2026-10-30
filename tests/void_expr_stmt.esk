@@ -1,3 +1,5 @@
+// `return f();` of a `void` call in a `void` function or lambda (with a `defer`), `void`
+// ternaries as statements.
 extern int printf(string f, ...);
 void hi() { printf("hi\n"); }
 void lo() { printf("lo\n"); }

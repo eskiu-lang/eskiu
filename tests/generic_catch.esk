@@ -1,3 +1,4 @@
+// `catch (T e)` / `catch (Err<T> e)` in a generic body matches the instance's thrown type.
 extern int printf(string f, ...);
 struct Err<T> { T v; }
 struct Plain { int v; }

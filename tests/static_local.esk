@@ -1,3 +1,4 @@
+// A `static` local keeps one instance across calls.
 extern int printf(string fmt, ...);
 
 // A `static` local keeps a single instance across calls (C storage semantics).

@@ -1,3 +1,4 @@
+// `thread_create`/`thread_join`: output order is non-deterministic.
 extern int printf(string fmt, ...);
 extern int sleep(int seconds);
 

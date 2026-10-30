@@ -1,3 +1,5 @@
+// Indexing a slice or array of a struct with an `operator []` reaches the element, not the
+// operator; `for (v in s)` over it.
 extern int printf(string f, ...);
 struct V { int x; int y; }
 int operator [](V a, int i) { if (i == 0) { return a.x; } return a.y; }

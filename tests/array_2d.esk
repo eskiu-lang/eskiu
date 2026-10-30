@@ -1,3 +1,4 @@
+// Multidimensional `int[N][M]` in C order: the leftmost bracket is the outer dimension.
 extern int printf(string fmt, ...);
 
 // Multidimensional arrays follow C order: `int[N][M]` is N rows of M, so the

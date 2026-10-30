@@ -1,3 +1,4 @@
+// `break`/`continue` inside a `finally`, and a lambda with a `return` written there.
 extern int printf(string fmt, ...);
 // break/continue inside a finally keep working, and a lambda inside a finally is its
 // own function (its return is fine); only a `return` out of the finally is rejected.

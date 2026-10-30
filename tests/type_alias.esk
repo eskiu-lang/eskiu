@@ -1,3 +1,4 @@
+// `type u8 = uint8;` resolves to the underlying type.
 import <mem>;
 
 extern int printf(string fmt, ...);

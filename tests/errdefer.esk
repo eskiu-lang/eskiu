@@ -1,3 +1,4 @@
+// `errdefer` runs only on a `?`-propagation exit; plain `defer` always runs.
 extern int printf(string fmt, ...);
 
 struct R { bool ok; int value; }

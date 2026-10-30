@@ -1,3 +1,4 @@
+// `alloc_with(&a, T, n)` over a caller-provided buffer.
 import <mem>;
 
 extern int printf(string fmt, ...);

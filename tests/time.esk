@@ -1,3 +1,4 @@
+// `<time>` wall clock / monotonic / `time_sleep_ms`.
 import <time>;
 
 extern int printf(string fmt, ...);

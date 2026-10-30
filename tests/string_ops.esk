@@ -1,3 +1,4 @@
+// `<string>` `split` (e.g. `"a,b,,c"` on `','`).
 import <string>;
 
 extern int printf(string fmt, ...);

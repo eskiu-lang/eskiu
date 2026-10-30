@@ -1,3 +1,4 @@
+// `<path>` `join`/`basename`/`dirname`/`extension`/`is_absolute`.
 import <path>;
 
 extern int printf(string fmt, ...);

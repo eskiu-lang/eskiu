@@ -1,3 +1,5 @@
+// A global, `static` or struct-field interface value initialized with `&global` folds to
+// `{data, vtable}`.
 extern int printf(string fmt, ...);
 interface Sh { int area(); }
 struct Sq { int s; int area() { return self.s * self.s; } }

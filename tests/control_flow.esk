@@ -1,3 +1,4 @@
+// `if`/`else if`/`else`, `while`, `for`, `break`, `continue`.
 extern int printf(string fmt, ...);
 
 int main() {

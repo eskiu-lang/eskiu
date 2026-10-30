@@ -1,3 +1,5 @@
+// A struct field of a struct, enum, union, interface, alias or generic instance declared
+// later in the file gets that type's real layout.
 extern int printf(string fmt, ...);
 struct S { T t; C c; I i; U u; E e; AL al; Box<T> bt; T[2] ts; int k; }
 struct Box<X> { X v; }

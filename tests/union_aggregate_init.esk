@@ -1,3 +1,4 @@
+// Global and `static` union constants whose member is a struct or an array.
 extern int printf(string f, ...);
 struct Pk { int a; int b; }
 union U { Pk p; int64 raw; }

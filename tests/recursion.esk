@@ -1,3 +1,4 @@
+// Self-recursion: factorial, fibonacci, Ackermann.
 extern int printf(string fmt, ...);
 
 int factorial(int n) {

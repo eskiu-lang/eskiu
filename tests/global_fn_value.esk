@@ -1,3 +1,5 @@
+// A function name as a global, `static`, array-element and struct-field initializer (a
+// constant closure).
 extern int printf(string fmt, ...);
 // A top-level function name is a constant initializer (C): it decays to a closure.
 type Op = fn(int, int)->int;

@@ -1,3 +1,4 @@
+// `?:` evaluates one arm and coexists with postfix `?` propagation.
 extern int printf(string fmt, ...);
 
 // The `?:` ternary evaluates exactly one arm. It coexists with the postfix `?`

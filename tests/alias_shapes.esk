@@ -1,3 +1,6 @@
+// Aliases of an interface, a pointer, a generic instance, a fn type, a classic enum, a
+// struct (operators, `*VV self`), a slice (`IS[2]`, `*IS`) and an array, used as their
+// targets.
 extern int printf(string fmt, ...);
 import <mem>;
 // A type alias is its target for every shape check: an alias of an interface boxes and

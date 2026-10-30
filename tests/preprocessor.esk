@@ -1,3 +1,4 @@
+// Object-like and function-like `#define`, `#ifdef`.
 extern int printf(string fmt, ...);
 
 #define MAX 100

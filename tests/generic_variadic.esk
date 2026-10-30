@@ -1,3 +1,5 @@
+// A generic variadic function is called variadic (`va<int>(1, 7)`, `sum<double>(2, 1.5,
+// 2.0)`).
 extern int printf(string f, ...);
 T va<T>(int n, ...) { va_list ap; va_start(ap); T t = va_arg<T>(ap); va_end(ap); return t; }
 T sum<T>(int n, ...) {

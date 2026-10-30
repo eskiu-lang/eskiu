@@ -1,3 +1,4 @@
+// Structural interfaces, vtable fat-pointer dispatch.
 extern int printf(string fmt, ...);
 
 // Structural interface: any struct with a matching method satisfies it.

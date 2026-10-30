@@ -1,3 +1,5 @@
+// `static` locals accept array, cast and negative constant initializers and persist across
+// calls.
 extern int printf(string fmt, ...);
 int bump() {
     static int[3] t = {10, 20, 30};

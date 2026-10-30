@@ -1,3 +1,6 @@
+// In an async fn: a `static` local keeps one cell across calls, `for-in` over a slice,
+// `try`/`catch`, an array-literal local, `match` on a local ADT, bindings named like a
+// hoisted local.
 import <future>;
 extern int printf(string fmt, ...);
 Future<int>* rdy(int v) { Future<int>* f = future_new<int>(); Future_complete<int>(f, v); return f; }

@@ -1,3 +1,4 @@
+// `<mem>` `alloc<T>(n)`/`free`; `<alloc>` Bump/Arena/Pool/FirstFit.
 import <mem>;
 
 import <alloc>;

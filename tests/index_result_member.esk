@@ -1,3 +1,5 @@
+// A member of an overloaded `[]` result (`w[2].v`), `.len` of an element of an array of
+// slices.
 extern int printf(string fmt, ...);
 // A member of an indexed element: the result of an overloaded `[]` (an rvalue), and an
 // element of an array of slices (`.len`).

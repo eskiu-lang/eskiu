@@ -1,3 +1,4 @@
+// `sizeof`, `union` (incl. float member), typed pointer arithmetic.
 import <mem>;
 
 extern int printf(string fmt, ...);

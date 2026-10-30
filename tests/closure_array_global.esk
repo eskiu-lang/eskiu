@@ -1,3 +1,4 @@
+// Arrays of closures as a global, a `static` and a struct field.
 extern int printf(string f, ...);
 struct C { fn(int)->int[2] fs; }
 fn(int)->int[2] gfs = { int(int x) { return x + 1; }, int(int x) { return x * 2; } };

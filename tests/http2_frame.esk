@@ -1,3 +1,4 @@
+// `<http2>` 9-byte frame-header encode/decode round-trip (incl. 31-bit stream id).
 import <http2>;
 extern int printf(string fmt, ...);
 int main() {

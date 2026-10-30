@@ -1,3 +1,4 @@
+// Slice `T[]` fat pointer: carries its length and aliases the backing array.
 extern int printf(string fmt, ...);
 
 // A slice `T[]` is a fat pointer (data + length). It carries its length, so a

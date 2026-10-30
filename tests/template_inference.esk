@@ -1,3 +1,4 @@
+// `T` inferred when it appears directly as a parameter type.
 extern int printf(string fmt, ...);
 
 // Type parameter T appears directly as a parameter type, so it can be inferred

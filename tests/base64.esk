@@ -1,3 +1,4 @@
+// `<base64>` encode/decode over buffers.
 import <mem>;
 import <base64>;
 

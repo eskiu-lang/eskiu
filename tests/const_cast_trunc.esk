@@ -1,3 +1,4 @@
+// A cast in a constant (a const initializer, a case label, an index) truncates as in C: (int8)259 is 3.
 extern int printf(string f, ...);
 const int8 K = (int8)259;
 int main() {

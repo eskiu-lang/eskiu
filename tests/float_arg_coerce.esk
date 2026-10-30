@@ -1,3 +1,4 @@
+// A `double` literal passed to a `float` parameter narrows at the call site.
 extern int printf(string fmt, ...);
 
 float scale(float x, float k) { return x * k; }

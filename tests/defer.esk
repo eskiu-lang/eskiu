@@ -1,3 +1,4 @@
+// `defer` runs LIFO at block exit on fall-through, `return`, `break`, `continue` and `?`.
 extern int printf(string fmt, ...);
 
 // `defer stmt;` runs stmt at enclosing-block exit, LIFO, on every path out:

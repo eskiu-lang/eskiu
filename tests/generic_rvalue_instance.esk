@@ -1,3 +1,5 @@
+// A generic struct or enum instance reached only through a call result (`flip(n).a`,
+// `unbox(bx(7))`, `bx(2.5).get()`, `match wrap<int64>(5)`).
 extern int printf(string fmt, ...);
 enum Option<T> { None, Some(T) }
 struct Box<T> { T v; T get() { return self.v; } }

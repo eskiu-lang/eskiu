@@ -1,3 +1,4 @@
+// `T` inferred from a composite param type (`List<T>*`).
 extern int printf(string fmt, ...);
 
 import <list>;

@@ -1,3 +1,5 @@
+// A struct literal's array field takes `{...}` (nested, zero-filled) in a local, an
+// assignment, a bitfield struct and a global.
 extern int printf(string fmt, ...);
 struct S { int a; int[2] b; int[2][2] m; }
 struct B { uint8 f : 4; int[3] v; }

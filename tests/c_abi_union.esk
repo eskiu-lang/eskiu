@@ -1,3 +1,5 @@
+// Unions by value across `extern` (+ `.c`): x86-64 SysV eightbytes as wide as the widest
+// member.
 extern int printf(string fmt, ...);
 // Unions passed and returned by value across an `extern` follow the target C ABI: on
 // x86-64 SysV an eightbyte holding a union is as wide as its widest member

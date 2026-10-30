@@ -1,3 +1,4 @@
+// Compound bitwise assignment `&= |= ^= <<= >>=`.
 extern int printf(string fmt, ...);
 
 int main() {

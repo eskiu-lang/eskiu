@@ -1,3 +1,4 @@
+// A non-escaping closure param may be captured by a lambda that only lives for the call, and an escaping one by a lambda that is returned.
 extern int printf(string fmt, ...);
 int twice(fn()->int g) { return g() + g(); }
 int wrap(fn()->int f) { return twice(int() { return f() * 10; }); }

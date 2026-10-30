@@ -1,3 +1,4 @@
+// Unary `+` yields its (integer-promoted) operand, in code and in constant initializers.
 extern int printf(string fmt, ...);
 int g = +5;
 double gd = +2.5;

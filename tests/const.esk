@@ -1,3 +1,4 @@
+// Immutable bindings, usable as array sizes.
 extern int printf(string fmt, ...);
 
 const int CAP = 4;

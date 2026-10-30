@@ -1,3 +1,4 @@
+// A ?*T global narrowed by a check stays narrowed up to the next call; a call in the condition before the check does not undo it.
 extern int printf(string fmt, ...);
 struct S { int v; }
 ?*S gp = null;

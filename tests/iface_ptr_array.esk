@@ -1,3 +1,5 @@
+// Interface values in an array literal (local, global, `for-in`), a method call through
+// `*I`, and a closure `fn(I)->int` boxing its `&s` argument.
 extern int printf(string fmt, ...);
 interface I { int f(); }
 struct S { int v; int f() { return self.v; } }

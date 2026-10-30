@@ -1,3 +1,4 @@
+// Enum members as int constants, usable in `switch`/comparisons.
 extern int printf(string fmt, ...);
 
 enum Color { Red, Green, Blue }            // 0, 1, 2

@@ -1,3 +1,5 @@
+// A bitfield whose values fit an `int` reads as `int` (C, clang output); a postfix `f++`
+// keeps the declared type.
 extern int printf(string f, ...);
 // A bitfield whose values all fit an int reads as int (C promotion); a wider one keeps
 // its declared type. Expected output matches clang on the same C program.

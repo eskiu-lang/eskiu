@@ -1,3 +1,4 @@
+// `<either>` `Option`/`Either` helpers (`Option_is_some`, `Option_unwrap_or`).
 import <either>;
 extern int printf(string fmt, ...);
 int main() {

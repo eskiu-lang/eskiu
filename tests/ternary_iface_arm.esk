@@ -1,3 +1,4 @@
+// Each arm of a ?: bound to an interface boxes on its own (a struct pointer in one arm, an interface in the other, nested).
 extern int printf(string f, ...);
 interface Sh { int area(); }
 struct Sq { int s; int area() { return self.s; } }

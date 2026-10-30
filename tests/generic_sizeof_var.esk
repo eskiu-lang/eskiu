@@ -1,3 +1,5 @@
+// `sizeof(var)` in a generic body (and a lambda in one) measures the variable's instance
+// type (`T`, `T[4]`, `B<T>`).
 extern int printf(string f, ...);
 struct B<T> { T[3] a; }
 struct Box<T> { T v; }

@@ -1,3 +1,4 @@
+// Named template struct literal `Pair<int,float>{…}`.
 extern int printf(string fmt, ...);
 
 struct Pair<A, B> {

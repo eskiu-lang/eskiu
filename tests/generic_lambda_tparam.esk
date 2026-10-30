@@ -1,3 +1,5 @@
+// A lambda typed by a type parameter (`T() {...}`, `fn(T)->T`) in a generic function or
+// inline method.
 extern int printf(string f, ...);
 struct Box<T> { T v; fn()->T getter() { T c = self.v; return T() { return c; }; } }
 fn()->T konst<T>(T v) { return T() { return v; }; }

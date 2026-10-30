@@ -1,3 +1,4 @@
+// `<fs>` file I/O.
 import <fs>;
 import <mem>;
 extern int printf(string fmt, ...);

@@ -1,3 +1,4 @@
+// Bitfield assignment + masked read; signed fields sign-extend.
 extern int printf(string fmt, ...);
 
 struct Flags {
