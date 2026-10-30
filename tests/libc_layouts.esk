@@ -1,0 +1,111 @@
+// The libc records the stdlib declares by hand (struct addrinfo in <dns>, sockaddr_in,
+// pollfd and timeval in <net>, timespec and struct tm in <time>, kevent / epoll_event in
+// <eventloop>) have the size and field offsets this platform's C compiler gives them
+// (C companion libc_layouts.c). A wrong layout passes every other test on one libc and
+// corrupts memory on the next, with no type error.
+import <dns>;
+import <net>;
+import <time>;
+import <eventloop>;
+extern int printf(string fmt, ...);
+extern int64 c_layout(int what);
+
+int bad = 0;
+
+void same(string what, int64 eskiu, int key) {
+    const int64 c = c_layout(key);
+    if (eskiu != c) {
+        printf("MISMATCH %s: eskiu %lld, C %lld\n", what, eskiu, c);
+        bad++;
+    }
+}
+
+int64 off(*void base, *void field) {
+    return (int64)field - (int64)base;
+}
+
+// The offset of the first byte equal to `b` in `n` bytes at `p` (for packed records,
+// whose fields are found by the value written into them).
+int64 find(*void p, int64 n, uint8 b) {
+    *uint8 q = (*uint8)p;
+    for (i in 0..n) {
+        if (q[i] == b) { return i; }
+    }
+    return -1;
+}
+
+void check_addrinfo() {
+    let a: _dns_addrinfo;
+    same("addrinfo size", sizeof(_dns_addrinfo), 0);
+    same("addrinfo.ai_flags", off(&a, &a.ai_flags), 1);
+    same("addrinfo.ai_family", off(&a, &a.ai_family), 2);
+    same("addrinfo.ai_socktype", off(&a, &a.ai_socktype), 3);
+    same("addrinfo.ai_protocol", off(&a, &a.ai_protocol), 4);
+    same("addrinfo.ai_addrlen", off(&a, &a.ai_addrlen), 5);
+    same("addrinfo.ai_canonname", off(&a, &a.ai_canonname), 6);
+    same("addrinfo.ai_addr", off(&a, &a.ai_addr), 7);
+    same("addrinfo.ai_next", off(&a, &a.ai_next), 8);
+    same("addrinfo.ai_addrlen size", sizeof(a.ai_addrlen), 9);
+}
+
+void check_sockaddr_in() {
+    let s: sockaddr_in;
+    same("sockaddr_in size", sizeof(sockaddr_in), 10);
+    s.sin_family = (uint8)0xA1;
+    s.sin_port = (uint16)0xB2;
+    s.sin_addr = (uint32)0xC3;
+    same("sockaddr_in.sin_family", find(&s, sizeof(sockaddr_in), (uint8)0xA1), 11);
+    same("sockaddr_in.sin_family size", sizeof(s.sin_family), 12);
+    same("sockaddr_in.sin_port", find(&s, sizeof(sockaddr_in), (uint8)0xB2), 13);
+    same("sockaddr_in.sin_addr", find(&s, sizeof(sockaddr_in), (uint8)0xC3), 14);
+}
+
+void check_net() {
+    let p: _net_pollfd;
+    same("pollfd size", sizeof(_net_pollfd), 20);
+    same("pollfd.events", off(&p, &p.events), 21);
+    same("pollfd.revents", off(&p, &p.revents), 22);
+    let t: _net_timeval;
+    same("timeval size", sizeof(_net_timeval), 30);
+    same("timeval.tv_usec", off(&t, &t.tv_usec), 31);
+}
+
+void check_time() {
+    let t: timespec;
+    same("timespec size", sizeof(timespec), 32);
+    same("timespec.tv_nsec", off(&t, &t.tv_nsec), 33);
+    let m: _time_tm;
+    if (sizeof(_time_tm) < c_layout(40)) {
+        printf("MISMATCH struct tm: eskiu %lld bytes, smaller than C %lld\n", sizeof(_time_tm), c_layout(40));
+        bad++;
+    }
+    same("tm.tm_isdst", off(&m, &m.isdst), 41);
+}
+
+void check_eventloop() {
+#ifdef __APPLE__
+    let k: EvNative;
+    same("kevent size", sizeof(EvNative), 50);
+    same("kevent.filter", off(&k, &k.filter), 51);
+    same("kevent.flags", off(&k, &k.flags), 52);
+    same("kevent.fflags", off(&k, &k.fflags), 53);
+    same("kevent.data", off(&k, &k.data), 54);
+    same("kevent.udata", off(&k, &k.udata), 55);
+#endif
+#ifdef __linux__
+    let e: EvNative;
+    same("epoll_event size", sizeof(EvNative), 50);
+    e.data = (uint64)0xD4;
+    same("epoll_event.data", find(&e, sizeof(EvNative), (uint8)0xD4), 51);
+#endif
+}
+
+int main() {
+    check_addrinfo();
+    check_sockaddr_in();
+    check_net();
+    check_time();
+    check_eventloop();
+    printf("layouts %s\n", bad == 0 ? "match" : "differ");
+    return bad;
+}
