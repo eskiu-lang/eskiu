@@ -101,6 +101,7 @@ postfix     f() a[i] a.b ++ -- ?
 | `--target TRIPLE`           | Cross-compile for the given target triple        |
 | `--mcpu` / `--mattr` / `--reloc` | Target CPU, feature string, relocation model |
 | `--freestanding`            | Use `esk_alloc`/`esk_free` instead of libc      |
+| `-ffp-contract=fast`        | Allow fused multiply-add (default `off`: each float operation rounds) |
 | `--test-lexer`              | Print token stream                              |
 | `--test-parser`             | Print AST                                       |
 | `--test-typechecker`        | Type check and report errors                    |

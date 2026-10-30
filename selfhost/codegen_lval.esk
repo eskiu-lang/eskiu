@@ -1057,6 +1057,9 @@ CgVal cg_binary_builtin(Codegen* g, *ExprNode e, CgVal left) {
             cg_emit(g, t);
             cg_emit(g, " = ");
             cg_emit(g, fop);
+            if (g.fp_contract == 1 && cg_streq(fop, "fdiv") == 0 && cg_streq(fop, "frem") == 0) {
+                cg_emit(g, " contract");
+            }
             cg_emit(g, " ");
             cg_emit(g, fty);
             cg_emit(g, " ");

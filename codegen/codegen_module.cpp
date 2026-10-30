@@ -355,6 +355,11 @@ llvm::Module* CodeGen::generateCode(std::shared_ptr<Program> program) {
     module->setTargetTriple(triple);
     if (auto tm = makeTargetMachine(*this, triple, tripleStr))
         module->setDataLayout(tm->createDataLayout());
+    if (fpContract) {
+        llvm::FastMathFlags fmf;
+        fmf.setAllowContract(true);
+        builder->setFastMathFlags(fmf);
+    }
     if (semaInstanceArgs)
         for (const auto& kv : *semaInstanceArgs) templateInstanceArgs.emplace(kv.first, kv.second);
 

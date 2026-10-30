@@ -338,6 +338,12 @@ fi
 v_n="$("$ESKIUC" --test-codegen "$here/volatile_access.esk" 2>/dev/null | grep -c 'volatile i32')"
 if [[ "$v_n" -eq 10 ]]; then ok "codegen/volatile-access"
 else bad "codegen/volatile-access" "$v_n volatile i32 accesses in the IR, expected 10"; fi
+# -ffp-contract=fast marks the multiplies, adds and subtracts `contract` (4 in the test);
+# without it none is.
+fc_on="$("$ESKIUC" --test-codegen -ffp-contract=fast "$here/fp_contract.esk" 2>/dev/null | grep -cE '(fmul|fadd|fsub) contract')"
+fc_off="$("$ESKIUC" --test-codegen "$here/fp_contract.esk" 2>/dev/null | grep -c ' contract ')"
+if [[ "$fc_on" -eq 4 && "$fc_off" -eq 0 ]]; then ok "codegen/fp-contract"
+else bad "codegen/fp-contract" "$fc_on contract ops with the flag (want 4), $fc_off without (want 0)"; fi
 # A lambda in a generic body keeps a heap env only where an instance lets it escape (3).
 gl_n="$("$ESKIUC" --test-codegen "$here/generic_lambda_env.esk" 2>/dev/null |
     awk '/^define/{fn=$0} /env.heap = /{print fn}' | grep -c '@gl_')"

@@ -79,6 +79,10 @@ public:
     bool ubsan = false;  // bounds checking; traps on out-of-bounds (no runtime)
     // Optimization level (0 = -O0, no middle-end; 1..3 run the LLVM optimizer).
     unsigned optLevel = 0;
+    // -ffp-contract=fast: every floating-point operation carries the `contract` flag, so
+    // the backend may fuse a multiply and an add (FMA). Off: results are the same on every
+    // target.
+    bool fpContract = false;
 
     // Single-resolver table: post-AsyncTransform type checker's expressionTypeMap.
     // When set, getExprEskiuType returns these resolved types instead of re-deriving.

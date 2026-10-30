@@ -138,6 +138,15 @@ static llvm::cl::opt<std::string> Subsystem("subsystem",
     llvm::cl::value_desc("console|windows"),
     llvm::cl::cat(EskiuCat));
 
+// -ffp-contract=fast: let the backend fuse a multiply and an add into one instruction
+// (FMA), rounding once instead of twice. Off by default, so floating-point results are the
+// same on every target.
+static llvm::cl::opt<std::string> FpContract("ffp-contract",
+    llvm::cl::desc("Floating-point contraction: off (default) or fast (fuse a*b+c into an FMA)"),
+    llvm::cl::value_desc("off|fast"),
+    llvm::cl::init("off"),
+    llvm::cl::cat(EskiuCat));
+
 static llvm::cl::opt<bool> Freestanding("freestanding",
     llvm::cl::desc("Compile without libc — alloc/free use esk_alloc/esk_free"),
     llvm::cl::cat(EskiuCat));
@@ -396,6 +405,7 @@ static int testCodegen(const std::string& filename) {
         codegen.freestanding = Freestanding;
         { unsigned m = 0; safeChecksFromFlag(m); codegen.safeChecks = m; }
         codegen.optLevel = OptLevel;
+        codegen.fpContract = FpContract == "fast";
         llvm::Module* module = codegen.generateCode(program);
 
         if (!module) {
@@ -610,6 +620,11 @@ static int compilerMain(int argc, char** argv) {
     // Check input file provided
     if (InputFilename.empty()) {
         std::cerr << "error: no input file specified" << std::endl;
+        return 1;
+    }
+    if (FpContract != "off" && FpContract != "fast") {
+        std::cerr << "error: invalid -ffp-contract value '" << std::string(FpContract)
+                  << "' (use off or fast)" << std::endl;
         return 1;
     }
     if (OptLevel > 3) {
@@ -929,6 +944,8 @@ static int compilerMain(int argc, char** argv) {
             codegen.asan = Asan;
             codegen.ubsan = Ubsan;
             codegen.optLevel = OptLevel;
+            codegen.fpContract = FpContract == "fast";
+        codegen.fpContract = FpContract == "fast";
             if (!codegen.generateCode(program)) {
                 std::cerr << "error: code generation failed" << std::endl;
                 return 1;

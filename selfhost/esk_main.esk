@@ -122,6 +122,9 @@ int is_value_opt(string o) {
     if (cg_streq(o, "-O") == 1) {                          // `-O 2`, like `-O2`
         return 1;
     }
+    if (cg_streq(o, "-ffp-contract") == 1 || cg_streq(o, "--ffp-contract") == 1) {
+        return 1;
+    }
     if (cg_streq(o, "--target") == 1 || cg_streq(o, "-target") == 1) {
         return 1;
     }
@@ -1227,6 +1230,7 @@ int esk_main(int argc, string* argv) {
     int safe = 0;            // --safe[=LIST]: run-time checks, bits of safe_checks
     int compile_only = 0;    // -c: emit an object file, do not link
     int freestanding = 0;    // --freestanding: no libc; object only (link it yourself)
+    int fp_contract = 0;     // -ffp-contract=fast: fused multiply-add allowed (C++ FpContract)
     string triple = "";      // --target TRIPLE (passed to clang; picks the OS macro)
     string mcpu = "";        // --mcpu CPU
     string mattr = "";       // --mattr +f,-g: target features, passed to clang
@@ -1387,6 +1391,20 @@ int esk_main(int argc, string* argv) {
         }
         else if (cg_streq(a, "--ubsan") == 1) {
             san = 2;
+        }
+        else if (cg_streq(opt, "-ffp-contract") == 1 || cg_streq(opt, "--ffp-contract") == 1) {
+            if (cg_streq(val, "fast") == 1) {
+                fp_contract = 1;
+            }
+            else if (cg_streq(val, "off") == 1) {
+                fp_contract = 0;
+            }
+            else {
+                eprint("error: invalid -ffp-contract value '");
+                eprint(val);
+                eprint("' (use off or fast)\n");
+                return 1;
+            }
         }
         else if (cg_streq(opt, "--safe") == 1 || cg_streq(opt, "-safe") == 1) {
             safe = safe_checks(val);
@@ -1658,6 +1676,7 @@ int esk_main(int argc, string* argv) {
     cg_set_target(&g, triple);         // the C ABI (and pointer size) follow --target
     g.safe = safe;                     // --safe[=LIST]: the run-time checks to emit
     g.freestanding = freestanding;     // closure envs on esk_alloc/esk_free
+    g.fp_contract = fp_contract;       // -ffp-contract=fast
     cg_program(&g, prog);
     // No -o writes the object <input>.o, like the C++ driver (it links only with -o).
     if (outfile == null && runmode == 0 && cg_streq(mode, "--test-codegen") == 0) {

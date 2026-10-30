@@ -75,6 +75,13 @@ if [ "$#" -eq 0 ]; then
     vb="$(ESKIU_ROOT="$(pwd)" "$CGBIN" --test-codegen tests/volatile_bitfield.esk 2>/dev/null | grep -c 'volatile i16')"
     if [ "$vb" = 12 ]; then echo "ok    volatile_bitfield  (IR: 12 volatile accesses)"
     else echo "FAIL  volatile_bitfield  (IR: $vb volatile i16 accesses, expected 12)"; fail=1; fi
+    # -ffp-contract=fast: 4 contract ops in the test, none without the flag (tests/run.sh
+    # checks the C++ side).
+    total=$((total + 1))
+    fc_on="$(ESKIU_ROOT="$(pwd)" "$CGBIN" --test-codegen -ffp-contract=fast tests/fp_contract.esk 2>/dev/null | grep -cE '(fmul|fadd|fsub) contract')"
+    fc_off="$(ESKIU_ROOT="$(pwd)" "$CGBIN" --test-codegen tests/fp_contract.esk 2>/dev/null | grep -c ' contract ')"
+    if [ "$fc_on" = 4 ] && [ "$fc_off" = 0 ]; then echo "ok    fp_contract  (IR: 4 contract ops)"
+    else echo "FAIL  fp_contract  (IR: $fc_on contract ops with the flag, $fc_off without)"; fail=1; fi
     # C math externs that touch no memory are memory(none): 3 on Darwin, 1 on Linux
     # (tests/run.sh checks the C++ side).
     total=$((total + 1))

@@ -1,0 +1,13 @@
+// Floating-point contraction is off by default: a*b+c rounds twice, the same on every
+// target. Under -ffp-contract=fast the multiplies, adds and subtracts carry `contract`
+// (4 here, checked in the IR by run.sh and cg_parity.sh), so the backend may fuse them.
+extern int printf(string f, ...);
+
+double mul_add(double a, double b, double c) { return a * b + c; }
+float mul_sub(float x, float y) { return x * y - x; }
+double ratio(double a, double b) { return a / b; }
+
+int main() {
+    printf("%.6f %.3f %.3f\n", mul_add(1.5, 2.0, 0.25), (double)mul_sub(3.0, 4.0), ratio(1.0, 4.0));
+    return 0;
+}

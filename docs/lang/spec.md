@@ -619,7 +619,11 @@ The same constant rule applies to a **global** variable's initializer, as in C: 
 | `a / b`  | Division           |
 | `a % b`  | Modulo (remainder) |
 
-Integer division truncates toward zero. Float operands use IEEE 754 semantics.
+Integer division truncates toward zero. Float operands use IEEE 754 semantics, and each
+operation rounds its own result: `a * b + c` rounds the product and then the sum, so the
+result is the same on every target and at every optimization level. `-ffp-contract=fast`
+lets the compiler fuse a multiply and an add or subtract into one fused multiply-add,
+which rounds once (faster, and usually more accurate, but no longer the same everywhere).
 
 Integer arithmetic has defined results at run time, the same at every optimization level
 (unlike C, where these cases are undefined behavior):
