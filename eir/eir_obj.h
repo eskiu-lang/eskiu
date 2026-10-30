@@ -6,7 +6,8 @@
 
 namespace eir {
 
-bool emitEirObject(const Module* mod, const std::string& outFile, const std::string& triple);
+bool emitEirObject(const Module* mod, const std::string& outFile, const std::string& triple,
+                   unsigned optLevel = 0);
 
 } // namespace eir
 

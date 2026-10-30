@@ -936,7 +936,7 @@ static int compilerMain(int argc, char** argv) {
             if (OptLevel) codegen.optimizeModule();
         }
         auto emitObject = [&](const std::string& path) {
-            if (eirModule) return eir::emitEirObject(eirModule.get(), path, std::string(TargetTriple));
+            if (eirModule) return eir::emitEirObject(eirModule.get(), path, std::string(TargetTriple), OptLevel);
             return codegen.emitObjectFile(path);
         };
 

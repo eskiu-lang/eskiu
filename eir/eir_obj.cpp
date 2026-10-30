@@ -61,8 +61,11 @@ bool runDriver(const std::string& driver, const std::vector<std::string>& ccArgs
 
 // The system C driver turns the backend's output (ARM64 assembly, or C99 for any other
 // target) into an object. The assembly path compiles the runtime as a second object and
-// joins the two with a relocatable link, so the result is still one object file.
-bool emitEirObject(const Module* mod, const std::string& outFile, const std::string& triple) {
+// joins the two with a relocatable link, so the result is still one object file. The C is
+// compiled at `optLevel` (eskiuc's -O) with strict aliasing off: Eskiu defines a pointer
+// cast that reads one type through another.
+bool emitEirObject(const Module* mod, const std::string& outFile, const std::string& triple,
+                   unsigned optLevel) {
     bool isArm64 = triple.find("aarch64") != std::string::npos ||
                    triple.find("arm64") != std::string::npos;
 #if defined(__aarch64__) || defined(__arm64__)
@@ -84,7 +87,9 @@ bool emitEirObject(const Module* mod, const std::string& outFile, const std::str
     if (!isArm64) {
         TempFile src;
         if (!writeTemp("c", src, [&](std::ostream& os) { createCEmitter()->emitModule(mod, os); })) return false;
-        return runDriver(driver, ccArgs, {"-std=c99", "-w", "-c", src.path, "-o", outFile}, "C compiler");
+        return runDriver(driver, ccArgs, {"-std=c99", "-w", "-fno-strict-aliasing",
+                                          "-O" + std::to_string(optLevel), "-c", src.path,
+                                          "-o", outFile}, "C compiler");
     }
 
     TempFile s;

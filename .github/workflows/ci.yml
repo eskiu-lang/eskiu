@@ -230,6 +230,11 @@ jobs:
       - name: C ABI self-host parity
         run: CLANG=clang-22 tests/selfhost/cabi_parity.sh
 
+      # The EIR C99 backend on Linux, where `--backend=eir` takes the C path: a run test
+      # listed in tests/eir/pass_c_linux.txt that stops passing fails the build.
+      - name: EIR C backend
+        run: CC=clang-22 tests/eir/check.sh c
+
   # Leak checking on its own: tests/run.sh runs ASan with detect_leaks=0 (short-lived test
   # programs), so the constructs that must never leak (async frames, cancellation cleanups,
   # closure environments, channels, defer unwinding, allocators) are checked here with

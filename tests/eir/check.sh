@@ -7,7 +7,11 @@
 #   tests/eir/check.sh [asm|c]
 #
 # asm: `--backend=eir` (ARM64 assembly; needs an arm64 host). c: `--emit-c`, compiled with
-# $CC (default cc). Default: asm on arm64, c elsewhere.
+# $CC (default cc) at -O1, as `eskiuc -O1 --backend=eir` builds it (without optimization
+# http_serve_slow_reader misses its deadline). Default: asm on arm64, c elsewhere.
+#
+# The list is per host OS for the C mode (libc output and type widths differ):
+# pass_c.txt on macOS, pass_c_linux.txt on Linux.
 #
 # The tests known to pass are listed in tests/eir/pass_<mode>.txt: one that stops passing
 # fails the gate, one that starts passing is reported (UPDATE=1 rewrites the list).
@@ -26,6 +30,7 @@ fi
 case "$mode" in asm|c) ;; *) echo "usage: tests/eir/check.sh [asm|c]"; exit 2 ;; esac
 
 list="tests/eir/pass_$mode.txt"
+[ "$mode" = c ] && [ "$(uname -s)" = Linux ] && list="tests/eir/pass_c_linux.txt"
 work="$(mktemp -d -t eskiu_eir.XXXXXX)"
 trap 'rm -rf "$work"' EXIT
 
@@ -57,7 +62,7 @@ for f in tests/*.esk; do
         "$BIN" "$f" ${link[@]+"${link[@]}"} -o "$exe" --backend=eir >/dev/null 2>&1 || continue
     else
         "$BIN" "$f" --emit-c -o "$work/$n.c" >/dev/null 2>&1 || continue
-        "$CC" -std=c99 -w -fno-strict-aliasing "$work/$n.c" ${companion[@]+"${companion[@]}"} -o "$exe" -lm -lpthread >/dev/null 2>&1 || continue
+        "$CC" -std=c99 -w -fno-strict-aliasing -O1 "$work/$n.c" ${companion[@]+"${companion[@]}"} -o "$exe" -lm -lpthread >/dev/null 2>&1 || continue
     fi
     run10 "$exe" >"$work/$n.got" 2>&1 || continue
     diff -q "tests/$n.expected" "$work/$n.got" >/dev/null && passed+=("$n")
