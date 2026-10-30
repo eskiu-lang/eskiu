@@ -7,6 +7,50 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
+## [Unreleased]
+
+### Added
+- `-ffp-contract=fast` lets the compiler fuse a multiply and an add into one fused
+  multiply-add (rounded once); without it each floating-point operation rounds, so results
+  stay the same on every target. Both compilers.
+- `-fstrict-aliasing` gives the optimizer C's aliasing rule (scalar type-based alias
+  information): a store of one scalar type is assumed not to change a value of another.
+  Unions, bytes and a variable read through a pointer cast keep aliasing everything. Off by
+  default; both compilers.
+- `eskiuc fmt --width N` also breaks code lines longer than N after the commas of their
+  outermost bracketed list; without it the formatter's output does not change.
+- `<json>`: `json_parse_doc(src)` parses into a `JsonDoc` whose nodes and strings live in
+  one arena, about three times faster than `json_parse` plus `JsonValue_free`; the document
+  is read-only and `JsonDoc_free` frees it.
+- The self-hosted compiler links a package's `[native.NAME]` libraries, fetching and
+  checking them as the C++ compiler does.
+- `tests/index.sh` prints the test catalog from each test's first comment, and `run.sh`
+  fails on a test without one.
+
+### Changed
+- `<regex>` searches with a lazily built DFA for where the match ends and one over the
+  reversed pattern for where it starts, and runs the Pike VM only over the match, for its
+  groups: two to three times faster on log-like text, with the same results (checked
+  against the Pike VM alone by a test and the regex fuzz target).
+- TLS (`<tls>` servers and `<fetch>`'s HTTPS client) asks for TLS 1.2 or newer and turns
+  off compression and renegotiation, whatever the OpenSSL defaults; a server whose key
+  does not match its certificate is refused when the context is made. The client loads
+  OpenSSL and makes its shared contexts once, also from several threads at once.
+- The kernel demo's heap is a first-fit allocator, so `free` gives memory back.
+- `--backend=eir` compiles the generated C at the `-O` level given (it ignored it) and
+  with `-fno-strict-aliasing`.
+- Building against an LLVM without RTTI (the llvm-project release tarballs) stops at
+  configure time with an explanation instead of failing to link. LLVM's headers are
+  included as system headers, and the compiler's own sources build without warnings (CI
+  builds with `-DESKIU_WERROR=ON`).
+- `fetch_basic` and `fetch_async` use numeric addresses only; the host name cases moved to
+  `fetch_dns`, which `ESKIU_RESOLVER_TESTS=0` skips with `dns_connect`.
+- CI runs the Windows build on pull requests and on `main`, the EIR C backend on Linux,
+  and fails when the editor modes exceed their time budget; a release fails when its
+  Windows build does.
+
+---
+
 ## [0.14.1] - 2026-10-29
 
 ### Added
