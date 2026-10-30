@@ -321,6 +321,17 @@ if [[ -n "$plat" && "$plat" != -* ]] && command -v "$cc_prog" > /dev/null 2>&1 &
     else
         bad "native/direct-fetch" "$out"
     fi
+    # The self-hosted compiler fetches, checks, links and caches the same archive.
+    if [[ -x "$ESK" ]]; then
+        rm -rf "$ESKIU_HOME/native"
+        out="$(cd "$work/nat" && "$ESK" src/main.esk -o "$work/nat_esk" 2>&1 && "$work/nat_esk")"
+        if [[ "$out" == *"fetching nat for nat from file://"* && "$out" == *"41" ]]; then ok "selfhost/native-fetch"; else bad "selfhost/native-fetch" "$out"; fi
+        out="$(cd "$work/nat" && "$ESK" src/main.esk -o "$work/nat_esk" 2>&1 && "$work/nat_esk")"
+        if [[ "$out" == "41" ]]; then ok "selfhost/native-cache"; else bad "selfhost/native-cache" "$out"; fi
+        rm -rf "$ESKIU_HOME/native"
+        (cd "$work/nat" && "$ESK" src/other.esk -o "$work/nat_other" > /dev/null 2>&1)
+        if [[ ! -d "$ESKIU_HOME/native" ]]; then ok "selfhost/native-unused"; else bad "selfhost/native-unused" "fetched"; fi
+    fi
     case "$plat" in
         macos-arm64)    tt="arm64-apple-macosx13.0" ;;
         macos-x86_64)   tt="x86_64-apple-macosx13.0" ;;
@@ -340,6 +351,15 @@ if [[ -n "$plat" && "$plat" != -* ]] && command -v "$cc_prog" > /dev/null 2>&1 &
     sed "s/$sum/$zeros/" "$work/nat/eskiu.toml" > "$work/nat/toml.new" && mv "$work/nat/toml.new" "$work/nat/eskiu.toml"
     out="$(cd "$work/nat" && "$ESKIUC" build 2>&1)"; code=$?
     if [[ $code -ne 0 && "$out" == *"has sha256 $sum, not $zeros"* ]]; then ok "native/bad-sha256"; else bad "native/bad-sha256" "$out"; fi
+    if [[ -x "$ESK" ]]; then
+        rm -rf "$ESKIU_HOME/native"
+        out="$(cd "$work/nat" && "$ESK" src/main.esk -o "$work/nat_esk" 2>&1)"; code=$?
+        if [[ $code -ne 0 && "$out" == *"error: the native library 'nat' of package 'nat' from file://"*"has sha256 $sum, not $zeros"* ]]; then
+            ok "selfhost/native-bad-sha256"
+        else
+            bad "selfhost/native-bad-sha256" "$out"
+        fi
+    fi
     printf '[package]\nname = "nat"\n\n[native.nat]\nmacos = { url = "x", sha256 = "y" }\n' > "$work/nat/eskiu.toml"
     out="$(cd "$work/nat" && "$ESKIUC" build 2>&1)"; code=$?
     if [[ $code -ne 0 && "$out" == "error: eskiu.toml:5: unknown platform 'macos' in [native.nat] (macos-arm64, macos-x86_64, linux-x86_64, linux-arm64, windows-x86_64, windows-arm64, ios-arm64, ios-arm64-simulator, ios-x86_64-simulator, android-arm64, android-x86_64)" ]]; then

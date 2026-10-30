@@ -21,6 +21,7 @@ import "async_lower.esk";
 import "codegen.esk";
 import "eir.esk";
 import "fmt.esk";
+import "pkg_native.esk";
 import "bigstack.esk";
 
 extern int64 write(int fd, *void buf, int64 n);
@@ -1891,6 +1892,37 @@ int esk_main(int argc, string* argv) {
             }
         }
     }
+    // A build inside a package finds the native libraries it links in the archives its
+    // packages declare for the target (or host) platform (pkg_native.esk): -L, and an
+    // rpath for run time where the program runs from this machine's cache.
+    List<string> native_dirs;
+    List_init<string>(&native_dirs, 2);
+    int win_target = cg_streq(g_pp_os, "_WIN32");
+    if (want_obj == 0 || cross == 1) {
+        ntv_load(triple);
+        List<string> want_libs;
+        List_init<string>(&want_libs, 4);
+        for (wi in 0..List_len<string>(&linked)) {
+            List_push<string>(&want_libs, List_get<string>(&linked, wi));
+        }
+        if (default_libs == 1) {
+            for (wi in 0..List_len<string>(&g_link_libs)) {
+                List_push<string>(&want_libs, List_get<string>(&g_link_libs, wi));
+            }
+        }
+        if (ntv_lib_dirs(&want_libs, &native_dirs) != 0) {
+            remove(tmp);
+            return 1;
+        }
+        for (ni in 0..List_len<string>(&native_dirs)) {
+            string nd = List_get<string>(&native_dirs, ni);
+            List_push<string>(&tail, cg_cat("-L", nd));
+            if (win_target == 0 && str_contains(triple, "wasm") == 0 && str_contains(triple, "android") == 0 &&
+                str_contains(triple, "-ios") == 0) {
+                List_push<string>(&tail, cg_cat("-Wl,-rpath,", nd));
+            }
+        }
+    }
     if (want_obj == 0) {
         int ti = 0;
         while (ti < List_len<string>(&tail)) {
@@ -1931,6 +1963,9 @@ int esk_main(int argc, string* argv) {
         }
         eprint("error: clang failed to link the output\n");
         return 1;
+    }
+    if (win_target == 1) {
+        ntv_copy_dlls(&native_dirs, outfile);
     }
     if (runmode == 0) {
         return 0;

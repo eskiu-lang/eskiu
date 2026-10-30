@@ -66,9 +66,6 @@ first-class in the language without giving up general systems use.
   the WebAssembly exception-handling instructions (`-fwasm-exceptions`) would avoid it and
   bring exceptions to WASI. That needs a second lowering of `try` (funclet pads instead of
   `landingpad`) in both compilers.
-- **Native libraries in the self-hosted compiler.** A package's `[native.NAME]` archives
-  cover host and `--target` cross builds (including iOS and Android) with the C++ compiler;
-  the self-hosted compiler still takes `-L`.
 - **A faster `<regex>`.** 0.14.1 added a first-byte prefilter, a required-byte check and a
   reused scratch block, but the search is still a Pike VM: LangArena's log parser takes
   1.8 s, against 1.0 s for Go's `regexp` and 0.33 s for PCRE2's JIT. A lazy DFA, as RE2 and

@@ -1,0 +1,459 @@
+// pkg_native.esk: the prebuilt native libraries of a package ([native.NAME] tables in its
+// eskiu.toml) for the self-hosted driver. Mirrors pkg.cpp: ntv_load is hostNatives (the
+// archives the target's platform gets from the package and the dependencies its lock
+// names), ntv_lib_dirs is pkgNativeLibDirs (fetch the ones a build links, return their
+// `lib` directories), ntv_fetch is fetchNative (curl, SHA-256 check, tar or unzip into
+// $ESKIU_HOME/native/SHA256, renamed into place when complete) and ntv_copy_dlls is
+// copyNativeDlls. A manifest that does not parse contributes nothing here, as in the C++
+// driver (the package commands report it).
+
+import <hash>;
+
+struct NtvSrc {
+    string pkg;      // the package whose eskiu.toml declares it
+    string lib;      // NAME in [native.NAME]: the library -lNAME links
+    string url;
+    string sha;      // lowercase hex
+    string libdir;   // the directory inside the archive holding the library ("lib")
+}
+
+List<NtvSrc> g_natives;
+
+// The platform key of a target triple, or of this host for an empty one ("" when no key
+// names it): macos-arm64, linux-x86_64, ios-arm64-simulator, android-arm64, ...
+string ntv_platform(string triple) {
+    if (triple[0] == 0) {
+        string os = "";
+#ifdef __APPLE__
+        os = "macos";
+#endif
+#ifdef __linux__
+        os = "linux";
+#endif
+#ifdef _WIN32
+        os = "windows";
+#endif
+        string arch = "";
+#ifdef __aarch64__
+        arch = "arm64";
+#endif
+#ifdef __x86_64__
+        arch = "x86_64";
+#endif
+        if (os[0] == 0 || arch[0] == 0) {
+            return "";
+        }
+        return str_concat(os, str_concat("-", arch));
+    }
+    string arch = "";
+    if (str_starts(triple, "aarch64") == 1 || str_starts(triple, "arm64") == 1) {
+        arch = "arm64";
+    } else if (str_starts(triple, "x86_64") == 1 || str_starts(triple, "amd64") == 1) {
+        arch = "x86_64";
+    } else {
+        return "";
+    }
+    if (str_contains(triple, "-ios") == 1) {
+        if (str_contains(triple, "simulator") == 1) {
+            return str_concat("ios-", str_concat(arch, "-simulator"));
+        }
+        return str_eq(arch, "arm64") == 1 ? "ios-arm64" : "";
+    }
+    if (str_contains(triple, "android") == 1) {
+        return str_concat("android-", arch);
+    }
+    if (str_contains(triple, "apple") == 1 || str_contains(triple, "darwin") == 1 || str_contains(triple, "macos") == 1) {
+        return str_concat("macos-", arch);
+    }
+    if (str_contains(triple, "windows") == 1 || str_contains(triple, "win32") == 1 || str_contains(triple, "mingw") == 1) {
+        return str_concat("windows-", arch);
+    }
+    if (str_contains(triple, "linux") == 1) {
+        return str_concat("linux-", arch);
+    }
+    return "";
+}
+
+int ntv_is_space(int c) {
+    return c == 32 || c == 9 ? 1 : 0;
+}
+
+// A TOML key or table name: letters, digits, '_', '-' and '.'.
+int ntv_is_key(int c) {
+    return (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || (c >= 48 && c <= 57) || c == 95 || c == 45 || c == 46 ? 1 : 0;
+}
+
+// The TOML basic string starting at the quote text[*pos] ("" when there is none); *pos
+// moves past the closing quote, or to -1 when the string is malformed.
+string ntv_string(string text, *int pos, int end) {
+    int i = *pos;
+    if (i >= end || (int)text[i] != 34) {
+        *pos = -1;
+        return "";
+    }
+    i = i + 1;
+    string out = "";
+    int a = i;
+    while (i < end && (int)text[i] != 34) {
+        if ((int)text[i] == 92 && i + 1 < end) {
+            out = str_concat(out, p_sub(text, a, i));
+            out = str_concat(out, p_sub(text, i + 1, i + 2));
+            i = i + 2;
+            a = i;
+        } else {
+            i = i + 1;
+        }
+    }
+    if (i >= end) {
+        *pos = -1;
+        return "";
+    }
+    out = str_concat(out, p_sub(text, a, i));
+    *pos = i + 1;
+    return out;
+}
+
+// One `PLATFORM = { url = "...", sha256 = "...", lib = "..." }` line of a [native.NAME]
+// table, between `a` and `end`; 1 and the fields in `src` when it is one for `platform`.
+int ntv_entry(string text, int a, int end, string platform, NtvSrc* src) {
+    int i = a;
+    while (i < end && ntv_is_key((int)text[i]) == 1) {
+        i = i + 1;
+    }
+    if (str_eq(p_sub(text, a, i), platform) == 0) {
+        return 0;
+    }
+    while (i < end && ntv_is_space((int)text[i]) == 1) {
+        i = i + 1;
+    }
+    if (i >= end || (int)text[i] != 61) {
+        return 0;
+    }
+    i = i + 1;
+    while (i < end && ntv_is_space((int)text[i]) == 1) {
+        i = i + 1;
+    }
+    if (i >= end || (int)text[i] != 123) {
+        return 0;
+    }
+    i = i + 1;
+    src.url = "";
+    src.sha = "";
+    src.libdir = "lib";
+    while (i < end) {
+        while (i < end && (ntv_is_space((int)text[i]) == 1 || (int)text[i] == 44)) {
+            i = i + 1;
+        }
+        if (i < end && (int)text[i] == 125) {
+            break;
+        }
+        int k = i;
+        while (i < end && ntv_is_key((int)text[i]) == 1) {
+            i = i + 1;
+        }
+        string key = p_sub(text, k, i);
+        while (i < end && ntv_is_space((int)text[i]) == 1) {
+            i = i + 1;
+        }
+        if (k == i || i >= end || (int)text[i] != 61) {
+            return 0;
+        }
+        i = i + 1;
+        while (i < end && ntv_is_space((int)text[i]) == 1) {
+            i = i + 1;
+        }
+        string v = ntv_string(text, &i, end);
+        if (i < 0) {
+            return 0;
+        }
+        if (str_eq(key, "url") == 1) {
+            src.url = v;
+        } else if (str_eq(key, "sha256") == 1) {
+            src.sha = ntv_lower(v);
+        } else if (str_eq(key, "lib") == 1) {
+            src.libdir = v;
+        } else {
+            return 0;
+        }
+    }
+    if (src.url[0] == 0 || strlen(src.sha) != 64 || src.libdir[0] == 0) {
+        return 0;
+    }
+    return 1;
+}
+
+string ntv_lower(string s) {
+    string out = str_concat(s, "");
+    *uint8 p = (*uint8)out;
+    int i = 0;
+    while (p[i] != 0) {
+        if (p[i] >= 65 && p[i] <= 90) {
+            p[i] = (uint8)(p[i] + 32);
+        }
+        i = i + 1;
+    }
+    return out;
+}
+
+// Add the [native.NAME] archives for `platform` that the eskiu.toml in `root` declares.
+void ntv_read_manifest(string pkg, string root, string platform) {
+    let len: int64 = 0;
+    *uint8 raw = fs_read_all(str_concat(root, "/eskiu.toml"), &len);
+    if (raw == null) {
+        return;
+    }
+    string text = (string)raw;
+    string lib = "";
+    int pos = 0;
+    while (pos < (int)len) {
+        int end = pos;
+        while (end < (int)len && (int)text[end] != 10) {
+            end = end + 1;
+        }
+        int a = pos;
+        while (a < end && ntv_is_space((int)text[a]) == 1) {
+            a = a + 1;
+        }
+        if (a < end && (int)text[a] == 91) {
+            int b = a + 1;
+            while (b < end && (int)text[b] != 93) {
+                b = b + 1;
+            }
+            string table = p_sub(text, a + 1, b);
+            lib = str_starts(table, "native.") == 1 ? str_after(table, 7) : "";
+        } else if (lib[0] != 0 && a < end && (int)text[a] != 35) {
+            let src: NtvSrc;
+            if (ntv_entry(text, a, end, platform, &src) == 1) {
+                int dup = 0;
+                for (i in 0..List_len<NtvSrc>(&g_natives)) {
+                    if (str_eq(List_get<NtvSrc>(&g_natives, i).sha, src.sha) == 1) {
+                        dup = 1;
+                    }
+                }
+                if (dup == 0) {
+                    src.pkg = pkg;
+                    src.lib = lib;
+                    List_push<NtvSrc>(&g_natives, src);
+                }
+            }
+        }
+        pos = end + 1;
+    }
+}
+
+// Fill g_natives from the package pkg_load_roots found (none outside a package).
+void ntv_load(string triple) {
+    List_init<NtvSrc>(&g_natives, 4);
+    if (g_pkg_active == 0) {
+        return;
+    }
+    string platform = ntv_platform(triple);
+    if (platform[0] == 0) {
+        return;
+    }
+    for (i in 0..List_len<string>(&g_pkg_roots)) {
+        ntv_read_manifest(List_get<string>(&g_pkg_names, i), List_get<string>(&g_pkg_roots, i), platform);
+    }
+}
+
+// Run args[0] with `args`, its stdout and stderr thrown away: the exit code, or 127 when
+// it could not be started.
+int ntv_run_quiet(List<string>* args) {
+    int n = List_len<string>(args);
+    *string av = alloc<string>((int64)(n + 1));
+    for (i in 0..n) {
+        av[i] = List_get<string>(args, i);
+    }
+    int pid = fork();
+    if (pid < 0) {
+        return 127;
+    }
+    if (pid == 0) {
+        int fd = open("/dev/null", 1);
+        if (fd >= 0) {
+            dup2(fd, 1);
+            dup2(fd, 2);
+        }
+        execvp(av[0], av);
+        _exit(127);
+    }
+    let st: int = 0;
+    if (waitpid(pid, &st, 0) < 0) {
+        return 127;
+    }
+    if ((st & 127) != 0) {
+        return 128 + (st & 127);
+    }
+    return (st >> 8) & 255;
+}
+
+int ntv_fail(string msg) {
+    eprint("error: ");
+    eprint(msg);
+    eprint("\n");
+    return 1;
+}
+
+string ntv_dir(NtvSrc* src) {
+    return str_concat(pkg_home(), str_concat("/native/", src.sha));
+}
+
+// Download, check and unpack `src` into ntv_dir(src) unless it is already there: 0, or 1
+// after printing the error.
+int ntv_fetch(NtvSrc* src) {
+    string dir = ntv_dir(src);
+    if (fs_is_dir(dir) == 1) {
+        return 0;
+    }
+    string what = str_concat("native library '", str_concat(src.lib, str_concat("' of package '", str_concat(src.pkg, "'"))));
+    fs_mkdir_p(str_concat(pkg_home(), "/native"));
+    string file = str_concat(dir, ".download");
+    string tmp = str_concat(dir, ".tmp");
+    fs_remove(file);
+    fs_remove_all(tmp);
+    eprint("fetching ");
+    eprint(src.lib);
+    eprint(" for ");
+    eprint(src.pkg);
+    eprint(" from ");
+    eprint(src.url);
+    eprint("\n");
+    List<string> args;
+    List_init<string>(&args, 8);
+    List_push<string>(&args, "curl");
+    List_push<string>(&args, "-fsSL");
+    List_push<string>(&args, "--retry");
+    List_push<string>(&args, "2");
+    List_push<string>(&args, "-o");
+    List_push<string>(&args, file);
+    List_push<string>(&args, src.url);
+    int rc = ntv_run_quiet(&args);
+    if (rc == 127) {
+        return ntv_fail(str_concat("curl not found on PATH (needed to fetch the ", str_concat(what, ")")));
+    }
+    if (rc != 0) {
+        fs_remove(file);
+        return ntv_fail(str_concat("could not download the ", str_concat(what, str_concat(" from ", src.url))));
+    }
+    let n: int64 = 0;
+    *uint8 data = fs_read_all(file, &n);
+    let got: String;
+    got.init(64);
+    if (data != null) {
+        hash_sha256_hex(data, n, &got);
+    }
+    if (str_eq(got.cstr(), src.sha) == 0) {
+        fs_remove(file);
+        return ntv_fail(str_concat("the ", str_concat(what, str_concat(" from ", str_concat(src.url,
+                        str_concat(" has sha256 ", str_concat(got.cstr(), str_concat(", not ", src.sha))))))));
+    }
+    fs_mkdir_p(tmp);
+    List<string> ux;
+    List_init<string>(&ux, 6);
+    string tool = "tar";
+#ifdef __linux__
+    // GNU tar does not read zip archives; macOS tar (libarchive) does.
+    if (str_ends(src.url, ".zip") == 1) {
+        tool = "unzip";
+    }
+#endif
+    List_push<string>(&ux, tool);
+    if (str_eq(tool, "unzip") == 1) {
+        List_push<string>(&ux, "-q");
+        List_push<string>(&ux, file);
+        List_push<string>(&ux, "-d");
+        List_push<string>(&ux, tmp);
+    } else {
+        List_push<string>(&ux, "-xf");
+        List_push<string>(&ux, file);
+        List_push<string>(&ux, "-C");
+        List_push<string>(&ux, tmp);
+    }
+    rc = ntv_run_quiet(&ux);
+    fs_remove(file);
+    if (rc != 0) {
+        fs_remove_all(tmp);
+        if (rc == 127) {
+            return ntv_fail(str_concat(tool, str_concat(" not found on PATH (needed to unpack the ", str_concat(what, ")"))));
+        }
+        return ntv_fail(str_concat("could not unpack the ", what));
+    }
+    string libdir = str_concat(tmp, str_concat("/", src.libdir));
+    if (fs_is_dir(libdir) == 0) {
+        fs_remove_all(tmp);
+        return ntv_fail(str_concat("the ", str_concat(what, str_concat(" has no directory '",
+                        str_concat(src.libdir, "' (lib in its eskiu.toml)")))));
+    }
+#ifdef __APPLE__
+    // Give each .dylib an @rpath install name (some upstream archives record the
+    // builder's absolute path in LC_ID_DYLIB).
+    let names: List<String>;
+    List_init<String>(&names, 8);
+    fs_list_dir(libdir, &names);
+    for (i in 0..List_len<String>(&names)) {
+        String nm = List_get<String>(&names, i);
+        string p = str_concat(libdir, str_concat("/", nm.cstr()));
+        if (str_ends(nm.cstr(), ".dylib") == 1 && fs_is_file(p) == 1) {
+            List<string> it;
+            List_init<string>(&it, 4);
+            List_push<string>(&it, "install_name_tool");
+            List_push<string>(&it, "-id");
+            List_push<string>(&it, str_concat("@rpath/", nm.cstr()));
+            List_push<string>(&it, p);
+            if (ntv_run_quiet(&it) == 0) {
+                List<string> cs;
+                List_init<string>(&cs, 5);
+                List_push<string>(&cs, "codesign");
+                List_push<string>(&cs, "--force");
+                List_push<string>(&cs, "--sign");
+                List_push<string>(&cs, "-");
+                List_push<string>(&cs, p);
+                ntv_run_quiet(&cs);
+            }
+        }
+    }
+#endif
+    if (fs_rename(tmp, dir) != 0) {
+        fs_remove_all(tmp);
+        return ntv_fail(str_concat("could not create ", dir));
+    }
+    return 0;
+}
+
+// The `lib` directories of the native libraries named in `linked` (fetched when missing)
+// into `dirs`: 0, or 1 after printing the error.
+int ntv_lib_dirs(List<string>* linked, List<string>* dirs) {
+    for (i in 0..List_len<NtvSrc>(&g_natives)) {
+        NtvSrc src = List_get<NtvSrc>(&g_natives, i);
+        int want = 0;
+        for (k in 0..List_len<string>(linked)) {
+            if (str_eq(List_get<string>(linked, k), src.lib) == 1) {
+                want = 1;
+            }
+        }
+        if (want == 1) {
+            if (ntv_fetch(&src) != 0) {
+                return 1;
+            }
+            List_push<string>(dirs, str_concat(ntv_dir(&src), str_concat("/", src.libdir)));
+        }
+    }
+    return 0;
+}
+
+// Copy the .dll files of `dirs` next to the program `exe` (a Windows target).
+void ntv_copy_dlls(List<string>* dirs, string exe) {
+    string to = str_dir(canonical_path(exe));
+    for (i in 0..List_len<string>(dirs)) {
+        string d = List_get<string>(dirs, i);
+        let names: List<String>;
+        List_init<String>(&names, 8);
+        fs_list_dir(d, &names);
+        for (k in 0..List_len<String>(&names)) {
+            String nm = List_get<String>(&names, k);
+            if (str_ends(ntv_lower(nm.cstr()), ".dll") == 1) {
+                fs_copy(str_concat(d, str_concat("/", nm.cstr())), str_concat(to, str_concat("/", nm.cstr())));
+            }
+        }
+    }
+}

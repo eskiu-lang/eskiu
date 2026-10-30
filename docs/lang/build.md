@@ -321,7 +321,8 @@ A package's prebuilt native libraries (`[native.NAME]`, see
 [getting started](getting-started.md#native-libraries)) are downloaded with `curl` into
 `~/.eskiu/native/SHA256` by the first build that links one (or the host ones by
 `eskiuc fetch`) and checked against their SHA-256; a build in the package links them
-with no `-L`. The lock does not list them: the manifest's SHA-256 names each one.
+with no `-L`, with either compiler (`eskiuc` or the self-hosted `eskiuc-esk`). The lock
+does not list them: the manifest's SHA-256 names each one.
 
 ## Running Tests
 
