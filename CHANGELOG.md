@@ -96,7 +96,7 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   several threads at once), and threads that cannot read the next byte are dropped. A
   log-scanning benchmark went from 25.2 s to 1.8 s and a template one from 7.4 s to 3.1 s.
 
-## [0.14.0] - 2026-10-23
+## [0.14.0]
 
 ### Added
 - `catch (_)` catches any exception without binding a variable; it is the last catch of a
@@ -115,7 +115,7 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   normalized first (`x86_64-w64-windows-gnu`).
 - A build for iOS or Android no longer embeds an rpath to this machine's package cache.
 
-## [0.13.0] - 2026-10-21
+## [0.13.0]
 
 The first public release. Code that compiles with 0.13.0 keeps compiling in every 0.13.x
 ([stability.md](docs/lang/stability.md)).
