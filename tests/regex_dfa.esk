@@ -1,0 +1,123 @@
+// The lazy DFA search (forward DFA for the end, reversed DFA for the start, the Pike
+// VM over the span for the groups) finds exactly what the Pike VM alone finds: every
+// match and group of Regex_iter, over hand-picked patterns (anchors, multi-line mode,
+// word boundaries, alternation and lazy priority, empty matches, Unicode, invalid UTF-8)
+// and over random patterns and texts, searched as Regex_iter does and from every byte
+// offset.
+import <regex>;
+import <random>;
+import <string>;
+extern int printf(string f, ...);
+
+int pairs = 0;
+int diffs = 0;
+
+// Every match (with its groups) of re in text, as text, into out.
+void all_matches(Regex* re, string text, int64 len, String* out) {
+    RegexIter it = Regex_iter(re, text, len);
+    let m: Match;
+    m.cap = null;
+    while (RegexIter_next(&it, &m) == 1) {
+        for (g in 0..m.ngroup + 1) {
+            out.appendf("%d-%d ", m.cap[2 * g], m.cap[2 * g + 1]);
+        }
+        out.append("| ");
+    }
+    Match_free(&m);
+}
+
+// The match of a search from each byte offset (also from inside a UTF-8
+// sequence), into out.
+void from_each(Regex* re, string text, int64 len, String* out) {
+    let m: Match;
+    for (int64 st = 0; st <= len; st++) {
+        if (Regex_search_at(re, text, len, st, &m) == 1) {
+            out.appendf("@%d:%d-%d ", (int)st, m.start, m.end);
+        }
+        Match_free(&m);
+    }
+}
+
+void compare(string pat, string text, int64 len) {
+    Regex re = regex_compile(pat);
+    if (re.ok == 0) {
+        Regex_free(&re);
+        return;
+    }
+    let a: String;
+    a.init(64);
+    let b: String;
+    b.init(64);
+    all_matches(&re, text, len, &a);
+    from_each(&re, text, len, &a);
+    _re_force_vm = true;
+    all_matches(&re, text, len, &b);
+    from_each(&re, text, len, &b);
+    _re_force_vm = false;
+    pairs++;
+    if (!a.eq(&b)) {
+        diffs++;
+        if (diffs <= 5) {
+            printf("differ: /%s/ on \"%s\"\n  dfa: %s\n  vm:  %s\n", pat, text, a.cstr(), b.cstr());
+        }
+    }
+    a.free();
+    b.free();
+    Regex_free(&re);
+}
+
+const string[40] PATS = {
+    "a", "ab|a", "a|ab", "a*", "a*?", "a+?b", "(a|b)*c", "^abc", "abc$", "^$", "(?m)^\\w+$",
+    "(?m)^", "(?m)$", "\\bfoo\\b", "\\B\\w\\B", "\\b", "x*", "(a*)(b*)", "(?i)hello", "[[:digit:]]+",
+    "\\d{2,3}", "(\\w+)@(\\w+)\\.com", "é+", "\\pL+", "[^a]+", ".", "(?s).+", "a.c", "(foo|foobar)x",
+    "(a+)(a+)", "(?U)a+", "colou?r", "^(a|b)*?$", "\\A\\w", "\\w\\z", "[a-c]{2}|z", "()", "(|a)+",
+    "\\x{FFFD}", "(?m)^a|b$"};
+const string[12] TEXTS = {
+    "", "a", "ab", "aab", "abc", "xabcx", "foo foobar foo_x foox", "hello HeLLo", "a\nbb\n\nc",
+    "2024-01-15 12:30:45 user@host.com", "caf\xc3\xa9 \xc3\xa9\xc3\xa9 \xce\xb1\xce\xb2", "a\xffb\xe2\x82c"};
+
+int main() {
+    for (i in 0..40) {
+        for (j in 0..12) {
+            compare(PATS[i], TEXTS[j], (int64)strlen(TEXTS[j]));
+        }
+    }
+    // Random patterns over a small alphabet, against random texts over it.
+    let rng: Rng;
+    Rng_seed(&rng, (uint64)12345);
+    const string atoms = "ab.";
+    let pat: String;
+    pat.init(32);
+    let text: String;
+    text.init(32);
+    for (round in 0..3000) {
+        pat.clear();
+        const int n = (int)Rng_range(&rng, 1, 7);
+        for (k in 0..n) {
+            const int pick = (int)Rng_below(&rng, (uint64)14);
+            if (pick < 3) { pat.push(atoms[pick]); }
+            else if (pick == 3) { pat.append("(a|b)"); }
+            else if (pick == 4) { pat.append("(ab|a)"); }
+            else if (pick == 5) { pat.push('*'); }
+            else if (pick == 6) { pat.push('+'); }
+            else if (pick == 7) { pat.push('?'); }
+            else if (pick == 8) { pat.append("\\b"); }
+            else if (pick == 9) { pat.push('^'); }
+            else if (pick == 10) { pat.push('$'); }
+            else if (pick == 11) { pat.append("(?m)$"); }
+            else if (pick == 12) { pat.append("[ab]*?"); }
+            else { pat.append("(b*)"); }
+        }
+        text.clear();
+        const int tn = (int)Rng_below(&rng, (uint64)10);
+        for (k in 0..tn) {
+            const int c = (int)Rng_below(&rng, (uint64)5);
+            text.push(c < 2 ? "ab"[c] : c == 2 ? ' ' : c == 3 ? '\n' : 'b');
+        }
+        compare(pat.cstr(), text.cstr(), (int64)text.len);
+    }
+    pat.free();
+    text.free();
+    printf("%s\n", diffs == 0 ? "dfa and vm agree" : "dfa and vm differ");
+    return diffs == 0 ? 0 : 1;
+}

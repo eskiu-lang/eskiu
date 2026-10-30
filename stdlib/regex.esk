@@ -44,10 +44,16 @@
 //   `\b` and `\B`. Any other escape of a letter or digit is an error. In a class,
 //   a `-` right after a shorthand is a literal (`[\d-z]` is digits, '-' and 'z').
 //
-// The matcher is a Thompson NFA run as a Pike VM: it explores all paths in
-// lockstep, so matching is linear in the input length with no catastrophic
-// backtracking (no ReDoS). It reports capture groups for the leftmost match,
-// preferring greedy quantifiers unless they are marked lazy.
+// The matcher is a Thompson NFA, linear in the input length with no catastrophic
+// backtracking (no ReDoS). A search runs it three ways, as RE2 does: a lazily
+// built DFA (states made on first use and cached, with their ASCII transitions)
+// finds where the leftmost match ends, a DFA over the reversed program finds
+// where that match starts, and a Pike VM, which explores all paths in lockstep
+// and tracks the capture groups, runs over that span only (not at all for a
+// pattern without groups). The result is the Pike VM's: the leftmost match,
+// preferring greedy quantifiers unless they are marked lazy, and earlier
+// alternatives. A DFA that outgrows its budget (RE_DFA_MAX_STATES) leaves the
+// search to the Pike VM over the whole text.
 //
 // Before the VM runs, the search skips text where no match can start: compiling
 // records the bytes a match can begin with and an ASCII byte every match
@@ -166,6 +172,45 @@ struct _ReScratch {
     *int capsA;
     *int capsB;
     *int work;          // 2 * ncap ints: the working and the best captures
+    *_ReDfa fdfa;       // the forward and reverse DFAs, made by the first search
+    *_ReDfa rdfa;
+    int dfa_off;        // 1 once a DFA outgrew its budget: the Pike VM alone
+}
+
+// A lazily built DFA over a program (the forward one or the reversed one). A
+// state is an ordered list of the program's pcs that a step resumes from: the
+// consuming instructions, MATCH, and the zero-width assertions still to be
+// decided (they need the character after the point), plus, in the unanchored
+// forward DFA, RE_DFA_RESTART last, standing for the match that may start at the
+// next position. Its flags describe the character on its consumed side (the
+// left one going forward, the right one in reverse). A transition first decides
+// the assertions with the next character, then (going forward) drops what
+// follows a MATCH, as the Pike VM cuts its lower-priority threads, then steps
+// over the character. Transitions on ASCII code points are cached per state.
+struct _ReDfa {
+    Regex* re;
+    *_ReInst insts;
+    *uint64 amask;
+    int ninst;
+    int restart;        // forward: unanchored, RE_DFA_RESTART at the end of states
+    int cut;            // forward: leftmost-first (MATCH cuts what follows)
+    int reverse;        // the consumed character is on the right
+    *int pool;          // the items of every state
+    int npool;
+    int cpool;
+    *int off;           // per state: its items in pool
+    *int len;
+    *int flags;
+    *uint8 isstart;     // the state is a start state (no partial match in it)
+    *int trans;         // per state, 128 entries: 0 unknown, else (next + 3) * 2 + match
+    int nst;
+    int cst;
+    *int hash;          // open addressing: state + 1, 0 empty
+    int hcap;
+    *int mark;          // per pc: the pass that last added it
+    int gen;
+    *int buf1;
+    *int buf2;
 }
 
 struct Regex {
@@ -199,6 +244,12 @@ struct Regex {
     // Search scratch, allocated by regex_compile (so copies of the Regex share
     // it) and reused by every search that finds it free.
     *_ReScratch _scratch;
+    // The program reversed (concatenations right to left, no SAVE), for the
+    // reverse DFA that finds where a match starts, and its ASCII masks; null when
+    // it did not fit (the search then runs the Pike VM only).
+    *_ReInst _rinst;
+    int _rninst;
+    *uint64 _ramask;
 }
 
 struct _ReComp {
@@ -213,6 +264,7 @@ struct _ReComp {
     int depth;   // groups currently open (the parser recurses once per group)
     int flags;   // RF_* in effect
     int inquote; // inside \Q...\E
+    int rev;     // compiling the reversed program
 }
 
 struct Match {
@@ -1466,10 +1518,20 @@ void _re_compile_node(_ReComp* c, _ReNode* n) {
         break;
         case N_WORDB: _re_emit(c, OP_WORDB, n.ch, 0);
         break;
-        case N_CONCAT: _re_compile_node(c, n.left);
-        _re_compile_node(c, n.right);
+        case N_CONCAT:
+        if (c.rev == 1) {
+            _re_compile_node(c, n.right);
+            _re_compile_node(c, n.left);
+        } else {
+            _re_compile_node(c, n.left);
+            _re_compile_node(c, n.right);
+        }
         break;
         case N_GROUP:
+        if (c.rev == 1) {
+            _re_compile_node(c, n.left);
+            break;
+        }
         _re_emit(c, OP_SAVE, 2 * n.grp, 0);
         _re_compile_node(c, n.left);
         _re_emit(c, OP_SAVE, 2 * n.grp + 1, 0);
@@ -1514,10 +1576,14 @@ void _re_compile_node(_ReComp* c, _ReNode* n) {
     return sc;
 }
 
+void _re_dfa_free(*_ReDfa d);
+
 void _re_scratch_free(*_ReScratch sc) {
     if (sc == null) {
         return;
     }
+    _re_dfa_free(sc.fdfa);
+    _re_dfa_free(sc.rdfa);
     free(sc.visited);
     free(sc.la);
     free(sc.lb);
@@ -1602,6 +1668,9 @@ Regex regex_compile(string pattern) {
     re.ngroup = 0;
     re.ok = 0;
     re.err = null;
+    re._rinst = null;
+    re._rninst = 0;
+    re._ramask = null;
 
     let c: _ReComp;
     c.pat = pattern;
@@ -1615,6 +1684,7 @@ Regex regex_compile(string pattern) {
     c.depth = 0;
     c.flags = 0;
     c.inquote = 0;
+    c.rev = 0;
     defer free(c.nodes);
 
     _ReNode* ast = _re_parse_alt(&c);
@@ -1636,8 +1706,31 @@ Regex regex_compile(string pattern) {
         re.err = c.err;
         return re;
     }
+    // The reversed program: ast right to left, then MATCH. A pattern whose
+    // reversed program does not fit only loses the DFA.
+    *_ReInst fwd = re.inst;
+    const int nfwd = re.ninst;
+    re.inst = alloc<_ReInst>(RE_MAX_INST);
+    re.ninst = 0;
+    c.rev = 1;
+    _re_compile_node(&c, ast);
+    _re_emit(&c, OP_MATCH, 0, 0);
+    c.rev = 0;
+    if (c.err == null) {
+        re._rinst = re.inst;
+        re._rninst = re.ninst;
+    } else {
+        free(re.inst);
+        c.err = null;
+    }
+    re.inst = fwd;
+    re.ninst = nfwd;
+
     re._scratch = _re_scratch_new(&re);
     _re_analyze(&re);
+    if (re._rinst != null) {
+        re._ramask = _re_masks(&re, re._rinst, re._rninst);
+    }
     re._req = _re_pick_required(&re, ast);
     re.ok = 1;
     return re;
@@ -1652,6 +1745,10 @@ void Regex_free(Regex* re) {
     free(re._first);
     free(re._inmatch);
     _re_scratch_free(re._scratch);
+    free(re._rinst);
+    free(re._ramask);
+    re._rinst = null;
+    re._ramask = null;
     re.inst = null;
     re.classes = null;
     re.ranges = null;
@@ -1905,12 +2002,12 @@ void _re_first_walk(Regex* re, int pc, int bol, *int seen, *uint8 fb, *int flags
     }
 }
 
-// Fill the ASCII masks of the instructions and the start prefilter.
-void _re_analyze(Regex* re) {
-    const int ninst = re.ninst;
-    re._amask = alloc<uint64>(2 * ninst);
-    for (pc in 0..ninst) {
-        const _ReInst ins = re.inst[pc];
+// For each of the `n` instructions of `insts`, the ASCII code points it
+// consumes, as two words of bits.
+*uint64 _re_masks(Regex* re, *_ReInst insts, int n) {
+    *uint64 am = alloc<uint64>(2 * n + 2);
+    for (pc in 0..n) {
+        const _ReInst ins = insts[pc];
         if (ins.op != OP_CHAR && ins.op != OP_ANY && ins.op != OP_CLASS) {
             continue;
         }
@@ -1924,10 +2021,17 @@ void _re_analyze(Regex* re) {
                 step = _re_in_class(re, ins.a, ch) == 1;
             }
             if (step) {
-                re._amask[2 * pc + (ch >> 6)] = re._amask[2 * pc + (ch >> 6)] | ((uint64)1 << (uint64)(ch & 63));
+                am[2 * pc + (ch >> 6)] = am[2 * pc + (ch >> 6)] | ((uint64)1 << (uint64)(ch & 63));
             }
         }
     }
+    return am;
+}
+
+// Fill the ASCII masks of the instructions and the start prefilter.
+void _re_analyze(Regex* re) {
+    const int ninst = re.ninst;
+    re._amask = _re_masks(re, re.inst, ninst);
     re._inmatch = alloc<uint8>(256);
     for (pc in 0..ninst) {
         const int op = re.inst[pc].op;
@@ -1996,6 +2100,508 @@ int _re_skip(Regex* re, string text, int len, int sp) {
     return len;
 }
 
+// =========================== lazy DFA ======================================
+
+#define RE_DFA_RESTART -1
+#define RE_DFA_DEAD -2
+#define RE_DFA_FAIL -3
+#define RE_DFA_MAX_STATES 4096
+#define RE_DFA_MAX_POOL 1048576
+
+// The side flags of a point's neighbour: none (the text's edge), a newline, an
+// ASCII word character (what ^, $, \b and \B look at), or 0 for anything else.
+#define DF_NONE 1
+#define DF_NL   2
+#define DF_WORD 4
+
+int _re_side(int ch) {
+    if (ch < 0) {
+        return DF_NONE;
+    }
+    if (ch == '\n') {
+        return DF_NL;
+    }
+    return ch < 128 && _re_is_word(ch) ? DF_WORD : 0;
+}
+
+*_ReDfa _re_dfa_new(Regex* re, int reverse) {
+    *_ReDfa d = alloc<_ReDfa>(1);
+    d.re = re;
+    d.reverse = reverse;
+    d.insts = reverse == 1 ? re._rinst : re.inst;
+    d.amask = reverse == 1 ? re._ramask : re._amask;
+    d.ninst = reverse == 1 ? re._rninst : re.ninst;
+    d.restart = 1 - reverse;
+    d.cut = 1 - reverse;
+    d.cpool = 1024;
+    d.pool = alloc<int>(d.cpool);
+    d.cst = 32;
+    d.off = alloc<int>(d.cst);
+    d.len = alloc<int>(d.cst);
+    d.flags = alloc<int>(d.cst);
+    d.isstart = alloc<uint8>(d.cst);
+    d.trans = alloc<int>(d.cst * 128);
+    d.hcap = 64;
+    d.hash = alloc<int>(d.hcap);
+    d.mark = alloc<int>(d.ninst + 1);
+    d.buf1 = alloc<int>(d.ninst + 2);
+    d.buf2 = alloc<int>(d.ninst + 2);
+    return d;
+}
+
+void _re_dfa_free(*_ReDfa d) {
+    if (d == null) {
+        return;
+    }
+    free(d.pool);
+    free(d.off);
+    free(d.len);
+    free(d.flags);
+    free(d.isstart);
+    free(d.trans);
+    free(d.hash);
+    free(d.mark);
+    free(d.buf1);
+    free(d.buf2);
+    free(d);
+}
+
+// Does the zero-width assertion `ins` hold between neighbours with side flags
+// `left` and `right`?
+bool _re_holds(_ReInst* ins, int left, int right) {
+    if (ins.op == OP_BOL) {
+        return (left & DF_NONE) != 0 || (ins.a == 1 && (left & DF_NL) != 0);
+    }
+    if (ins.op == OP_EOL) {
+        return (right & DF_NONE) != 0 || (ins.a == 1 && (right & DF_NL) != 0);
+    }
+    const bool b = ((left & DF_WORD) != 0) != ((right & DF_WORD) != 0);
+    return b != (ins.a == 1);
+}
+
+// Add pc and what it reaches without consuming to `list` (*n items), in the
+// Pike VM's priority order. With `resolve`, assertions are decided between
+// `left` and `right`; without, they are kept in the list to decide later.
+void _re_dfa_add(_ReDfa* d, int pc, *int list, *int n, bool resolve, int left, int right) {
+    if (d.mark[pc] == d.gen) {
+        return;
+    }
+    d.mark[pc] = d.gen;
+    _ReInst* ins = &d.insts[pc];
+    const int op = ins.op;
+    if (op == OP_JMP) {
+        _re_dfa_add(d, ins.a, list, n, resolve, left, right);
+    } else if (op == OP_SPLIT) {
+        _re_dfa_add(d, ins.a, list, n, resolve, left, right);
+        _re_dfa_add(d, ins.b, list, n, resolve, left, right);
+    } else if (op == OP_SAVE) {
+        _re_dfa_add(d, pc + 1, list, n, resolve, left, right);
+    } else if (op == OP_BOL || op == OP_EOL || op == OP_WORDB) {
+        if (!resolve) {
+            list[*n] = pc;
+            *n = *n + 1;
+        } else if (_re_holds(ins, left, right)) {
+            _re_dfa_add(d, pc + 1, list, n, resolve, left, right);
+        }
+    } else {
+        list[*n] = pc;
+        *n = *n + 1;
+    }
+}
+
+// Does the consuming instruction pc accept code point ch?
+bool _re_dfa_accepts(_ReDfa* d, int pc, int ch) {
+    if (ch < 128) {
+        return ((d.amask[2 * pc + (ch >> 6)] >> (uint64)(ch & 63)) & (uint64)1) != (uint64)0;
+    }
+    _ReInst* ins = &d.insts[pc];
+    if (ins.op == OP_CHAR) {
+        return _re_char_eq(ins.a, ins.b, ch) == 1;
+    }
+    if (ins.op == OP_ANY) {
+        return true;
+    }
+    if (ins.op == OP_CLASS) {
+        return _re_in_class(d.re, ins.a, ch) == 1;
+    }
+    return false;
+}
+
+void _re_dfa_grow(_ReDfa* d) {
+    const int nc = d.cst * 2;
+    *int off = alloc<int>(nc);
+    *int len = alloc<int>(nc);
+    *int flags = alloc<int>(nc);
+    *uint8 isstart = alloc<uint8>(nc);
+    *int trans = alloc<int>(nc * 128);
+    memcpy((*void)off, (*void)d.off, (size_t)(d.nst * 4));
+    memcpy((*void)len, (*void)d.len, (size_t)(d.nst * 4));
+    memcpy((*void)flags, (*void)d.flags, (size_t)(d.nst * 4));
+    memcpy((*void)isstart, (*void)d.isstart, (size_t)d.nst);
+    memcpy((*void)trans, (*void)d.trans, (size_t)(d.nst * 128 * 4));
+    free(d.off);
+    free(d.len);
+    free(d.flags);
+    free(d.isstart);
+    free(d.trans);
+    d.off = off;
+    d.len = len;
+    d.flags = flags;
+    d.isstart = isstart;
+    d.trans = trans;
+    d.cst = nc;
+}
+
+int _re_dfa_hash(*int list, int n, int flags) {
+    int64 h = (int64)flags * 31 + (int64)n;
+    for (i in 0..n) {
+        h = (h * 1000003 + (int64)list[i]) & 0x7fffffff;
+    }
+    return (int)h;
+}
+
+int _re_dfa_find(_ReDfa* d, *int list, int n, int flags, int h) {
+    int i = h & (d.hcap - 1);
+    while (d.hash[i] != 0) {
+        const int st = d.hash[i] - 1;
+        if (d.len[st] == n && d.flags[st] == flags) {
+            *int items = &d.pool[d.off[st]];
+            bool same = true;
+            for (k in 0..n) {
+                if (items[k] != list[k]) {
+                    same = false;
+                    break;
+                }
+            }
+            if (same) {
+                return st;
+            }
+        }
+        i = (i + 1) & (d.hcap - 1);
+    }
+    return -1 - i;
+}
+
+// The state with these items and flags, made when new: RE_DFA_DEAD for no item,
+// RE_DFA_FAIL past the budget.
+int _re_dfa_state(_ReDfa* d, *int list, int n, int flags) {
+    if (n == 0) {
+        return RE_DFA_DEAD;
+    }
+    const int h = _re_dfa_hash(list, n, flags);
+    int slot = _re_dfa_find(d, list, n, flags, h);
+    if (slot >= 0) {
+        return slot;
+    }
+    if (d.nst >= RE_DFA_MAX_STATES || d.npool + n > RE_DFA_MAX_POOL) {
+        return RE_DFA_FAIL;
+    }
+    if (d.npool + n > d.cpool) {
+        int nc = d.cpool * 2;
+        while (nc < d.npool + n) {
+            nc = nc * 2;
+        }
+        *int pool = alloc<int>(nc);
+        memcpy((*void)pool, (*void)d.pool, (size_t)(d.npool * 4));
+        free(d.pool);
+        d.pool = pool;
+        d.cpool = nc;
+    }
+    if (d.nst == d.cst) {
+        _re_dfa_grow(d);
+    }
+    if ((d.nst + 1) * 2 > d.hcap) {
+        const int nh = d.hcap * 2;
+        free(d.hash);
+        d.hash = alloc<int>(nh);
+        d.hcap = nh;
+        for (st in 0..d.nst) {
+            const int sh = _re_dfa_hash(&d.pool[d.off[st]], d.len[st], d.flags[st]);
+            const int e = _re_dfa_find(d, &d.pool[d.off[st]], d.len[st], d.flags[st], sh);
+            d.hash[-1 - e] = st + 1;
+        }
+        slot = _re_dfa_find(d, list, n, flags, h);
+    }
+    const int st = d.nst++;
+    d.off[st] = d.npool;
+    d.len[st] = n;
+    d.flags[st] = flags;
+    for (k in 0..n) {
+        d.pool[d.npool + k] = list[k];
+    }
+    d.npool += n;
+    d.hash[-1 - slot] = st + 1;
+    return st;
+}
+
+// The start state at a point whose consumed-side neighbour has side flags
+// `flags`: what pc 0 reaches, then the restart (forward).
+int _re_dfa_start(_ReDfa* d, int flags) {
+    d.gen++;
+    int n = 0;
+    _re_dfa_add(d, 0, d.buf1, &n, false, 0, 0);
+    if (d.restart == 1) {
+        d.buf1[n] = RE_DFA_RESTART;
+        n++;
+    }
+    const int st = _re_dfa_state(d, d.buf1, n, flags);
+    if (st >= 0) {
+        d.isstart[st] = (uint8)1;
+    }
+    return st;
+}
+
+// From state st, with `ch` (-1 for none) the next code point: *match is 1 when a
+// match ends at this point; with `step`, returns the state after `ch`
+// (RE_DFA_DEAD, or RE_DFA_FAIL past the budget).
+int _re_dfa_next(_ReDfa* d, int st, int ch, bool step, *int hit) {
+    const int consumed = d.flags[st];
+    const int ahead = _re_side(ch);
+    const int left = d.reverse == 1 ? ahead : consumed;
+    const int right = d.reverse == 1 ? consumed : ahead;
+    *int items = &d.pool[d.off[st]];
+    const int ni = d.len[st];
+    d.gen++;
+    int n1 = 0;
+    for (i in 0..ni) {
+        if (items[i] == RE_DFA_RESTART) {
+            d.buf1[n1] = RE_DFA_RESTART;
+            n1++;
+        } else {
+            _re_dfa_add(d, items[i], d.buf1, &n1, true, left, right);
+        }
+    }
+    *hit = 0;
+    for (i in 0..n1) {
+        if (d.buf1[i] >= 0 && d.insts[d.buf1[i]].op == OP_MATCH) {
+            *hit = 1;
+            if (d.cut == 1) {
+                n1 = i;
+            }
+            break;
+        }
+    }
+    if (!step) {
+        return RE_DFA_DEAD;
+    }
+    d.gen++;
+    int n2 = 0;
+    for (i in 0..n1) {
+        const int it = d.buf1[i];
+        if (it == RE_DFA_RESTART) {
+            _re_dfa_add(d, 0, d.buf2, &n2, false, 0, 0);
+            d.buf2[n2] = RE_DFA_RESTART;
+            n2++;
+        } else if (d.insts[it].op != OP_MATCH && _re_dfa_accepts(d, it, ch)) {
+            _re_dfa_add(d, it + 1, d.buf2, &n2, false, 0, 0);
+        }
+    }
+    return _re_dfa_state(d, d.buf2, n2, _re_side(ch));
+}
+
+// _re_dfa_next for a step over `ch`, through the state's cache for ASCII.
+int _re_dfa_step(_ReDfa* d, int st, int ch, *int hit) {
+    if (ch >= 128) {
+        return _re_dfa_next(d, st, ch, true, hit);
+    }
+    const int t = d.trans[st * 128 + ch];
+    if (t != 0) {
+        *hit = t & 1;
+        return (t >> 1) - 3;
+    }
+    const int nx = _re_dfa_next(d, st, ch, true, hit);
+    if (nx != RE_DFA_FAIL) {
+        d.trans[st * 128 + ch] = (nx + 3) * 2 + *hit;
+    }
+    return nx;
+}
+
+// The side flags of the code point before byte offset p (ASCII decides them).
+int _re_side_before(string text, int p) {
+    if (p <= 0) {
+        return DF_NONE;
+    }
+    const int b = (int)((uint8)text[p - 1]);
+    return b < 128 ? _re_side(b) : 0;
+}
+
+int _re_side_at(string text, int len, int p) {
+    if (p >= len) {
+        return DF_NONE;
+    }
+    const int b = (int)((uint8)text[p]);
+    return b < 128 ? _re_side(b) : 0;
+}
+
+// The code point that ends at byte offset p (> lo), with its width in w[0], as
+// Go's utf8.DecodeLastRune over the bytes from lo: a byte that does not end a
+// valid sequence is one U+FFFD. The forward search reads the same code points
+// from lo (a search from the middle of a sequence sees its rest as U+FFFDs).
+int _re_decode_last(string text, int len, int lo, int p, *int w) {
+    const int b = (int)((uint8)text[p - 1]);
+    if (b < 0x80) {
+        w[0] = 1;
+        return b;
+    }
+    int lead = p - 1;
+    while (lead > lo && lead > p - 4 && ((int)((uint8)text[lead]) & 0xC0) == 0x80) {
+        lead--;
+    }
+    int[1] fw;
+    const int r = _re_decode(text, len, lead, &fw[0]);
+    if (r >= 0 && lead + fw[0] == p) {
+        w[0] = fw[0];
+        return r;
+    }
+    w[0] = 1;
+    return 0xFFFD;
+}
+
+// The end of the leftmost-first match at or after `start` (the one the Pike VM
+// reports), in *end: 1, 0 for none, -1 when the DFA outgrew its budget.
+int _re_dfa_forward(Regex* re, _ReDfa* d, string text, int len, int start, *int end) {
+    int st = _re_dfa_start(d, _re_side_before(text, start));
+    if (st < 0) {
+        return -1;
+    }
+    // In a start state the search jumps to the next byte a match can begin with,
+    // when that is one byte (memchr); otherwise the cached transitions are as fast.
+    const bool pf = re._pf == 1 && re._pfbyte >= 0;
+    int last = -1;
+    int p = start;
+    int[1] w;
+    int[1] m;
+    while (true) {
+        if (pf && last < 0 && d.isstart[st] != (uint8)0) {
+            const int np = _re_skip(re, text, len, p);
+            if (np >= len) {
+                break;                  // _pf: no empty match, so none at the end either
+            }
+            if (np != p) {
+                p = np;
+                st = _re_dfa_start(d, _re_side_before(text, p));
+                if (st < 0) {
+                    return -1;
+                }
+            }
+        }
+        if (p >= len) {
+            _re_dfa_next(d, st, -1, false, &m[0]);
+            if (m[0] == 1) {
+                last = len;
+            }
+            break;
+        }
+        // The cached ASCII transitions, without leaving the loop (a start state
+        // goes back to the prefilter above).
+        *int trans = d.trans;
+        *uint8 isstart = d.isstart;
+        bool moved = false;
+        while (p < len) {
+            const int b = (int)((uint8)text[p]);
+            if (b >= 128) {
+                break;
+            }
+            const int t = trans[st * 128 + b];
+            if (t == 0) {
+                break;
+            }
+            if ((t & 1) != 0) {
+                last = p;
+            }
+            const int nx = (t >> 1) - 3;
+            if (nx < 0) {
+                st = nx;
+                break;
+            }
+            st = nx;
+            p++;
+            moved = true;
+            if (pf && last < 0 && isstart[st] != (uint8)0) {
+                break;
+            }
+        }
+        if (st == RE_DFA_DEAD) {
+            break;
+        }
+        if (moved) {
+            continue;
+        }
+        if (p >= len) {
+            continue;
+        }
+        int ch = (int)((uint8)text[p]);
+        w[0] = 1;
+        if (ch >= 128) {
+            ch = _re_decode(text, len, p, &w[0]);
+            if (ch < 0) {
+                ch = 0xFFFD;
+            }
+        }
+        const int nx = _re_dfa_step(d, st, ch, &m[0]);
+        if (m[0] == 1) {
+            last = p;
+        }
+        if (nx == RE_DFA_FAIL) {
+            return -1;
+        }
+        if (nx == RE_DFA_DEAD) {
+            break;
+        }
+        st = nx;
+        p += w[0];
+    }
+    if (last < 0) {
+        return 0;
+    }
+    *end = last;
+    return 1;
+}
+
+// The leftmost start, at or after `start`, of a match ending at `end` (the
+// reversed program run backwards from `end`, keeping the last point where it
+// matches), or -1 when the DFA outgrew its budget.
+int _re_dfa_reverse(_ReDfa* d, string text, int len, int start, int end) {
+    int st = _re_dfa_start(d, _re_side_at(text, len, end));
+    if (st < 0) {
+        return -1;
+    }
+    int best = -1;
+    int p = end;
+    int[1] w;
+    int[1] m;
+    while (true) {
+        if (p <= start) {
+            int la = -1;
+            if (start > 0) {
+                la = _re_decode_last(text, len, 0, start, &w[0]);
+            }
+            _re_dfa_next(d, st, la, false, &m[0]);
+            if (m[0] == 1) {
+                best = p;
+            }
+            break;
+        }
+        const int ch = _re_decode_last(text, len, start, p, &w[0]);
+        const int nx = _re_dfa_step(d, st, ch, &m[0]);
+        if (m[0] == 1) {
+            best = p;
+        }
+        if (nx == RE_DFA_FAIL) {
+            return -1;
+        }
+        if (nx == RE_DFA_DEAD) {
+            break;
+        }
+        st = nx;
+        p -= w[0];
+    }
+    return best;
+}
+
+// Set to make every search run the Pike VM alone (tests compare it with the DFA).
+bool _re_force_vm = false;
+
 // Regex_search_at, writing the groups of a match into `buf` (2 * (ngroup + 1)
 // ints, or null to allocate them). `buf` is not freed when there is no match.
 int _re_search(Regex* re, string text, int64 len, int64 start, Match* m, *int buf) {
@@ -2010,19 +2616,73 @@ int _re_search(Regex* re, string text, int64 len, int64 start, Match* m, *int bu
     if (re._bolonly == 1 && start > 0) {
         return 0;
     }
-
-    let vm: _ReVm;
-    vm.prog = re;
-    vm.text = text;
-    vm.len = (int)len;
-    vm.ncap = 2 * (re.ngroup + 1);
-    const int ninst = re.ninst;
     // The Regex's scratch when no other search holds it, else one for this call.
     *_ReScratch sc = re._scratch;
     const bool own = !atomic_cas(&sc.busy, 0, 1);
     if (own) {
         sc = _re_scratch_new(re);
     }
+    const int ncap = 2 * (re.ngroup + 1);
+    *int caps = &sc.work[ncap];
+    bool matched = false;
+    bool done = false;
+    // The DFAs find where the match ends and where it starts; the Pike VM then
+    // runs over that span only, for the groups (none to find: no run at all).
+    if (sc.dfa_off == 0 && re._rinst != null && !_re_force_vm) {
+        if (sc.fdfa == null) {
+            sc.fdfa = _re_dfa_new(re, 0);
+            sc.rdfa = _re_dfa_new(re, 1);
+        }
+        int[1] e;
+        const int f = _re_dfa_forward(re, sc.fdfa, text, (int)len, (int)start, &e[0]);
+        if (f == 0) {
+            done = true;
+        } else if (f == 1) {
+            const int b = _re_dfa_reverse(sc.rdfa, text, (int)len, (int)start, e[0]);
+            if (b >= 0) {
+                done = true;
+                matched = true;
+                if (re.ngroup == 0) {
+                    caps[0] = b;
+                    caps[1] = e[0];
+                } else {
+                    matched = _re_pike(re, sc, text, len, (int64)b, true, caps);
+                }
+            }
+        }
+        if (!done) {
+            sc.dfa_off = 1;
+        }
+    }
+    if (!done) {
+        matched = _re_pike(re, sc, text, len, start, false, caps);
+    }
+    if (matched) {
+        m.ok = 1;
+        m.cap = buf != null ? buf : alloc<int>(ncap);
+        for (j in 0..ncap) {
+            m.cap[j] = caps[j];
+        }
+        m.start = m.cap[0];
+        m.end = m.cap[1];
+    }
+    if (own) {
+        _re_scratch_free(sc);
+    } else {
+        atomic_store(&sc.busy, 0);
+    }
+    return m.ok;
+}
+
+// The Pike VM from `start` (only there when `anchored`): true and the groups of
+// the leftmost-first match in `out` (2 * (ngroup + 1) ints), or false.
+bool _re_pike(Regex* re, *_ReScratch sc, string text, int64 len, int64 start, bool anchored, *int out) {
+    let vm: _ReVm;
+    vm.prog = re;
+    vm.text = text;
+    vm.len = (int)len;
+    vm.ncap = 2 * (re.ngroup + 1);
+    const int ninst = re.ninst;
     vm.visited = sc.visited;
     vm.la = sc.la;
     vm.lb = sc.lb;
@@ -2065,8 +2725,13 @@ int _re_search(Regex* re, string text, int64 len, int64 start, Match* m, *int bu
             if (re._bolonly == 1 && sp > 0) {
                 break;
             }
+            if (anchored) {
+                if (sp > (int)start) {
+                    break;
+                }
+            }
             int nsp = sp;
-            if (req >= 0) {
+            if (req >= 0 && !anchored) {
                 // A match holds a `req` byte at or after its start, so none
                 // starts at sp or later if no `req` byte follows. With _reqscan,
                 // every byte of a match is in _inmatch, so a match starting
@@ -2091,7 +2756,7 @@ int _re_search(Regex* re, string text, int64 len, int64 start, Match* m, *int bu
                     nsp = reqmin;
                 }
             }
-            if (pf) {
+            if (pf && !anchored) {
                 nsp = _re_skip(re, text, vm.len, nsp);
                 if (nsp >= vm.len) {
                     break;
@@ -2112,7 +2777,8 @@ int _re_search(Regex* re, string text, int64 len, int64 start, Match* m, *int bu
         }
         // Until a match is found, start a new thread at every position where a
         // match can start (a thread started elsewhere would die at once).
-        if (!matched && (!pf || (sp < vm.len && fb[(int)((uint8)text[sp])] != (uint8)0)) && (re._bolonly == 0 || sp == 0)) {
+        if (!matched && (!pf || (sp < vm.len && fb[(int)((uint8)text[sp])] != (uint8)0)) && (re._bolonly == 0 || sp == 0)
+            && (!anchored || sp == (int)start)) {
             for (k in 0..vm.ncap) {
                 workcaps[k] = -1;
             }
@@ -2167,22 +2833,12 @@ int _re_search(Regex* re, string text, int64 len, int64 start, Match* m, *int bu
         sp += w[0];
     }
     sc.visited[ninst] = glob;
-
     if (matched) {
-        m.ok = 1;
-        m.cap = buf != null ? buf : alloc<int>(vm.ncap);
         for (j in 0..vm.ncap) {
-            m.cap[j] = bestcaps[j];
+            out[j] = bestcaps[j];
         }
-        m.start = m.cap[0];
-        m.end = m.cap[1];
     }
-    if (own) {
-        _re_scratch_free(sc);
-    } else {
-        atomic_store(&sc.busy, 0);
-    }
-    return m.ok;
+    return matched;
 }
 
 // Search the `len` bytes of `text` for the leftmost match of `re` that starts

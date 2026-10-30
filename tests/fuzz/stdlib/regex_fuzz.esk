@@ -4,6 +4,20 @@ import "harness.esk";
 import <regex>;
 import <string>;
 
+// Every match of re in text, with its groups, as text.
+void all_groups(Regex* re, string text, int64 len, String* out) {
+    RegexIter it = Regex_iter(re, text, len);
+    let m: Match;
+    m.cap = null;
+    while (RegexIter_next(&it, &m) == 1) {
+        for (g in 0..m.ngroup + 1) {
+            String_appendf(out, "%d-%d ", m.cap[2 * g], m.cap[2 * g + 1]);
+        }
+        String_append(out, "|");
+    }
+    Match_free(&m);
+}
+
 void fuzz_one(*uint8 data, int len, string s) {
     int nl = 0;
     while (nl < len && data[nl] != 10) { nl = nl + 1; }
@@ -43,6 +57,16 @@ void fuzz_one(*uint8 data, int len, string s) {
             if ((int64)m.start < tlen / 2 || m.end < m.start || (int64)m.end > tlen) { fuzz_fail("search_at bounds"); }
         }
         Match_free(&m);
+        // The DFA search and the Pike VM alone find the same matches and groups.
+        let a: String; String_init(&a, 32);
+        let b: String; String_init(&b, 32);
+        all_groups(&re, text, tlen, &a);
+        _re_force_vm = true;
+        all_groups(&re, text, tlen, &b);
+        _re_force_vm = false;
+        if (!String_eq(&a, &b)) { fuzz_fail("dfa and vm differ"); }
+        String_free(&a);
+        String_free(&b);
     }
     Regex_free(&re);
     free(pat);

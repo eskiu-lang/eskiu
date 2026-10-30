@@ -66,17 +66,6 @@ first-class in the language without giving up general systems use.
   the WebAssembly exception-handling instructions (`-fwasm-exceptions`) would avoid it and
   bring exceptions to WASI. That needs a second lowering of `try` (funclet pads instead of
   `landingpad`) in both compilers.
-- **A faster `<regex>`.** 0.14.1 added a first-byte prefilter, a required-byte check and a
-  reused scratch block, but the search is still a Pike VM: LangArena's log parser takes
-  1.8 s, against 1.0 s for Go's `regexp` and 0.33 s for PCRE2's JIT. A lazy DFA, as RE2 and
-  Rust's `regex` use, would close most of that, checked against Go's results by the
-  existing differential fuzzer.
-- **Opt-in aliasing and contraction flags.** Two benchmarks run 1.2 times slower than C
-  because Eskiu emits no type-based alias information, and one 1.1 times slower because it
-  does not fuse multiply-adds. Both are deliberate defaults (type punning through a pointer
-  cast stays defined, and floating-point results stay the same on every platform), so the
-  plan is `-fstrict-aliasing` and `-ffp-contract=fast` as flags in both compilers, with the
-  defaults unchanged.
 - **Fewer allocations in `<json>`.** Parsing is about six times slower than yyjson because
   every node, key and string is its own allocation. A per-document arena would remove most of
   them, but it changes what can be freed on its own (a child taken out of a parsed document),
