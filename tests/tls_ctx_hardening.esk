@@ -1,0 +1,19 @@
+// tls_server_ctx sets TLS 1.2 as the minimum version and turns off compression and
+// renegotiation, whatever the OpenSSL defaults, and rejects a key that does not match
+// the certificate (SSL_CTX_check_private_key) instead of failing later in a handshake.
+// OpenSSL is the stand-in in tls_ctx_hardening.c.
+import <io>;
+import <tls>;
+
+extern c_long tls_test_min_version();
+extern uint64 tls_test_options();
+
+int main() {
+    *void ctx = tls_server_ctx("cert", "key");
+    printf("ctx: %d\n", ctx != null ? 1 : 0);
+    printf("min version: 0x%04llx\n", (int64)tls_test_min_version());
+    printf("no compression: %d\n", (tls_test_options() & 0x00020000) != 0 ? 1 : 0);
+    printf("no renegotiation: %d\n", (tls_test_options() & 0x40000000) != 0 ? 1 : 0);
+    printf("mismatched key: %d\n", tls_server_ctx("cert", "wrong") == null ? 1 : 0);
+    return 0;
+}

@@ -14,6 +14,7 @@
 //   eskiuc app.esk -o app -L/opt/homebrew/opt/openssl@3/lib -lssl -lcrypto
 
 import <c/signal>;   // signal (Linux)
+import <ctypes>;
 import <mem>;
 import <future>;
 import <eventloop>;
@@ -34,6 +35,9 @@ extern void SSL_CTX_free(*void ctx);
 extern int SSL_CTX_use_certificate_file(*void ctx, string file, int type);
 extern int SSL_CTX_use_PrivateKey_file(*void ctx, string file, int type);
 extern void SSL_CTX_set_alpn_select_cb(*void ctx, *void cb, *void arg);
+extern int SSL_CTX_check_private_key(*void ctx);
+extern c_long SSL_CTX_ctrl(*void ctx, int cmd, c_long larg, *void parg);
+extern uint64 SSL_CTX_set_options(*void ctx, uint64 op);
 extern *void SSL_new(*void ctx);
 extern int SSL_set_fd(*void ssl, int fd);
 extern int SSL_get_fd(*void ssl);
@@ -49,6 +53,10 @@ const int SSL_ERROR_WANT_READ = 2;
 const int SSL_ERROR_WANT_WRITE = 3;
 const int SSL_TLSEXT_ERR_OK = 0;   // ALPN: a protocol was selected
 const int SSL_TLSEXT_ERR_NOACK = 3;   // ALPN: none acceptable
+const int SSL_CTRL_SET_MIN_PROTO_VERSION = 123;   // SSL_CTX_set_min_proto_version is a macro
+const int TLS1_2_VERSION = 0x0303;
+const uint64 SSL_OP_NO_COMPRESSION = 0x00020000;
+const uint64 SSL_OP_NO_RENEGOTIATION = 0x40000000;   // OpenSSL 1.1.0h+; ignored before
 
 // OpenSSL writes a socket BIO with write(), so a peer that closed raises
 // SIGPIPE. macOS marks the socket SO_NOSIGPIPE; Linux has no per-socket switch,
@@ -99,18 +107,25 @@ int _tls_alpn_select(*void ssl, **uint8 out, *uint8 outlen, *uint8 protos, uint 
 
 // ── Server context + connection ──────────────────────────────────────────────
 
-// Build a server SSL_CTX: load the PEM cert + key and install the ALPN-"h2"
-// callback. Returns null on failure.
+// Build a server SSL_CTX: TLS 1.2 or newer (whatever the library's default), no
+// compression or renegotiation, the PEM cert + key (checked against each other), and the
+// ALPN-"h2" callback. Returns null on failure.
 *void tls_server_ctx(string cert_file, string key_file) {
     *void ctx = SSL_CTX_new(TLS_server_method());
     if (ctx == null) {
         return null;
     }
+    if (SSL_CTX_ctrl(ctx, SSL_CTRL_SET_MIN_PROTO_VERSION, TLS1_2_VERSION, null) != 1) {
+        SSL_CTX_free(ctx);
+        return null;
+    }
+    SSL_CTX_set_options(ctx, SSL_OP_NO_COMPRESSION | SSL_OP_NO_RENEGOTIATION);
     if (SSL_CTX_use_certificate_file(ctx, cert_file, X509_FILETYPE_PEM) <= 0) {
         SSL_CTX_free(ctx);
         return null;
     }
-    if (SSL_CTX_use_PrivateKey_file(ctx, key_file, X509_FILETYPE_PEM) <= 0) {
+    if (SSL_CTX_use_PrivateKey_file(ctx, key_file, X509_FILETYPE_PEM) <= 0
+        || SSL_CTX_check_private_key(ctx) != 1) {
         SSL_CTX_free(ctx);
         return null;
     }

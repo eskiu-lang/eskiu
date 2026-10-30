@@ -34,6 +34,7 @@ import <c/signal>;   // signal (Linux)
 import <mem>;
 import <string>;
 import <net>;
+import <atomic>;
 
 #ifdef _WIN32
 extern *void LoadLibraryA(string name);
@@ -96,6 +97,10 @@ struct _FtVIP {
 
 struct _FtILP {
     fn(int, int64, *void)->int f;
+}
+
+struct _FtLL {
+    fn(int64)->int64 f;
 }
 
 struct _FtISI {
@@ -183,6 +188,14 @@ int _ftls_call_ilp(*void code, *void a, int x, int64 l, *void p) {
     return f(x, l, p);
 }
 
+int64 _ftls_call_ll(*void code, *void a, int64 x) {
+    let r: _FtRaw;
+    r.code = code;
+    r.env = a;
+    let f: fn(int64)->int64 = ((*_FtLL)&r).f;
+    return f(x);
+}
+
 int _ftls_call_isi(*void code, *void a, string s, int x) {
     let r: _FtRaw;
     r.code = code;
@@ -225,7 +238,7 @@ int _ftls_call_ip(*void code, *void a, *void p) {
 
 // ── Loading ──────────────────────────────────────────────────────────────────
 
-int _ftls_state = 0;     // 0 not tried, 1 loaded, -1 not found
+int _ftls_state = 0;     // 0 not tried, 2 loading, 1 loaded, -1 not found
 *void _ftls_ssl = null;
 *void _ftls_crypto = null;
 *void _ftls_ctx_verify = null;
@@ -250,11 +263,7 @@ int _ftls_state = 0;     // 0 not tried, 1 loaded, -1 not found
     return p;
 }
 
-int _ftls_load() {
-    if (_ftls_state != 0) {
-        return _ftls_state;
-    }
-    _ftls_state = -1;
+int _ftls_load_once() {
     *void lib = _ftls_try(getenv("ESKIU_LIBSSL"));
 #ifdef __APPLE__
     if (lib == null) {
@@ -326,8 +335,26 @@ int _ftls_load() {
         _ftls_ssl = null;
         return -1;
     }
-    _ftls_state = 1;
     return 1;
+}
+
+// Load OpenSSL once: the first caller loads it while the others (threads making their
+// first https request at the same time) wait for its result.
+int _ftls_load() {
+    int s = atomic_load(&_ftls_state);
+    if (s == 1 || s == -1) {
+        return s;
+    }
+    if (atomic_cas(&_ftls_state, 0, 2)) {
+        const int r = _ftls_load_once();
+        atomic_store(&_ftls_state, r);
+        return r;
+    }
+    s = atomic_load(&_ftls_state);
+    while (s == 2) {
+        s = atomic_load(&_ftls_state);
+    }
+    return s;
 }
 
 // 1 if an OpenSSL library was found (see the top of the file), else 0. Loads
@@ -407,21 +434,52 @@ int _ftls_add_system_roots(*void ctx) {
 }
 #endif
 
+const int _FTLS_CTRL_SET_MIN_PROTO_VERSION = 123;   // SSL_CTX_set_min_proto_version is a macro
+const int64 _FTLS_TLS1_2_VERSION = 0x0303;
+// SSL_OP_NO_COMPRESSION | SSL_OP_NO_RENEGOTIATION (same bits in OpenSSL 1.1 and 3).
+const int64 _FTLS_OPTIONS = 0x00020000 | 0x40000000;
+
+// TLS 1.2 or newer, no compression, no renegotiation, whatever the library's defaults
+// (OpenSSL 1.1.1 still accepts TLS 1.0 unless its configuration says otherwise). 0 when
+// the minimum version cannot be set.
+int _ftls_harden(*void ctx) {
+    if (_ftls_call_ilp(_ftls_sym("SSL_CTX_ctrl"), ctx, _FTLS_CTRL_SET_MIN_PROTO_VERSION,
+                       _FTLS_TLS1_2_VERSION, null) != 1) {
+        return 0;
+    }
+    _ftls_call_ll(_ftls_sym("SSL_CTX_set_options"), ctx, _FTLS_OPTIONS);
+    return 1;
+}
+
+// Keep `ctx` as the shared context in `cell` unless another thread stored one first;
+// then free `ctx` and return the one stored.
+*void _ftls_publish(**void cell, *void ctx) {
+    if (atomic_cas_ptr(cell, null, ctx)) {
+        return ctx;
+    }
+    _ftls_call_v(_ftls_sym("SSL_CTX_free"), ctx);
+    return atomic_load_ptr(cell);
+}
+
 // A client SSL_CTX: verification on (OpenSSL's default trust store, plus
 // `ca_file` when it is not empty, or on Windows without one the system "ROOT"
 // store) or off. The two contexts without a CA file are made
 // once and kept; one with a CA file is the caller's to free (_ftls_ctx_free).
 *void _ftls_ctx(int verify, string ca_file) {
     const bool own = ca_file != null && ca_file[0] != 0;
-    if (!own && verify != 0 && _ftls_ctx_verify != null) {
-        return _ftls_ctx_verify;
-    }
-    if (!own && verify == 0 && _ftls_ctx_noverify != null) {
-        return _ftls_ctx_noverify;
+    if (!own) {
+        *void shared = atomic_load_ptr(verify != 0 ? &_ftls_ctx_verify : &_ftls_ctx_noverify);
+        if (shared != null) {
+            return shared;
+        }
     }
     *void method = _ftls_call_p(_ftls_sym("TLS_client_method"), null);
     *void ctx = _ftls_call_p(_ftls_sym("SSL_CTX_new"), method);
     if (ctx == null) {
+        return null;
+    }
+    if (_ftls_harden(ctx) == 0) {
+        _ftls_call_v(_ftls_sym("SSL_CTX_free"), ctx);
         return null;
     }
     if (verify != 0) {
@@ -440,11 +498,7 @@ int _ftls_add_system_roots(*void ctx) {
         _ftls_call_vip(_ftls_sym("SSL_CTX_set_verify"), ctx, 0, null);   // SSL_VERIFY_NONE
     }
     if (!own) {
-        if (verify != 0) {
-            _ftls_ctx_verify = ctx;
-        } else {
-            _ftls_ctx_noverify = ctx;
-        }
+        return _ftls_publish(verify != 0 ? &_ftls_ctx_verify : &_ftls_ctx_noverify, ctx);
     }
     return ctx;
 }

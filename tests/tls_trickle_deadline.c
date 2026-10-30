@@ -19,6 +19,9 @@ void SSL_CTX_free(void* c){ free(c); }
 int SSL_CTX_use_certificate_file(void* c, const char* f, int t){ return 1; }
 int SSL_CTX_use_PrivateKey_file(void* c, const char* f, int t){ return 1; }
 void SSL_CTX_set_alpn_select_cb(void* c, void* cb, void* a){}
+int SSL_CTX_check_private_key(void* c){ return 1; }
+long SSL_CTX_ctrl(void* c, int cmd, long l, void* p){ return 1; }
+unsigned long long SSL_CTX_set_options(void* c, unsigned long long o){ return o; }
 void* SSL_new(void* c){ return calloc(1, sizeof(S)); }
 int SSL_set_fd(void* p, int fd){ ((S*)p)->fd = fd; return 1; }
 int SSL_get_fd(void* p){ return ((S*)p)->fd; }

@@ -1,0 +1,5 @@
+ctx: 1
+min version: 0x0303
+no compression: 1
+no renegotiation: 1
+mismatched key: 1
