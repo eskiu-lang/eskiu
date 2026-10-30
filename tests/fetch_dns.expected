@@ -1,0 +1,7 @@
+localhost: 200 [fast done] redirects=0
+redirect to localhost: 200 [fast done] redirects=1
+unresolvable: rc=-2
+async localhost: 200 [fast done] redirects=0
+async unresolvable: rc=-2
+dropped during lookup: ok
+done 0

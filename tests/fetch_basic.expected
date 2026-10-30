@@ -11,7 +11,7 @@ post-json: 200 OK ok=1 type=[] len=22 body=[{"msg":"hi \"there\""}] url=http://1
   method=POST
 header ok=1
 headers: 200 OK ok=1 type=[] len=62 body=[x-custom=one two ua=eskiu/0.14.1 accept=*/* auth=Bearer secret] url=http://127.0.0.1:18431/headers redirects=0
-cross-origin: 200 OK ok=1 type=[] len=43 body=[x-custom=one two ua=eskiu/0.14.1 accept=*/*] url=http://localhost:18431/headers redirects=1
+cross-origin: 200 OK ok=1 type=[] len=43 body=[x-custom=one two ua=eskiu/0.14.1 accept=*/*] url=http://127.0.0.1:18440/headers redirects=1
 agent: 200 OK ok=1 type=[] len=64 body=[x-custom=one two ua=custom-agent/1 accept=*/* auth=Bearer secret] url=http://127.0.0.1:18431/headers redirects=0
 relative: 200 OK ok=1 type=[text/plain] len=11 body=[hello fetch] url=http://127.0.0.1:18431/text redirects=1
 absolute: 200 OK ok=1 type=[application/json] len=39 body=[{"name":"eskiu","tags":["a","b"],"n":3}] url=http://127.0.0.1:18431/json redirects=1
@@ -26,6 +26,5 @@ inject: rc=-10 (invalid request header (a name must be a token; a value may not 
 bad-method: rc=-10 (invalid request method)
 bad-target: rc=-1 (invalid URL 'http://127.0.0.1:18431/a??X-Evil: 1')
 refused: rc=-3
-dns: rc=-2
 invalid-url: rc=-1 (invalid URL 'not a url')
 scheme: rc=-1 (unsupported scheme 'ftp' (only http and https))

@@ -1,0 +1,84 @@
+// <fetch> by host name, through the system resolver: "localhost" reaches the local
+// http_serve server (sync, async, and as the target of a redirect, which is then another
+// origin), a name that does not resolve fails with FETCH_ERR_DNS, and an async fetch can
+// be dropped while its lookup runs on a thread. Like dns_connect, this test needs a
+// resolver that maps localhost to loopback and fails for .invalid: tests/run.sh skips
+// both with ESKIU_RESOLVER_TESTS=0.
+import <fetch>;
+import <http>;
+import <future>;
+import <eventloop>;
+import <time>;
+import <timer>;
+import <string>;
+extern int printf(string fmt, ...);
+
+const int PORT = 18441;
+EventLoop* g_lp;
+
+void handler(HttpRequest* req, HttpResponse* res) {
+    if (req.path.eq_cstr("/fast") == 1) {
+        HttpResponse_set_body(res, "fast done");
+    } else if (req.path.eq_cstr("/r/host") == 1) {
+        res.status = 302;
+        HttpResponse_header(res, "Location", "http://localhost:18441/fast");
+    } else {
+        res.status = 404;
+    }
+}
+
+void show(string what, int rc, Response* r) {
+    if (rc == 0) { printf("%s: %d [%s] redirects=%d\n", what, r.status, Response_text(r), r.redirects); }
+    else { printf("%s: rc=%d (%s)\n", what, rc, fetch_last_error()); }
+}
+
+async int run(EventLoop* lp) {
+    let o: FetchOptions;  FetchOptions_init(&o);
+    let a: Response;
+    int rc = await fetch_async(lp, "http://localhost:18441/fast", &o, &a);
+    show("async localhost", rc, &a);
+    Response_free(&a);
+
+    rc = await fetch_async(lp, "http://no-such-host.invalid/", &o, &a);
+    printf("async unresolvable: rc=%d\n", rc);
+    Response_free(&a);
+
+    // Whichever finishes first, the loser is dropped (a running lookup frees
+    // itself when its thread ends).
+    Future<int>* fl = fetch_async(lp, "http://localhost:18441/fast", &o, &a);
+    Future<int>* ft = timer_after(lp, 0);
+    if (await select2(fl, ft) == 0) { Future_free<int>(fl); } else { Future_free<int>(ft); }
+    printf("dropped during lookup: ok\n");
+    Response_free(&a);
+    FetchOptions_free(&o);
+    return 0;
+}
+
+int main() {
+    thread_create(void() { http_serve(PORT, 4, handler); });
+    let r: Response;
+    int rc = -1;
+    for (int i = 0; i < 100 && rc != 0; i++) {
+        rc = fetch("http://127.0.0.1:18441/fast", &r);
+        Response_free(&r);
+        if (rc != 0) { time_sleep_ms(20); }
+    }
+
+    rc = fetch("http://localhost:18441/fast", &r);
+    show("localhost", rc, &r);
+    Response_free(&r);
+    rc = fetch("http://127.0.0.1:18441/r/host", &r);
+    show("redirect to localhost", rc, &r);
+    Response_free(&r);
+    rc = fetch("http://no-such-host.invalid/", &r);
+    printf("unresolvable: rc=%d\n", rc);
+    Response_free(&r);
+
+    g_lp = el_new(64);
+    Future<int>* f = run(g_lp);
+    if (Future_poll<int>(f, void() { EventLoop_stop(g_lp); }) == 0) { EventLoop_run(g_lp); }
+    printf("done %d\n", f.value);
+    Future_free<int>(f);
+    EventLoop_free(g_lp);
+    return 0;
+}

@@ -6,7 +6,4 @@ redirect: 200 [fast done] redirects=1
 put: 200 [PUT:payload] redirects=0
 timeout: rc=-4 (timed out after 300 ms (waiting for the response))
 refused: rc=-3
-localhost: 200 [fast done] redirects=0
-unresolvable: rc=-2
-dropped during lookup: ok
 done 0

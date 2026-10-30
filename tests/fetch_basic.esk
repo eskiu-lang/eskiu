@@ -1,8 +1,9 @@
 // <fetch> against a local http_serve server: GET text and JSON, POST with a
 // JSON body echoed back, custom headers, HEAD, a 404, redirects (relative and
 // absolute, 303 turns POST into GET, 307 keeps the body, a loop fails after
-// 10), and the failures that need no server: connection refused, an .invalid
-// host, an invalid URL, an unsupported scheme, header injection.
+// 10), and the failures that need no server: connection refused, an invalid URL, an
+// unsupported scheme, header injection. Every address is numeric, so the test does not
+// depend on the system resolver (host names are in fetch_dns).
 import <fetch>;
 import <http>;
 import <json>;
@@ -11,6 +12,7 @@ import <time>;
 extern int printf(string fmt, ...);
 
 const int PORT = 18431;
+const int OTHER_PORT = 18440;   // a second server: another origin for the cross-origin redirect
 
 void handler(HttpRequest* req, HttpResponse* res) {
     if (req.path.eq_cstr("/text") == 1) {
@@ -50,7 +52,7 @@ void handler(HttpRequest* req, HttpResponse* res) {
         HttpResponse_header(res, "Location", "/echo");
     } else if (req.path.eq_cstr("/r/host") == 1) {
         res.status = 302;
-        HttpResponse_header(res, "Location", "http://localhost:18431/headers");
+        HttpResponse_header(res, "Location", "http://127.0.0.1:18440/headers");
     } else if (req.path.eq_cstr("/loop") == 1) {
         res.status = 302;
         HttpResponse_header(res, "Location", "/loop");
@@ -76,6 +78,7 @@ void show(string what, int rc, Response* r) {
 
 int main() {
     thread_create(void() { http_serve(PORT, 2, handler); });
+    thread_create(void() { http_serve(OTHER_PORT, 2, handler); });
     // Wait until the server answers.
     let r: Response;
     int rc = -1;
@@ -85,6 +88,12 @@ int main() {
     }
     show("text", rc, &r);
     Response_free(&r);
+    rc = -1;
+    for (int i = 0; i < 100 && rc != 0; i++) {
+        rc = fetch("http://127.0.0.1:18440/text", &r);
+        Response_free(&r);
+        if (rc != 0) { time_sleep_ms(20); }
+    }
 
     rc = fetch("http://127.0.0.1:18431/json", &r);
     *JsonValue v = Response_json(&r);
@@ -205,9 +214,6 @@ int main() {
     // Failures without a server.
     rc = fetch("http://127.0.0.1:1/", &r);
     printf("refused: rc=%d\n", rc);
-    Response_free(&r);
-    rc = fetch("http://no-such-host.invalid/", &r);
-    printf("dns: rc=%d\n", rc);
     Response_free(&r);
     rc = fetch("not a url", &r);
     show("invalid-url", rc, &r);
