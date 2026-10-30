@@ -66,10 +66,6 @@ first-class in the language without giving up general systems use.
   the WebAssembly exception-handling instructions (`-fwasm-exceptions`) would avoid it and
   bring exceptions to WASI. That needs a second lowering of `try` (funclet pads instead of
   `landingpad`) in both compilers.
-- **Fewer allocations in `<json>`.** Parsing is about six times slower than yyjson because
-  every node, key and string is its own allocation. A per-document arena would remove most of
-  them, but it changes what can be freed on its own (a child taken out of a parsed document),
-  so it needs an API decision first.
 - **Eskiu in LangArena.** All 50 benchmarks of
   [LangArena](https://github.com/kostya/LangArena) are ported with matching checksums: Eskiu
   runs at C's speed on the 39 algorithmic ones and at about 1.28 times C's time over all 50,

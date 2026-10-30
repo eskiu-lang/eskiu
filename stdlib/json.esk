@@ -14,6 +14,12 @@
 //   *JsonValue name = JsonValue_get(v, "name");   // object lookup
 //   printf("%s\n", JsonValue_as_cstr(name));
 //   JsonValue_free(v);
+//
+// To only read a document, `json_parse_doc` is faster: its nodes and strings come
+// from one arena, freed together by JsonDoc_free (the document is read-only):
+//   JsonDoc d = json_parse_doc(text);
+//   if (d.root != null) { ... JsonValue_get(d.root, "name") ... }
+//   JsonDoc_free(&d);
 
 import <c/stdlib>;   // atof
 import <string>;
@@ -212,6 +218,7 @@ struct JsonValue {
     int _n;
     *JsonValue _at;
     int _at_i;
+    int _arena;       // 1: part of a JsonDoc, which owns it and its strings
 }
 
 // alloc zero-fills, so num is 0, boolean is 0, and str/key/child/next are null.
@@ -226,6 +233,9 @@ struct JsonValue {
 // in front of its siblings before the node is freed (each child chain is walked
 // once to find its tail, so the whole free is linear).
 void JsonValue_free(JsonValue* v) {
+    if (v != null && v._arena == 1) {
+        return;                         // its JsonDoc frees it
+    }
     while (v != null) {
         if (v.child != null) {
             *JsonValue last = v.child;
@@ -347,6 +357,77 @@ struct _JParser {
     int pos;
     int err;     // 0 = ok, 1 = malformed
     int depth;   // arrays/objects currently open
+    *_JArena arena;   // json_parse_doc: nodes and strings come from it
+    String scratch;   // with an arena: each string is read here, then copied in
+}
+
+// The memory of a JsonDoc: chunks that only grow, freed together. Chunks come
+// from alloc (zeroed), and nothing is reused, so a node starts zeroed.
+struct _JChunk {
+    *_JChunk next;
+    int64 size;
+}
+
+struct _JArena {
+    *_JChunk head;
+    *uint8 cur;
+    int64 left;
+    int64 next_size;
+}
+
+*uint8 _jarena_alloc(_JArena* a, int64 n) {
+    n = (n + 7) & ~7;
+    if (n > a.left) {
+        int64 size = a.next_size < 4096 ? 4096 : a.next_size;
+        if (size < n) {
+            size = n;
+        }
+        *uint8 raw = alloc<uint8>(16 + size);
+        *_JChunk c = (*_JChunk)raw;
+        c.next = a.head;
+        c.size = size;
+        a.head = c;
+        a.cur = raw + 16;
+        a.left = size;
+        a.next_size = size < (1 << 20) ? size * 2 : size;
+    }
+    *uint8 p = a.cur;
+    a.cur = a.cur + n;
+    a.left = a.left - n;
+    return p;
+}
+
+void _jarena_free(_JArena* a) {
+    *_JChunk c = a.head;
+    while (c != null) {
+        *_JChunk nx = c.next;
+        free((*void)c);
+        c = nx;
+    }
+    a.head = null;
+    a.left = 0;
+}
+
+// A node of the document being parsed: from the arena, or the heap.
+*JsonValue _JParser_node(_JParser* self, int kind) {
+    if (self.arena == null) {
+        return JsonValue_new(kind);
+    }
+    *JsonValue v = (*JsonValue)_jarena_alloc(self.arena, sizeof(JsonValue));
+    v.kind = kind;
+    v._arena = 1;
+    return v;
+}
+
+// A copy of the parser's scratch string in the arena, as a String to read.
+void _JParser_keep(_JParser* self, String* out) {
+    const int64 n = self.scratch.len;
+    *char d = (*char)_jarena_alloc(self.arena, n + 1);
+    memcpy((*void)d, (*void)self.scratch.data, n);
+    d[n] = (char)0;
+    out.data = d;
+    out.len = n;
+    out.cap = n + 1;
 }
 
 // Nesting limit: deeper input is rejected (json_parse returns null) instead of
@@ -607,7 +688,7 @@ void _JParser_word(_JParser* self, string word) {
 // On error the partial container is returned with everything parsed so far
 // linked in, so json_parse frees the whole tree.
 *JsonValue _JParser_array(_JParser* self) {
-    *JsonValue arr = JsonValue_new(JArray);
+    *JsonValue arr = _JParser_node(self, JArray);
     self.pos++;   // skip [
     _JParser_ws(self);
     if (self.src[self.pos] == ']') {
@@ -648,7 +729,7 @@ void _JParser_word(_JParser* self, string word) {
 }
 
 *JsonValue _JParser_object(_JParser* self) {
-    *JsonValue obj = JsonValue_new(JObject);
+    *JsonValue obj = _JParser_node(self, JObject);
     self.pos++;   // skip {
     _JParser_ws(self);
     if (self.src[self.pos] == '}') {
@@ -663,22 +744,36 @@ void _JParser_word(_JParser* self, string word) {
             return obj;
         }
         let k: String;
-        k.init(8);
-        _JParser_read_string(self, &k);
+        if (self.arena != null) {
+            self.scratch.clear();
+            _JParser_read_string(self, &self.scratch);
+            if (self.err == 0) {
+                _JParser_keep(self, &k);
+            }
+        } else {
+            k.init(8);
+            _JParser_read_string(self, &k);
+        }
         if (self.err == 1) {
-            k.free();
+            if (self.arena == null) {
+                k.free();
+            }
             return obj;
         }
         _JParser_ws(self);
         if (self.src[self.pos] != ':') {
             self.err = 1;
-            k.free();
+            if (self.arena == null) {
+                k.free();
+            }
             return obj;
         }
         self.pos++;
         *JsonValue val = _JParser_value(self);
         if (val == null) {
-            k.free();
+            if (self.arena == null) {
+                k.free();
+            }
             return obj;
         }
         val.key = k;   // move the key in
@@ -724,29 +819,35 @@ void _JParser_word(_JParser* self, string word) {
         return r;
     }
     if (c == '"') {
-        *JsonValue v = JsonValue_new(JString);
+        *JsonValue v = _JParser_node(self, JString);
+        if (self.arena != null) {
+            self.scratch.clear();
+            _JParser_read_string(self, &self.scratch);
+            _JParser_keep(self, &v.str);
+            return v;
+        }
         v.str.init(8);
         _JParser_read_string(self, &v.str);
         return v;
     }
     if (c == 't') {
-        *JsonValue v = JsonValue_new(JBool);
+        *JsonValue v = _JParser_node(self, JBool);
         v.boolean = 1;
         _JParser_word(self, "true");
         return v;
     }
     if (c == 'f') {
-        *JsonValue v = JsonValue_new(JBool);
+        *JsonValue v = _JParser_node(self, JBool);
         _JParser_word(self, "false");
         return v;
     }
     if (c == 'n') {
-        *JsonValue v = JsonValue_new(JNull);
+        *JsonValue v = _JParser_node(self, JNull);
         _JParser_word(self, "null");
         return v;
     }
     if (c == '-' || _JParser_is_digit(c) == 1) {
-        *JsonValue v = JsonValue_new(JNumber);
+        *JsonValue v = _JParser_node(self, JNumber);
         v.num = _JParser_read_number(self);
         return v;
     }
@@ -762,6 +863,7 @@ void _JParser_word(_JParser* self, string word) {
     p.pos = 0;
     p.err = 0;
     p.depth = 0;
+    p.arena = null;
     *JsonValue v = _JParser_value(&p);
     if (p.err == 0) {
         _JParser_ws(&p);
@@ -774,6 +876,48 @@ void _JParser_word(_JParser* self, string word) {
         return null;
     }
     return v;
+}
+
+// A parsed document whose nodes and strings live in one arena: faster to parse
+// (no allocation per node) and to free (one per chunk), but read-only, since no
+// node can be freed on its own: JsonValue_set, JsonValue_push and JsonValue_remove
+// on its nodes refuse (-1 / 0), and JsonValue_free on one does nothing. `root` is
+// null when the text is not valid JSON. Free with JsonDoc_free, after which no
+// pointer into the document may be used.
+struct JsonDoc {
+    *JsonValue root;
+    _JArena _arena;
+}
+
+JsonDoc json_parse_doc(string src) {
+    let d: JsonDoc;
+    let p: _JParser;
+    p.src = src;
+    p.pos = 0;
+    p.err = 0;
+    p.depth = 0;
+    p.arena = &d._arena;
+    p.scratch.init(64);
+    *JsonValue v = _JParser_value(&p);
+    if (p.err == 0) {
+        _JParser_ws(&p);
+        if (p.src[p.pos] != 0) {
+            p.err = 1;
+        }
+    }
+    p.scratch.free();
+    if (p.err == 1) {
+        _jarena_free(&d._arena);
+        d.root = null;
+        return d;
+    }
+    d.root = v;
+    return d;
+}
+
+void JsonDoc_free(JsonDoc* d) {
+    _jarena_free(&d._arena);
+    d.root = null;
 }
 
 // ── Building, editing and printing documents ─────────────────────────────────
@@ -854,7 +998,7 @@ void _json_free_one(JsonValue* v) {
 // appended. Returns 0, or -1 (and leaves `val` with the caller) when `obj` is
 // not an object or `val` is null.
 int JsonValue_set(JsonValue* obj, string key, JsonValue* val) {
-    if (obj == null || val == null || obj.kind != JObject) {
+    if (obj == null || val == null || obj.kind != JObject || obj._arena == 1 || val._arena == 1) {
         return -1;
     }
     if (val.key.data != null) {
@@ -889,7 +1033,7 @@ int JsonValue_set(JsonValue* obj, string key, JsonValue* val) {
 // Append `val` to array `arr`, which then owns it. Returns 0, or -1 (and leaves
 // `val` with the caller) when `arr` is not an array or `val` is null.
 int JsonValue_push(JsonValue* arr, JsonValue* val) {
-    if (arr == null || val == null || arr.kind != JArray) {
+    if (arr == null || val == null || arr.kind != JArray || arr._arena == 1 || val._arena == 1) {
         return -1;
     }
     if (val.key.data != null) {
@@ -910,7 +1054,7 @@ int JsonValue_push(JsonValue* arr, JsonValue* val) {
 // Remove member `key` from object `obj` and free it. Returns 1 if a member was
 // removed, else 0.
 int JsonValue_remove(JsonValue* obj, string key) {
-    if (obj == null || obj.kind != JObject) {
+    if (obj == null || obj.kind != JObject || obj._arena == 1) {
         return 0;
     }
     _json_reset_hints(obj);

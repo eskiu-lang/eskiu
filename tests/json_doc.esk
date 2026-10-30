@@ -1,0 +1,64 @@
+// json_parse_doc: a document whose nodes and strings live in one arena reads like a
+// json_parse tree (get, at, len, json_get, stringify give the same results, escapes and
+// keys included), is null for malformed input (and past the nesting limit), refuses
+// edits (set, push, remove) and ignores JsonValue_free on its nodes; JsonDoc_free frees
+// it all.
+import <json>;
+import <string>;
+extern int printf(string f, ...);
+
+int main() {
+    const string text = "{\"name\":\"Eskiu\",\"tags\":[\"a\",\"b\\n\\u00e9\",3.5,-2,true,null],\"nested\":{\"k\":{\"deep\":[[],{}]}},\"empty\":\"\"}";
+    JsonDoc d = json_parse_doc(text);
+    *JsonValue h = json_parse(text);
+    let a: String;
+    a.init(64);
+    let b: String;
+    b.init(64);
+    JsonValue_stringify(d.root, &a);
+    JsonValue_stringify(h, &b);
+    printf("same text: %d\n", a.eq(&b) ? 1 : 0);
+    printf("%s\n", a.cstr());
+    printf("name=%s tags=%d tag1=%s num=%g deep=%d\n", JsonValue_as_cstr(JsonValue_get(d.root, "name")),
+           JsonValue_len(JsonValue_get(d.root, "tags")), JsonValue_as_cstr(JsonValue_at(JsonValue_get(d.root, "tags"), 1)),
+           JsonValue_as_double(json_get(d.root, "tags[2]")), JsonValue_len(json_get(d.root, "nested.k.deep")));
+    printf("edits refused: set=%d push=%d remove=%d\n", JsonValue_set(d.root, "x", JsonValue_null()),
+           JsonValue_push(JsonValue_get(d.root, "tags"), JsonValue_int(1)), JsonValue_remove(d.root, "name"));
+    *JsonValue n = JsonValue_null();
+    printf("arena node into a heap tree: %d\n", JsonValue_push(JsonValue_array(), JsonValue_get(d.root, "name")));
+    JsonValue_free(n);
+    JsonValue_free(JsonValue_get(d.root, "tags"));
+    printf("still there: %d\n", JsonValue_len(JsonValue_get(d.root, "tags")));
+    JsonDoc bad = json_parse_doc("{\"a\":[1,2,}");
+    JsonDoc trail = json_parse_doc("[1] x");
+    printf("malformed: %d %d\n", bad.root == null ? 1 : 0, trail.root == null ? 1 : 0);
+    let deep: String;
+    deep.init(2048);
+    for (i in 0..600) { deep.push('['); }
+    for (i in 0..600) { deep.push(']'); }
+    JsonDoc dd = json_parse_doc(deep.cstr());
+    printf("too deep: %d\n", dd.root == null ? 1 : 0);
+    // A large array: many chunks.
+    let big: String;
+    big.init(1 << 16);
+    big.push('[');
+    for (i in 0..20000) {
+        big.appendf("%s{\"id\":%d,\"s\":\"item%d\"}", i == 0 ? "" : ",", i, i);
+    }
+    big.push(']');
+    JsonDoc bd = json_parse_doc(big.cstr());
+    printf("big: %d items, last id %d, last s %s\n", JsonValue_len(bd.root),
+           (int)JsonValue_as_int(JsonValue_get(JsonValue_at(bd.root, 19999), "id")),
+           JsonValue_as_cstr(JsonValue_get(JsonValue_at(bd.root, 19999), "s")));
+    JsonDoc_free(&bd);
+    JsonDoc_free(&dd);
+    JsonDoc_free(&bad);
+    JsonDoc_free(&trail);
+    JsonDoc_free(&d);
+    JsonValue_free(h);
+    a.free();
+    b.free();
+    deep.free();
+    big.free();
+    return 0;
+}

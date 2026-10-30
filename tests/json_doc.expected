@@ -1,0 +1,10 @@
+same text: 1
+{"name":"Eskiu","tags":["a","b\né",3.5,-2,true,null],"nested":{"k":{"deep":[[],{}]}},"empty":""}
+name=Eskiu tags=6 tag1=b
+é num=3.5 deep=2
+edits refused: set=-1 push=-1 remove=0
+arena node into a heap tree: -1
+still there: 6
+malformed: 1 1
+too deep: 1
+big: 20000 items, last id 19999, last s item19999

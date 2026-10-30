@@ -1,4 +1,5 @@
-// Fuzz target: <json> json_parse on arbitrary text, then a walk of the whole tree.
+// Fuzz target: <json> json_parse (and json_parse_doc, which must agree) on arbitrary
+// text, then a walk of the whole tree.
 import "harness.esk";
 import <json>;
 import <string>;
@@ -59,11 +60,23 @@ void json_roundtrip(JsonValue* v) {
 
 void fuzz_one(*uint8 data, int len, string s) {
     *JsonValue v = json_parse(s);
+    // json_parse_doc accepts exactly what json_parse accepts, into the same tree.
+    JsonDoc doc = json_parse_doc(s);
+    if ((v == null) != (doc.root == null)) { fuzz_fail("json_parse_doc and json_parse disagree on validity"); }
     if (v != null) {
         json_walk(v, 0);
+        json_walk(doc.root, 0);
+        let a: String;  a.init(64);
+        let b: String;  b.init(64);
+        JsonValue_stringify(v, &a);
+        JsonValue_stringify(doc.root, &b);
+        if (String_eq(&a, &b) == 0) { fuzz_fail("json_parse_doc and json_parse trees differ"); }
+        a.free();
+        b.free();
         json_roundtrip(v);
         JsonValue_free(v);
     }
+    JsonDoc_free(&doc);
     // The input as a path, over a fixed document.
     *JsonValue d = json_parse("{\"a\":{\"b\":[1,{\"c\":\"x\"}]},\"a.b\":[[2]],\"\":3}");
     json_get(d, s);
