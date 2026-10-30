@@ -58,8 +58,14 @@ first-class in the language without giving up general systems use.
   throws, with `ErrorBoundary` and `ui_on_error`. The plan:
   [`ui-error-recovery.md`](ui-error-recovery.md).
 
-- **Build times.** Measure a package with several dependencies, then decide whether
-  modules need a cache.
+- **Build times.** Measured on `examples/scripts/organize.esk` (11 stdlib imports, the
+  file `tests/editor_timing.sh` budgets): lexing all the imported text is about 5% of an
+  `-O0` build, parsing about 20%, type checking about 15%, code generation about 45% and
+  LLVM's back end the rest; at `-O2` LLVM's optimizer is about 60% of the time. A module
+  cache would save the parse and check of the imports (a third of an `-O0` build, a sixth
+  of an `-O2` one), and CI's Release build type-checks the file in about 130 ms, so it
+  waits until a real package's front end passes about a second; the editor timing budget
+  in CI is the signal.
 - **Native WebAssembly exceptions.** On emscripten, exceptions run through its
   JavaScript-based runtime, which costs a call into JavaScript at every call that may throw;
   the WebAssembly exception-handling instructions (`-fwasm-exceptions`) would avoid it and
