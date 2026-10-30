@@ -266,6 +266,30 @@ first-class in the language without giving up general systems use.</p>
 <li><strong>Native libraries in the self-hosted compiler.</strong> A package's <code>[native.NAME]</code> archives
   cover host and <code>--target</code> cross builds (including iOS and Android) with the C++ compiler;
   the self-hosted compiler still takes <code>-L</code>.</li>
+<li><strong>A faster <code>&lt;regex&gt;</code>.</strong> 0.14.1 added a first-byte prefilter, a required-byte check and a
+  reused scratch block, but the search is still a Pike VM: LangArena's log parser takes
+  1.8 s, against 1.0 s for Go's <code>regexp</code> and 0.33 s for PCRE2's JIT. A lazy DFA, as RE2 and
+  Rust's <code>regex</code> use, would close most of that, checked against Go's results by the
+  existing differential fuzzer.</li>
+<li><strong>Opt-in aliasing and contraction flags.</strong> Two benchmarks run 1.2 times slower than C
+  because Eskiu emits no type-based alias information, and one 1.1 times slower because it
+  does not fuse multiply-adds. Both are deliberate defaults (type punning through a pointer
+  cast stays defined, and floating-point results stay the same on every platform), so the
+  plan is <code>-fstrict-aliasing</code> and <code>-ffp-contract=fast</code> as flags in both compilers, with the
+  defaults unchanged.</li>
+<li><strong>Fewer allocations in <code>&lt;json&gt;</code>.</strong> Parsing is about six times slower than yyjson because
+  every node, key and string is its own allocation. A per-document arena would remove most of
+  them, but it changes what can be freed on its own (a child taken out of a parsed document),
+  so it needs an API decision first.</li>
+<li><strong>The EIR C gate's optimization level.</strong> <code>tests/eir/check.sh c</code> compiles the generated C
+  without optimization, and <code>http_serve_slow_reader</code> misses its 1.5 s deadline that way (it
+  passes at <code>-O1</code>), so it is out of <code>pass_c.txt</code>. Decide whether the gate builds at <code>-O1</code>.</li>
+<li><strong>Eskiu in LangArena.</strong> All 50 benchmarks of
+  <a href="https://github.com/kostya/LangArena">LangArena</a> are ported with matching checksums: Eskiu
+  runs at C's speed on the 39 algorithmic ones and at about 1.28 times C's time over all 50,
+  with byte-identical output from both compilers. Propose it upstream as Goose was added (PR
+  #28): a directory with the sources, a Makefile and run scripts, a Docker image from the Linux
+  release, and the entry in <code>benchmarks.rb</code>.</li>
 </ul>
 <h2 id="next-10">Next: 1.0</h2>
 <ul>

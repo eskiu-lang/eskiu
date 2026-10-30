@@ -69,6 +69,30 @@ first-class in the language without giving up general systems use.
 - **Native libraries in the self-hosted compiler.** A package's `[native.NAME]` archives
   cover host and `--target` cross builds (including iOS and Android) with the C++ compiler;
   the self-hosted compiler still takes `-L`.
+- **A faster `<regex>`.** 0.14.1 added a first-byte prefilter, a required-byte check and a
+  reused scratch block, but the search is still a Pike VM: LangArena's log parser takes
+  1.8 s, against 1.0 s for Go's `regexp` and 0.33 s for PCRE2's JIT. A lazy DFA, as RE2 and
+  Rust's `regex` use, would close most of that, checked against Go's results by the
+  existing differential fuzzer.
+- **Opt-in aliasing and contraction flags.** Two benchmarks run 1.2 times slower than C
+  because Eskiu emits no type-based alias information, and one 1.1 times slower because it
+  does not fuse multiply-adds. Both are deliberate defaults (type punning through a pointer
+  cast stays defined, and floating-point results stay the same on every platform), so the
+  plan is `-fstrict-aliasing` and `-ffp-contract=fast` as flags in both compilers, with the
+  defaults unchanged.
+- **Fewer allocations in `<json>`.** Parsing is about six times slower than yyjson because
+  every node, key and string is its own allocation. A per-document arena would remove most of
+  them, but it changes what can be freed on its own (a child taken out of a parsed document),
+  so it needs an API decision first.
+- **The EIR C gate's optimization level.** `tests/eir/check.sh c` compiles the generated C
+  without optimization, and `http_serve_slow_reader` misses its 1.5 s deadline that way (it
+  passes at `-O1`), so it is out of `pass_c.txt`. Decide whether the gate builds at `-O1`.
+- **Eskiu in LangArena.** All 50 benchmarks of
+  [LangArena](https://github.com/kostya/LangArena) are ported with matching checksums: Eskiu
+  runs at C's speed on the 39 algorithmic ones and at about 1.28 times C's time over all 50,
+  with byte-identical output from both compilers. Propose it upstream as Goose was added (PR
+  #28): a directory with the sources, a Makefile and run scripts, a Docker image from the Linux
+  release, and the entry in `benchmarks.rb`.
 
 ## Next: 1.0
 
