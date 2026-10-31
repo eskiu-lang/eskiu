@@ -3,12 +3,14 @@
 // test fixture with no other use). Checks: verification off accepts it, the
 // default verification rejects it, trusting it through o.ca_file accepts it
 // for "localhost" and rejects it for "127.0.0.1" (name mismatch), and
-// fetch_async works over TLS. A body that ends with the connection is
-// complete after close_notify, and a peer that drops the connection without
-// it is an error, not a short body. OpenSSL is loaded at run time (<fetch_tls>), so
-// where libssl is missing the test prints "skipped" and passes; the server
-// side reaches OpenSSL the same way. With ESKIU_REQUIRE_TLS set (as CI does) a
-// missing libssl fails the test instead.
+// fetch_async works over TLS. With the real OpenSSL, the client context reports TLS 1.2
+// as its minimum (what pins <fetch>'s floor), and a server that offers TLS 1.1 at most is
+// refused (OpenSSL 3 refuses it by default too; OpenSSL 1.1.1 would not without the
+// floor). A body that ends with the connection is complete after close_notify, and a
+// peer that drops the connection without it is an error, not a short body. OpenSSL is
+// loaded at run time (<fetch_tls>), so where libssl is missing the test prints "skipped"
+// and passes; the server side reaches OpenSSL the same way. With ESKIU_REQUIRE_TLS set (as
+// CI does) a missing libssl fails the test instead.
 import <fetch>;
 import <fetch_tls>;
 import <future>;
@@ -21,6 +23,7 @@ import <env>;
 extern int printf(string fmt, ...);
 
 const int PORT = 18436;
+const int OLD_PORT = 18442;   // a server limited to TLS 1.1
 
 const string CERT = "-----BEGIN CERTIFICATE-----\nMIIBlTCCATugAwIBAgIUeFkAcYWAeRkHlpO1jw66rLWcuEgwCgYIKoZIzj0EAwIw\nFDESMBAGA1UEAwwJbG9jYWxob3N0MCAXDTI2MTAxMTIzMzI0NFoYDzIxMjYwOTE3\nMjMzMjQ0WjAUMRIwEAYDVQQDDAlsb2NhbGhvc3QwWTATBgcqhkjOPQIBBggqhkjO\nPQMBBwNCAASDMYRpgP0sgru79Qc/mKysJyjS9hliRdk9t7XVf9PHaAnrHZ8KYO1D\ne94MwDn5pSF0v/ufDVRQBtHA0hUFf6Sso2kwZzAdBgNVHQ4EFgQUnZMceWGVfRjj\nYCbuf5kCHOk6MWYwHwYDVR0jBBgwFoAUnZMceWGVfRjjYCbuf5kCHOk6MWYwDwYD\nVR0TAQH/BAUwAwEB/zAUBgNVHREEDTALgglsb2NhbGhvc3QwCgYIKoZIzj0EAwID\nSAAwRQIgXF+RJupqDJfWGBahxN/2AbBdtMfQWc7So2LMhRZfV30CIQCNK89dY7xg\n4qsaDxuR9Ekm4wDr/10o236xrRiAl9FPXA==\n-----END CERTIFICATE-----\n";
 const string KEY = "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgN2mNSKiMxL5u4gvb\nZHThaZ+3zDf7vPjMGVg7sSgx2nqhRANCAASDMYRpgP0sgru79Qc/mKysJyjS9hli\nRdk9t7XVf9PHaAnrHZ8KYO1De94MwDn5pSF0v/ufDVRQBtHA0hUFf6Ss\n-----END PRIVATE KEY-----\n";
@@ -126,6 +129,26 @@ int main() {
 
     rc = get("https://127.0.0.1:18436/cut", 0, "", &r);
     check("a close without close_notify is an error", rc == FETCH_ERR_IO);
+    Response_free(&r);
+
+    // The client's context (the shared verify-off one) asks for TLS 1.2 or newer.
+    *void cctx = _ftls_ctx(0, "");
+    check("client minimum is TLS 1.2", cctx != null
+          && _ftls_call_ilp(_ftls_sym("SSL_CTX_ctrl"), cctx, 130, 0, null) == 0x0303);   // SSL_CTX_get_min_proto_version
+
+    // A server that speaks TLS 1.1 at most (security level 0, so OpenSSL 3 still offers it).
+    *void old = _ftls_call_p(_ftls_sym("SSL_CTX_new"), _ftls_call_p(_ftls_sym("TLS_server_method"), null));
+    _ftls_call_isi(_ftls_sym("SSL_CTX_use_certificate_file"), old, certf.cstr(), 1);
+    _ftls_call_isi(_ftls_sym("SSL_CTX_use_PrivateKey_file"), old, keyf.cstr(), 1);
+    *void seclevel = _ftls_sym("SSL_CTX_set_security_level");
+    if (seclevel != null) { _ftls_call_ii(seclevel, old, 0); }
+    _ftls_call_ilp(_ftls_sym("SSL_CTX_ctrl"), old, 123, 0x0301, null);   // min TLS 1.0
+    _ftls_call_ilp(_ftls_sym("SSL_CTX_ctrl"), old, 124, 0x0302, null);   // max TLS 1.1
+    const int ofd = net_tcp_listen((uint16)OLD_PORT);
+    check("listen (TLS 1.1 server)", ofd >= 0);
+    thread_create(void() { serve(ofd, old); });
+    rc = get("https://127.0.0.1:18442/", 0, "", &r);
+    check("a server limited to TLS 1.1 is refused", rc == FETCH_ERR_TLS);
     Response_free(&r);
 
     g_lp = el_new(64);
