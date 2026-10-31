@@ -218,6 +218,7 @@ forin_array_alias_deref
 forin_list_ptr
 forin_multidim
 forward_decl
+fp_contract
 fs
 fs_copy_mode
 fs_dir
@@ -347,6 +348,7 @@ json
 json_build
 json_builder_escape
 json_depth
+json_doc
 json_keyword_methods
 json_number_format
 json_parse_numbers
@@ -450,6 +452,7 @@ recursion
 regex
 regex_class_range
 regex_depth
+regex_dfa
 regex_empty_iter
 regex_escapes
 regex_posix_class
@@ -494,6 +497,7 @@ static_local
 static_local_closure
 stdlib_after_free
 stdlib_result
+strict_aliasing
 string_append_bytes
 string_equality
 string_int_edges

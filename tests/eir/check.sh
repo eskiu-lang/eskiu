@@ -30,7 +30,11 @@ fi
 case "$mode" in asm|c) ;; *) echo "usage: tests/eir/check.sh [asm|c]"; exit 2 ;; esac
 
 list="tests/eir/pass_$mode.txt"
-[ "$mode" = c ] && [ "$(uname -s)" = Linux ] && list="tests/eir/pass_c_linux.txt"
+other=""
+if [ "$mode" = c ]; then
+    if [ "$(uname -s)" = Linux ]; then list="tests/eir/pass_c_linux.txt"; other="tests/eir/pass_c.txt"
+    else other="tests/eir/pass_c_linux.txt"; fi
+fi
 work="$(mktemp -d -t eskiu_eir.XXXXXX)"
 trap 'rm -rf "$work"' EXIT
 
@@ -43,6 +47,15 @@ run10() {
         gtimeout 10 "$@"
     else
         perl -e 'alarm shift @ARGV; exec @ARGV or exit 127' 10 "$@"
+    fi
+}
+
+# Why a test fails here (the stage, or the first lines of the difference), for a test the
+# other host's list has: the cross-host differences explain themselves in the log.
+why=()
+explain() {
+    if [ -n "$other" ] && grep -qx "$1" "$other" 2>/dev/null; then
+        why+=("$1: $2")
     fi
 }
 
@@ -61,11 +74,16 @@ for f in tests/*.esk; do
         [ ${#companion[@]} -gt 0 ] && link=(--link-arg "${companion[0]}")
         "$BIN" "$f" ${link[@]+"${link[@]}"} -o "$exe" --backend=eir >/dev/null 2>&1 || continue
     else
-        "$BIN" "$f" --emit-c -o "$work/$n.c" >/dev/null 2>&1 || continue
-        "$CC" -std=c99 -w -fno-strict-aliasing -O1 "$work/$n.c" ${companion[@]+"${companion[@]}"} -o "$exe" -lm -lpthread >/dev/null 2>&1 || continue
+        "$BIN" "$f" --emit-c -o "$work/$n.c" >"$work/$n.err" 2>&1 || { explain "$n" "--emit-c: $(head -1 "$work/$n.err")"; continue; }
+        "$CC" -std=c99 -w -fno-strict-aliasing -O1 "$work/$n.c" ${companion[@]+"${companion[@]}"} -o "$exe" -lm -lpthread >"$work/$n.err" 2>&1 \
+            || { explain "$n" "C compile: $(grep -m1 -i error "$work/$n.err")"; continue; }
     fi
-    run10 "$exe" >"$work/$n.got" 2>&1 || continue
-    diff -q "tests/$n.expected" "$work/$n.got" >/dev/null && passed+=("$n")
+    run10 "$exe" >"$work/$n.got" 2>&1 || { explain "$n" "exit $?: $(tail -1 "$work/$n.got")"; continue; }
+    if diff -q "tests/$n.expected" "$work/$n.got" >/dev/null; then
+        passed+=("$n")
+    else
+        explain "$n" "output: $(diff "tests/$n.expected" "$work/$n.got" | grep -m2 '^[<>]' | tr '\n' ' ')"
+    fi
 done
 
 printf '%s\n' ${passed[@]+"${passed[@]}"} | sed '/^$/d' | sort > "$work/now.txt"
@@ -75,6 +93,10 @@ if [ "${UPDATE:-0}" = 1 ]; then
     exit 0
 fi
 
+if [ ${#why[@]} -gt 0 ]; then
+    echo "passing on the other host, not here:"
+    printf '  %s\n' "${why[@]}"
+fi
 touch "$list"
 lost="$(comm -23 <(sort "$list") "$work/now.txt")"
 gained="$(comm -13 <(sort "$list") "$work/now.txt")"
