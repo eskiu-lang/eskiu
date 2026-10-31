@@ -263,7 +263,9 @@ void eb_binary(EB* b, *ExprNode node) {
             return;
         }
         if (et_is_float(t) == 1 && et_eq(op, "%") == 1) {
-            dprintf(2, "EIR: `%%` on floating-point operands is not supported\n");
+            // The C++ builder throws here: the build stops.
+            dprintf(2, "error: EIR: `%%` on floating-point operands is not supported\n");
+            exit(1);
         }
         eb_i2(b, eb_arith_op(op, t), dst, t, lhs, rhs);
         b.lastv = eo_var(dst, t);
@@ -1508,7 +1510,9 @@ void eb_alloc_with(EB* b, *ExprNode node) {
         af = eb_inst_generic_method(b, an, "alloc");
     }
     if (af == null) {
-        dprintf(2, "EIR: alloc_with: allocator type '%s' has no alloc method (%s)\n", an, fname);
+        // The C++ builder throws here: the build stops.
+        dprintf(2, "error: EIR: alloc_with: allocator type '%s' has no alloc method (%s)\n", an, fname);
+        exit(1);
         return;
     }
     fname = af.name;

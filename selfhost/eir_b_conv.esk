@@ -515,7 +515,9 @@ EOp eb_c_fn_pointer(EB* b, *ExprNode e) {
     if (e.kind == EK_IDENT && em_func(b.m, e.sval) != null && eb_has_var(b, e.sval) == 0) {
         return eo_global(e.sval, et_ptr(null));
     }
-    dprintf(2, "EIR: an extern's function parameter takes a top-level function or null\n");
+    // The C++ builder throws here: the build stops.
+    dprintf(2, "error: EIR: an extern's function parameter takes a top-level function or null\n");
+    exit(1);
     return eo_null();
 }
 
