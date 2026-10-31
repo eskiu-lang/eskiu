@@ -517,7 +517,9 @@ static int eirMode(const std::string& filename) {
 // generates code is an error under it rather than silently ignored.
 static bool checkEirOptions(unsigned safeChecks) {
     std::vector<std::string> bad;
-    if (OptLevel) bad.push_back("-O" + std::to_string(OptLevel));
+    // -O reaches the C compiler when the backend writes C; the ARM64 emitter has no levels.
+    if (OptLevel && (EmitAsm || eir::eirUsesAsm(std::string(TargetTriple))))
+        bad.push_back("-O" + std::to_string(OptLevel));
     if (safeChecks) bad.push_back("--safe");
     if (Freestanding) bad.push_back("--freestanding");
     if (Asan) bad.push_back("--asan");

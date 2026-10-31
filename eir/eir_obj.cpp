@@ -64,8 +64,7 @@ bool runDriver(const std::string& driver, const std::vector<std::string>& ccArgs
 // joins the two with a relocatable link, so the result is still one object file. The C is
 // compiled at `optLevel` (eskiuc's -O) with strict aliasing off: Eskiu defines a pointer
 // cast that reads one type through another.
-bool emitEirObject(const Module* mod, const std::string& outFile, const std::string& triple,
-                   unsigned optLevel) {
+bool eirUsesAsm(const std::string& triple) {
     bool isArm64 = triple.find("aarch64") != std::string::npos ||
                    triple.find("arm64") != std::string::npos;
 #if defined(__aarch64__) || defined(__arm64__)
@@ -75,7 +74,12 @@ bool emitEirObject(const Module* mod, const std::string& outFile, const std::str
 #ifdef _WIN32
     if (triple.empty()) windows = true;
 #endif
-    if (isArm64 && windows) isArm64 = false;
+    return isArm64 && !windows;
+}
+
+bool emitEirObject(const Module* mod, const std::string& outFile, const std::string& triple,
+                   unsigned optLevel) {
+    bool isArm64 = eirUsesAsm(triple);
 
     std::vector<std::string> ccArgs;
     std::string driver = findCDriver(false, &ccArgs, triple);

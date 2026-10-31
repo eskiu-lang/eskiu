@@ -706,7 +706,11 @@ private:
             os << "__eskc_unwind: ;\n";
             if (pushCount > 0) {
                 os << "    if (__eskc_hd > 0) {\n        switch (__eskc_hs[--__eskc_hd]) {\n";
-                for (const auto& kv : handlerIds) os << "        case " << kv.second << ": goto " << label(kv.first) << ";\n";
+                // In id order, so the output does not depend on the hash map's.
+                std::vector<std::string> byId(handlerIds.size());
+                for (const auto& kv : handlerIds) byId[kv.second] = kv.first;
+                for (size_t id = 0; id < byId.size(); ++id)
+                    os << "        case " << id << ": goto " << label(byId[id]) << ";\n";
                 os << "        }\n        __eskc_trap();\n    }\n";
             }
             if (isMain) os << "    __eir_uncaught();\n";
