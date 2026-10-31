@@ -28,6 +28,21 @@ bool isCAggregate(const TypePtr& t) {
     return isAggregate(t) && !t->isClosure() && !isVaListType(t);
 }
 
+// An asm constraint as C writes it: an explicit x86 register in LLVM's form (`{ax}`,
+// `{eax}`, `{rax}`, also after `=`, `&` or `+`) becomes its GCC letter (a b c d S D), which
+// is what C accepts; anything else is kept.
+std::string gccConstraint(const std::string& c) {
+    size_t open = c.find('{');
+    size_t close = c.find('}');
+    if (open == std::string::npos || close == std::string::npos || close < open) return c;
+    std::string reg = c.substr(open + 1, close - open - 1);
+    if (reg.size() == 3 && (reg[0] == 'e' || reg[0] == 'r')) reg = reg.substr(1);
+    static const char* const regs[][2] = {{"ax", "a"}, {"bx", "b"}, {"cx", "c"}, {"dx", "d"}, {"si", "S"}, {"di", "D"}};
+    for (const auto& r : regs)
+        if (reg == r[0]) return c.substr(0, open) + r[1] + c.substr(close + 1);
+    return c;
+}
+
 bool isRuntimeName(const std::string& n) {
     return n.rfind("__eir_", 0) == 0 || n == "__exception_text_into";
 }
@@ -1249,7 +1264,7 @@ private:
                 TypePtr t = outIdx < resultTypes.size() ? resultTypes[outIdx] : Type::getI64();
                 std::string tmp = "a" + std::to_string(nextTmp++);
                 pre << " " << cType(t) << " " << tmp << ";";
-                outs.push_back(escape(c) + "(" + tmp + ")");
+                outs.push_back(escape(gccConstraint(c)) + "(" + tmp + ")");
                 outTys.push_back(t);
                 std::string conv = t && t->isInt() ? "(int64_t)" + tmp : tmp;
                 if (resultTypes.size() > 1) post << " ((int64_t*)" << res << ")[" << outIdx << "] = (int64_t)" << tmp << ";";
@@ -1263,7 +1278,7 @@ private:
                 ins.push_back("\"m\"(*(char*)" + pval(inst->operands[opIdx++]) + ")");
             } else {
                 const Operand& o = inst->operands[opIdx++];
-                ins.push_back(escape(c) + "(" + asC(o, o.type) + ")");
+                ins.push_back(escape(gccConstraint(c)) + "(" + asC(o, o.type) + ")");
             }
         }
 
