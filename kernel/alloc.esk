@@ -33,12 +33,18 @@ int64 block_bytes(*void p) {
 
 // <mem>'s contract is zeroed memory. A byte loop rather than memset, since no C
 // library is linked.
+// The timer preempts tasks, so two tasks can be in the allocator at once: the free list
+// and `used` change with IRQs masked (one core, so that is enough).
 *void esk_alloc(int64 size) {
+    const int64 daif = cpu_irq_save();
     *uint8 p = (*uint8)FirstFit_alloc(&heap, size);
+    if (p != null) {
+        used += block_bytes((*void)p);
+    }
+    cpu_irq_restore(daif);
     if (p == null) {
         return null;
     }
-    used += block_bytes((*void)p);
     for (i in 0..size) {
         p[i] = 0;
     }
@@ -49,6 +55,8 @@ void esk_free(*void p) {
     if (p == null) {
         return;
     }
+    const int64 daif = cpu_irq_save();
     used -= block_bytes(p);
     FirstFit_free(&heap, p);
+    cpu_irq_restore(daif);
 }
