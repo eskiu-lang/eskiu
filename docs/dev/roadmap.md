@@ -84,10 +84,12 @@ first-class in the language without giving up general systems use.
   in `eskiu.lock`.
   A registry and version ranges would let packages depend on "1.2 or later" instead of a
   commit.
-- **Shipping the self-hosted compiler.** It already matches the C++ one. Making it the
-  released binary needs either object emission without clang or accepting clang as a
-  runtime requirement; porting the EIR back ends to it is the first
-  ([`eir-spec.md` §8](eir-spec.md#8-next-steps)).
+- **Shipping the self-hosted compiler.** It already matches the C++ one, and with
+  `--backend=eir` it builds programs through its port of the EIR C99 emitter, so it needs a
+  C compiler but not clang or LLVM. What is left before it can be the released binary:
+  deciding whether the EIR C path becomes its default (it trades LLVM's optimizer for the C
+  compiler's), and the ARM64 emitter and object driver ([`eir-spec.md`
+  §8](eir-spec.md#8-next-steps)).
 
 ## Later, not scheduled
 

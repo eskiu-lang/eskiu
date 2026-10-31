@@ -368,13 +368,15 @@ Nothing here is scheduled; this is where to pick the work up again.
    first CI run prints every passing test as "newly passing"; record them with
    `UPDATE=1`, and look at each test that passes on macOS but not on Linux (a backend bug,
    or a legitimate difference that stays off the Linux list).
-2. **Back ends in the self-hosted compiler.** `selfhost/eir*.esk` builds the same EIR as the
-   C++ builder but stops at the text form. Porting the C99 emitter (`eir/eir_c.cpp`) first
-   would let `eskiuc-esk` produce a binary through the system C compiler without LLVM,
-   which is one of the two ways to ship the self-hosted compiler (roadmap, 1.0). Same
-   method as the builder: a new `--emit-c` mode in `esk_main.esk`, byte parity over the run
-   tests against the C++ `--emit-c`, a ratchet list, a CI step. The ARM64 emitter
-   (`eir_asm_arm64.cpp`) and the object driver (`eir_obj.cpp`) come after.
+2. **Back ends in the self-hosted compiler.** The C99 emitter is ported:
+   `selfhost/eir_c.esk` reads the instructions the builder now keeps beside their text
+   (`EBlock.insts`) and writes the same C as `eir/eir_c.cpp` for every run test
+   (`tests/selfhost/eir_c_parity.sh`, list `eir_c_parity_pass.txt`); the C it copies
+   (prelude, runtime, the table of C functions) is generated from the C++ sources into
+   `selfhost/eir_c_text.esk` by `tools/gen_eir_c_text.py`, which the parity script checks.
+   `esk_main --emit-c` prints it and `--backend=eir` builds through it with any C compiler
+   (`tests/eir/check.sh driver`). The ARM64 emitter (`eir_asm_arm64.cpp`) and the object
+   driver (`eir_obj.cpp`) come next.
 3. **Release.** The EIR is under `[Unreleased]` in the CHANGELOG; it can ship as an
    experimental `--backend=eir` whenever the next version goes out.
 
