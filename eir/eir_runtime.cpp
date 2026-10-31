@@ -153,20 +153,21 @@ void __eir_thread_join(void* handle) {
 }
 #else
 static void* __eir_thread_entry(void* arg) { __eir_thread_run((__eir_thread_start*)arg); return 0; }
+/* The handle is the pthread_t itself, as with the LLVM back end: nothing to free, so a
+   thread that is never joined (one that detaches itself) leaks nothing. */
 void* __eir_thread_create(void* closure, int32_t owned) {
     __eir_thread_start* st = (__eir_thread_start*)ESK_RT_malloc(sizeof *st);
-    uintptr_t* tid = (uintptr_t*)ESK_RT_malloc(sizeof *tid);
-    if (!closure || !st || !tid) return 0;
+    uintptr_t tid = 0;
+    if (!closure || !st) return 0;
     st->fn = ((void**)closure)[0];
     st->env = ((void**)closure)[1];
     st->owned = owned;
-    if (ESK_RT_pthread_create(tid, 0, __eir_thread_entry, st) != 0) ESK_RT_abort();
-    return tid;
+    if (ESK_RT_pthread_create(&tid, 0, __eir_thread_entry, st) != 0) ESK_RT_abort();
+    return (void*)tid;
 }
 void __eir_thread_join(void* handle) {
     if (!handle) return;
-    ESK_RT_pthread_join(*(uintptr_t*)handle, 0);
-    ESK_RT_free(handle);
+    ESK_RT_pthread_join((uintptr_t)handle, 0);
 }
 #endif
 )RT";
