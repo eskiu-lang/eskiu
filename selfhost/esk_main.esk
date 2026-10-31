@@ -20,6 +20,7 @@ import "sema.esk";
 import "async_lower.esk";
 import "codegen.esk";
 import "eir.esk";
+import "eir_c.esk";
 import "fmt.esk";
 import "pkg_native.esk";
 import "bigstack.esk";
@@ -123,6 +124,9 @@ int is_value_opt(string o) {
         return 1;
     }
     if (cg_streq(o, "-ffp-contract") == 1 || cg_streq(o, "--ffp-contract") == 1) {
+        return 1;
+    }
+    if (cg_streq(o, "--backend") == 1 || cg_streq(o, "-backend") == 1) {
         return 1;
     }
     if (cg_streq(o, "--target") == 1 || cg_streq(o, "-target") == 1) {
@@ -1267,6 +1271,7 @@ int esk_main(int argc, string* argv) {
     string reloc = "";       // --reloc MODEL: relocation model, passed to clang
     string subsystem = "";   // --subsystem console|windows: a Windows program's subsystem
     string optflag = "";     // -O0..-O3 (clang optimizes the emitted IR)
+    int backend_eir = 0;     // --backend=eir: build through EIR and its C99 emitter, no LLVM IR
     List<string> linkx;      // -l / -L / --link-arg, forwarded to the link
     List_init<string>(&linkx, 4);
     List<string> linked;     // library names given with -l (the implied ones skip these)
@@ -1422,6 +1427,20 @@ int esk_main(int argc, string* argv) {
         else if (cg_streq(a, "--ubsan") == 1) {
             san = 2;
         }
+        else if (cg_streq(opt, "--backend") == 1 || cg_streq(opt, "-backend") == 1) {
+            if (cg_streq(val, "eir") == 1) {
+                backend_eir = 1;
+            }
+            else if (cg_streq(val, "llvm") == 1) {
+                backend_eir = 0;
+            }
+            else {
+                eprint("error: invalid --backend '");
+                eprint(val);
+                eprint("' (use llvm or eir)\n");
+                return 1;
+            }
+        }
         else if (cg_streq(opt, "-ffp-contract") == 1 || cg_streq(opt, "--ffp-contract") == 1) {
             if (cg_streq(val, "fast") == 1) {
                 fp_contract = 1;
@@ -1474,7 +1493,8 @@ int esk_main(int argc, string* argv) {
                 || cg_streq(a, "--test-parser") == 1
                 || cg_streq(a, "--test-typechecker") == 1
                 || cg_streq(a, "--test-codegen") == 1
-                || cg_streq(a, "--test-eir") == 1) {
+                || cg_streq(a, "--test-eir") == 1
+                || cg_streq(a, "--emit-c") == 1) {
             mode = a;
         }
         else if (is_value_opt(opt) == 1) {
@@ -1655,7 +1675,8 @@ int esk_main(int argc, string* argv) {
         sm.no_depr = no_depr;
         sm.werror = werror;
         sm.wnone = wnone;
-        if (cg_streq(mode, "--test-codegen") == 0 && cg_streq(mode, "--test-eir") == 0) {   // as the C++ driver
+        if (cg_streq(mode, "--test-codegen") == 0 && cg_streq(mode, "--test-eir") == 0
+            && cg_streq(mode, "--emit-c") == 0) {   // as the C++ driver
             sm.wall = wall;
             sm.wextra = wextra;
         }
@@ -1673,7 +1694,8 @@ int esk_main(int argc, string* argv) {
             printf("Type checking failed!\n");
             return 1;
         }
-        if (ok == 0 && (cg_streq(mode, "--test-codegen") == 1 || cg_streq(mode, "--test-eir") == 1)) {
+        if (ok == 0 && (cg_streq(mode, "--test-codegen") == 1 || cg_streq(mode, "--test-eir") == 1
+                        || cg_streq(mode, "--emit-c") == 1)) {
             eprint("Type checking failed!\n");
             return 1;
         }
@@ -1687,7 +1709,7 @@ int esk_main(int argc, string* argv) {
 
     async_lower(prog);                 // lower async fns → frame + resume + ctor (after sema)
 
-    if (cg_streq(mode, "--test-eir") == 1) {
+    if (cg_streq(mode, "--test-eir") == 1 || cg_streq(mode, "--emit-c") == 1) {
         // The checker again over the lowered program, stamping each expression's type,
         // as the C++ driver's post-lowering check feeds its EIR builder.
         let pt: Sema;
@@ -1702,9 +1724,68 @@ int esk_main(int argc, string* argv) {
         let eb: EB;
         eb_init(&eb, triple);
         eb_build(&eb, prog);
+        if (cg_streq(mode, "--emit-c") == 1) {
+            // --emit-c: the module as C99 (selfhost/eir_c.esk), to -o or stdout.
+            let csrc: String = ec_emit_module(eb.m);
+            *uint8 cb = (*uint8)String_cstr(&csrc);
+            if (outfile == null || cg_streq(outfile, "-") == 1) {
+                write(1, (*void)cb, (int64)String_len(&csrc));
+                return 0;
+            }
+            if (fs_write_all(outfile, cb, (int64)String_len(&csrc)) == 0) {
+                eprint("error: cannot open output file '");
+                eprint(outfile);
+                eprint("'\n");
+                return 1;
+            }
+            return 0;
+        }
         string text = eb_module_text(&eb);
         write(1, (*void)text, (int64)et_len(text));
         return 0;
+    }
+
+    // --backend=eir: the C99 of the EIR emitter (selfhost/eir_c.esk) instead of LLVM IR,
+    // compiled by the same driver. The self-hosted compiler takes this path on every
+    // target (the C++ one assembles ARM64 directly on arm64).
+    string eir_csrc = null;
+    if (backend_eir == 1 && mode[0] == 0) {
+        string bad = "";
+        if (safe != 0) {
+            bad = "--safe";
+        } else if (freestanding == 1) {
+            bad = "--freestanding";
+        } else if (san == 1) {
+            bad = "--asan";
+        } else if (san == 2) {
+            bad = "--ubsan";
+        } else if (mcpu[0] != 0) {
+            bad = "--mcpu";
+        } else if (mattr[0] != 0) {
+            bad = "--mattr";
+        } else if (reloc[0] != 0) {
+            bad = "--reloc";
+        }
+        if (bad[0] != 0) {
+            eprint("error: ");
+            eprint(bad);
+            eprint(" is not supported by the EIR backend\n");
+            return 1;
+        }
+        let ept: Sema;
+        sema_init(&ept, infile);
+        ept.wnone = 1;
+        ept.stamp_all = 1;
+        sema_set_target(&ept, triple);
+        if (sema_check(&ept, prog) == 0) {
+            eprint("error: internal: the checker rejected the lowered program\n");
+            return 1;
+        }
+        let eeb: EB;
+        eb_init(&eeb, triple);
+        eb_build(&eeb, prog);
+        let ecs: String = ec_emit_module(eeb.m);
+        eir_csrc = (string)String_cstr(&ecs);
     }
 
     let g: Codegen;
@@ -1714,7 +1795,13 @@ int esk_main(int argc, string* argv) {
     g.freestanding = freestanding;     // closure envs on esk_alloc/esk_free
     g.fp_contract = fp_contract;       // -ffp-contract=fast
     g.strict_alias = strict_alias;     // -fstrict-aliasing
-    cg_program(&g, prog);
+    if (eir_csrc == null) {
+        cg_program(&g, prog);
+    } else {
+        // The runtime of the EIR C is C: no C++ exception library; pthread for threads.
+        g.uses_eh = 0;
+        g.uses_threads = str_contains(eir_csrc, "__eir_thread_create(") == 1 ? 1 : 0;
+    }
     // No -o writes the object <input>.o, like the C++ driver (it links only with -o).
     if (outfile == null && runmode == 0 && cg_streq(mode, "--test-codegen") == 0) {
         outfile = cg_cat(infile, ".o");
@@ -1742,7 +1829,10 @@ int esk_main(int argc, string* argv) {
     if (freestanding == 1) {
         irtext = ir_no_builtins(irtext);
     }
-    string tmp = temp_file("ir", ".ll");
+    if (eir_csrc != null) {
+        irtext = eir_csrc;
+    }
+    string tmp = temp_file("ir", eir_csrc != null ? ".c" : ".ll");
     int64 irlen = 0;
     while (irtext[irlen] != 0) {
         irlen = irlen + 1;
@@ -1762,6 +1852,15 @@ int esk_main(int argc, string* argv) {
     string cc = getenv("CLANG");        // clang emits from .ll; cc/gcc can't, so no findCDriver ladder
     if (cc == null) {
         cc = "clang";
+    }
+    if (eir_csrc != null) {
+        // C needs no clang: $CC, then $CLANG, then cc (the C++ driver's findCDriver order).
+        string ecc = getenv("CC");
+        if (ecc != null && ecc[0] != 0) {
+            cc = ecc;
+        } else if (getenv("CLANG") == null) {
+            cc = "cc";
+        }
     }
     List<string> cargs;
     List_init<string>(&cargs, 8);
@@ -1867,6 +1966,12 @@ int esk_main(int argc, string* argv) {
     }
     if (want_obj == 1) {
         List_push<string>(&cargs, "-c");
+    }
+    if (eir_csrc != null) {
+        // The EIR C reads memory through casts (eir_c.cpp's prelude).
+        List_push<string>(&cargs, "-std=c99");
+        List_push<string>(&cargs, "-w");
+        List_push<string>(&cargs, "-fno-strict-aliasing");
     }
     List_push<string>(&cargs, tmp);
     List_push<string>(&cargs, "-o");
