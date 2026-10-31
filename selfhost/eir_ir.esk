@@ -738,6 +738,7 @@ struct EBlock {
     List<string> lines;
     List<int> allocas;
     int term;
+    List<EInst> insts;  // the instructions themselves, line for line (the C emitter reads them)
 }
 
 struct EFunc {

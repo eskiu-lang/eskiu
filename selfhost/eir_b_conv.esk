@@ -494,12 +494,14 @@ EOp eb_closure_target(EB* b, EOp fnop) {
             i = i + 1;
         }
         List_push<string>(&entry.lines, ei_render(&c));
+        List_push<EInst>(&entry.insts, c);
         List_push<int>(&entry.allocas, 0);
         EInst r = ei_make(EO_RET, "", target.ret);
         if (is_void == 0) {
             ei_add(&r, eo_var(res, target.ret));
         }
         List_push<string>(&entry.lines, ei_render(&r));
+        List_push<EInst>(&entry.insts, r);
         List_push<int>(&entry.allocas, 0);
         entry.term = 1;
     }

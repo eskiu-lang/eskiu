@@ -286,6 +286,7 @@ void eb_emit(EB* b, EInst ins) {
         return;
     }
     List_push<string>(&b.blk.lines, ei_render(&ins));
+    List_push<EInst>(&b.blk.insts, ins);
     int al = 0;
     if (ins.op == EO_ALLOCA) {
         al = 1;
@@ -1821,6 +1822,7 @@ void eb_entry_alloca(EB* b, string name, *ETy t, int64 align) {
     EInst i = ei_make(EO_ALLOCA, name, t);
     ei_add(&i, eo_int(align, et_i32()));
     List_insert<string>(&entry.lines, at, ei_render(&i));
+    List_insert<EInst>(&entry.insts, at, i);
     List_insert<int>(&entry.allocas, at, 1);
 }
 
