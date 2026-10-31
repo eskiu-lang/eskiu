@@ -229,6 +229,14 @@ jobs:
       - name: EIR C backend
         run: CC=clang-22 tests/eir/check.sh c
 
+      # The self-hosted EIR C99 emitter (selfhost/eir_c.esk): `--emit-c` byte-identical to
+      # the C++ one for every test in tests/selfhost/eir_c_parity_pass.txt, and the
+      # self-hosted driver's `--backend=eir` builds (C, no LLVM IR) passing the C list.
+      - name: EIR C self-host parity
+        run: tests/selfhost/eir_c_parity.sh
+      - name: EIR backend in the self-hosted driver
+        run: ESKIUC=build/eskiuc-esk CC=clang-22 tests/eir/check.sh driver
+
   # Leak checking on its own: tests/run.sh runs ASan with detect_leaks=0 (short-lived test
   # programs), so the constructs that must never leak (async frames, cancellation cleanups,
   # closure environments, channels, defer unwinding, allocators) are checked here with

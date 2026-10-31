@@ -4,11 +4,15 @@
 # as tests/run.sh does (from the repository root, stdout and stderr together, exit code 0),
 # and compare with the expected output.
 #
-#   tests/eir/check.sh [asm|c]
+#   tests/eir/check.sh [asm|c|driver]
 #
 # asm: `--backend=eir` (ARM64 assembly; needs an arm64 host). c: `--emit-c`, compiled with
 # $CC (default cc) at -O1, as `eskiuc -O1 --backend=eir` builds it (without optimization
 # http_serve_slow_reader misses its deadline). Default: asm on arm64, c elsewhere.
+#
+# driver: `$BIN --backend=eir -O1 -o exe` builds and links each test through the C path
+# of the compiler's own driver (the self-hosted compiler's on every target:
+# ESKIUC=build/eskiuc-esk); it is held to the C mode's list of this host.
 #
 # The list is per host OS for the C mode (libc output and type widths differ):
 # pass_c.txt on macOS, pass_c_linux.txt on Linux.
@@ -27,11 +31,13 @@ mode="${1:-}"
 if [ -z "$mode" ]; then
     case "$(uname -m)" in arm64|aarch64) mode=asm ;; *) mode=c ;; esac
 fi
-case "$mode" in asm|c) ;; *) echo "usage: tests/eir/check.sh [asm|c]"; exit 2 ;; esac
+case "$mode" in asm|c|driver) ;; *) echo "usage: tests/eir/check.sh [asm|c|driver]"; exit 2 ;; esac
+cmode="$mode"
+[ "$mode" = driver ] && cmode=c
 
-list="tests/eir/pass_$mode.txt"
+list="tests/eir/pass_$cmode.txt"
 other=""
-if [ "$mode" = c ]; then
+if [ "$cmode" = c ]; then
     if [ "$(uname -s)" = Linux ]; then list="tests/eir/pass_c_linux.txt"; other="tests/eir/pass_c.txt"
     else other="tests/eir/pass_c_linux.txt"; fi
 fi
@@ -69,7 +75,12 @@ for f in tests/*.esk; do
         "$CC" -c "tests/$n.c" -o "$work/$n.c.o" >/dev/null 2>&1 || continue
         companion=("$work/$n.c.o")
     fi
-    if [ "$mode" = asm ]; then
+    if [ "$mode" = driver ]; then
+        link=()
+        [ ${#companion[@]} -gt 0 ] && link=(--link-arg "${companion[0]}")
+        "$BIN" "$f" ${link[@]+"${link[@]}"} -o "$exe" --backend=eir -O1 >"$work/$n.err" 2>&1 \
+            || { explain "$n" "--backend=eir: $(head -1 "$work/$n.err")"; continue; }
+    elif [ "$mode" = asm ]; then
         link=()
         [ ${#companion[@]} -gt 0 ] && link=(--link-arg "${companion[0]}")
         "$BIN" "$f" ${link[@]+"${link[@]}"} -o "$exe" --backend=eir >/dev/null 2>&1 || continue
@@ -87,6 +98,10 @@ for f in tests/*.esk; do
 done
 
 printf '%s\n' ${passed[@]+"${passed[@]}"} | sed '/^$/d' | sort > "$work/now.txt"
+if [ "${UPDATE:-0}" = 1 ] && [ "$mode" = driver ]; then
+    echo "eir/check: UPDATE=1 records the C mode's list; run it in c mode"
+    exit 2
+fi
 if [ "${UPDATE:-0}" = 1 ]; then
     cp "$work/now.txt" "$list"
     echo "eir/check ($mode): wrote $list (${#passed[@]} passing)"
