@@ -169,6 +169,10 @@ private:
                                     const std::map<std::string, std::string>& subs);
     FunctionDecl* genericFreeMethod(const std::string& instName, const std::string& method) const;
 
+    // The functions the program defines (a body somewhere): a prototype of one is not an
+    // extern, even where it is called before its definition is built.
+    std::set<std::string> definedFunctions;
+
     // Volatile tracking
     std::set<std::string> volatileVars;
     bool volatileRooted(const Expr* e) const;

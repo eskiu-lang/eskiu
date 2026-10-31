@@ -1,0 +1,23 @@
+// A prototype is not an extern when the program defines its function: a call before the
+// definition passes a closure as a closure (not as a C function pointer) and gets a struct
+// back the Eskiu way, in every back end (the EIR builders once treated it as a C function).
+extern int printf(string f, ...);
+
+struct Pair { int a; int b; }
+
+Pair both(fn(int)->int look, int v);
+
+int run(fn(int)->int look) {
+    Pair p = both(look, 5);
+    return p.a * 100 + p.b;
+}
+
+Pair both(fn(int)->int look, int v) {
+    return Pair{a: look(v), b: look(v + 1)};
+}
+
+int main() {
+    int k = 3;
+    printf("%d\n", run(int(int x) { return x * k; }));
+    return 0;
+}

@@ -1019,6 +1019,10 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
     }
 
     // Phase 2: Function prototypes
+    definedFunctions.clear();
+    for (auto& decl : program->declarations)
+        if (auto f = dynamic_cast<FunctionDecl*>(decl.get()); f && f->typeParams.empty() && f->body)
+            definedFunctions.insert(f->name);
     for (auto& decl : program->declarations) {
         if (auto f = dynamic_cast<FunctionDecl*>(decl.get())) {
             if (!f->typeParams.empty()) continue;
@@ -1170,7 +1174,7 @@ void EIRBuilder::visit(FunctionDecl* node) {
     }
 
     if (!node->body) {
-        if (currentFunction->blocks.empty()) currentFunction->isExtern = true;
+        if (currentFunction->blocks.empty() && !definedFunctions.count(node->name)) currentFunction->isExtern = true;
         return;
     }
     if (!currentFunction->blocks.empty()) return;

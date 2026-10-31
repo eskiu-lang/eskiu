@@ -202,6 +202,12 @@ void eb_build(EB* b, Program* prog) {
         i = i + 1;
     }
     // Phase 2: prototypes.
+    for (di in 0..n) {
+        *DeclNode dd = List_get<*DeclNode>(&prog.decls, di);
+        if (dd.kind == DK_FUNCTION && List_len<TypeParam>(&dd.type_params) == 0 && dd.body != null) {
+            StrTab_set(&b.defined_fns, dd.name, 1);
+        }
+    }
     i = 0;
     while (i < n) {
         *DeclNode d = List_get<*DeclNode>(&prog.decls, i);

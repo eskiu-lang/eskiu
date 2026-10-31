@@ -199,6 +199,7 @@ void IAMap_set(IAMap* m, string key, string base, List<string>* args) {
 
 struct EB {
     *EModule m;
+    StrTab defined_fns;   // the functions the program defines (EIRBuilder::definedFunctions)
     *EFunc cur_fn;
     *EBlock blk;
     int nv;

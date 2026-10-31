@@ -141,7 +141,7 @@ void eb_function(EB* b, *DeclNode node) {
         b.cur_fn = f;
     }
     if (node.body == null) {
-        if (List_len<*EBlock>(&b.cur_fn.blocks) == 0) {
+        if (List_len<*EBlock>(&b.cur_fn.blocks) == 0 && StrTab_has(&b.defined_fns, node.name) == 0) {
             b.cur_fn.is_extern = 1;
         }
         return;
@@ -641,7 +641,9 @@ void eb_for_in(EB* b, *StmtNode node) {
             }
         }
         if (et_len(elem_type) == 0) {
-            dprintf(2, "EIR: for-in over unsupported type: %s\n", it_type);
+            // The C++ builder throws here: the build stops.
+            dprintf(2, "error: EIR: for-in over unsupported type: %s\n", it_type);
+            exit(1);
             return;
         }
         length = eb_mk_member(iterable, "size");
