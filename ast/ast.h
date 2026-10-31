@@ -12,16 +12,13 @@
 // numeric/pointer types resolves to that function by the same name. The op is spelled as a
 // word so the name stays a valid identifier (`+`->`add`, `[]`->`index`, unary `-`->`neg`).
 inline std::string eskiuOpWord(const std::string& op) {
-    if (op == "+")  return "add";   if (op == "-")  return "sub";
-    if (op == "*")  return "mul";   if (op == "/")  return "div";
-    if (op == "%")  return "mod";   if (op == "==") return "eq";
-    if (op == "!=") return "ne";    if (op == "<")  return "lt";
-    if (op == ">")  return "gt";    if (op == "<=") return "le";
-    if (op == ">=") return "ge";    if (op == "&")  return "band";
-    if (op == "|")  return "bor";   if (op == "^")  return "bxor";
-    if (op == "<<") return "shl";   if (op == ">>") return "shr";
-    if (op == "[]") return "index"; if (op == "u-") return "neg";
-    if (op == "!")  return "lnot";  if (op == "~")  return "bnot";
+    static const char* const words[][2] = {
+        {"+", "add"},   {"-", "sub"},   {"*", "mul"},   {"/", "div"},   {"%", "mod"},
+        {"==", "eq"},   {"!=", "ne"},   {"<", "lt"},    {">", "gt"},    {"<=", "le"},
+        {">=", "ge"},   {"&", "band"},  {"|", "bor"},   {"^", "bxor"},  {"<<", "shl"},
+        {">>", "shr"},  {"[]", "index"}, {"u-", "neg"}, {"!", "lnot"},  {"~", "bnot"}};
+    for (const auto& w : words)
+        if (op == w[0]) return w[1];
     return "";
 }
 // Make a type spelling safe to embed in a symbol name (`*V3`->`p_V3`, `List<int>`->`List_int`,
