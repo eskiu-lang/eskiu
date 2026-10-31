@@ -657,6 +657,7 @@ struct _FetchDns {
 }
 
 extern int pthread_detach(*void t);
+extern *void pthread_self();
 
 void _fetch_dns_free(_FetchDns* j) {
     if (j.addrs != null) {
@@ -886,9 +887,12 @@ int _fetch_resolve(_FetchCall* c) {
             String_init(&j.port, 8);
             String_appendf(&j.port, "%d", c.url.port);
             c.dns_job = j;
-            pthread_detach(thread_create(void() {
+            // The lookup thread detaches itself: thread_create's handle is opaque (the
+            // EIR backends' is not a pthread_t), but pthread_self is the thread's own.
+            thread_create(void() {
+                pthread_detach(pthread_self());
                 _fetch_dns_work(j);
-            }));
+            });
         }
         if (atomic_load(&j.state) == 0) {
             return _FETCH_WANT_DNS;
