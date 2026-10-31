@@ -129,7 +129,7 @@ public:
             if (!seen.insert(fn->name).second) continue;
             emitPrototype(fn.get(), protos);
         }
-        for (const auto& name : cabiFns) {
+        for (const auto& name : cabiOrder) {
             const Function* f = mod->getFunction(name);
             if (isCAggregate(f->returnType)) cRecord(f->returnType);
             for (const auto& p : f->params) if (isCAggregate(p.second)) cRecord(p.second);
@@ -147,7 +147,7 @@ public:
         }
         os << "\n";
 
-        for (const auto& name : cabiFns) emitCabiThunk(mod->getFunction(name), os);
+        for (const auto& name : cabiOrder) emitCabiThunk(mod->getFunction(name), os);
         emitGlobalDefs(mod, os);
 
         seen.clear();
@@ -435,7 +435,10 @@ private:
 
     std::unordered_map<std::string, std::string> recordNames;
     std::ostringstream recordDefs;
-    std::unordered_set<std::string> cabiFns;   // functions handed to C that take/return a record
+    // Functions handed to C that take/return a record, in the order the module first takes
+    // their address (cabiOrder), so the records and thunks come out in a fixed order.
+    std::unordered_set<std::string> cabiFns;
+    std::vector<std::string> cabiOrder;
 
     // A member declaration `T name` (an array's dimensions after the name).
     std::string memberDecl(const TypePtr& t, const std::string& name) {
@@ -496,6 +499,7 @@ private:
     // thunk with the C signature that calls it with the Eskiu one.
     void findCabiFns(const Module* mod) {
         cabiFns.clear();
+        cabiOrder.clear();
         for (const auto& fn : mod->functions) {
             for (const auto& bb : fn->blocks) {
                 for (const auto& inst : bb->instructions) {
@@ -507,7 +511,7 @@ private:
                         if (!f || f->isExtern || f->blocks.empty()) continue;
                         bool rec = isCAggregate(f->returnType);
                         for (const auto& p : f->params) rec = rec || isCAggregate(p.second) || isVaListType(p.second);
-                        if (rec) cabiFns.insert(f->name);
+                        if (rec && cabiFns.insert(f->name).second) cabiOrder.push_back(f->name);
                     }
                 }
             }
