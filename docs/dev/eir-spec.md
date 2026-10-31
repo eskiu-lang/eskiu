@@ -375,7 +375,8 @@ Nothing here is scheduled; this is where to pick the work up again.
    (prelude, runtime, the table of C functions) is generated from the C++ sources into
    `selfhost/eir_c_text.esk` by `tools/gen_eir_c_text.py`, which the parity script checks.
    `esk_main --emit-c` prints it and `--backend=eir` builds through it with any C compiler
-   (`tests/eir/check.sh driver`). The ARM64 emitter (`eir_asm_arm64.cpp`) and the object
+   (`tests/eir/check.sh driver`); `tests/selfhost/eir_bootstrap.sh` builds the compiler
+   itself that way and checks it writes the same C for its own source. The ARM64 emitter (`eir_asm_arm64.cpp`) and the object
    driver (`eir_obj.cpp`) come next.
 3. **Release.** The EIR is under `[Unreleased]` in the CHANGELOG; it can ship as an
    experimental `--backend=eir` whenever the next version goes out.

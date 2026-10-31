@@ -35,7 +35,7 @@ jobs:
 
       - name: Build
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR=$LLVM_DIR -DCMAKE_CXX_COMPILER=clang++-22
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR=$LLVM_DIR -DCMAKE_CXX_COMPILER=clang++-22 -DESKIU_WERROR=ON
           cmake --build build --target eskiuc -j"$(nproc)"
 
       - name: Fuzz
@@ -71,7 +71,7 @@ jobs:
 
       - name: Build
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR=$LLVM_DIR -DCMAKE_CXX_COMPILER=clang++-22
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR=$LLVM_DIR -DCMAKE_CXX_COMPILER=clang++-22 -DESKIU_WERROR=ON
           cmake --build build -j"$(nproc)"
 
       - name: Oracle

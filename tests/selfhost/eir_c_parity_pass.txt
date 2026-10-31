@@ -161,6 +161,7 @@ dns_connect
 dns_scope
 dotenv
 dup_struct_decl
+eir_prototype_closure
 either_stdlib
 enum_adt
 enum_arith

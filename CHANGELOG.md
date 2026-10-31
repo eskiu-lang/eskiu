@@ -52,6 +52,21 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   and fails when the editor modes exceed their time budget; a release fails when its
   Windows build does.
 
+### Fixed
+- The EIR builders (C++ and self-hosted) treated a prototype as an `extern` until its
+  definition was built: a call written before the definition passed a closure argument as a
+  C function pointer (the C++ compiler rejected the program, the self-hosted one built a
+  binary that crashed), which broke building the self-hosted compiler through EIR. A
+  prototype of a function the program defines is now an ordinary function.
+- The self-hosted EIR builder printed its errors and went on, exiting 0; it now stops with
+  status 1 as the C++ one does.
+- A thread started under the EIR backends kept 8 bytes until it was joined (a thread that
+  detaches itself leaked them): the handle is now the `pthread_t` itself, as with LLVM.
+- `<fetch>`'s host lookup thread detaches itself instead of detaching through the handle
+  `thread_create` returns, which is opaque (a crash with the EIR backends on Linux).
+- The kernel demo's allocator masks IRQs around its free list: a preempted task could
+  corrupt it.
+
 ---
 
 ## [0.14.1] - 2026-10-29

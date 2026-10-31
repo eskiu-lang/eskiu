@@ -236,6 +236,10 @@ jobs:
         run: tests/selfhost/eir_c_parity.sh
       - name: EIR backend in the self-hosted driver
         run: ESKIUC=build/eskiuc-esk CC=clang-22 tests/eir/check.sh driver
+      # The self-hosted compiler built through its own EIR C backend writes the same C for
+      # itself and builds a sample of the run tests.
+      - name: Self-hosted compiler built through EIR
+        run: CC=clang-22 tests/selfhost/eir_bootstrap.sh
 
   # Leak checking on its own: tests/run.sh runs ASan with detect_leaks=0 (short-lived test
   # programs), so the constructs that must never leak (async frames, cancellation cleanups,
@@ -258,7 +262,7 @@ jobs:
 
       - name: Configure & build
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR=$LLVM_DIR -DCMAKE_CXX_COMPILER=clang++-22
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLLVM_DIR=$LLVM_DIR -DCMAKE_CXX_COMPILER=clang++-22 -DESKIU_WERROR=ON
           cmake --build build --target eskiuc -j"$(nproc)"
 
       - name: Leak checks (ASan + LeakSanitizer)
