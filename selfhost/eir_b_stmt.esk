@@ -150,6 +150,17 @@ void eb_function(EB* b, *DeclNode node) {
         return;
     }
     b.cur_fn.is_extern = 0;
+    // The definition names the parameters: an `extern` or prototype of the same function
+    // seen first may have named them differently (C++ visit(FunctionDecl)).
+    int pk = 0;
+    for (pi in 0..List_len<Param>(&node.params)) {
+        Param dp = List_get<Param>(&node.params, pi);
+        if (et_eq(dp.ty, "...") == 1 || pk >= efn_nparams(b.cur_fn)) {
+            break;
+        }
+        List_set<string>(&b.cur_fn.pnames, pk, dp.name);
+        pk = pk + 1;
+    }
     b.nv = 0;
     b.nb = 0;
     *EBlock entry = efn_create_block(b.cur_fn, "entry");

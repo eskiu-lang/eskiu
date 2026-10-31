@@ -1176,6 +1176,12 @@ void EIRBuilder::visit(FunctionDecl* node) {
     if (!currentFunction->blocks.empty()) return;
 
     currentFunction->isExtern = false;
+    // The definition names the parameters: an `extern` or prototype of the same function
+    // seen first may have named them differently.
+    for (size_t i = 0, k = 0; i < node->params.size() && k < currentFunction->params.size(); ++i) {
+        if (node->params[i].first == "...") break;
+        currentFunction->params[k++].first = node->params[i].second;
+    }
 
     nextVarId = 0;
     nextBlockId = 0;
