@@ -330,6 +330,7 @@ import_dedup
 index_result_member
 inline_asm
 inline_asm_ext
+inline_asm_gcc
 inline_asm_out
 int64_arith
 int64_literal_limits
