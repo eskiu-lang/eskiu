@@ -32,8 +32,10 @@ TO=""; command -v timeout >/dev/null 2>&1 && TO="timeout 30"
 
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 fail=0; total=0; skip=0; excluded=0
+source tests/resolver.sh
 for f in tests/*.esk; do
     n="$(basename "$f" .esk)"
+    resolver_skip "$n" && { echo "skip  $n  (ESKIU_RESOLVER_TESTS=0)"; continue; }
     case "$SKIP" in *" $n "*) echo "excl  $n  (flaky async — see project-flaky-http2)"; excluded=$((excluded + 1)); continue ;; esac
     # A tests/NAME.c companion (C side of a C-ABI test) is compiled and linked in.
     extra=()

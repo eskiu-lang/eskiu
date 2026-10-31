@@ -21,7 +21,9 @@
 # fails the gate, one that starts passing is reported (UPDATE=1 rewrites the list).
 
 set -u
+export LC_ALL=C          # one sort order (and comm's) on every host
 cd "$(dirname "$0")/../.." || exit 2
+source tests/resolver.sh
 
 BIN="${ESKIUC:-build/eskiuc}"
 [ -x "$BIN" ] || { echo "eir/check: cannot find eskiuc (set ESKIUC or build it)"; exit 2; }
@@ -65,9 +67,17 @@ explain() {
     fi
 }
 
+# The tests that need the system resolver (tests/resolver.sh): skipped with
+# ESKIU_RESOLVER_TESTS=0, and then not counted as lost.
+skipped=()
+
 passed=()
 for f in tests/*.esk; do
     n="$(basename "$f" .esk)"
+    if resolver_skip "$n"; then
+        skipped+=("$n")
+        continue
+    fi
     [ -f "tests/$n.expected" ] || continue
     exe="$work/$n.out"
     companion=()
@@ -98,6 +108,10 @@ for f in tests/*.esk; do
 done
 
 printf '%s\n' ${passed[@]+"${passed[@]}"} | sed '/^$/d' | sort > "$work/now.txt"
+if [ "${UPDATE:-0}" = 1 ] && [ ${#skipped[@]} -gt 0 ]; then
+    echo "eir/check: UPDATE=1 with ESKIU_RESOLVER_TESTS=0 would drop the skipped tests from the list"
+    exit 2
+fi
 if [ "${UPDATE:-0}" = 1 ] && [ "$mode" = driver ]; then
     echo "eir/check: UPDATE=1 records the C mode's list; run it in c mode"
     exit 2
@@ -113,7 +127,8 @@ if [ ${#why[@]} -gt 0 ]; then
     printf '  %s\n' "${why[@]}"
 fi
 touch "$list"
-lost="$(comm -23 <(sort "$list") "$work/now.txt")"
+printf '%s\n' ${skipped[@]+"${skipped[@]}"} | sed '/^$/d' | sort > "$work/skipped.txt"
+lost="$(comm -23 <(sort "$list") "$work/now.txt" | comm -23 - "$work/skipped.txt")"
 gained="$(comm -13 <(sort "$list") "$work/now.txt")"
 [ -n "$gained" ] && echo "newly passing (UPDATE=1 to record):" && sed 's/^/  /' <<< "$gained"
 if [ -n "$lost" ]; then

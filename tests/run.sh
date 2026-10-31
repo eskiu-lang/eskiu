@@ -26,10 +26,7 @@
 # Usage:  tests/run.sh            (from repo root or anywhere)
 #         ESKIUC=/path/eskiuc tests/run.sh
 #
-# Every test runs on the machine alone (servers on 127.0.0.1) except the ones in
-# RESOLVER_TESTS, which also need the system resolver to map localhost to loopback and
-# fail for .invalid names. A proxy that answers every name (fake-ip, 198.18.0.0/15)
-# breaks them: ESKIU_RESOLVER_TESTS=0 skips them.
+# ESKIU_RESOLVER_TESTS=0 skips the tests that need the system resolver (tests/resolver.sh).
 #
 set -u
 
@@ -71,8 +68,7 @@ if [[ ! -x "$ESKIUC" ]]; then
     exit 2
 fi
 
-RESOLVER_TESTS=" dns_connect fetch_dns "
-ESKIU_RESOLVER_TESTS="${ESKIU_RESOLVER_TESTS:-1}"
+source "$here/resolver.sh"
 
 ok()   { printf '  \033[32mPASS\033[0m  %s\n' "$1"; pass=$((pass+1)); }
 bad()  { printf '  \033[31mFAIL\033[0m  %s — %s\n' "$1" "$2"; fail=$((fail+1)); failed_names+=("$1"); }
@@ -82,7 +78,7 @@ echo "Positive tests:"
 for esk in "$here"/*.esk; do
     name="$(basename "$esk" .esk)"
     bin="$work/$name"
-    if [[ "$ESKIU_RESOLVER_TESTS" == 0 && "$RESOLVER_TESTS" == *" $name "* ]]; then
+    if resolver_skip "$name"; then
         printf '  SKIP  %s (ESKIU_RESOLVER_TESTS=0)\n' "$name"
         continue
     fi

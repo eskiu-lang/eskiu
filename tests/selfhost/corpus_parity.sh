@@ -35,9 +35,11 @@ if ! "$BIN" selfhost/esk_main.esk -o "$ESKMAIN" >/dev/null 2>"$WORK/build.log"; 
 fi
 
 fail=0; run_ok=0; smoke_ok=0; total=0
+source tests/resolver.sh
 for esk in tests/*.esk; do
     [ -f "$esk" ] || continue
     name="$(basename "$esk" .esk)"
+    resolver_skip "$name" && continue
     total=$((total + 1))
     companion=()                                  # tests/NAME.c: C side of a C-ABI test
     if [ -f "tests/$name.c" ]; then

@@ -55,8 +55,10 @@ tests/index.sh --check                # fails on a test that starts with no comm
 Every test runs on the machine alone (its servers listen on `127.0.0.1`) except
 `dns_connect` and `fetch_dns`, which also need the system resolver to map `localhost` to
 loopback and to fail for a `.invalid` name. A proxy that answers every name with one
-address (fake-ip setups hand out `198.18.0.0/15`) breaks them; `ESKIU_RESOLVER_TESTS=0
-tests/run.sh` skips them. CI keeps them on.
+address (fake-ip setups hand out `198.18.0.0/15`) breaks them. `ESKIU_RESOLVER_TESTS=0`
+skips them in every runner that runs the tests (`run.sh`, `eir/check.sh` in each mode,
+`opt_differential.sh`, `selfhost/corpus_parity.sh`, `linux_docker.sh`); the list is in
+`tests/resolver.sh`. CI keeps them on.
 
 ## Previously known issues (now fixed, and guarded by tests)
 

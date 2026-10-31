@@ -60,7 +60,8 @@ fail=0
 if [[ -n "${TESTS:-}" ]]; then
     names="$TESTS"
 else
-    names="$(for f in tests/*.esk; do basename "$f" .esk; done)"
+    source tests/resolver.sh
+    names="$(for f in tests/*.esk; do n="$(basename "$f" .esk)"; resolver_skip "$n" || echo "$n"; done)"
 fi
 ntests=0
 echo "Cross-compiling for $TRIPLE..."
