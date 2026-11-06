@@ -6,8 +6,10 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <stdexcept>
+#include <vector>
 
 namespace eir {
 
@@ -102,7 +104,7 @@ public:
             if (!emitted.insert(fn->name).second) continue;
             emitFunction(fn.get(), idx++, os);
         }
-        for (const auto& name : cabiFns) emitCabiThunk(mod->getFunction(name), os);
+        for (const auto& name : cabiOrder) emitCabiThunk(mod->getFunction(name), os);
     }
 
 private:
@@ -123,7 +125,10 @@ private:
     std::unordered_set<std::string> addrVars;
     std::unordered_map<std::string, TypePtr> resultTypes;
     std::unordered_map<const Instruction*, size_t> callScratch;   // a C call's copies of its records
-    std::unordered_set<std::string> cabiFns;   // functions handed to C that take/return a record   // integer results narrower than 64 bits
+    // Functions handed to C that take or return a record, in the order the module first
+    // takes their address (cabiOrder), so the thunks come out in a fixed order.
+    std::unordered_set<std::string> cabiFns;
+    std::vector<std::string> cabiOrder;
     std::unordered_map<std::string, int> handlerIds;
     size_t sretSlot = 0, handlerDepthSlot = 0, handlerStackSlot = 0, handlerCap = 0;
     size_t caughtSlot = 0, retSaveSlot = 0, incomingStackBytes = 0;
@@ -169,8 +174,12 @@ private:
         std::string b = bb;
         if (!b.empty() && b[0] == '$') b = b.substr(1);
         std::string out = localPrefix() + fnTag + "_";
-        for (unsigned char c : b) out += (isalnum(c) || c == '_') ? static_cast<char>(c) : '_';
-        return out + "_" + std::to_string(std::hash<std::string>{}(b) % 100000);
+        uint32_t h = 2166136261u;   // FNV-1a: the suffix is the same on every host
+        for (unsigned char c : b) {
+            out += (isalnum(c) || c == '_') ? static_cast<char>(c) : '_';
+            h = (h ^ c) * 16777619u;
+        }
+        return out + "_" + std::to_string(h % 100000);
     }
 
     void collectStrings(const Module* mod) {
@@ -730,6 +739,7 @@ private:
     // closure's target) and whose signature has a record or a va_list.
     void findCabiFns(const Module* mod) {
         cabiFns.clear();
+        cabiOrder.clear();
         for (const auto& fn : mod->functions) {
             for (const auto& bb : fn->blocks) {
                 for (const auto& inst : bb->instructions) {
@@ -741,7 +751,7 @@ private:
                         if (!f || f->isExtern || f->blocks.empty()) continue;
                         bool rec = isCAggregate(f->returnType);
                         for (const auto& p : f->params) rec = rec || isCAggregate(p.second) || isVaListType(p.second);
-                        if (rec) cabiFns.insert(f->name);
+                        if (rec && cabiFns.insert(f->name).second) cabiOrder.push_back(f->name);
                     }
                 }
             }
@@ -753,7 +763,7 @@ private:
                 if (!f || f->isExtern || f->blocks.empty()) continue;
                 bool rec = isCAggregate(f->returnType);
                 for (const auto& p : f->params) rec = rec || isCAggregate(p.second) || isVaListType(p.second);
-                if (rec) cabiFns.insert(f->name);
+                if (rec && cabiFns.insert(f->name).second) cabiOrder.push_back(f->name);
             }
         }
     }
@@ -1057,10 +1067,12 @@ private:
                 memOp("str", "x9", "sp", handlerDepthSlot, 8, os);
                 addImm("x10", "sp", handlerStackSlot, os);
                 os << "    ldr x9, [x10, x9, lsl #3]\n";
-                for (const auto& kv : handlerIds) {
-                    movImm("x10", kv.second, os);
+                std::vector<std::string> byId(handlerIds.size());
+                for (const auto& kv : handlerIds) byId[kv.second] = kv.first;
+                for (size_t id = 0; id < byId.size(); ++id) {
+                    movImm("x10", static_cast<int64_t>(id), os);
                     os << "    cmp x9, x10\n";
-                    os << "    b.eq " << blockLabel(kv.first) << "\n";
+                    os << "    b.eq " << blockLabel(byId[id]) << "\n";
                 }
                 os << "    brk #1\n";
                 os << none << ":\n";
