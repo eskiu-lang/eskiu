@@ -243,6 +243,7 @@ private:
     // Scripts: a file with top-level statements gets an implicit `main` (see
     // buildScriptMain). The statements and the top-level variables, in order.
     bool startsScriptStatement() const;
+    bool exportAhead() const;
     std::vector<std::pair<StmtPtr, VarDecl*>> scriptOrder;
     void buildScriptMain(std::vector<DeclPtr>& decls);
     StmtPtr parseBlockStatement();

@@ -1,0 +1,8 @@
+// `export` qualifies a function as a C entry point; elsewhere it is an identifier.
+struct P { double x; double y; int k; }
+export P mk(int k, P a) { a.k = k; return a; }
+export must_use *P first(*P ps) { return ps; }
+deprecated("use mk") export int old(int k) { return k; }
+int export = 1;
+export = 2;
+export += 1;

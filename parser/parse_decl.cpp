@@ -55,6 +55,15 @@ DeclPtr Parser::parseDeclaration() {
             fd->deprecatedMsg = msg.empty() ? std::string(" ") : msg;
             return decl;
         }
+        // `export T f(...) { ... }`: f is a C entry point (see exportAhead).
+        if (exportAhead()) {
+            Token at = advance();
+            auto decl = parseDeclaration();
+            auto* fd = dynamic_cast<FunctionDecl*>(decl.get());
+            if (!fd) fail("'export' applies to a function", at);
+            fd->isExport = true;
+            return decl;
+        }
         // `must_use T f(...) { ... }` — discarding a call to f is an error.
         if (match(TokenType::MUST_USE)) {
             auto decl = parseFunctionDecl();

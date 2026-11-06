@@ -3838,6 +3838,27 @@ void parse_unnamed_bitfield(Parser* p, *DeclNode d, string ty) {
 
 // Top-level declaration dispatch (mirrors parseDeclaration). A declared type name
 // is registered so later `(Name)x` casts are recognized.
+// `export` is a contextual qualifier: it starts a declaration when a function header
+// follows, a type and then `name(` before any `;` `=` `{` (Parser::exportAhead).
+int p_export_ahead(Parser* p) {
+    Token t0 = p_peek(p);
+    if (t0.type != IDENT || lexeme_eq(p.src, t0.start, t0.len, "export") == 0) {
+        return 0;
+    }
+    int k = 1;
+    while (true) {
+        int t = p_peek_k(p, k).type;
+        if (t == LPAREN) {
+            return k >= 3 && p_peek_k(p, k - 1).type == IDENT ? 1 : 0;
+        }
+        if (t == SEMICOLON || t == EQ || t == LBRACE || t == RBRACE || t == EOF_TOKEN) {
+            return 0;
+        }
+        k = k + 1;
+    }
+    return 0;
+}
+
 *DeclNode parse_decl_top(Parser* p) {
     int t = p_at(p);
     *DeclNode d;
@@ -3860,6 +3881,16 @@ void parse_unnamed_bitfield(Parser* p, *DeclNode d, string ty) {
         d = parse_function(p);
         d.is_mustuse = 1;
         return d;
+    }
+    // `export T f(...)`: f is a C entry point (see p_export_ahead).
+    if (p_export_ahead(p) == 1) {
+        Token et = p_adv(p);
+        *DeclNode ed = parse_decl_top(p);
+        if (ed.kind != DK_FUNCTION) {
+            p_report(p, et, "'export' applies to a function");
+        }
+        ed.is_export = 1;
+        return ed;
     }
     // `deprecated("use X") T f(...)`: sema warns at each use of f.
     if (t == IDENT && p_peek_k(p, 1).type == LPAREN && p_peek_k(p, 2).type == STRING_LIT && p_peek_k(p, 3).type == RPAREN) {
@@ -4025,6 +4056,9 @@ int p_starts_script_stmt(Parser* p) {
     }
     if (t == IDENT && str_eq(tok_text(p.src, p_peek(p)), "deprecated") == 1 && p_peek_k(p, 1).type == LPAREN
         && p_peek_k(p, 2).type == STRING_LIT) {
+        return 0;
+    }
+    if (p_export_ahead(p) == 1) {
         return 0;
     }
     int k = 0;

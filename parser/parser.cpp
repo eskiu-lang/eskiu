@@ -560,6 +560,21 @@ std::vector<DeclPtr> Parser::parseProgram() {
     return declarations;
 }
 
+// `export` is a contextual qualifier: it starts a declaration when a function header
+// follows, a type and then `name(` before any `;` `=` `{` (`export(x);` and `export = 1;`
+// stay statements over a variable of that name).
+bool Parser::exportAhead() const {
+    if (peek().type != TokenType::IDENT || peek().value != "export") return false;
+    for (int k = 1;; ++k) {
+        TokenType t = peek_ahead(k).type;
+        if (t == TokenType::LPAREN)
+            return k >= 3 && peek_ahead(k - 1).type == TokenType::IDENT;
+        if (t == TokenType::SEMICOLON || t == TokenType::EQ || t == TokenType::LBRACE ||
+            t == TokenType::RBRACE || t == TokenType::EOF_TOKEN)
+            return false;
+    }
+}
+
 // A top-level line is a statement when no declaration can start that way: a statement
 // keyword, `{`, a literal or prefix operator, a call `f(`, an assignment, member or
 // postfix use of a name (`x = 1`, `p.x`, `arr[0] = 2` but not `Point[2] ps`), a label,
@@ -597,6 +612,7 @@ bool Parser::startsScriptStatement() const {
             if (t == TokenType::IDENT && peek().value == "deprecated" &&
                 peek_ahead(1).type == TokenType::LPAREN && peek_ahead(2).type == TokenType::STRING_LIT)
                 return false;
+            if (exportAhead()) return false;
             int k = 0;
             while (peek_ahead(k).type == TokenType::STAR) ++k;
             if (peek_ahead(k).type != TokenType::IDENT) return false;

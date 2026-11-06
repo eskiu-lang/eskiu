@@ -998,6 +998,7 @@ struct DeclNode {
     // literal or the previous + 1), folded by sema into params' ty
     int is_async;                  // function declared `async` (1) or not (0)
     int is_mustuse;                  // function declared `must_use` (discarding result is an error)
+    int is_export;                 // function declared `export`: a C entry point (C calling convention)
     int is_const;                  // DK_VARDECL: declared value-const global
     int is_extern;                 // DK_VARDECL: `extern <type> <name>;` (C global, external linkage, no init)
     int is_vol;                    // DK_VARDECL: `volatile` global
@@ -1634,6 +1635,9 @@ void print_decl(*DeclNode dn, int d) {
         }
         if (dn.is_mustuse == 1) {
             printf(" (must_use)");
+        }
+        if (dn.is_export == 1) {
+            printf(" (export)");
         }
         printf("\n");
         print_type_params(dn, d + 1);

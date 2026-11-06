@@ -121,6 +121,9 @@ public:
     bool isAsync = false;
     // `must_use`: discarding a call to this function (a bare call statement) is an error.
     bool mustUse = false;
+    // `export`: the function is a C entry point, defined with the target's C calling
+    // convention (structs and unions by value as C passes them) under its own name.
+    bool isExport = false;
     // `deprecated("use X") T f(...)`: each use outside an imported module warns, with
     // this message (empty: not deprecated).
     std::string deprecatedMsg;
