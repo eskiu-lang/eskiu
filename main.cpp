@@ -98,6 +98,11 @@ static llvm::cl::opt<bool> EmitObj("emit-obj",
                                    llvm::cl::desc("Emit native object file (.o) via EIR without LLVM"),
     llvm::cl::cat(EskiuCat));
 
+// The integrated ARM64 assembler alone: the input is assembly as --emit-asm writes it.
+static llvm::cl::opt<bool> EirAssemble("eir-assemble",
+                                       llvm::cl::desc("Assemble the input (--emit-asm output) into the -o object"),
+    llvm::cl::Hidden, llvm::cl::cat(EskiuCat));
+
 enum class BackendKind {
     LLVM,
     EIR
@@ -716,6 +721,15 @@ static int compilerMain(int argc, char** argv) {
         }
     }
 
+    if (EirAssemble) {
+        if (OutputFilename.empty()) {
+            std::cerr << "error: --eir-assemble needs -o" << std::endl;
+            return 1;
+        }
+        return eir::assembleEirFile(std::string(InputFilename), std::string(OutputFilename),
+                                    std::string(TargetTriple)) ? 0 : 1;
+    }
+
     // Handle --test-lexer
     if (TestLexer) {
         return testLexer(InputFilename);
@@ -1115,6 +1129,9 @@ static int compilerMain(int argc, char** argv) {
                 llvm::VersionTuple v;
                 if (t.isMacOSX() && t.getMacOSXVersion(v) && v.getMajor() > 0)
                     extra.push_back("-mmacosx-version-min=" + v.getAsString());
+            } else {
+                std::string v = eir::eirLinkMacOSVersion(std::string(TargetTriple), OptLevel);
+                if (!v.empty()) extra.push_back("-mmacosx-version-min=" + v);
             }
             // --subsystem=windows on a Windows target: the GUI subsystem, entered at main.
             if (Subsystem == "windows" && macros.count("_WIN32")) {
