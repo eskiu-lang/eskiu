@@ -1,0 +1,1235 @@
+// The EIR ARM64 emitter, first part: its state, symbols and strings, globals, immediates
+// and frame slots, operands, the calling convention and the C ABI for records (classifyC,
+// the `__cabi_<f>` thunks). A port of the first half of the C++ eir/eir_asm_arm64.cpp; the
+// functions keep its names (ea_mov_imm is movImm, ea_classify_c is classifyC, ...).
+//
+// Values live in 8-byte frame slots; an integer narrower than 64 bits is kept extended
+// to 64 by its signedness. An aggregate is the address of its bytes; a function
+// returning one writes it to the buffer its caller passes in x8 and returns that address.
+
+import "eir_c.esk";
+
+// Where one argument travels (ArgLoc): an integer or FP register, or the stack at an
+// offset from the outgoing area (caller) or from the incoming area (callee).
+struct EaArg {
+    int fp;
+    int reg;
+    int64 off;
+    int64 size;
+    int vararg;
+}
+
+// Where a C argument travels (CLoc).
+enum EaCKind { EAC_GPR, EAC_FPR, EAC_STACK, EAC_HFA, EAC_WORDS, EAC_STACKCOPY, EAC_INDIRECT }
+
+struct EaCLoc {
+    int kind;
+    int reg;
+    int count;
+    int64 off;
+    int64 size;
+    int dbl;
+    int vararg;
+    int via_stack;
+}
+
+// A call's argument types and how the callee takes them (CallShape).
+struct EaShape {
+    List<*ETy> tys;
+    int fixed;
+    int variadic;
+    int external;
+    int indirect_env;
+}
+
+struct EA {
+    *EModule m;
+    int darwin;
+    int throws;
+    StrTab str_ix;           // stringTable: a string's escaped text -> its index below
+    List<string> str_esc;    // stringOrder: escaped text
+    List<string> str_lbl;    //   and label
+    StrTab defined;          // definedSyms
+    int next_str;
+    int next_local;
+    // per function
+    *EFunc fun;
+    string tag;
+    StrTab slots;            // variable -> frame offset
+    StrTab addr_vars;        // variables whose value is their slot's address
+    StrTab res_ix;           // integer results narrower than 64 bits -> index in res_tys
+    List<*ETy> res_tys;
+    StrTab scratch;          // a C call's copies of its records, by "block:instruction"
+    int cur_bi;
+    int cur_ii;
+    // functions handed to C that take or return a record, in the order first seen
+    StrTab cabi_set;
+    List<string> cabi_order;
+    StrTab handler_ix;       // handler label -> id
+    List<string> handlers;   // by id
+    int64 sret_slot;
+    int64 hdepth_slot;
+    int64 hstack_slot;
+    int64 hcap;
+    int64 caught_slot;
+    int64 retsave_slot;
+    int64 in_stack;
+    int64 gr_save;
+    int64 vr_save;
+    int fixed_gr;
+    int fixed_vr;
+    int has_sret;
+    int saves_caught;
+}
+
+void ea_w(String* os, string s) {
+    String_append(os, s);
+}
+
+void ea_fail(string msg) {
+    eprint("error: EIR arm64: ");
+    eprint(msg);
+    eprint("\n");
+    exit(1);
+}
+
+int ea_digit(int ch) {
+    return ch >= 48 && ch <= 57 ? 1 : 0;
+}
+
+int64 ea_align_up(int64 v, int64 al) {
+    return (v + al - 1) & ~(al - 1);
+}
+
+int64 ea_max(int64 x, int64 y) {
+    return x > y ? x : y;
+}
+
+int64 ea_min(int64 x, int64 y) {
+    return x < y ? x : y;
+}
+
+string ea_r(string p, int n) {
+    return et_cat(p, et_itoa(n));
+}
+
+string ea_x(int n) {
+    return ea_r("x", n);
+}
+
+string ea_l(int64 v) {
+    return et_ltoa(v);
+}
+
+uint32 ea_f32_bits(double v) {
+    float f = (float)v;
+    *uint32 pf = (*uint32)(&f);
+    return *pf;
+}
+
+int64 ea_f64_bits(double v) {
+    double d = v;
+    *int64 pd = (*int64)(&d);
+    return *pd;
+}
+
+string ea_prefix(EA* a) {
+    return a.darwin == 1 ? "L" : ".L";
+}
+
+string ea_new_local(EA* a, string what) {
+    string s = et_cat3(ea_prefix(a), what, et_cat("_", et_itoa(a.next_local)));
+    a.next_local = a.next_local + 1;
+    return s;
+}
+
+// escapeAsm over the n bytes at str.
+string ea_escape_n(string str, int n) {
+    String o;
+    String_init(&o, n + 8);
+    for (i in 0..n) {
+        int ch = (int)(uint8)str[i];
+        if (ch == 10) {
+            String_append(&o, "\\n");
+        } else if (ch == 9) {
+            String_append(&o, "\\t");
+        } else if (ch == 13) {
+            String_append(&o, "\\r");
+        } else if (ch == 34) {
+            String_append(&o, "\\\"");
+        } else if (ch == 92) {
+            String_append(&o, "\\\\");
+        } else if (ch < 32 || ch >= 127) {
+            uint8[8] buf;
+            sprintf((string)&buf[0], "\\%03o", ch);
+            String_append(&o, (string)&buf[0]);
+        } else {
+            String_push(&o, (char)ch);
+        }
+    }
+    return (string)String_cstr(&o);
+}
+
+// mangleSym: characters an assembler identifier cannot hold are spelled `$XX`.
+string ea_mangle(EA* a, string name) {
+    String o;
+    String_init(&o, et_len(name) + 8);
+    if (a.darwin == 1) {
+        String_push(&o, '_');
+    }
+    int i = 0;
+    while (name[i] != 0) {
+        int ch = (int)(uint8)name[i];
+        if (ec_alnum(ch) == 1 || ch == 95 || ch == 46) {
+            String_push(&o, (char)ch);
+        } else {
+            String_push(&o, '$');
+            String_append(&o, ec_hex2(ch));
+        }
+        i = i + 1;
+    }
+    return (string)String_cstr(&o);
+}
+
+// blockLabel: the name sanitized, with an FNV-1a suffix of the original.
+string ea_block_label(EA* a, string bb) {
+    string b = bb;
+    if (b[0] == '$') {
+        b = et_from(b, 1);
+    }
+    String o;
+    String_init(&o, et_len(b) + 24);
+    String_append(&o, ea_prefix(a));
+    String_append(&o, a.tag);
+    String_push(&o, '_');
+    uint32 h = (uint32)2166136261;
+    int i = 0;
+    while (b[i] != 0) {
+        int ch = (int)(uint8)b[i];
+        if (ec_alnum(ch) == 1 || ch == 95) {
+            String_push(&o, (char)ch);
+        } else {
+            String_push(&o, '_');
+        }
+        h = (h ^ (uint32)ch) * (uint32)16777619;
+        i = i + 1;
+    }
+    String_push(&o, '_');
+    String_append(&o, et_ltoa((int64)(h % (uint32)100000)));
+    return (string)String_cstr(&o);
+}
+
+void ea_add_string(EA* a, EOp* o) {
+    string key = ea_escape_n(o.text, o.slen);
+    if (StrTab_has(&a.str_ix, key) == 1) {
+        return;
+    }
+    string lbl = et_cat3(ea_prefix(a), "str_", et_itoa(a.next_str));
+    a.next_str = a.next_str + 1;
+    StrTab_set(&a.str_ix, key, List_len<string>(&a.str_lbl));
+    List_push<string>(&a.str_esc, key);
+    List_push<string>(&a.str_lbl, lbl);
+}
+
+string ea_string_label(EA* a, EOp* o) {
+    int i = StrTab_get(&a.str_ix, ea_escape_n(o.text, o.slen), -1);
+    return i < 0 ? "" : List_get<string>(&a.str_lbl, i);
+}
+
+void ea_collect_strings(EA* a) {
+    for (gi in 0..List_len<EGlobal>(&a.m.globals)) {
+        EGlobal g = List_get<EGlobal>(&a.m.globals, gi);
+        if (g.init.kind == EOK_STR) {
+            ea_add_string(a, &g.init);
+        }
+        for (k in 0..List_len<EOp>(&g.elems)) {
+            EOp e = List_get<EOp>(&g.elems, k);
+            if (e.kind == EOK_STR) {
+                ea_add_string(a, &e);
+            }
+        }
+    }
+    for (fi in 0..List_len<*EFunc>(&a.m.funcs)) {
+        *EFunc fun = List_get<*EFunc>(&a.m.funcs, fi);
+        for (bi in 0..List_len<*EBlock>(&fun.blocks)) {
+            *EBlock bb = List_get<*EBlock>(&fun.blocks, bi);
+            for (ii in 0..List_len<EInst>(&bb.insts)) {
+                EInst ins = List_get<EInst>(&bb.insts, ii);
+                for (k in 0..List_len<EOp>(&ins.ops)) {
+                    EOp op = List_get<EOp>(&ins.ops, k);
+                    if (op.kind == EOK_STR) {
+                        ea_add_string(a, &op);
+                    }
+                }
+            }
+        }
+    }
+}
+
+int64 ea_size_of(EA* a, *ETy t) {
+    if (t == null) {
+        return 8;
+    }
+    int64 sz = 0;
+    if (t.kind == ETK_STRUCT) {
+        sz = em_struct_size(a.m, et_nominal(t));
+    }
+    if (sz == 0) {
+        sz = et_type_size(t, a.m);
+    }
+    if (sz == 0) {
+        sz = 8;
+    }
+    return sz;
+}
+
+// One scalar of a global's initializer; returns the bytes written.
+int64 ea_global_scalar(EA* a, EOp* v, *ETy ty, String* os) {
+    int64 esz = ea_size_of(a, ty != null ? ty : et_ptr(null));
+    if (v.kind == EOK_INT) {
+        int64 u = v.iv;
+        if (esz == 1) {
+            ea_w(os, et_cat3("    .byte ", ea_l(u & 255), "\n"));
+        } else if (esz == 2) {
+            ea_w(os, et_cat3("    .short ", ea_l(u & 65535), "\n"));
+        } else if (esz == 4) {
+            ea_w(os, et_cat3("    .long ", ea_l(u & 4294967295), "\n"));
+        } else if (esz == 8) {
+            ea_w(os, et_cat3("    .quad ", ec_u64(u), "\n"));
+        } else {
+            ea_w(os, et_cat3("    .zero ", ea_l(esz), "\n"));
+        }
+    } else if (v.kind == EOK_FLOAT) {
+        if (esz == 4) {
+            ea_w(os, et_cat3("    .long ", ea_l((int64)ea_f32_bits(v.fv)), "\n"));
+        } else {
+            ea_w(os, et_cat3("    .quad ", ec_u64(ea_f64_bits(v.fv)), "\n"));
+        }
+    } else if (v.kind == EOK_STR) {
+        ea_w(os, et_cat3("    .quad ", ea_string_label(a, v), "\n"));
+        esz = 8;
+    } else if (v.kind == EOK_GLOBAL) {
+        ea_w(os, et_cat3("    .quad ", ea_mangle(a, v.text), "\n"));
+        esz = 8;
+    } else {
+        ea_w(os, et_cat3("    .zero ", ea_l(esz), "\n"));
+    }
+    return esz;
+}
+
+void ea_emit_global(EA* a, EGlobal* g, String* os) {
+    string sym = ea_mangle(a, g.name);
+    if (et_findc(g.name, '.') < 0 && ec_is_runtime(g.name) == 0) {
+        ea_w(os, et_cat3("    .globl ", sym, "\n"));
+    }
+    ea_w(os, et_cat3("    .p2align 3\n", sym, ":\n"));
+    int64 sz = ea_size_of(a, g.ty);
+    int64 written = 0;
+    int ne = List_len<EOp>(&g.elems);
+    if (ne > 0) {
+        for (i in 0..ne) {
+            if (written >= sz) {
+                break;
+            }
+            EOp e = List_get<EOp>(&g.elems, i);
+            written = written + ea_global_scalar(a, &e, e.ty, os);
+        }
+    } else if (g.init.kind != EOK_NULL && et_is_agg(g.ty) == 0) {
+        *ETy ty = g.ty;
+        if (g.init.kind == EOK_STR || g.init.kind == EOK_GLOBAL) {
+            ty = et_ptr(null);
+        }
+        written = ea_global_scalar(a, &g.init, ty, os);
+    }
+    if (written < sz) {
+        ea_w(os, et_cat3("    .zero ", ea_l(sz - written), "\n"));
+    }
+}
+
+// ---- Immediates and frame addressing ----
+
+void ea_mov_imm(string reg, int64 v, String* os) {
+    if ((v >= 0 && v <= 65535) || (v < 0 && v >= -65536)) {
+        ea_w(os, et_cat3(et_cat3("    mov ", reg, ", #"), ea_l(v), "\n"));
+        return;
+    }
+    uint64 uv = (uint64)v;
+    ea_w(os, et_cat3(et_cat3("    movz ", reg, ", #"), ea_l((int64)(uv & (uint64)65535)), "\n"));
+    int sh = 16;
+    while (sh < 64) {
+        int64 part = (int64)((uv >> (uint64)sh) & (uint64)65535);
+        if (part != 0) {
+            ea_w(os, et_cat3(et_cat3("    movk ", reg, ", #"), ea_l(part), et_cat3(", lsl #", et_itoa(sh), "\n")));
+        }
+        sh = sh + 16;
+    }
+}
+
+void ea_add_imm(string rd, string rn, int64 imm, String* os) {
+    if (imm <= 4095) {
+        if (imm == 0 && et_eq(rd, rn) == 1) {
+            return;
+        }
+        ea_w(os, et_cat3(et_cat3("    add ", rd, ", "), rn, et_cat3(", #", ea_l(imm), "\n")));
+    } else {
+        ea_mov_imm("x16", imm, os);
+        ea_w(os, et_cat3(et_cat3("    add ", rd, ", "), rn, ", x16\n"));
+    }
+}
+
+// `op reg, [base, #off]` with the scaled unsigned offset form when it encodes, else the
+// offset in x16.
+void ea_mem_op(string op, string reg, string base, int64 off, int64 scale, String* os) {
+    string head = et_cat3(et_cat3("    ", op, " "), reg, et_cat3(", [", base, ", "));
+    if (off % scale == 0 && off / scale <= 4095) {
+        ea_w(os, et_cat3(head, et_cat("#", ea_l(off)), "]\n"));
+    } else {
+        ea_mov_imm("x16", off, os);
+        ea_w(os, et_cat(head, "x16]\n"));
+    }
+}
+
+int64 ea_slot_of(EA* a, string v) {
+    int s = StrTab_get(&a.slots, v, -1);
+    if (s < 0) {
+        ea_fail(et_cat3(et_cat3("no slot for ", v, " in "), a.fun.name, ""));
+    }
+    return (int64)s;
+}
+
+// Extend the low bits of x<r> to 64 by the type's width and signedness.
+void ea_normalize(int r, *ETy t, String* os) {
+    if (et_is_int(t) == 0) {
+        return;
+    }
+    string x = ea_x(r);
+    string w = ea_r("w", r);
+    if (t.bits == 1) {
+        ea_w(os, et_cat3(et_cat3("    and ", x, ", "), x, ", #1\n"));
+    } else if (t.bits == 8) {
+        if (t.sgn == 1) {
+            ea_w(os, et_cat3(et_cat3("    sxtb ", x, ", "), w, "\n"));
+        } else {
+            ea_w(os, et_cat3(et_cat3("    and ", x, ", "), x, ", #0xff\n"));
+        }
+    } else if (t.bits == 16) {
+        if (t.sgn == 1) {
+            ea_w(os, et_cat3(et_cat3("    sxth ", x, ", "), w, "\n"));
+        } else {
+            ea_w(os, et_cat3(et_cat3("    and ", x, ", "), x, ", #0xffff\n"));
+        }
+    } else if (t.bits == 32) {
+        if (t.sgn == 1) {
+            ea_w(os, et_cat3(et_cat3("    sxtw ", x, ", "), w, "\n"));
+        } else {
+            ea_w(os, et_cat3(et_cat3("    mov ", w, ", "), w, "\n"));
+        }
+    }
+}
+
+// Store an instruction's result: an integer is first normalized to its type.
+void ea_store_x(EA* a, string reg, string v, String* os) {
+    int ri = StrTab_get(&a.res_ix, v, -1);
+    if (ri >= 0 && et_len(reg) > 1 && reg[0] == 'x' && ea_digit((int)reg[1]) == 1) {
+        ea_normalize(atoi(et_from(reg, 1)), List_get<*ETy>(&a.res_tys, ri), os);
+    }
+    ea_mem_op("str", reg, "sp", ea_slot_of(a, v), 8, os);
+}
+
+void ea_store_float(EA* a, int fr, int is32, string v, String* os) {
+    if (is32 == 1) {
+        ea_mem_op("str", ea_r("s", fr), "sp", ea_slot_of(a, v), 4, os);
+    } else {
+        ea_mem_op("str", ea_r("d", fr), "sp", ea_slot_of(a, v), 8, os);
+    }
+}
+
+void ea_load_sym_addr(EA* a, string reg, string name, String* os) {
+    string sym = StrTab_has(&a.cabi_set, name) == 1 ? ea_mangle(a, et_cat("__cabi_", name)) : ea_mangle(a, name);
+    int local = StrTab_has(&a.defined, name);
+    string adrp = et_cat3("    adrp ", reg, ", ");
+    if (a.darwin == 1) {
+        if (local == 1) {
+            ea_w(os, et_cat3(adrp, sym, "@PAGE\n"));
+            ea_w(os, et_cat3(et_cat3("    add ", reg, ", "), reg, et_cat3(", ", sym, "@PAGEOFF\n")));
+        } else {
+            ea_w(os, et_cat3(adrp, sym, "@GOTPAGE\n"));
+            ea_w(os, et_cat3(et_cat3("    ldr ", reg, ", ["), reg, et_cat3(", ", sym, "@GOTPAGEOFF]\n")));
+        }
+    } else {
+        if (local == 1) {
+            ea_w(os, et_cat3(adrp, sym, "\n"));
+            ea_w(os, et_cat3(et_cat3("    add ", reg, ", "), reg, et_cat3(", :lo12:", sym, "\n")));
+        } else {
+            ea_w(os, et_cat3(adrp, ":got:", et_cat(sym, "\n")));
+            ea_w(os, et_cat3(et_cat3("    ldr ", reg, ", ["), reg, et_cat3(", :got_lo12:", sym, "]\n")));
+        }
+    }
+}
+
+void ea_load_operand(EA* a, EOp* op, int ri, String* os) {
+    string reg = ea_x(ri);
+    int k = op.kind;
+    if (k == EOK_INT) {
+        ea_mov_imm(reg, ec_trunc(op.iv, op.ty), os);
+    } else if (k == EOK_NULL) {
+        ea_w(os, et_cat3("    mov ", reg, ", #0\n"));
+    } else if (k == EOK_FLOAT) {
+        if (op.ty != null && op.ty.bits == 32) {
+            ea_mov_imm(reg, (int64)ea_f32_bits(op.fv), os);
+        } else {
+            ea_mov_imm(reg, ea_f64_bits(op.fv), os);
+        }
+    } else if (k == EOK_STR) {
+        string lbl = ea_string_label(a, op);
+        if (a.darwin == 1) {
+            ea_w(os, et_cat3(et_cat3("    adrp ", reg, ", "), lbl, "@PAGE\n"));
+            ea_w(os, et_cat3(et_cat3("    add ", reg, ", "), reg, et_cat3(", ", lbl, "@PAGEOFF\n")));
+        } else {
+            ea_w(os, et_cat3(et_cat3("    adrp ", reg, ", "), lbl, "\n"));
+            ea_w(os, et_cat3(et_cat3("    add ", reg, ", "), reg, et_cat3(", :lo12:", lbl, "\n")));
+        }
+    } else if (k == EOK_GLOBAL) {
+        ea_load_sym_addr(a, reg, op.text, os);
+    } else if (k == EOK_VAR) {
+        // A value nothing defined (a void result) reads as 0, as in the EVM.
+        if (StrTab_has(&a.slots, op.text) == 0) {
+            ea_w(os, et_cat3("    mov ", reg, ", #0\n"));
+        } else if (StrTab_has(&a.addr_vars, op.text) == 1) {
+            ea_add_imm(reg, "sp", ea_slot_of(a, op.text), os);
+        } else {
+            ea_mem_op("ldr", reg, "sp", ea_slot_of(a, op.text), 8, os);
+        }
+    } else {
+        ea_fail(et_cat("unsupported operand ", eo_str_of(op)));
+    }
+}
+
+// Load a value into s<r>/d<r> as the width `want32` asks, converting from the
+// operand's own type (an integer converts by its signedness).
+void ea_load_float(EA* a, EOp* op, int r, int want32, String* os) {
+    string s = ea_r("s", r);
+    string d = ea_r("d", r);
+    string dst = want32 == 1 ? s : d;
+    if (op.kind == EOK_FLOAT) {
+        if (want32 == 1) {
+            ea_mov_imm("w16", (int64)ea_f32_bits(op.fv), os);
+            ea_w(os, et_cat3("    fmov ", s, ", w16\n"));
+        } else {
+            ea_mov_imm("x16", ea_f64_bits(op.fv), os);
+            ea_w(os, et_cat3("    fmov ", d, ", x16\n"));
+        }
+        return;
+    }
+    if (op.kind == EOK_VAR && et_is_float(op.ty) == 1 && StrTab_has(&a.slots, op.text) == 1) {
+        int src32 = op.ty.bits == 32 ? 1 : 0;
+        if (src32 == 1) {
+            ea_mem_op("ldr", s, "sp", ea_slot_of(a, op.text), 4, os);
+        } else {
+            ea_mem_op("ldr", d, "sp", ea_slot_of(a, op.text), 8, os);
+        }
+        if (src32 == 1 && want32 == 0) {
+            ea_w(os, et_cat3(et_cat3("    fcvt ", d, ", "), s, "\n"));
+        }
+        if (src32 == 0 && want32 == 1) {
+            ea_w(os, et_cat3(et_cat3("    fcvt ", s, ", "), d, "\n"));
+        }
+        return;
+    }
+    ea_load_operand(a, op, 16, os);
+    int uns = et_is_int(op.ty) == 1 && op.ty.sgn == 0 ? 1 : 0;
+    ea_w(os, et_cat3(uns == 1 ? "    ucvtf " : "    scvtf ", dst, ", x16\n"));
+}
+
+// Load a value of type t from [base + off] into `xreg`, extended by its type.
+void ea_load_sized(string xreg, string base, int64 off, *ETy t, String* os) {
+    string w = et_cat("w", et_from(xreg, 1));
+    if (et_is_int(t) == 0 || t.bits > 32) {
+        ea_mem_op("ldr", xreg, base, off, 8, os);
+        return;
+    }
+    if (t.bits <= 8) {
+        if (t.sgn == 1 && t.bits > 1) {
+            ea_mem_op("ldrsb", xreg, base, off, 1, os);
+        } else {
+            ea_mem_op("ldrb", w, base, off, 1, os);
+        }
+    } else if (t.bits <= 16) {
+        if (t.sgn == 1) {
+            ea_mem_op("ldrsh", xreg, base, off, 2, os);
+        } else {
+            ea_mem_op("ldrh", w, base, off, 2, os);
+        }
+    } else {
+        if (t.sgn == 1) {
+            ea_mem_op("ldrsw", xreg, base, off, 4, os);
+        } else {
+            ea_mem_op("ldr", w, base, off, 4, os);
+        }
+    }
+}
+
+// Copy `size` bytes from [x9] to [x10] (clobbers x9-x13).
+void ea_copy_bytes(EA* a, int64 size, String* os) {
+    if (size <= 128) {
+        int64 b = 0;
+        while (b + 8 <= size) {
+            ea_w(os, et_cat3("    ldr x11, [x9, #", ea_l(b), "]\n"));
+            ea_w(os, et_cat3("    str x11, [x10, #", ea_l(b), "]\n"));
+            b = b + 8;
+        }
+        while (b < size) {
+            ea_w(os, et_cat3("    ldrb w11, [x9, #", ea_l(b), "]\n"));
+            ea_w(os, et_cat3("    strb w11, [x10, #", ea_l(b), "]\n"));
+            b = b + 1;
+        }
+        return;
+    }
+    string loop = ea_new_local(a, "copy");
+    ea_mov_imm("x12", size / 8, os);
+    ea_w(os, et_cat(loop, ":\n"));
+    ea_w(os, "    ldr x11, [x9], #8\n");
+    ea_w(os, "    str x11, [x10], #8\n");
+    ea_w(os, "    subs x12, x12, #1\n");
+    ea_w(os, et_cat3("    b.ne ", loop, "\n"));
+    int64 r = 0;
+    while (r < size % 8) {
+        ea_w(os, "    ldrb w11, [x9], #1\n");
+        ea_w(os, "    strb w11, [x10], #1\n");
+        r = r + 1;
+    }
+}
+
+// ---- Calling convention ----
+
+int64 ea_arg_size(*ETy t) {
+    if (t == null || et_is_agg(t) == 1) {
+        return 8;
+    }
+    if (t.kind == ETK_FLOAT) {
+        return t.bits == 32 ? 4 : 8;
+    }
+    if (t.kind == ETK_INT) {
+        return t.bits <= 8 ? 1 : t.bits <= 16 ? 2 : t.bits <= 32 ? 4 : 8;
+    }
+    return 8;
+}
+
+List<EaArg> ea_classify(EA* a, List<*ETy>* tys, int fixed, int variadic, *int64 stack_bytes) {
+    List<EaArg> locs;
+    List_init<EaArg>(&locs, 8);
+    int ngr = 0;
+    int nvr = 0;
+    int64 off = 0;
+    for (i in 0..List_len<*ETy>(tys)) {
+        *ETy t = List_get<*ETy>(tys, i);
+        EaArg l;
+        l.reg = -1;
+        l.fp = et_is_float(t);
+        l.size = ea_arg_size(t);
+        l.vararg = variadic == 1 && i >= fixed ? 1 : 0;
+        if (a.darwin == 1 && l.vararg == 1) {
+            off = ea_align_up(off, 8);
+            l.off = off;
+            l.size = 8;
+            off = off + 8;
+        } else if (l.fp == 1 && nvr < 8) {
+            l.reg = nvr;
+            nvr = nvr + 1;
+        } else if (l.fp == 0 && ngr < 8) {
+            l.reg = ngr;
+            ngr = ngr + 1;
+        } else {
+            int64 al = a.darwin == 1 ? l.size : 8;
+            off = ea_align_up(off, al);
+            l.off = off;
+            off = off + (a.darwin == 1 ? l.size : 8);
+        }
+        List_push<EaArg>(&locs, l);
+    }
+    if (stack_bytes != null) {
+        *stack_bytes = ea_align_up(off, 16);
+    }
+    return locs;
+}
+
+EaShape ea_call_shape(EA* a, EInst* ins) {
+    EaShape cs;
+    List_init<*ETy>(&cs.tys, 8);
+    *EFunc callee = null;
+    EOp o0 = ei_op(ins, 0);
+    if (ins.op == EO_CALL) {
+        callee = em_func(a.m, o0.text);
+        cs.external = callee == null || ec_fn_external(callee) == 1 ? 1 : 0;
+    } else {
+        cs.indirect_env = et_is_closure(o0.ty);
+    }
+    if (cs.indirect_env == 1) {
+        List_push<*ETy>(&cs.tys, et_ptr(null));
+    }
+    int n = List_len<EOp>(&ins.ops);
+    int i = 1;
+    while (i < n) {
+        EOp o = ei_op(ins, i);
+        *ETy t = o.ty;
+        if (callee != null && i - 1 < efn_nparams(callee) && efn_ptype(callee, i - 1) != null) {
+            t = efn_ptype(callee, i - 1);
+        }
+        if (o.kind == EOK_FLOAT && et_is_float(t) == 0) {
+            t = et_f64();
+        }
+        List_push<*ETy>(&cs.tys, t);
+        i = i + 1;
+    }
+    cs.variadic = callee != null && callee.is_variadic == 1 ? 1 : 0;
+    cs.fixed = callee != null ? efn_nparams(callee) : List_len<*ETy>(&cs.tys);
+    return cs;
+}
+
+// ---- C ABI for records (AAPCS64) ----
+//
+// A struct or union passed by value to or from C: a homogeneous floating-point
+// aggregate (1-4 members of one float type) in consecutive v registers, else up to
+// 16 bytes in x registers, else a pointer to a copy; when the registers run out, the
+// record goes on the stack. A result: an HFA in v0-v3, up to 16 bytes in x0/x1, else in
+// the buffer x8 points to.
+
+// The scalar leaves of a type, in order (a union contributes its widest member's,
+// when all members agree; a bitfield an integer, which is never an HFA member).
+void ea_leaves(EA* a, *ETy t, List<*ETy>* out, int depth) {
+    if (t == null || depth > 8 || List_len<*ETy>(out) > 8) {
+        List_push<*ETy>(out, et_i64());
+        return;
+    }
+    if (t.kind == ETK_ARRAY) {
+        int64 i = 0;
+        while (i < t.size && List_len<*ETy>(out) <= 8) {
+            ea_leaves(a, t.elem, out, depth + 1);
+            i = i + 1;
+        }
+        return;
+    }
+    if (t.kind != ETK_STRUCT) {
+        if (t.kind == ETK_CLOSURE || t.kind == ETK_INTERFACE || t.kind == ETK_SLICE) {
+            List_push<*ETy>(out, et_i64());
+        } else {
+            List_push<*ETy>(out, t);
+        }
+        return;
+    }
+    *EStruct si = em_layout(a.m, et_nominal(t));
+    if (si == null) {
+        List_push<*ETy>(out, et_i64());
+        return;
+    }
+    for (p in 0..List_len<EPad>(&si.pads)) {
+        if (List_get<EPad>(&si.pads, p).width > 0) {
+            List_push<*ETy>(out, et_i64());   // a `: 0` is not data
+        }
+    }
+    int nf = List_len<*EField>(&si.fields);
+    if (si.is_union == 1) {
+        List<*ETy> widest;
+        List_init<*ETy>(&widest, 4);
+        int same = 1;
+        *ETy base = null;
+        for (fi in 0..nf) {
+            *EField f = List_get<*EField>(&si.fields, fi);
+            List<*ETy> mm;
+            List_init<*ETy>(&mm, 4);
+            if (f.is_bf == 1) {
+                List_push<*ETy>(&mm, et_i64());
+            } else {
+                ea_leaves(a, f.ty, &mm, depth + 1);
+            }
+            for (k in 0..List_len<*ETy>(&mm)) {
+                *ETy l = List_get<*ETy>(&mm, k);
+                if (base == null) {
+                    base = l;
+                } else if (!(l.kind == ETK_FLOAT && base.kind == ETK_FLOAT && l.bits == base.bits)) {
+                    same = 0;
+                }
+            }
+            if (List_len<*ETy>(&mm) > List_len<*ETy>(&widest)) {
+                widest = mm;
+            }
+        }
+        if (same == 0) {
+            List_push<*ETy>(&widest, et_i64());
+        }
+        for (k in 0..List_len<*ETy>(&widest)) {
+            List_push<*ETy>(out, List_get<*ETy>(&widest, k));
+        }
+        return;
+    }
+    for (fi in 0..nf) {
+        *EField f = List_get<*EField>(&si.fields, fi);
+        if (f.is_bf == 1) {
+            List_push<*ETy>(out, et_i64());
+        } else {
+            ea_leaves(a, f.ty, out, depth + 1);
+        }
+    }
+}
+
+// The HFA member count (0: not one) and whether its members are doubles.
+int ea_hfa_of(EA* a, *ETy t, *int is_double) {
+    List<*ETy> l;
+    List_init<*ETy>(&l, 8);
+    ea_leaves(a, t, &l, 0);
+    int n = List_len<*ETy>(&l);
+    if (n == 0 || n > 4) {
+        return 0;
+    }
+    *ETy first = List_get<*ETy>(&l, 0);
+    for (i in 0..n) {
+        *ETy x = List_get<*ETy>(&l, i);
+        if (x.kind != ETK_FLOAT || x.bits != first.bits) {
+            return 0;
+        }
+    }
+    *is_double = first.bits == 64 ? 1 : 0;
+    return n;
+}
+
+int ea_hfa_ret(EA* a, *ETy t) {
+    int dbl = 0;
+    return ea_hfa_of(a, t, &dbl) != 0 ? 1 : 0;
+}
+
+// onStack: place l at the next stack offset of the given alignment.
+void ea_on_stack(EA* a, EaCLoc* l, *int64 off, int64 size, int64 al) {
+    *off = ea_align_up(*off, al);
+    l.off = *off;
+    *off = *off + ea_align_up(size, a.darwin == 1 ? ea_min(al, 8) : 8);
+}
+
+List<EaCLoc> ea_classify_c(EA* a, List<*ETy>* tys, int fixed, int variadic, *int64 stack_bytes) {
+    List<EaCLoc> locs;
+    List_init<EaCLoc>(&locs, 8);
+    int ngr = 0;
+    int nvr = 0;
+    int64 off = 0;
+    for (i in 0..List_len<*ETy>(tys)) {
+        *ETy t = List_get<*ETy>(tys, i);
+        EaCLoc l;
+        l.kind = EAC_GPR;
+        l.size = 8;
+        l.vararg = variadic == 1 && i >= fixed ? 1 : 0;
+        if (ec_is_cagg(t) == 1) {
+            int64 size = ea_size_of(a, t);
+            int dbl = 0;
+            int hfa = ea_hfa_of(a, t, &dbl);
+            if (a.darwin == 1 && l.vararg == 1) {
+                l.kind = size > 16 ? EAC_INDIRECT : EAC_STACKCOPY;
+                l.via_stack = 1;
+                l.size = size;
+                ea_on_stack(a, &l, &off, size > 16 ? 8 : size, 8);
+            } else if (hfa != 0) {
+                l.size = size;
+                l.dbl = dbl;
+                l.count = hfa;
+                if (nvr + hfa <= 8) {
+                    l.kind = EAC_HFA;
+                    l.reg = nvr;
+                    nvr = nvr + hfa;
+                } else {
+                    nvr = 8;
+                    l.kind = EAC_STACKCOPY;
+                    ea_on_stack(a, &l, &off, size, dbl == 1 ? 8 : 4);
+                }
+            } else if (size <= 16) {
+                int words = (int)((size + 7) / 8);
+                l.size = size;
+                l.count = words;
+                if (ngr + words <= 8) {
+                    l.kind = EAC_WORDS;
+                    l.reg = ngr;
+                    ngr = ngr + words;
+                } else {
+                    ngr = 8;
+                    l.kind = EAC_STACKCOPY;
+                    ea_on_stack(a, &l, &off, size, 8);
+                }
+            } else {
+                l.kind = EAC_INDIRECT;
+                l.size = size;
+                if (ngr < 8) {
+                    l.reg = ngr;
+                    ngr = ngr + 1;
+                } else {
+                    l.via_stack = 1;
+                    ea_on_stack(a, &l, &off, 8, 8);
+                }
+            }
+        } else {
+            int fp = et_is_float(t);
+            int64 sz = ea_arg_size(t);
+            l.size = sz;
+            if (a.darwin == 1 && l.vararg == 1) {
+                l.kind = EAC_STACK;
+                ea_on_stack(a, &l, &off, 8, 8);
+            } else if (fp == 1 && nvr < 8) {
+                l.kind = EAC_FPR;
+                l.reg = nvr;
+                nvr = nvr + 1;
+            } else if (fp == 0 && ngr < 8) {
+                l.kind = EAC_GPR;
+                l.reg = ngr;
+                ngr = ngr + 1;
+            } else {
+                l.kind = EAC_STACK;
+                ea_on_stack(a, &l, &off, sz, a.darwin == 1 ? sz : 8);
+            }
+            l.dbl = fp == 1 && t.bits != 32 ? 1 : 0;
+        }
+        List_push<EaCLoc>(&locs, l);
+    }
+    if (stack_bytes != null) {
+        *stack_bytes = ea_align_up(off, 16);
+    }
+    return locs;
+}
+
+int ea_is_c_record_call(EA* a, EInst* ins, EaShape* cs) {
+    if (cs.external == 0 || ins.op != EO_CALL || ec_is_runtime(ei_op(ins, 0).text) == 1) {
+        return 0;
+    }
+    if (ec_is_cagg(ins.ty) == 1) {
+        return 1;
+    }
+    for (i in 0..List_len<*ETy>(&cs.tys)) {
+        if (ec_is_cagg(List_get<*ETy>(&cs.tys, i)) == 1) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void ea_load_arg_int(EA* a, EOp* op, *ETy t, int external, int reg, String* os) {
+    ea_load_operand(a, op, reg, os);
+    if (external == 1 && ec_is_valist(t) == 1 && a.darwin == 1) {
+        ea_w(os, et_cat3(et_cat3("    ldr ", ea_x(reg), ", ["), ea_x(reg), "]\n"));
+    }
+}
+
+string ea_scratch_key(EA* a) {
+    return et_cat3(et_itoa(a.cur_bi), ":", et_itoa(a.cur_ii));
+}
+
+// Store w9/x9 to [sp + off] at width w.
+void ea_store_width(int64 w, int64 off, String* os) {
+    if (w == 1) {
+        ea_mem_op("strb", "w9", "sp", off, 1, os);
+    } else if (w == 2) {
+        ea_mem_op("strh", "w9", "sp", off, 2, os);
+    } else if (w == 4) {
+        ea_mem_op("str", "w9", "sp", off, 4, os);
+    } else {
+        ea_mem_op("str", "x9", "sp", off, 8, os);
+    }
+}
+
+// A call to C with records: each record is first copied to the call's scratch area
+// (so a register load never reads past the record), then placed by classifyC.
+void ea_c_record_call(EA* a, EInst* ins, EaShape* cs, String* os) {
+    List<EaCLoc> locs = ea_classify_c(a, &cs.tys, cs.fixed, cs.variadic, null);
+    int nargs = List_len<EOp>(&ins.ops) - 1;
+    int sk = StrTab_get(&a.scratch, ea_scratch_key(a), -1);
+    if (sk < 0) {
+        ea_fail("no scratch area for a C call");
+    }
+    int64 scratch = (int64)sk;
+    List<int64> copy_at;
+    List_init<int64>(&copy_at, 8);
+    for (i in 0..nargs) {
+        List_push<int64>(&copy_at, 0);
+        *ETy t = List_get<*ETy>(&cs.tys, i);
+        if (ec_is_cagg(t) == 0) {
+            continue;
+        }
+        List_set<int64>(&copy_at, i, scratch);
+        EOp o = ei_op(ins, i + 1);
+        ea_load_operand(a, &o, 9, os);
+        ea_add_imm("x10", "sp", scratch, os);
+        ea_copy_bytes(a, ea_size_of(a, t), os);
+        scratch = scratch + ea_align_up(ea_max(ea_size_of(a, t), 16), 16);
+    }
+    // Stack placements.
+    for (i in 0..nargs) {
+        EaCLoc l = List_get<EaCLoc>(&locs, i);
+        EOp o = ei_op(ins, i + 1);
+        if (l.kind == EAC_STACKCOPY) {
+            ea_add_imm("x9", "sp", List_get<int64>(&copy_at, i), os);
+            ea_add_imm("x10", "sp", l.off, os);
+            ea_copy_bytes(a, l.size, os);
+        } else if (l.kind == EAC_INDIRECT && l.via_stack == 1) {
+            ea_add_imm("x9", "sp", List_get<int64>(&copy_at, i), os);
+            ea_mem_op("str", "x9", "sp", l.off, 8, os);
+        } else if (l.kind == EAC_STACK) {
+            *ETy t = List_get<*ETy>(&cs.tys, i);
+            if (et_is_float(t) == 1) {
+                int is32 = l.vararg == 0 && t.bits == 32 ? 1 : 0;
+                ea_load_float(a, &o, 16, is32, os);
+                ea_mem_op("str", is32 == 1 ? "s16" : "d16", "sp", l.off, is32 == 1 ? 4 : 8, os);
+            } else {
+                ea_load_arg_int(a, &o, t, 1, 9, os);
+                ea_store_width(a.darwin == 1 && l.vararg == 0 ? l.size : 8, l.off, os);
+            }
+        }
+    }
+    // Register placements.
+    for (i in 0..nargs) {
+        EaCLoc l = List_get<EaCLoc>(&locs, i);
+        *ETy t = List_get<*ETy>(&cs.tys, i);
+        EOp o = ei_op(ins, i + 1);
+        if (l.kind == EAC_GPR) {
+            ea_load_arg_int(a, &o, t, 1, l.reg, os);
+        } else if (l.kind == EAC_FPR) {
+            ea_load_float(a, &o, l.reg, l.vararg == 0 && t != null && t.bits == 32 ? 1 : 0, os);
+        } else if (l.kind == EAC_HFA) {
+            for (k in 0..l.count) {
+                ea_mem_op("ldr", ea_r(l.dbl == 1 ? "d" : "s", l.reg + k), "sp",
+                          List_get<int64>(&copy_at, i) + (int64)k * (l.dbl == 1 ? 8 : 4), l.dbl == 1 ? 8 : 4, os);
+            }
+        } else if (l.kind == EAC_WORDS) {
+            for (k in 0..l.count) {
+                ea_mem_op("ldr", ea_x(l.reg + k), "sp", List_get<int64>(&copy_at, i) + (int64)k * 8, 8, os);
+            }
+        } else if (l.kind == EAC_INDIRECT) {
+            if (l.via_stack == 0) {
+                ea_add_imm(ea_x(l.reg), "sp", List_get<int64>(&copy_at, i), os);
+            }
+        }
+    }
+    int rec_ret = ec_is_cagg(ins.ty);
+    int has_res = et_len(ins.res) > 0 ? 1 : 0;
+    if (rec_ret == 1 && has_res == 1 && ea_size_of(a, ins.ty) > 16 && ea_hfa_ret(a, ins.ty) == 0) {
+        ea_add_imm("x8", "sp", ea_slot_of(a, ins.res), os);
+    }
+    ea_w(os, et_cat3("    bl ", ea_mangle(a, ei_op(ins, 0).text), "\n"));
+    if (has_res == 0) {
+        return;
+    }
+    if (rec_ret == 1) {
+        int dbl = 0;
+        int hfa = ea_hfa_of(a, ins.ty, &dbl);
+        int64 at = ea_slot_of(a, ins.res);
+        if (hfa != 0) {
+            for (k in 0..hfa) {
+                ea_mem_op("str", ea_r(dbl == 1 ? "d" : "s", k), "sp", at + (int64)k * (dbl == 1 ? 8 : 4), dbl == 1 ? 8 : 4, os);
+            }
+        } else if (ea_size_of(a, ins.ty) <= 16) {
+            ea_mem_op("str", "x0", "sp", at, 8, os);
+            if (ea_size_of(a, ins.ty) > 8) {
+                ea_mem_op("str", "x1", "sp", at + 8, 8, os);
+            }
+        }
+    } else if (et_is_float(ins.ty) == 1) {
+        ea_store_float(a, 0, ins.ty.bits == 32 ? 1 : 0, ins.res, os);
+    } else {
+        ea_normalize(0, ins.ty, os);
+        ea_store_x(a, "x0", ins.res, os);
+    }
+}
+
+// A function handed to C whose signature has a record or a va_list.
+void ea_note_cabi(EA* a, string name) {
+    *EFunc f = em_func(a.m, name);
+    if (f == null || ec_fn_external(f) == 1) {
+        return;
+    }
+    int rec = ec_is_cagg(f.ret);
+    for (pi in 0..List_len<*ETy>(&f.ptypes)) {
+        *ETy pt = List_get<*ETy>(&f.ptypes, pi);
+        if (ec_is_cagg(pt) == 1 || ec_is_valist(pt) == 1) {
+            rec = 1;
+        }
+    }
+    if (rec == 1 && StrTab_has(&a.cabi_set, f.name) == 0) {
+        StrTab_set(&a.cabi_set, f.name, 1);
+        List_push<string>(&a.cabi_order, f.name);
+    }
+}
+
+// findCabiFns: a function whose address is handed to C (an operand other than a direct
+// call's or a closure's target, or a global's element).
+void ea_find_cabi(EA* a) {
+    for (fi in 0..List_len<*EFunc>(&a.m.funcs)) {
+        *EFunc fun = List_get<*EFunc>(&a.m.funcs, fi);
+        for (bi in 0..List_len<*EBlock>(&fun.blocks)) {
+            *EBlock bb = List_get<*EBlock>(&fun.blocks, bi);
+            for (ii in 0..List_len<EInst>(&bb.insts)) {
+                EInst ins = List_get<EInst>(&bb.insts, ii);
+                for (k in 0..List_len<EOp>(&ins.ops)) {
+                    EOp op = List_get<EOp>(&ins.ops, k);
+                    if (op.kind != EOK_GLOBAL) {
+                        continue;
+                    }
+                    if (k == 0 && (ins.op == EO_CALL || ins.op == EO_MAKECLOSURE)) {
+                        continue;
+                    }
+                    ea_note_cabi(a, op.text);
+                }
+            }
+        }
+    }
+    for (gi in 0..List_len<EGlobal>(&a.m.globals)) {
+        EGlobal g = List_get<EGlobal>(&a.m.globals, gi);
+        for (k in 0..List_len<EOp>(&g.elems)) {
+            EOp e = List_get<EOp>(&g.elems, k);
+            if (e.kind == EOK_GLOBAL) {
+                ea_note_cabi(a, e.text);
+            }
+        }
+    }
+}
+
+// thunk alloc: a 16-aligned area of at least 8 bytes.
+int64 ea_thunk_alloc(*int64 local, int64 sz) {
+    *local = ea_align_up(*local, 16);
+    int64 o = *local;
+    *local = *local + ea_align_up(ea_max(sz, 8), 16);
+    return o;
+}
+
+// `__cabi_<f>`: the C signature, calling f with the Eskiu one (records by address, a
+// va_list in a slot of its own, a record result through f's buffer).
+void ea_cabi_thunk(EA* a, *EFunc fun, String* os) {
+    List<*ETy> ctys;
+    List_init<*ETy>(&ctys, 8);
+    for (i in 0..List_len<*ETy>(&fun.ptypes)) {
+        List_push<*ETy>(&ctys, List_get<*ETy>(&fun.ptypes, i));
+    }
+    int np = List_len<*ETy>(&ctys);
+    List<EaCLoc> inl = ea_classify_c(a, &ctys, np, 0, null);
+    int64 outgoing = 0;
+    List<EaArg> outl = ea_classify(a, &ctys, np, 0, &outgoing);
+    int64 local = outgoing;
+    List<int64> slot;
+    List_init<int64>(&slot, 8);
+    for (i in 0..np) {
+        *ETy t = List_get<*ETy>(&ctys, i);
+        int64 sz = ec_is_valist(t) == 1 ? 32 : ec_is_cagg(t) == 1 ? ea_size_of(a, t) : 8;
+        List_push<int64>(&slot, ea_thunk_alloc(&local, sz));
+    }
+    int rec_ret = ec_is_cagg(fun.ret);
+    int64 ret_buf = 0;
+    if (rec_ret == 1) {
+        ret_buf = ea_thunk_alloc(&local, ea_size_of(a, fun.ret));
+    }
+    int64 x8_slot = ea_thunk_alloc(&local, 8);
+    int64 frame = ea_align_up(local, 16);
+
+    string sym = ea_mangle(a, et_cat("__cabi_", fun.name));
+    ea_w(os, et_cat3("    .p2align 2\n", sym, ":\n"));
+    ea_w(os, "    stp x29, x30, [sp, #-16]!\n    mov x29, sp\n");
+    ea_mov_imm("x16", frame, os);
+    ea_w(os, "    sub sp, sp, x16\n");
+    ea_mem_op("str", "x8", "sp", x8_slot, 8, os);
+    for (i in 0..np) {
+        EaCLoc l = List_get<EaCLoc>(&inl, i);
+        *ETy t = List_get<*ETy>(&ctys, i);
+        int64 si = List_get<int64>(&slot, i);
+        if (l.kind == EAC_GPR) {
+            ea_mem_op("str", ea_x(l.reg), "sp", si, 8, os);
+        } else if (l.kind == EAC_FPR) {
+            ea_mem_op("str", ea_r(l.dbl == 1 ? "d" : "s", l.reg), "sp", si, l.dbl == 1 ? 8 : 4, os);
+        } else if (l.kind == EAC_STACK) {
+            if (et_is_float(t) == 1) {
+                ea_mem_op("ldr", l.dbl == 1 ? "d16" : "s16", "x29", 16 + l.off, l.dbl == 1 ? 8 : 4, os);
+                ea_mem_op("str", l.dbl == 1 ? "d16" : "s16", "sp", si, l.dbl == 1 ? 8 : 4, os);
+            } else {
+                ea_load_sized("x9", "x29", 16 + l.off, a.darwin == 1 ? t : et_i64(), os);
+                ea_mem_op("str", "x9", "sp", si, 8, os);
+            }
+        } else if (l.kind == EAC_HFA) {
+            for (k in 0..l.count) {
+                ea_mem_op("str", ea_r(l.dbl == 1 ? "d" : "s", l.reg + k), "sp", si + (int64)k * (l.dbl == 1 ? 8 : 4), l.dbl == 1 ? 8 : 4, os);
+            }
+        } else if (l.kind == EAC_WORDS) {
+            for (k in 0..l.count) {
+                ea_mem_op("str", ea_x(l.reg + k), "sp", si + (int64)k * 8, 8, os);
+            }
+        } else if (l.kind == EAC_STACKCOPY) {
+            ea_add_imm("x9", "x29", 16 + l.off, os);
+            ea_add_imm("x10", "sp", si, os);
+            ea_copy_bytes(a, l.size, os);
+        } else if (l.kind == EAC_INDIRECT) {
+            if (l.via_stack == 1) {
+                ea_mem_op("ldr", "x9", "x29", 16 + l.off, 8, os);
+            } else {
+                ea_w(os, et_cat3("    mov x9, x", et_itoa(l.reg), "\n"));
+            }
+            ea_add_imm("x10", "sp", si, os);
+            ea_copy_bytes(a, l.size, os);
+        }
+        // A va_list: on Darwin its char* arrived (stored above); elsewhere a pointer to it.
+        if (ec_is_valist(t) == 1 && a.darwin == 0) {
+            ea_mem_op("ldr", "x9", "sp", si, 8, os);
+            ea_add_imm("x10", "sp", si, os);
+            ea_copy_bytes(a, 32, os);
+        }
+    }
+    // The Eskiu call: stack arguments first, then registers.
+    for (i in 0..np) {
+        EaArg l = List_get<EaArg>(&outl, i);
+        if (l.reg >= 0) {
+            continue;
+        }
+        *ETy t = List_get<*ETy>(&ctys, i);
+        int64 si = List_get<int64>(&slot, i);
+        if (l.fp == 1) {
+            int is32 = t.bits == 32 ? 1 : 0;
+            ea_mem_op("ldr", is32 == 1 ? "s16" : "d16", "sp", si, is32 == 1 ? 4 : 8, os);
+            ea_mem_op("str", is32 == 1 ? "s16" : "d16", "sp", l.off, is32 == 1 ? 4 : 8, os);
+        } else {
+            if (ec_is_cagg(t) == 1 || ec_is_valist(t) == 1) {
+                ea_add_imm("x9", "sp", si, os);
+            } else {
+                ea_mem_op("ldr", "x9", "sp", si, 8, os);
+            }
+            ea_mem_op("str", "x9", "sp", l.off, 8, os);
+        }
+    }
+    for (i in 0..np) {
+        EaArg l = List_get<EaArg>(&outl, i);
+        if (l.reg < 0) {
+            continue;
+        }
+        *ETy t = List_get<*ETy>(&ctys, i);
+        int64 si = List_get<int64>(&slot, i);
+        if (l.fp == 1) {
+            int is32 = t.bits == 32 ? 1 : 0;
+            ea_mem_op("ldr", ea_r(is32 == 1 ? "s" : "d", l.reg), "sp", si, is32 == 1 ? 4 : 8, os);
+        } else if (ec_is_cagg(t) == 1 || ec_is_valist(t) == 1) {
+            ea_add_imm(ea_x(l.reg), "sp", si, os);
+        } else {
+            ea_mem_op("ldr", ea_x(l.reg), "sp", si, 8, os);
+        }
+    }
+    int big_ret = rec_ret == 1 && ea_size_of(a, fun.ret) > 16 && ea_hfa_ret(a, fun.ret) == 0 ? 1 : 0;
+    if (rec_ret == 1) {
+        if (big_ret == 1) {
+            ea_mem_op("ldr", "x8", "sp", x8_slot, 8, os);
+        } else {
+            ea_add_imm("x8", "sp", ret_buf, os);
+        }
+    }
+    ea_w(os, et_cat3("    bl ", ea_mangle(a, fun.name), "\n"));
+    if (rec_ret == 1 && big_ret == 0) {
+        int dbl = 0;
+        int hfa = ea_hfa_of(a, fun.ret, &dbl);
+        if (hfa != 0) {
+            for (k in 0..hfa) {
+                ea_mem_op("ldr", ea_r(dbl == 1 ? "d" : "s", k), "sp", ret_buf + (int64)k * (dbl == 1 ? 8 : 4), dbl == 1 ? 8 : 4, os);
+            }
+        } else {
+            ea_mem_op("ldr", "x0", "sp", ret_buf, 8, os);
+            ea_mem_op("ldr", "x1", "sp", ret_buf + 8, 8, os);
+        }
+    } else if (big_ret == 1) {
+        ea_mem_op("ldr", "x0", "sp", x8_slot, 8, os);
+    }
+    ea_w(os, "    mov sp, x29\n    ldp x29, x30, [sp], #16\n    ret\n\n");
+}

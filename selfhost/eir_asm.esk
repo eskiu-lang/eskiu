@@ -1,0 +1,9 @@
+// The EIR ARM64 emitter of the self-hosted compiler (`esk_main --emit-asm` and
+// `--backend=eir` on arm64): a port of eir/eir_asm_arm64.cpp whose assembly is
+// byte-identical to the C++ compiler's (gated by tests/selfhost/eir_asm_parity.sh). Its
+// parts, each relying on the ones before it:
+//   eir_a_core.esk   state, symbols, strings, globals, frame slots, operands, the calling
+//                    convention, the C ABI for records and the __cabi_<f> thunks
+//   eir_a_fn.esk     functions, instructions, calls, inline assembly, the module
+
+import "eir_a_fn.esk";

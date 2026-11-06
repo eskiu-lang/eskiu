@@ -21,6 +21,7 @@ import "async_lower.esk";
 import "codegen.esk";
 import "eir.esk";
 import "eir_c.esk";
+import "eir_asm.esk";
 import "fmt.esk";
 import "pkg_native.esk";
 import "bigstack.esk";
@@ -588,6 +589,81 @@ string temp_exe_path() {
 #else
     return temp_file("run", "");
 #endif
+}
+
+// Run `cc ... args` (with -target for a cross build); `what` names the step in the error.
+int eir_run_cc(string cc, string triple, List<string>* args, string what) {
+    List<string> argv;
+    List_init<string>(&argv, 12);
+    push_words(&argv, cc);
+    if (triple[0] != 0) {
+        List_push<string>(&argv, "-target");
+        List_push<string>(&argv, triple);
+    }
+    for (i in 0..List_len<string>(args)) {
+        List_push<string>(&argv, List_get<string>(args, i));
+    }
+    if (spawn_wait(&argv) != 0) {
+        eprint("error: ");
+        eprint(what);
+        eprint(" failed\n");
+        return 0;
+    }
+    return 1;
+}
+
+// The EIR's ARM64 assembly `asm_path` and the runtime it calls as one object `out`
+// (eir/eir_obj.cpp): the assembly assembled, the runtime C (EC_RT_STANDALONE, generated
+// from eir_runtime.cpp) compiled at -O2, both joined with a relocatable link.
+int eir_join_runtime(string cc, string triple, string asm_path, string out) {
+    string code_obj = temp_file("eir", ".o");
+    string rt_src = temp_file("rt", ".c");
+    string rt_obj = temp_file("rt", ".o");
+    if (code_obj == null || rt_src == null || rt_obj == null) {
+        eprint("error: could not create a temporary file\n");
+        return 0;
+    }
+    int ok = fs_write_all(rt_src, (*uint8)EC_RT_STANDALONE, (int64)et_len(EC_RT_STANDALONE));
+    if (ok == 0) {
+        eprint("error: cannot write to ");
+        eprint(rt_src);
+        eprint("\n");
+    }
+    List<string> a1;
+    List_init<string>(&a1, 4);
+    List_push<string>(&a1, "-c");
+    List_push<string>(&a1, asm_path);
+    List_push<string>(&a1, "-o");
+    List_push<string>(&a1, code_obj);
+    List<string> a2;
+    List_init<string>(&a2, 6);
+    List_push<string>(&a2, "-O2");
+    List_push<string>(&a2, "-w");
+    List_push<string>(&a2, "-c");
+    List_push<string>(&a2, rt_src);
+    List_push<string>(&a2, "-o");
+    List_push<string>(&a2, rt_obj);
+    List<string> a3;
+    List_init<string>(&a3, 6);
+    List_push<string>(&a3, "-r");
+    List_push<string>(&a3, "-nostdlib");
+    List_push<string>(&a3, code_obj);
+    List_push<string>(&a3, rt_obj);
+    List_push<string>(&a3, "-o");
+    List_push<string>(&a3, out);
+    if (ok == 1) {
+        ok = eir_run_cc(cc, triple, &a1, "assembler");
+    }
+    if (ok == 1) {
+        ok = eir_run_cc(cc, triple, &a2, "runtime compile");
+    }
+    if (ok == 1) {
+        ok = eir_run_cc(cc, triple, &a3, "relocatable link");
+    }
+    remove(code_obj);
+    remove(rt_src);
+    remove(rt_obj);
+    return ok;
 }
 
 int bytes_eq(*uint8 a, int an, *uint8 b, int bn) {
@@ -1327,7 +1403,7 @@ int esk_main(int argc, string* argv) {
     string reloc = "";       // --reloc MODEL: relocation model, passed to clang
     string subsystem = "";   // --subsystem console|windows: a Windows program's subsystem
     string optflag = "";     // -O0..-O3 (clang optimizes the emitted IR)
-    int backend_eir = 0;     // --backend=eir: build through EIR and its C99 emitter, no LLVM IR
+    int backend_eir = 0;     // --backend=eir: build through EIR (ARM64 assembly or C99), no LLVM IR
     string emit_header = null;   // --emit-header FILE: the C header of the `export` functions
     List<string> linkx;      // -l / -L / --link-arg, forwarded to the link
     List_init<string>(&linkx, 4);
@@ -1554,7 +1630,8 @@ int esk_main(int argc, string* argv) {
                 || cg_streq(a, "--test-typechecker") == 1
                 || cg_streq(a, "--test-codegen") == 1
                 || cg_streq(a, "--test-eir") == 1
-                || cg_streq(a, "--emit-c") == 1) {
+                || cg_streq(a, "--emit-c") == 1
+                || cg_streq(a, "--emit-asm") == 1) {
             mode = a;
         }
         else if (is_value_opt(opt) == 1) {
@@ -1603,6 +1680,47 @@ int esk_main(int argc, string* argv) {
                 return 1;
             }
             ii = ii + 1;
+        }
+    }
+
+    // The EIR backend emits the program as written, so an option that changes how LLVM
+    // generates code is an error under it (C++ checkEirOptions). -O reaches the C compiler
+    // when the backend writes C; the ARM64 assembly has no levels.
+    int emit_asm = cg_streq(mode, "--emit-asm");
+    if (emit_asm == 1 || (backend_eir == 1 && mode[0] == 0)) {
+        List<string> bad;
+        List_init<string>(&bad, 4);
+        if (optflag[0] != 0 && optflag[2] != '0' && (emit_asm == 1 || ea_uses_asm(triple) == 1)) {
+            List_push<string>(&bad, optflag);
+        }
+        if (safe != 0) {
+            List_push<string>(&bad, "--safe");
+        }
+        if (freestanding == 1) {
+            List_push<string>(&bad, "--freestanding");
+        }
+        if (san == 1) {
+            List_push<string>(&bad, "--asan");
+        }
+        if (san == 2) {
+            List_push<string>(&bad, "--ubsan");
+        }
+        if (mcpu[0] != 0) {
+            List_push<string>(&bad, "--mcpu");
+        }
+        if (mattr[0] != 0) {
+            List_push<string>(&bad, "--mattr");
+        }
+        if (reloc[0] != 0) {
+            List_push<string>(&bad, "--reloc");
+        }
+        for (bi in 0..List_len<string>(&bad)) {
+            eprint("error: ");
+            eprint(List_get<string>(&bad, bi));
+            eprint(" is not supported by the EIR backend\n");
+        }
+        if (List_len<string>(&bad) > 0) {
+            return 1;
         }
     }
 
@@ -1736,7 +1854,7 @@ int esk_main(int argc, string* argv) {
         sm.werror = werror;
         sm.wnone = wnone;
         if (cg_streq(mode, "--test-codegen") == 0 && cg_streq(mode, "--test-eir") == 0
-            && cg_streq(mode, "--emit-c") == 0) {   // as the C++ driver
+            && cg_streq(mode, "--emit-c") == 0 && emit_asm == 0) {   // as the C++ driver
             sm.wall = wall;
             sm.wextra = wextra;
         }
@@ -1755,7 +1873,7 @@ int esk_main(int argc, string* argv) {
             return 1;
         }
         if (ok == 0 && (cg_streq(mode, "--test-codegen") == 1 || cg_streq(mode, "--test-eir") == 1
-                        || cg_streq(mode, "--emit-c") == 1)) {
+                        || cg_streq(mode, "--emit-c") == 1 || emit_asm == 1)) {
             eprint("Type checking failed!\n");
             return 1;
         }
@@ -1772,7 +1890,7 @@ int esk_main(int argc, string* argv) {
 
     async_lower(prog);                 // lower async fns → frame + resume + ctor (after sema)
 
-    if (cg_streq(mode, "--test-eir") == 1 || cg_streq(mode, "--emit-c") == 1) {
+    if (cg_streq(mode, "--test-eir") == 1 || cg_streq(mode, "--emit-c") == 1 || emit_asm == 1) {
         // The checker again over the lowered program, stamping each expression's type,
         // as the C++ driver's post-lowering check feeds its EIR builder.
         let pt: Sema;
@@ -1787,9 +1905,15 @@ int esk_main(int argc, string* argv) {
         let eb: EB;
         eb_init(&eb, triple);
         eb_build(&eb, prog);
-        if (cg_streq(mode, "--emit-c") == 1) {
-            // --emit-c: the module as C99 (selfhost/eir_c.esk), to -o or stdout.
-            let csrc: String = ec_emit_module(eb.m);
+        if (cg_streq(mode, "--emit-c") == 1 || emit_asm == 1) {
+            // --emit-c: the module as C99 (selfhost/eir_c.esk); --emit-asm: as ARM64
+            // assembly (selfhost/eir_asm.esk). To -o or stdout.
+            let csrc: String;
+            if (emit_asm == 1) {
+                csrc = ea_emit_module(eb.m, triple);
+            } else {
+                csrc = ec_emit_module(eb.m);
+            }
             *uint8 cb = (*uint8)String_cstr(&csrc);
             if (outfile == null || cg_streq(outfile, "-") == 1) {
                 write(1, (*void)cb, (int64)String_len(&csrc));
@@ -1808,33 +1932,15 @@ int esk_main(int argc, string* argv) {
         return 0;
     }
 
-    // --backend=eir: the C99 of the EIR emitter (selfhost/eir_c.esk) instead of LLVM IR,
-    // compiled by the same driver. The self-hosted compiler takes this path on every
-    // target (the C++ one assembles ARM64 directly on arm64).
+    // --backend=eir: the EIR module instead of LLVM IR, compiled by the same driver: as
+    // ARM64 assembly on arm64 outside Windows (selfhost/eir_asm.esk, C++ eirUsesAsm), else
+    // as C99 (selfhost/eir_c.esk). The assembly needs the C runtime beside it when the
+    // module calls into it (eir_obj.cpp).
     string eir_csrc = null;
+    int eir_asm = 0;
+    int eir_rt = 0;
+    int eir_threads = 0;
     if (backend_eir == 1 && mode[0] == 0) {
-        string bad = "";
-        if (safe != 0) {
-            bad = "--safe";
-        } else if (freestanding == 1) {
-            bad = "--freestanding";
-        } else if (san == 1) {
-            bad = "--asan";
-        } else if (san == 2) {
-            bad = "--ubsan";
-        } else if (mcpu[0] != 0) {
-            bad = "--mcpu";
-        } else if (mattr[0] != 0) {
-            bad = "--mattr";
-        } else if (reloc[0] != 0) {
-            bad = "--reloc";
-        }
-        if (bad[0] != 0) {
-            eprint("error: ");
-            eprint(bad);
-            eprint(" is not supported by the EIR backend\n");
-            return 1;
-        }
         let ept: Sema;
         sema_init(&ept, infile);
         ept.wnone = 1;
@@ -1847,8 +1953,17 @@ int esk_main(int argc, string* argv) {
         let eeb: EB;
         eb_init(&eeb, triple);
         eb_build(&eeb, prog);
-        let ecs: String = ec_emit_module(eeb.m);
-        eir_csrc = (string)String_cstr(&ecs);
+        if (ea_uses_asm(triple) == 1) {
+            let eas: String = ea_emit_module(eeb.m, triple);
+            eir_csrc = (string)String_cstr(&eas);
+            eir_asm = 1;
+            eir_rt = em_needs_runtime(eeb.m);
+            eir_threads = em_uses_threads(eeb.m);
+        } else {
+            let ecs: String = ec_emit_module(eeb.m);
+            eir_csrc = (string)String_cstr(&ecs);
+            eir_threads = str_contains(eir_csrc, "__eir_thread_create(");
+        }
     }
 
     let g: Codegen;
@@ -1861,9 +1976,9 @@ int esk_main(int argc, string* argv) {
     if (eir_csrc == null) {
         cg_program(&g, prog);
     } else {
-        // The runtime of the EIR C is C: no C++ exception library; pthread for threads.
+        // The runtime of the EIR is C: no C++ exception library; pthread for threads.
         g.uses_eh = 0;
-        g.uses_threads = str_contains(eir_csrc, "__eir_thread_create(") == 1 ? 1 : 0;
+        g.uses_threads = eir_threads == 1 ? 1 : 0;
     }
     // No -o writes the object <input>.o, like the C++ driver (it links only with -o).
     if (outfile == null && runmode == 0 && cg_streq(mode, "--test-codegen") == 0) {
@@ -1895,7 +2010,7 @@ int esk_main(int argc, string* argv) {
     if (eir_csrc != null) {
         irtext = eir_csrc;
     }
-    string tmp = temp_file("ir", eir_csrc != null ? ".c" : ".ll");
+    string tmp = temp_file("ir", eir_asm == 1 ? ".s" : eir_csrc != null ? ".c" : ".ll");
     int64 irlen = 0;
     while (irtext[irlen] != 0) {
         irlen = irlen + 1;
@@ -2030,11 +2145,24 @@ int esk_main(int argc, string* argv) {
     if (want_obj == 1) {
         List_push<string>(&cargs, "-c");
     }
-    if (eir_csrc != null) {
+    if (eir_csrc != null && eir_asm == 0) {
         // The EIR C reads memory through casts (eir_c.cpp's prelude).
         List_push<string>(&cargs, "-std=c99");
         List_push<string>(&cargs, "-w");
         List_push<string>(&cargs, "-fno-strict-aliasing");
+    }
+    // The ARM64 assembly that calls the runtime becomes one object with it first: the
+    // object asked for, or a temporary one the link below takes.
+    int joined_obj = 0;
+    if (eir_asm == 1 && eir_rt == 1) {
+        string joined = want_obj == 1 ? outfile : temp_file("eir", ".o");
+        if (joined == null || eir_join_runtime(cc, triple, tmp, joined) == 0) {
+            remove(tmp);
+            return 1;
+        }
+        remove(tmp);
+        tmp = joined;
+        joined_obj = want_obj;
     }
     List_push<string>(&cargs, tmp);
     List_push<string>(&cargs, "-o");
@@ -2154,8 +2282,11 @@ int esk_main(int argc, string* argv) {
             ti = ti + 1;
         }
     }
-    int rc = spawn_wait(&cargs);
-    remove(tmp);
+    int rc = 0;
+    if (joined_obj == 0) {
+        rc = spawn_wait(&cargs);
+        remove(tmp);
+    }
     if (rc == 0 && want_lib == 1) {
         List<string> aargs;
         List_init<string>(&aargs, 4);
