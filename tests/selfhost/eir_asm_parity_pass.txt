@@ -187,6 +187,7 @@ exceptions_nolib
 executor
 executor_cross_thread
 executor_many
+export_c
 expr_types
 extern_defined_struct
 extern_var_link
