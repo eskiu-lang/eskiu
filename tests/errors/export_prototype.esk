@@ -1,0 +1,3 @@
+// EXPECT-ERROR: 'export' needs a definition
+export int twice(int n);
+int main() { return 0; }

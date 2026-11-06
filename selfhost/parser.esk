@@ -3839,17 +3839,23 @@ void parse_unnamed_bitfield(Parser* p, *DeclNode d, string ty) {
 // Top-level declaration dispatch (mirrors parseDeclaration). A declared type name
 // is registered so later `(Name)x` casts are recognized.
 // `export` is a contextual qualifier: it starts a declaration when a function header
-// follows, a type and then `name(` before any `;` `=` `{` (Parser::exportAhead).
+// follows, a type and then `name(` or `name<T>(` before any `;` `=` `{`
+// (Parser::exportAhead).
 int p_export_ahead(Parser* p) {
     Token t0 = p_peek(p);
     if (t0.type != IDENT || lexeme_eq(p.src, t0.start, t0.len, "export") == 0) {
         return 0;
     }
+    int n = p_peek_k(p, 1).type;
+    if (n == STRUCT || n == UNION || n == ENUM || n == INTERFACE || n == PACKED) {
+        return 1;   // a type declaration: rejected with a message
+    }
     int k = 1;
     while (true) {
         int t = p_peek_k(p, k).type;
         if (t == LPAREN) {
-            return k >= 3 && p_peek_k(p, k - 1).type == IDENT ? 1 : 0;
+            int pk = p_peek_k(p, k - 1).type;
+            return k >= 3 && (pk == IDENT || pk == GT) ? 1 : 0;
         }
         if (t == SEMICOLON || t == EQ || t == LBRACE || t == RBRACE || t == EOF_TOKEN) {
             return 0;

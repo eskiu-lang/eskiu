@@ -561,14 +561,19 @@ std::vector<DeclPtr> Parser::parseProgram() {
 }
 
 // `export` is a contextual qualifier: it starts a declaration when a function header
-// follows, a type and then `name(` before any `;` `=` `{` (`export(x);` and `export = 1;`
+// follows, a type and then `name(` or `name<T>(` before any `;` `=` `{` (`export(x);` and `export = 1;`
 // stay statements over a variable of that name).
 bool Parser::exportAhead() const {
     if (peek().type != TokenType::IDENT || peek().value != "export") return false;
+    TokenType n = peek_ahead(1).type;
+    if (n == TokenType::STRUCT || n == TokenType::UNION || n == TokenType::ENUM ||
+        n == TokenType::INTERFACE || n == TokenType::PACKED)
+        return true;   // a type declaration: rejected with a message
     for (int k = 1;; ++k) {
         TokenType t = peek_ahead(k).type;
         if (t == TokenType::LPAREN)
-            return k >= 3 && peek_ahead(k - 1).type == TokenType::IDENT;
+            return k >= 3 && (peek_ahead(k - 1).type == TokenType::IDENT ||
+                              peek_ahead(k - 1).type == TokenType::GT);
         if (t == TokenType::SEMICOLON || t == TokenType::EQ || t == TokenType::LBRACE ||
             t == TokenType::RBRACE || t == TokenType::EOF_TOKEN)
             return false;

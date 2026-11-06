@@ -1233,6 +1233,84 @@ void sema_check_insts(Sema* s, string primary) {
 }
 
 // Returns 1 if the program type-checks (no errors), 0 otherwise.
+// Why `t0` cannot be a parameter or result of an `export` function (null: it can), as
+// TypeChecker::exportTypeError: C has no closures, interfaces, slices or sum types and
+// passes no array by value, and a generic instance has no name a C header can keep.
+string sema_export_type_err(Sema* s, string t0) {
+    string t = sema_canon(s, sema_strip_nullable(sema_strip_const(t0)));
+    if (sema_is_fn_type(t) == 1) {
+        return "is a closure, which C cannot call";
+    }
+    if (sema_is_arr_ty(t) == 1) {
+        if (sema_is_fixed_arr_ty(t) == 1) {
+            return "is an array, which C does not pass by value";
+        }
+        return "is a slice (pass a pointer and a length)";
+    }
+    if (sema_has_star(t) == 1) {
+        return null;
+    }
+    if (sema_streq(t, "va_list") == 1) {
+        return "is a va_list";
+    }
+    if (sema_has_lt(t) == 1) {
+        return "is a generic instance, which has no stable C name (wrap it in a named struct)";
+    }
+    if (sema_find_iface(s, t) != null) {
+        return "is an interface value";
+    }
+    if (sema_is_enum(s, t) == 1) {
+        return "is a sum type, which has no C layout";
+    }
+    return null;
+}
+
+// `export T f(...)`: a C entry point (TypeChecker::checkExport).
+void sema_check_export(Sema* s, *DeclNode d) {
+    if (d.body == null) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: 'export' needs a definition: put it on the body of '%s'\n", s.filename, s.line, s.col, d.name);
+    }
+    int generic = List_len<TypeParam>(&d.type_params) > 0 ? 1 : 0;
+    if (generic == 1) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: exported function '%s' cannot be generic (C calls one instance by its name)\n", s.filename, s.line, s.col, d.name);
+    }
+    if (d.is_async == 1) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: exported function '%s' cannot be async (C cannot run the future it returns)\n", s.filename, s.line, s.col, d.name);
+    }
+    if (d.operator_sym != null && d.operator_sym[0] != 0) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: an operator overload cannot be exported (it has no C name)\n", s.filename, s.line, s.col);
+    }
+    int np = List_len<Param>(&d.params);
+    if (np > 0 && sema_streq(List_get<Param>(&d.params, np - 1).ty, "...") == 1) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: exported function '%s' cannot be variadic\n", s.filename, s.line, s.col, d.name);
+    }
+    if (generic == 1) {
+        return;
+    }
+    int i = 0;
+    while (i < np) {
+        Param pm = List_get<Param>(&d.params, i);
+        if (sema_streq(pm.ty, "...") == 0) {
+            string why = sema_export_type_err(s, pm.ty);
+            if (why != null) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: parameter '%s' of exported function '%s' %s\n", s.filename, s.line, s.col, pm.name, d.name, why);
+            }
+        }
+        i = i + 1;
+    }
+    string rwhy = sema_export_type_err(s, d.ret_type);
+    if (rwhy != null) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: the result of exported function '%s' %s\n", s.filename, s.line, s.col, d.name, rwhy);
+    }
+}
+
 int sema_check(Sema* s, *Program prog) {
     // Every `&name` in the program: a global whose address is taken is never narrowed.
     List_init<string>(&s.gaddr, 8);
@@ -1342,6 +1420,9 @@ int sema_check(Sema* s, *Program prog) {
         if (d.kind == DK_FUNCTION && d.is_mustuse == 1 && sema_streq(sema_strip_const(d.ret_type), "void") == 1) {
             s.had_error = 1;
             dprintf(2, "error: %s:%d:%d: 'must_use' on '%s', which returns void (there is no result to use)\n", s.filename, s.line, s.col, sema_fn_display(d));
+        }
+        if (d.kind == DK_FUNCTION && d.is_export == 1) {
+            sema_check_export(s, d);
         }
         // `main` is called by the C runtime as `main()` or `main(argc, argv[, envp])`.
         if (d.kind == DK_FUNCTION && sema_streq(d.name, "main") == 1 && List_len<Param>(&d.params) > 0) {

@@ -1,0 +1,3 @@
+// EXPECT-ERROR: 'export' applies to a function
+export struct P { int a; }
+int main() { return 0; }

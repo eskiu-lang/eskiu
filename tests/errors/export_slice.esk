@@ -1,0 +1,3 @@
+// EXPECT-ERROR: is a slice (pass a pointer and a length)
+export int64 count(int[] s) { return s.len; }
+int main() { return 0; }

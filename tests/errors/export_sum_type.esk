@@ -1,0 +1,4 @@
+// EXPECT-ERROR: the result of exported function 'pick' is a sum type
+enum Choice { Left(int), Right }
+export Choice pick(int k) { return k > 0 ? Left(k) : Right; }
+int main() { return 0; }

@@ -286,6 +286,49 @@ void TypeChecker::checkTypeParams(ASTNode* at, const std::string& owner, const s
             errorAt(at, "duplicate type parameter '" + tp + "' in '" + owner + "'");
 }
 
+// C has no closures, interfaces, slices or sum types and passes no array by value, and a
+// generic instance has no name a C header can keep.
+std::string TypeChecker::exportTypeError(const std::string& type) {
+    std::string t = normalizeType(tyq::strip(type));
+    if (isPointerType(t)) return "";
+    ty::Type ty = ty::Type::parse(t);
+    std::string name = ty.nominalName();
+    switch (ty.kind) {
+        case ty::Type::Kind::Fn: return "is a closure, which C cannot call";
+        case ty::Type::Kind::Slice: return "is a slice (pass a pointer and a length)";
+        case ty::Type::Kind::Array: return "is an array, which C does not pass by value";
+        case ty::Type::Kind::Interface: return "is an interface value";
+        case ty::Type::Kind::VaList: return "is a va_list";
+        case ty::Type::Kind::Template: return "is a generic instance, which has no stable C name (wrap it in a named struct)";
+        default: break;
+    }
+    if (adtEnums.count(name) || adtEnums.count(t)) return "is a sum type, which has no C layout";
+    if (interfaceDecls.count(name)) return "is an interface value";
+    if (templateInstanceArgs.count(name))
+        return "is a generic instance, which has no stable C name (wrap it in a named struct)";
+    return "";
+}
+
+// `export T f(...)`: a C entry point, so a function C can call by its name with its
+// own calling convention.
+void TypeChecker::checkExport(FunctionDecl* node) {
+    std::string fn = "exported function '" + node->name + "'";
+    if (!node->body) errorAt(node, "'export' needs a definition: put it on the body of '" + node->name + "'");
+    if (!node->typeParams.empty()) errorAt(node, fn + " cannot be generic (C calls one instance by its name)");
+    if (node->isAsync) errorAt(node, fn + " cannot be async (C cannot run the future it returns)");
+    if (!node->operatorSym.empty()) errorAt(node, "an operator overload cannot be exported (it has no C name)");
+    if (!node->params.empty() && node->params.back().first == "...")
+        errorAt(node, fn + " cannot be variadic");
+    if (!node->typeParams.empty()) return;
+    for (const auto& p : node->params) {
+        if (p.first == "...") continue;
+        if (std::string why = exportTypeError(p.first); !why.empty())
+            errorAt(node, "parameter '" + p.second + "' of " + fn + " " + why);
+    }
+    if (std::string why = exportTypeError(node->returnType); !why.empty())
+        errorAt(node, "the result of " + fn + " " + why);
+}
+
 void TypeChecker::visit(FunctionDecl* node) {
     localAddrHolders.clear();
     localAddrFn = node->name;
@@ -294,6 +337,7 @@ void TypeChecker::visit(FunctionDecl* node) {
         // `must_use` asks the caller to use a result; a void function has none.
         if (node->mustUse && tyq::strip(node->returnType) == "void")
             errorAt(node, "'must_use' on '" + fnDisplay(node->name) + "', which returns void (there is no result to use)");
+        if (node->isExport) checkExport(node);
     }
     if (!node->typeParams.empty()) {
         // Template body: type-checking is deferred to instantiation, but lambda

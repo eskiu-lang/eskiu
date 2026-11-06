@@ -538,6 +538,9 @@ private:
     // "" when a value of `type` is fine, else why not (a `void` value, or an instance
     // like `Box<void>` holding one): "cannot have type 'void'".
     std::string voidTypeError(const std::string& type);
+    // Why `type` cannot be a parameter or result of an `export` function (empty: it can).
+    std::string exportTypeError(const std::string& type);
+    void checkExport(class FunctionDecl* node);
     bool isAggregateValue(const std::string& normalizedType);
     bool isTruthValue(const std::string& normalizedType);
     std::set<std::string> unknownTypes;   // names already reported as unknown (no cascades)

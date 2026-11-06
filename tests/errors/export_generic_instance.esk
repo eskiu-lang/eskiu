@@ -1,0 +1,4 @@
+// EXPECT-ERROR: is a generic instance, which has no stable C name
+struct Box<T> { T v; }
+export int unbox(Box<int> b) { return b.v; }
+int main() { return 0; }

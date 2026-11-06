@@ -1,0 +1,4 @@
+// EXPECT-ERROR: is an interface value
+interface Shape { double area(); }
+export double area_of(Shape s) { return s.area(); }
+int main() { return 0; }

@@ -1,0 +1,3 @@
+// EXPECT-ERROR: cannot be async
+export async int later() { return 1; }
+int main() { return 0; }

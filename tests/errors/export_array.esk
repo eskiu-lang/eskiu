@@ -1,0 +1,3 @@
+// EXPECT-ERROR: is an array, which C does not pass by value
+export int first(int[4] a) { return a[0]; }
+int main() { return 0; }
