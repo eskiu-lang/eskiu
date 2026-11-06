@@ -960,6 +960,22 @@ int64 em_struct_size(*EModule m, string sname) {
     return 0;
 }
 
+// getFieldOffset: by the struct's name, else the name before its first `_`.
+int64 em_field_offset(*EModule m, string sname, string fname) {
+    *EStruct s = em_layout(m, sname);
+    if (s == null) {
+        int u = et_findc(sname, '_');
+        if (u >= 0) {
+            s = em_layout(m, et_sub(sname, 0, u));
+        }
+    }
+    if (s == null) {
+        return 0;
+    }
+    *EField f = es_field(s, fname);
+    return f != null ? f.offset : 0;
+}
+
 int64 et_type_align(*ETy t, *EModule m);
 
 int64 et_type_size(*ETy t, *EModule m) {
