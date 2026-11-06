@@ -114,7 +114,7 @@ declaration =
     function-decl | struct-decl | union-decl | interface-decl | enum-decl
   | type-alias  | extern-decl  | intrinsic-decl | var-decl
 
-function-decl   = ('async' | 'must_use')? type IDENT type-params? '(' param-list? ')' ( block | ';' )
+function-decl   = 'export'? ('async' | 'must_use')? type IDENT type-params? '(' param-list? ')' ( block | ';' )
                 | type 'operator' overload-op '(' param-list ')' block   // operator overload
 overload-op     = '+' | '-' | '*' | '/' | '%' | '==' | '!=' | '<' | '>' | '<=' | '>='
                 | '&' | '|' | '^' | '<<' | '>>' | '!' | '~' | '[' ']'

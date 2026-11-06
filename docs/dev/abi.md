@@ -272,6 +272,35 @@ Variadic arguments follow C default promotions:
 integers narrower than 32 bits widen to `i32` (sign- or zero-extended), `bool`
 zero-extends, and `float` widens to `double`.
 
+### Exported functions
+
+An `export` function (`export Pair scale(Pair p, double k)`) is called from C under its own
+name with the C convention. When that convention is the Eskiu one (scalars and pointers
+only), the function is emitted once. Otherwise its Eskiu body is emitted as the internal
+`NAME.esk`, and `NAME` is a thunk with the lowered C signature that rebuilds the Eskiu
+values, calls the body and returns the result the C way. It is the same thunk a function
+handed to C as a callback gets (`__cabi_NAME`: C++ `emitExportEntries` over
+`cabiCallbackThunk`, self-host `cg_emit_exports` over `cg_emit_cabi_thunk_as`). Eskiu
+callers keep calling the body. `tests/selfhost/cabi_parity.sh` compares the entries' lowered
+signatures between the two compilers on every target.
+
+`--emit-header FILE` writes the C declarations of the exported functions (C++
+`TypeChecker::cHeader` in `sema/c_header.cpp`, self-host `sema_c_header` in
+`selfhost/sema_header.esk`, byte for byte). The header uses `<stdint.h>` integer types,
+`bool`, `char*` for `string`, and `int32_t` typedefs plus an anonymous `enum` of the members
+for classic enums. Every struct and union it reaches gets a `typedef` and a definition with
+its declared field types, bitfields, unnamed bitfields and `#pragma pack(push, N)` for
+`packed` and `pack(N)`, so a C compiler lays it out as Eskiu does. A closure field is
+`struct { void* fn; void* env; }`, a slice `struct { void* ptr; int64_t len; }` and an
+interface value `struct { void* data; void* vtable; }`. A sum type, a generic instance or a
+`sizeof` in an array dimension has no C spelling, and the header is refused with the reason.
+The include guard is `ESKIU_` plus the file name in capitals. `run.sh` builds
+`tests/run_cmd/export_lib.esk` as a static library, compiles a C program against its header
+(which also compiles as C++) and checks each record's `sizeof` against Eskiu's.
+
+The EIR backends do not give an exported function with a record by value its C entry yet,
+and reject it.
+
 ---
 
 ## Function pointers, closures and interfaces

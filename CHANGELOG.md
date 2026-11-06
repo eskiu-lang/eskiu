@@ -10,6 +10,13 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 ## [Unreleased]
 
 ### Added
+- `export` before a function definition makes it a C entry point: C, Rust or any language
+  that calls C calls it by its name with the target's C calling convention, structs and
+  unions by value included, while Eskiu code calls it as before. `--emit-header FILE`
+  writes the C declarations of a program's exported functions and of the types they reach
+  (records with their bitfields and packing), so `eskiuc lib.esk -o liblib.a
+  --emit-header lib.h` gives C a library and its header. Both compilers; the EIR backends
+  reject an exported function with a struct or union by value for now.
 - `-ffp-contract=fast` lets the compiler fuse a multiply and an add into one fused
   multiply-add (rounded once); without it each floating-point operation rounds, so results
   stay the same on every target. Both compilers.

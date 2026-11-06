@@ -938,6 +938,31 @@ connect("example.com", 8080);      // verbose false
 
 Every parameter after one with a default needs a default too, and a variadic function takes none. A default is a literal (`"none"`, `'x'`, `true`, `null`, `-1.5`) an integer constant expression over literals, enum members and top-level `const` integers (`BASE + 43`), or a struct literal whose values are any of these, nested struct literals included (`V3 up = V3{0.0, 1.0, 0.0}`, `Seg s = Seg{a: V3{}, n: N * 2}`); fields the literal leaves out take the struct's field defaults, and each call gets its own copy. It is folded and checked against the parameter's type where the function is declared, so a local of the caller with the same name does not change it. Defaults may be written on the prototype or on the definition, not on both. They apply to direct calls, to generic functions, `async` functions and inline methods of non-generic structs (`s.add()`), and to a top-level `T_method(self, ...)` called with dot syntax, a generic one included (`c.get()` on a `Cell<int>`). Calls through a function value (`fn(...)->R`) pass every argument. `extern` and `intrinsic` prototypes, interface methods and lambdas take no defaults.
 
+### 6.1.4 export
+
+`export` before a function definition makes it a C entry point: C (or Rust, or any language
+that calls C) calls it by its name with the target's C calling convention, structs and
+unions by value included. Eskiu code calls it as any other function.
+
+```eskiu
+struct Pair { double x; double y; }
+
+export Pair scale(Pair p, double k) { return Pair{x: p.x * k, y: p.y * k}; }
+export int add(int a, int b) { return a + b; }
+```
+
+`eskiuc lib.esk -o liblib.a --emit-header lib.h` builds a static library and writes the C
+declarations of its exported functions and of the types they reach, so a C program can
+`#include "lib.h"` and link `liblib.a` (see [abi.md](../dev/abi.md#exported-functions)).
+
+The parameters and the result must have a C meaning: integers, `float`, `double`, `bool`,
+`char`, `string` (`char*`), pointers, classic enums (`int32_t`), and structs and unions. A
+closure, an interface value, a slice, a sum type, an array by value, a `va_list` or an
+instance of a generic type (`Box<int>`: wrap it in a named struct) is an error. An exported
+function cannot be generic, `async`, variadic or an operator overload, and `export` goes on
+the definition, not on a prototype. Like `deprecated`, `export` is not a keyword: it is
+recognized only before a function header, so a variable named `export` is still valid.
+
 ### 6.2 Void Functions
 
 ```eskiu
