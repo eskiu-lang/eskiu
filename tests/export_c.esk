@@ -1,0 +1,43 @@
+// `export` functions are C entry points: C calls them by name with the C calling
+// convention, structs and unions by value included (export_c.c), and Eskiu code calls
+// them as before.
+extern int printf(string f, ...);
+
+struct Small { int a; int b; }
+struct Pair { double x; double y; }
+struct Big { int64 a; int64 b; int64 c; int k; }
+union Num { int i; float f; }
+packed struct Tight { uint8 tag; int value; }
+
+export int add(int a, int b) { return a + b; }
+export bool positive(int8 v) { return v > 0; }
+export uint16 widen(uint8 b) { return (uint16)b * 300; }
+export int64 length(string s) {
+    int64 n = 0;
+    while (s[n] != 0) n++;
+    return n;
+}
+export Small swap(Small s) { return Small{a: s.b, b: s.a}; }
+export Pair scale(Pair p, double k) { return Pair{x: p.x * k, y: p.y * k}; }
+export Big grow(Big b, int k) {
+    b.a += k;
+    b.b += k;
+    b.c += k;
+    b.k = k;
+    return b;
+}
+export double bits(Num n) { return (double)n.f; }
+export int tight_sum(Tight t) { return t.tag + t.value; }
+export void fill(*Small out, int v) {
+    out.a = v;
+    out.b = v + 1;
+}
+
+extern int c_drive();
+
+int main() {
+    Small s = swap(Small{a: 1, b: 2});
+    Big b = grow(Big{a: 1, b: 2, c: 3, k: 0}, 10);
+    printf("eskiu: %d %d %d %lld %lld %lld %d\n", add(2, 3), s.a, s.b, b.a, b.b, b.c, b.k);
+    return c_drive();
+}

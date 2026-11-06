@@ -4,7 +4,7 @@
 #
 # For each C-ABI program and target triple this emits IR with BOTH compilers
 # (--test-codegen --target T) and compares, by function name, the lowered signatures:
-# every `declare` (externs) and every `@__cabi_*` callback thunk. Parameter names and
+# every `declare` (externs), every `@__cabi_*` callback thunk and every `export` entry. Parameter names and
 # the trailing `{` are stripped, so only types and ABI attributes (sret/byval/align/
 # alignstack) are compared. Cross targets can't run here, so this is an IR-level check.
 # For the 32-bit x86 and wasm32 targets each compiler's lowered `declare`s are also compared with
@@ -38,13 +38,17 @@ i686-pc-linux-gnu i386-apple-darwin i686-w64-windows-gnu i686-pc-windows-msvc
 wasm32-unknown-emscripten"
 VS_CLANG="i686-pc-linux-gnu i386-apple-darwin i686-w64-windows-gnu i686-pc-windows-msvc
 wasm32-unknown-emscripten"
-INPUTS="tests/c_abi_struct.esk tests/c_abi_callback.esk tests/c_abi_va_callback.esk tests/c_abi_try.esk tests/c_abi_fnptr.esk tests/bitfield_c_layout.esk tests/c_abi_union.esk tests/c_abi_narrow.esk tests/c_abi_x86_32.esk tests/pack_nested_c.esk tests/pack_union_c.esk tests/bitfield_unnamed_c.esk"
+INPUTS="tests/c_abi_struct.esk tests/c_abi_callback.esk tests/c_abi_va_callback.esk tests/c_abi_try.esk tests/c_abi_fnptr.esk tests/bitfield_c_layout.esk tests/c_abi_union.esk tests/c_abi_narrow.esk tests/c_abi_x86_32.esk tests/pack_nested_c.esk tests/pack_union_c.esk tests/bitfield_unnamed_c.esk tests/export_c.esk"
 
 # The lowered signatures in an IR file, one per line, sorted: `NAME<TAB>signature`. The C++
 # names a union's storage type `%U.union` and the self-host `%U`; only the spelling differs.
 sigs() {
-    grep -E '^(declare .*@|define internal .*@__cabi_)' "$1" \
-        | sed -E 's/ %[A-Za-z0-9_.]+([,)])/\1/g; s/ *\{$//; s/^define internal /define /; s/(%[A-Za-z0-9_]+)\.union/\1/g' \
+    # An `export` function's C entry keeps its name; its Eskiu body is `NAME.esk`.
+    local ex
+    ex="$(grep -oE '^define internal [^@]*@[A-Za-z0-9_]+\.esk\(' "$1" | sed -E 's/.*@([A-Za-z0-9_]+)\.esk\(/\1/' | paste -sd'|' -)"
+    { grep -E '^(declare .*@|define internal .*@__cabi_)' "$1"
+      if [ -n "$ex" ]; then grep -E "^define (dso_local )?[^@]*@($ex)\\(" "$1"; fi; } \
+        | sed -E 's/ %[A-Za-z0-9_.]+([,)])/\1/g; s/ *\{$//; s/^define (internal|dso_local) /define /; s/(%[A-Za-z0-9_]+)\.union/\1/g' \
         | sed -E "s/^([a-z]+ [^@]*@)([A-Za-z0-9_.]+)(\\(.*)$/\\2$TAB\\1\\2\\3/" \
         | sort
 }

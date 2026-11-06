@@ -1484,7 +1484,15 @@ string cg_va_from_c(Codegen* g, string c) {
 // Emit `__cabi_<name>`: the lowered C signature (like an extern's), rebuilding the Eskiu
 // values, calling `name` with first-class aggregates and returning the result the C way
 // (mirrors CodeGen::cabiCallbackThunk).
+void cg_emit_cabi_thunk_as(Codegen* g, string name, string callee, string sym, int internal);
+
 void cg_emit_cabi_thunk(Codegen* g, string name) {
+    cg_emit_cabi_thunk_as(g, name, name, cg_cat("__cabi_", name), 1);
+}
+
+// The same thunk for the function `name`, calling `@callee` and defined as `@sym`
+// (internal, or external for an `export` entry).
+void cg_emit_cabi_thunk_as(Codegen* g, string name, string callee, string sym, int internal) {
     CgFn f = cg_find_fn(g, name);
     int np = List_len<string>(&f.ptys);
     int fint = 6;
@@ -1634,7 +1642,7 @@ void cg_emit_cabi_thunk(Codegen* g, string name) {
     string argstr = (string)String_cstr(&args);
     if (cg_streq(f.retty, "void") == 1) {
         cg_emit(g, "  call void @");
-        cg_emit(g, name);
+        cg_emit(g, callee);
         cg_emit(g, "(");
         cg_emit(g, argstr);
         cg_emit(g, ")\n");
@@ -1646,7 +1654,7 @@ void cg_emit_cabi_thunk(Codegen* g, string name) {
         cg_emit(g, " = call ");
         cg_emit(g, f.retty);
         cg_emit(g, " @");
-        cg_emit(g, name);
+        cg_emit(g, callee);
         cg_emit(g, "(");
         cg_emit(g, argstr);
         cg_emit(g, ")\n");
@@ -1671,20 +1679,88 @@ void cg_emit_cabi_thunk(Codegen* g, string name) {
     }
     string bodytext = (string)String_cstr(&g.out);
     g.out = saved;
-    cg_emit(g, "define internal");
+    cg_emit(g, internal == 1 ? "define internal" : "define");
     if (ra.kind == 0) {
         cg_emit(g, cg_ext_attr(g, f.rety));
     }
     cg_emit(g, " ");
     cg_emit(g, lowret);
-    cg_emit(g, " @__cabi_");
-    cg_emit(g, name);
+    cg_emit(g, " @");
+    cg_emit(g, sym);
     cg_emit(g, "(");
     cg_emit(g, (string)String_cstr(&hdr));
     cg_emit(g, ") {\nentry:\n");
     cg_emit(g, (string)String_cstr(&g.entry_buf));
     cg_emit(g, bodytext);
     cg_emit(g, "}\n\n");
+}
+
+// An IR identifier character (after the `@` of a global's name).
+int cg_ir_ident_ch(int c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+        || c == '_' || c == '.' || c == '$' || c == '-' ? 1 : 0;
+}
+
+// The IR text `s` with every use of the global `@from` (not inside a quoted string)
+// renamed `@to`, and with `internal` linkage on its definition when `def` is 1.
+void cg_rename_sym(String* s, string from, string to, int def) {
+    *char src = (*char)String_cstr(s);
+    const int64 n = String_len(s);
+    const int64 fl = (int64)cg_strlen(from);
+    let out: String;
+    String_init(&out, n + 64);
+    int64 i = 0;
+    int64 last = 0;
+    int64 line = 0;
+    bool inq = false;
+    while (i < n) {
+        const int c = (int)src[i];
+        if (c == '\n') {
+            line = i + 1;
+        }
+        if (c == '"') {
+            inq = !inq;
+        } else if (!inq && c == '@' && i + 1 + fl <= n && memcmp((*void)(src + i + 1), (*void)from, (size_t)fl) == 0
+                   && (i + 1 + fl == n || cg_ir_ident_ch((int)src[i + 1 + fl]) == 0)) {
+            if (def == 1 && i + 1 + fl < n && src[i + 1 + fl] == '(' && i - line >= 7
+                && memcmp((*void)(src + line), (*void)"define ", (size_t)7) == 0) {
+                String_append_bytes(&out, src + last, line + 7 - last);
+                String_append(&out, "internal ");
+                last = line + 7;
+            }
+            String_append_bytes(&out, src + last, i + 1 - last);
+            String_append(&out, to);
+            i = i + 1 + fl;
+            last = i;
+            continue;
+        }
+        i = i + 1;
+    }
+    String_append_bytes(&out, src + last, n - last);
+    String_free(s);
+    *s = out;
+}
+
+// `export T f(...)` (CodeGen::emitExportEntries): when C's convention differs from the
+// Eskiu one, the body becomes the internal `@f.esk` (every use renamed) and `@f` is the
+// C-signature thunk that calls it.
+void cg_emit_exports(Codegen* g, *Program prog) {
+    int i = 0;
+    while (i < List_len<*DeclNode>(&prog.decls)) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        i = i + 1;
+        if (d.kind != DK_FUNCTION || d.is_export == 0 || d.body == null) {
+            continue;
+        }
+        CgFn f = cg_find_fn(g, d.name);
+        if (cg_cabi_needs_thunk(g, &f) == 0) {
+            continue;
+        }
+        string esk = cg_cat(d.name, ".esk");
+        cg_rename_sym(&g.out, d.name, esk, 1);
+        cg_rename_sym(&g.globals, d.name, esk, 0);
+        cg_emit_cabi_thunk_as(g, d.name, esk, d.name, 0);
+    }
 }
 
 // An enum is an ADT (tagged union) when some variant carries a payload.
@@ -3249,6 +3325,7 @@ void cg_program(Codegen* g, *Program prog) {
         cg_drain_lambdas(g);
         cg_drain_thunks(g);
     }
+    cg_emit_exports(g, prog);
 
     if (g.uses_heap_env == 1) {                                         // closures' env allocator
         string ha = cg_heap_alloc(g);

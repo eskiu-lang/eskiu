@@ -590,6 +590,23 @@ llvm::Value* CodeGen::emitCAbiCall(llvm::Function* fn, const CAbiSig& sig,
     return call;
 }
 
+// `export T f(...)`: C calls f by its name with the C convention. When that differs from
+// the Eskiu one (a struct or union by value, a large result, a va_list), the Eskiu body
+// becomes the internal `f.esk` and `f` is the C-signature thunk that calls it; Eskiu
+// callers keep calling the body (the rename follows every use).
+void CodeGen::emitExportEntries() {
+    for (const std::string& name : exportedFns) {
+        llvm::Function* fn = module->getFunction(name);
+        if (!fn || fn->isDeclaration()) continue;
+        llvm::Function* thunk = cabiCallbackThunk(fn);
+        if (thunk == fn) continue;
+        fn->setName(name + ".esk");
+        fn->setLinkage(llvm::GlobalValue::InternalLinkage);
+        thunk->setName(name);
+        thunk->setLinkage(llvm::GlobalValue::ExternalLinkage);
+    }
+}
+
 // C calls an Eskiu function through a raw pointer (`(*void)f`): the thunk takes the
 // lowered C signature, rebuilds the Eskiu-level values and calls `target` with the
 // Eskiu convention (first-class aggregates, hidden result pointer for a large struct),

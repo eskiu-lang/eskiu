@@ -237,6 +237,17 @@ void eb_build(EB* b, Program* prog) {
             f.pnames = pn;
             f.ptypes = pt;
             f.is_variadic = variadic;
+            // An `export` entry with a record by value (EIRBuilder phase 2).
+            int rec = et_is_struct(f.ret) == 1 ? 1 : 0;
+            for (pk in 0..List_len<*ETy>(&pt)) {
+                if (et_is_struct(List_get<*ETy>(&pt, pk)) == 1) {
+                    rec = 1;
+                }
+            }
+            if (d.is_export == 1 && d.body != null && rec == 1) {
+                dprintf(2, "error: EIR: exported function '%s' takes or returns a struct or union by value, which the EIR backends do not support yet\n", d.name);
+                exit(1);
+            }
         } else if (d.kind == DK_EXTERN) {
             if (em_func(b.m, d.name) != null) {
                 continue;

@@ -259,6 +259,7 @@ void CodeGen::visit(FunctionDecl* node) {
     if (!node->body) return;
     // Defensive: skip if a body was already emitted (e.g. forward decl + definition).
     if (!func->empty()) return;
+    if (node->isExport) exportedFns.push_back(node->name);
 
     llvm::Type* returnType = getTypeFromString(node->returnType);
     bool sret = needsSret(returnType);
