@@ -79,5 +79,7 @@ throw, the caller checks for a pending exception. A program with no `throw` pays
 
 `tests/eir/check.sh [asm|c]` compiles every run test with the backend, runs it, and
 compares its output; `tests/eir/pass_<mode>.txt` lists the tests known to pass, and the
-script fails when one of them stops passing (`UPDATE=1` rewrites the list). Tests that fail
+script fails when one of them stops passing (`UPDATE=1` rewrites the list). `EIR_OPT=N`
+picks the `-O` level of the C path (default 1); the emitted C must behave the same at every
+level, which CI checks at `-O2` through the driver on Linux. Tests that fail
 under both the EVM and the backends point at gaps in the EIR builder, not the backends.

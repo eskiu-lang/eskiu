@@ -7,12 +7,15 @@
 #   tests/eir/check.sh [asm|c|driver]
 #
 # asm: `--backend=eir` (ARM64 assembly; needs an arm64 host). c: `--emit-c`, compiled with
-# $CC (default cc) at -O1, as `eskiuc -O1 --backend=eir` builds it (without optimization
-# http_serve_slow_reader misses its deadline). Default: asm on arm64, c elsewhere.
+# $CC (default cc) at -O1 (EIR_OPT below), as `eskiuc -O1 --backend=eir` builds it (without
+# optimization http_serve_slow_reader misses its deadline). Default: asm on arm64, c elsewhere.
 #
 # driver: `$BIN --backend=eir -O1 -o exe` builds and links each test through the C path
 # of the compiler's own driver (the self-hosted compiler's on every target:
 # ESKIUC=build/eskiuc-esk); it is held to the C mode's list of this host.
+#
+# EIR_OPT=N (default 1) sets the -O level of the c and driver modes: the emitted C must
+# mean the same at every level (CI runs both at -O2 on Linux).
 #
 # The list is per host OS for the C mode (libc output and type widths differ):
 # pass_c.txt on macOS, pass_c_linux.txt on Linux.
@@ -28,6 +31,7 @@ source tests/resolver.sh
 BIN="${ESKIUC:-build/eskiuc}"
 [ -x "$BIN" ] || { echo "eir/check: cannot find eskiuc (set ESKIUC or build it)"; exit 2; }
 CC="${CC:-cc}"
+OPT="-O${EIR_OPT:-1}"
 
 mode="${1:-}"
 if [ -z "$mode" ]; then
@@ -88,7 +92,7 @@ for f in tests/*.esk; do
     if [ "$mode" = driver ]; then
         link=()
         [ ${#companion[@]} -gt 0 ] && link=(--link-arg "${companion[0]}")
-        "$BIN" "$f" ${link[@]+"${link[@]}"} -o "$exe" --backend=eir -O1 >"$work/$n.err" 2>&1 \
+        "$BIN" "$f" ${link[@]+"${link[@]}"} -o "$exe" --backend=eir "$OPT" >"$work/$n.err" 2>&1 \
             || { explain "$n" "--backend=eir: $(head -1 "$work/$n.err")"; continue; }
     elif [ "$mode" = asm ]; then
         link=()
@@ -96,7 +100,7 @@ for f in tests/*.esk; do
         "$BIN" "$f" ${link[@]+"${link[@]}"} -o "$exe" --backend=eir >/dev/null 2>&1 || continue
     else
         "$BIN" "$f" --emit-c -o "$work/$n.c" >"$work/$n.err" 2>&1 || { explain "$n" "--emit-c: $(head -1 "$work/$n.err")"; continue; }
-        "$CC" -std=c99 -w -fno-strict-aliasing -O1 "$work/$n.c" ${companion[@]+"${companion[@]}"} -o "$exe" -lm -lpthread >"$work/$n.err" 2>&1 \
+        "$CC" -std=c99 -w -fno-strict-aliasing "$OPT" "$work/$n.c" ${companion[@]+"${companion[@]}"} -o "$exe" -lm -lpthread >"$work/$n.err" 2>&1 \
             || { explain "$n" "C compile: $(grep -m1 -i error "$work/$n.err")"; continue; }
     fi
     run10 "$exe" >"$work/$n.got" 2>&1 || { explain "$n" "exit $?: $(tail -1 "$work/$n.got")"; continue; }

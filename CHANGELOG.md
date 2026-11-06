@@ -42,6 +42,8 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 - The kernel demo's heap is a first-fit allocator, so `free` gives memory back.
 - `--backend=eir` takes `-O` where it writes C (any target but arm64) and compiles the C
   at that level, always with `-fno-strict-aliasing`; on the ARM64 path `-O` stays an error.
+  Every run test on the C list behaves the same at `-O2` (`EIR_OPT=2 tests/eir/check.sh`,
+  in CI on Linux).
 - Building against an LLVM without RTTI (the llvm-project release tarballs) stops at
   configure time with an explanation instead of failing to link. LLVM's headers are
   included as system headers, and the compiler's own sources build without warnings (CI

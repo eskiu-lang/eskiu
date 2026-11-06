@@ -228,6 +228,10 @@ jobs:
       # listed in tests/eir/pass_c_linux.txt that stops passing fails the build.
       - name: EIR C backend
         run: CC=clang-22 tests/eir/check.sh c
+      # The same list built by the driver's own C path at -O2: -O reaches the C compiler,
+      # and the emitted C means the same once it optimizes.
+      - name: EIR C backend at -O2 through the driver
+        run: EIR_OPT=2 CC=clang-22 tests/eir/check.sh driver
 
       # The self-hosted EIR C99 emitter (selfhost/eir_c.esk): `--emit-c` byte-identical to
       # the C++ one for every test in tests/selfhost/eir_c_parity_pass.txt, and the

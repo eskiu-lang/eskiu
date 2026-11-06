@@ -88,8 +88,9 @@ Besides `run.sh`, these run in CI:
 - `tests/type_zoo/snapshot.sh check`: the golden-IR oracle (see `docs/dev/debugging.md`).
 - `tests/eir/check.sh [asm|c]`: every run test compiled by an EIR backend (ARM64
   assembly or C99, no LLVM code generator) and run as `run.sh` runs it; a test listed in
-  `tests/eir/pass_<mode>.txt` that stops passing fails (`UPDATE=1` rewrites the list). CI
-  runs both modes on macOS. See `docs/dev/eir-backends.md`.
+  `tests/eir/pass_<mode>.txt` that stops passing fails (`UPDATE=1` rewrites the list).
+  `EIR_OPT=N` sets the `-O` level of the C and driver modes (default 1). CI runs both modes
+  on macOS, and on Linux the C mode plus the driver mode at `-O2`. See `docs/dev/eir-backends.md`.
 - `tests/selfhost/*.sh`: parity between the self-hosted compiler and the C++ one
   (lexer, parser, preprocessor, type checker, codegen, C ABI, driver, EIR builder) and the
   bootstrap fixpoint; see `docs/dev/self-hosting.md`. `eir_parity.sh` compares
