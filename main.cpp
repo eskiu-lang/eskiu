@@ -949,7 +949,9 @@ static int compilerMain(int argc, char** argv) {
         return testCodegen(InputFilename);
     }
 
-    // --test-eir, --run-eir, --emit-asm, --emit-c
+    // --test-eir, --run-eir, --emit-asm, --emit-c. The assembly has no -O levels and none
+    // of the code-generation options, as for the asm path of --backend=eir.
+    if (EmitAsm && !checkEirOptions(safeChecks)) return 1;
     if (TestEir || RunEir || EmitAsm || EmitC) {
         return eirMode(InputFilename);
     }
