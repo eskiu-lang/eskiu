@@ -63,8 +63,9 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   does not match its certificate is refused when the context is made. The client loads
   OpenSSL and makes its shared contexts once, also from several threads at once.
 - The kernel demo's heap is a first-fit allocator, so `free` gives memory back.
-- `--backend=eir` takes `-O` where it writes C (any target but arm64) and compiles the C
-  at that level, always with `-fno-strict-aliasing`; on the ARM64 path `-O` stays an error.
+- `--backend=eir` takes `-O` on every target: at `-O1` and up it writes C and compiles it at
+  that level (always with `-fno-strict-aliasing`), arm64 included, and only an `-O0` build
+  on arm64 goes through the ARM64 assembly, which has no levels.
   Every run test on the C list behaves the same at `-O2` (`EIR_OPT=2 tests/eir/check.sh`,
   in CI on Linux).
 - Building against an LLVM without RTTI (the llvm-project release tarballs) stops at

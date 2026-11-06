@@ -21,7 +21,8 @@ SELF="${ESKIUC_ESK:-build/eskiuc-esk}"
 work="$(mktemp -d -t eskiu_eirboot.XXXXXX)"
 trap 'rm -rf "$work"' EXIT
 
-# -O reaches the C compiler; the ARM64 assembly has no levels.
+# -O reaches the C compiler; on arm64 the build goes without one, so it takes the ARM64
+# assembly path (eirUsesAsm: assembly at -O0 only).
 opt=(-O1)
 case "$(uname -m)" in
     arm64|aarch64) case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ;; *) opt=() ;; esac ;;

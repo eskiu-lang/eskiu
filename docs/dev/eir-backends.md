@@ -11,10 +11,10 @@ code without LLVM's code generator:
 | `eskiuc f.esk --emit-obj [-o f.o]` | the object file alone |
 
 `--backend=eir` builds the object through the system C driver (`$CC`, `cc`, `clang`, `gcc`):
-it assembles the ARM64 output on an arm64 target (Windows excepted) and compiles the C99
-output on any other (`eir/eir_obj.cpp`, `eirUsesAsm`). On the C path `-O` is the C
-compiler's level (the C is always compiled with `-fno-strict-aliasing`); the ARM64 path has
-none, so `-O` is an error there. Options that only change LLVM's code generation
+at `-O0` it assembles the ARM64 output on an arm64 target (Windows excepted), and otherwise
+it compiles the C99 output (`eir/eir_obj.cpp`, `eirUsesAsm`), so `-O1` and up are the C
+compiler's level on every target (the C is always compiled with `-fno-strict-aliasing`).
+The ARM64 assembly has no levels: `--emit-asm` with `-O1` or more is an error. Options that only change LLVM's code generation
 (`--safe`, `--freestanding`, `--asan`, `--ubsan`, `--mcpu`, `--mattr`, `--reloc`) are errors
 under it, not ignored.
 

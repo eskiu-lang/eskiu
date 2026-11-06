@@ -11,9 +11,9 @@
 # optimization http_serve_slow_reader misses its deadline). Default: asm on arm64, c elsewhere.
 #
 # driver: `$BIN --backend=eir -O1 -o exe` builds and links each test through the
-# compiler's own driver (ESKIUC=build/eskiuc-esk for the self-hosted one): C, or ARM64
-# assembly on arm64 outside Windows, which has no -O levels (the level is not passed
-# there); it is held to the C mode's list of this host.
+# compiler's own driver (ESKIUC=build/eskiuc-esk for the self-hosted one): C, or on arm64
+# outside Windows ARM64 assembly, which the driver takes only at -O0 (so no level is passed
+# there unless EIR_OPT is set); it is held to the C mode's list of this host.
 #
 # EIR_OPT=N (default 1) sets the -O level of the c and driver modes: the emitted C must
 # mean the same at every level (CI runs both at -O2 on Linux).
@@ -42,11 +42,14 @@ case "$mode" in asm|c|driver) ;; *) echo "usage: tests/eir/check.sh [asm|c|drive
 cmode="$mode"
 [ "$mode" = driver ] && cmode=c
 
-# The driver's -O: none where it assembles ARM64 (eirUsesAsm of the host).
+# The driver's -O: on arm64 none unless EIR_OPT is set, since -O0 is what selects the
+# ARM64 assembly (eirUsesAsm); EIR_OPT=1 or more there checks the C path instead.
 drvopt=("$OPT")
-case "$(uname -m)" in
-    arm64|aarch64) case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ;; *) drvopt=() ;; esac ;;
-esac
+if [ -z "${EIR_OPT:-}" ]; then
+    case "$(uname -m)" in
+        arm64|aarch64) case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ;; *) drvopt=() ;; esac ;;
+    esac
+fi
 
 list="tests/eir/pass_$cmode.txt"
 other=""

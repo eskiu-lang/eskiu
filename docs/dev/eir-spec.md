@@ -381,7 +381,7 @@ Nothing here is scheduled; this is where to pick the work up again.
    `eir_a_fn.esk`, a port of `eir_asm_arm64.cpp`) writes the same assembly as the C++ for
    every run test, Mach-O and ELF (`tests/selfhost/eir_asm_parity.sh`,
    `eir_asm_parity_pass.txt`); `esk_main --emit-asm` prints it, and `--backend=eir` takes
-   the assembly path exactly where `eirUsesAsm` does (arm64 outside Windows), joining the
+   the assembly path exactly where `eirUsesAsm` does (arm64 outside Windows, at -O0), joining the
    standalone runtime (`EC_RT_STANDALONE`, generated from `runtimeStandaloneSource`) as
    `eir_obj.cpp` does. The bootstrap through EIR then goes through assembly on arm64. Both back
    ends give an `export` function with a record by value its C entry (`export_c` is on
