@@ -45,6 +45,10 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   write the same C and ARM64 assembly as `eskiuc`, and `eskiuc-esk --backend=eir` builds
   programs through them (assembly on arm64 outside Windows, C with any `$CC` elsewhere),
   without clang or LLVM.
+- `--backend=eir` at `-O0` on arm64 assembles its output itself: an integrated ARM64
+  assembler writes the Mach-O or ELF object, with no external assembler (LangArena's 50
+  benchmarks build in 2.0 s instead of 4.6 s). `ESKIU_EIR_EXTERNAL_AS=1` uses the system
+  C driver instead.
 - `--emit-asm` rejects the options its assembly cannot honor (`-O1` and up, `--safe`,
   `--mcpu`, ...), as `--backend=eir` does on that path; they were ignored.
 - `tests/index.sh` prints the test catalog from each test's first comment, and `run.sh`

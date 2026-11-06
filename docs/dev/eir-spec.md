@@ -374,8 +374,10 @@ What EIR already gives stays valuable and is kept green in CI:
   end (`tests/eir/check.sh`, a list per host), and the self-hosted compiler builds itself
   through EIR (`eir_bootstrap.sh`). `--backend=eir` writes C at `-O1` and up and ARM64
   assembly at `-O0` on arm64; `export` functions get their C entry in both back ends.
-- **An integrated ARM64 assembler and object writer** (C++ only, in progress) so the
-  assembly path runs no external assembler; it is the last piece of EIR work scheduled.
+- **An integrated ARM64 assembler and object writer** (`eir/eir_as_arm64.cpp`, C++ only):
+  the assembly path runs no external assembler (Mach-O and ELF; `tests/eir/obj_check.sh`
+  compares every run test's object with `cc -c`'s). It was the last piece of EIR work
+  scheduled.
 
 Not planned, and where to start if EIR is picked up again: the register allocator and
 `mem2reg` the design leaves room for (§1), an x86-64 emitter, the runtime in Eskiu instead

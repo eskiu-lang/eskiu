@@ -10,11 +10,18 @@ code without LLVM's code generator:
 | `eskiuc f.esk -o prog --backend=eir` | an executable: the normal driver (link, `#pragma link`, implied libraries, `.a` output, `run`) with the object from EIR |
 | `eskiuc f.esk --emit-obj [-o f.o]` | the object file alone |
 
-`--backend=eir` builds the object through the system C driver (`$CC`, `cc`, `clang`, `gcc`):
-at `-O0` it assembles the ARM64 output on an arm64 target (Windows excepted), and otherwise
-it compiles the C99 output (`eir/eir_obj.cpp`, `eirUsesAsm`), so `-O1` and up are the C
-compiler's level on every target (the C is always compiled with `-fno-strict-aliasing`).
-The ARM64 assembly has no levels: `--emit-asm` with `-O1` or more is an error. Options that only change LLVM's code generation
+`--backend=eir` builds the object without LLVM's code generator (`eir/eir_obj.cpp`,
+`eirUsesAsm`). At `-O0` on an arm64 target (Windows excepted) it writes ARM64 assembly and
+assembles it itself: `eir/eir_as_arm64.cpp` is an integrated assembler for the subset the
+emitter writes (and the usual inline-asm instructions), producing a Mach-O or ELF object
+with no external assembler and no LLVM. A module whose inline asm falls outside that subset
+is assembled by the system C driver instead, and `ESKIU_EIR_EXTERNAL_AS=1` does that for
+every module (for comparison); `eskiuc f.s --eir-assemble -o f.o` runs the assembler alone.
+The C runtime (exceptions, threads) is still compiled by the C driver and joined with
+`-r` when a program needs it. Otherwise the backend writes C99 and compiles it with the
+system C driver (`$CC`, `cc`, `clang`, `gcc`), so `-O1` and up are the C compiler's level on
+every target (the C is always compiled with `-fno-strict-aliasing`). The ARM64 assembly
+has no levels: `--emit-asm` with `-O1` or more is an error. Options that only change LLVM's code generation
 (`--safe`, `--freestanding`, `--asan`, `--ubsan`, `--mcpu`, `--mattr`, `--reloc`) are errors
 under it, not ignored.
 
@@ -95,8 +102,21 @@ assembling the textual output with the system C driver is EIR's largest extra co
 assembly is large because every value lives on the stack: there is no register allocator
 yet); the builder itself is no longer a hot spot since `Module::getFunction` uses an index
 (`functionIndex`; it was a linear scan, and building the compiler's own source took 1.5 s
-more). An integrated assembler (in progress) removes the external one; past that, the front end is where
-compile time can improve for every back end, and EIR stays experimental
+more).
+
+The integrated assembler then removed the external one (same machine, best of 3, EIR to
+executable):
+
+| Program | With `cc -c` | Integrated |
+|---|---|---|
+| `examples/hello.esk` | 298 ms | 206 ms |
+| `tests/json_build.esk` | 751 ms | 421 ms |
+| LangArena's 50 benchmarks | 4.57 s | 2.04 s |
+| `selfhost/esk_main.esk` | 16.7 s | 9.2 s |
+
+On the compiler's own 25.7 MB of assembly, `cc -c` takes 9.0 s and the integrated assembler
+1.6 s (0.22 s in an optimized build). Past this, the front end is where compile time can
+improve for every back end, and EIR stays experimental
 ([`eir-spec.md` §8](eir-spec.md#8-status-and-direction)).
 
 ## Testing
