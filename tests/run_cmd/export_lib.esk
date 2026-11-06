@@ -1,0 +1,56 @@
+// A library for C: `eskiuc export_lib.esk -o libexport_lib.a --emit-header export_lib.h`,
+// used by export_lib_main.c (run.sh). Its types cover what a C header can spell.
+const int SLOTS = 3;
+enum Mode { Idle, Run = 5, Stop }
+type Id = uint32;
+
+struct Vec2 { float x; float y; }
+struct Flags { uint32 ready : 1; uint32 : 3; uint32 level : 4; uint8 : 0; bool on : 1; }
+#pragma pack(2)
+struct Wire { uint8 kind; int64 stamp; }
+#pragma pack()
+struct Body {
+    Vec2 pos;
+    Vec2[2] path;
+    int[SLOTS * 2] slots;
+    Mode mode;
+    Id id;
+    *Node next;
+    fn(int)->int hook;
+    Flags flags;
+}
+struct Node { int value; *Node next; }
+union Cell { int64 i; double d; Vec2 v; }
+
+export Body body_make(Id id, Mode m) {
+    Body b;
+    b.id = id;
+    b.mode = m;
+    b.pos = Vec2{x: 1.5, y: 2.5};
+    b.path[1] = Vec2{x: 3.0, y: 4.0};
+    b.slots[5] = 6;
+    b.flags.ready = 1;
+    b.flags.level = 9;
+    b.flags.on = true;
+    return b;
+}
+export float body_len(*Body b) { return b.pos.x + b.pos.y + b.path[1].x + b.path[1].y + (float)b.slots[5]; }
+export int node_sum(*Node n) {
+    int s = 0;
+    while (n != null) {
+        s += n.value;
+        n = n.next;
+    }
+    return s;
+}
+export Cell cell_of(double d) { return Cell{d: d}; }
+export int64 wire_stamp(Wire w) { return w.stamp + w.kind; }
+export Mode next_mode(Mode m) { return m == Idle ? Run : Stop; }
+// The sizes Eskiu lays the records out with, for the C side to compare with its own.
+export int64 size_of(int which) {
+    if (which == 0) return sizeof(Body);
+    if (which == 1) return sizeof(Flags);
+    if (which == 2) return sizeof(Wire);
+    if (which == 3) return sizeof(Cell);
+    return sizeof(Node);
+}

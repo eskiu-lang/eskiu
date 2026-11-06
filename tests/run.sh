@@ -535,6 +535,27 @@ else
     bad "codegen/freestanding-no-builtins" "a freestanding -O2 object references memset/memcpy"
 fi
 
+# `export` and --emit-header: an Eskiu static library used from C through its generated
+# header (the C side compares each record's sizeof with Eskiu's), which also compiles as C++.
+el="$work/export_lib"
+mkdir -p "$el"
+if "$ESKIUC" "$here/run_cmd/export_lib.esk" --emit-header "$el/export_lib.h" >/dev/null 2>&1 &&
+   "$ESKIUC" "$here/run_cmd/export_lib.esk" -o "$el/libexport_lib.a" >/dev/null 2>&1 &&
+   $CC -std=c99 -Wall -Wextra -pedantic -Werror -I"$el" "$here/run_cmd/export_lib_main.c" \
+       "$el/libexport_lib.a" -o "$el/main" >/dev/null 2>&1; then
+    el_out=$("$el/main" 2>&1)
+    el_want=$'7 5 1 9 1 6\n17.0 9 0.25 42 5 1\nsame same same same same'
+    if [[ "$el_out" == "$el_want" ]]; then ok "export/c-library"
+    else bad "export/c-library" "got: $el_out"; fi
+    if command -v c++ >/dev/null 2>&1; then
+        if printf '#include "export_lib.h"\nint main() { return sizeof(Body) == 0; }\n' |
+               c++ -x c++ -fsyntax-only -Wall -Werror -I"$el" - >/dev/null 2>&1; then ok "export/header-cxx"
+        else bad "export/header-cxx" "the generated header does not compile as C++"; fi
+    fi
+else
+    bad "export/c-library" "building the library, its header or the C program failed"
+fi
+
 # Narrow C integers: like clang, AArch64 outside Darwin and Windows x64 put no signext or
 # zeroext on extern params and results (bool stays zeroext on Windows x64); Darwin does.
 na_l=$("$ESKIUC" "$here/c_abi_narrow.esk" --target aarch64-unknown-linux-gnu --test-codegen 2>/dev/null | grep -cE '^declare .*(signext|zeroext)')

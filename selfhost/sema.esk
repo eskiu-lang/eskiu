@@ -20,3 +20,4 @@ import "sema_expr.esk";
 import "sema_stmt.esk";
 import "sema_flow.esk";
 import "sema_tooling.esk";
+import "sema_header.esk";

@@ -185,6 +185,12 @@ public:
     // --complete-at: an identifier or member named kCompleteSentinel (spliced in at the
     // cursor by the driver) collects the candidates visible there.
     static constexpr const char* kCompleteSentinel = "__eskiu_complete__";
+    // `--emit-header`: the C header for the program's `export` functions (c_header.cpp);
+    // `error` says why one of their types has no C spelling.
+    std::string cHeader(class Program* program, const std::string& source, const std::string& guard,
+                        std::string& error);
+    friend struct CHeaderWriter;
+
     struct Completion { std::string kind, name, detail; };
     std::vector<Completion> completions;
     bool completionDone = false;

@@ -90,6 +90,10 @@ static llvm::cl::opt<bool> EmitC("emit-c",
                                  llvm::cl::desc("Emit portable C99 code (.c) via EIR without LLVM"),
     llvm::cl::cat(EskiuCat));
 
+static llvm::cl::opt<std::string> EmitHeader("emit-header",
+                                   llvm::cl::desc("Write the C header of the `export` functions to <file>"),
+                                   llvm::cl::value_desc("file"), llvm::cl::cat(EskiuCat));
+
 static llvm::cl::opt<bool> EmitObj("emit-obj",
                                    llvm::cl::desc("Emit native object file (.o) via EIR without LLVM"),
     llvm::cl::cat(EskiuCat));
@@ -532,6 +536,30 @@ static bool checkEirOptions(unsigned safeChecks) {
     return bad.empty();
 }
 
+// --emit-header FILE: the C declarations of the program's `export` functions. The include
+// guard comes from the file's name (`mylib.h` -> ESKIU_MYLIB_H).
+static int writeCHeader(TypeChecker& tc, Program* program) {
+    std::string path = EmitHeader;
+    std::string base = path.substr(path.find_last_of("/\\") == std::string::npos ? 0 : path.find_last_of("/\\") + 1);
+    std::string guard = "ESKIU_";
+    for (char c : base) guard += std::isalnum((unsigned char)c) ? (char)std::toupper((unsigned char)c) : '_';
+    std::string src = InputFilename;
+    src = src.substr(src.find_last_of("/\\") == std::string::npos ? 0 : src.find_last_of("/\\") + 1);
+    std::string err;
+    std::string text = tc.cHeader(program, src, guard, err);
+    if (!err.empty()) {
+        std::cerr << "error: --emit-header: " << err << std::endl;
+        return 1;
+    }
+    std::ofstream out(path, std::ios::binary);
+    out << text;
+    if (!out) {
+        std::cerr << "error: cannot write " << path << std::endl;
+        return 1;
+    }
+    return 0;
+}
+
 // Test parser: tokenize, parse, and print AST
 static int testParser(const std::string& filename) {
     auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding);
@@ -945,6 +973,7 @@ static int compilerMain(int argc, char** argv) {
         if (!typeChecker.check(program.get())) {
             return 1;
         }
+        if (!EmitHeader.empty()) return writeCHeader(typeChecker, program.get());
 
         AsyncTransform(&typeChecker.expressionTypeMap(), &typeChecker.instanceArgsMap(), &typeChecker.instanceExprTypeMap()).run(program.get());
         // Single resolver: re-resolve the post-transform AST; codegen consumes it.

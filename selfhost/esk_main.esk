@@ -116,6 +116,59 @@ void push_words(List<string>* args, string cmd) {
 
 // Options that take a value (`-o out`, `--target T`, or `--target=T`). The self-host
 // driver implements -o/--target/--mcpu/--mattr/--reloc/--link-arg/-l/-L; the rest are C++-only.
+// The text after the last `/` or `\` of a path.
+string path_base(string p) {
+    int i = 0;
+    int b = 0;
+    while (p[i] != 0) {
+        if (p[i] == '/' || p[i] == '\\') {
+            b = i + 1;
+        }
+        i = i + 1;
+    }
+    return cg_sub_str(p, b, i);
+}
+
+// --emit-header FILE: the C declarations of the program's `export` functions. The include
+// guard comes from the file's name (`mylib.h` -> ESKIU_MYLIB_H).
+int write_c_header(Sema* sm, *Program prog, string infile, string path) {
+    string base = path_base(path);
+    String guard;
+    String_init(&guard, 32);
+    String_append(&guard, "ESKIU_");
+    int i = 0;
+    while (base[i] != 0) {
+        int c = (int)base[i];
+        if (c >= 'a' && c <= 'z') {
+            String_push(&guard, (char)(c - 32));
+        } else if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+            String_push(&guard, (char)c);
+        } else {
+            String_push(&guard, '_');
+        }
+        i = i + 1;
+    }
+    string err = null;
+    string text = sema_c_header(sm, prog, path_base(infile), (string)String_cstr(&guard), &err);
+    if (err != null) {
+        eprint("error: --emit-header: ");
+        eprint(err);
+        eprint("\n");
+        return 1;
+    }
+    int64 n = 0;
+    while (text[n] != 0) {
+        n = n + 1;
+    }
+    if (fs_write_all(path, (*uint8)text, n) == 0) {
+        eprint("error: cannot write ");
+        eprint(path);
+        eprint("\n");
+        return 1;
+    }
+    return 0;
+}
+
 int is_value_opt(string o) {
     if (cg_streq(o, "-o") == 1 || cg_streq(o, "-l") == 1 || cg_streq(o, "-L") == 1) {
         return 1;
@@ -127,6 +180,9 @@ int is_value_opt(string o) {
         return 1;
     }
     if (cg_streq(o, "--backend") == 1 || cg_streq(o, "-backend") == 1) {
+        return 1;
+    }
+    if (cg_streq(o, "--emit-header") == 1 || cg_streq(o, "-emit-header") == 1) {
         return 1;
     }
     if (cg_streq(o, "--target") == 1 || cg_streq(o, "-target") == 1) {
@@ -1272,6 +1328,7 @@ int esk_main(int argc, string* argv) {
     string subsystem = "";   // --subsystem console|windows: a Windows program's subsystem
     string optflag = "";     // -O0..-O3 (clang optimizes the emitted IR)
     int backend_eir = 0;     // --backend=eir: build through EIR and its C99 emitter, no LLVM IR
+    string emit_header = null;   // --emit-header FILE: the C header of the `export` functions
     List<string> linkx;      // -l / -L / --link-arg, forwarded to the link
     List_init<string>(&linkx, 4);
     List<string> linked;     // library names given with -l (the implied ones skip these)
@@ -1426,6 +1483,9 @@ int esk_main(int argc, string* argv) {
         }
         else if (cg_streq(a, "--ubsan") == 1) {
             san = 2;
+        }
+        else if (cg_streq(opt, "--emit-header") == 1 || cg_streq(opt, "-emit-header") == 1) {
+            emit_header = val;
         }
         else if (cg_streq(opt, "--backend") == 1 || cg_streq(opt, "-backend") == 1) {
             if (cg_streq(val, "eir") == 1) {
@@ -1704,6 +1764,9 @@ int esk_main(int argc, string* argv) {
             sprintf((string)&eb[0], "error: %s: type checking failed\n", infile);
             eprint((string)&eb[0]);
             return 1;
+        }
+        if (emit_header != null) {
+            return write_c_header(&sm, prog, infile, emit_header);
         }
     }
 

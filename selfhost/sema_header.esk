@@ -1,0 +1,304 @@
+// `--emit-header`: the C declarations of a program's `export` functions and of the types
+// they reach (mirrors sema/c_header.cpp, byte for byte). Records keep their declared field
+// types (bitfields, unnamed bitfields, `packed` and `pack(N)` through `#pragma pack`), so a
+// C compiler lays them out as Eskiu does.
+
+struct CHdr {
+    *Sema s;
+    string err;
+    List<string> records;          // definition order: by-value fields first
+    StrTab done;
+    StrTab visiting;
+    List<string> queued;           // reached through a pointer: defined later
+    List<string> enums;            // plain enums, in first-use order
+    StrTab enum_seen;
+    StrTab text;                   // record name -> its definition
+    List<string> texts;
+}
+
+void ch_fail(CHdr* h, string what) {
+    if (h.err == null) {
+        h.err = what;
+    }
+}
+
+string ch_int_name(string n) {
+    if (sema_streq(n, "int") == 1 || sema_streq(n, "int32") == 1) {
+        return "int32_t";
+    }
+    if (sema_streq(n, "uint") == 1 || sema_streq(n, "uint32") == 1) {
+        return "uint32_t";
+    }
+    if (sema_streq(n, "int8") == 1 || sema_streq(n, "int16") == 1 || sema_streq(n, "int64") == 1
+        || sema_streq(n, "uint8") == 1 || sema_streq(n, "uint16") == 1 || sema_streq(n, "uint64") == 1) {
+        return sema_cat(n, "_t");
+    }
+    return "";
+}
+
+*DeclNode ch_plain_enum(CHdr* h, string name) {
+    *DeclNode d = sema_find_tdecl(h.s, name);
+    if (d != null && d.kind == DK_ENUM && sema_is_plain_enum_decl(d) == 1) {
+        return d;
+    }
+    return null;
+}
+
+*DeclNode ch_record_decl(CHdr* h, string name) {
+    *DeclNode d = sema_find_tdecl(h.s, name);
+    if (d != null && (d.kind == DK_STRUCT || d.kind == DK_UNION) && List_len<TypeParam>(&d.type_params) == 0) {
+        return d;
+    }
+    return null;
+}
+
+string ch_use_enum(CHdr* h, string name) {
+    if (StrTab_has(&h.enum_seen, name) == 0) {
+        StrTab_set(&h.enum_seen, name, 1);
+        List_push<string>(&h.enums, name);
+    }
+    return name;
+}
+
+string ch_with_name(string base, string name) {
+    if (name == null || name[0] == 0) {
+        return base;
+    }
+    return sema_cat(base, sema_cat(" ", name));
+}
+
+string ch_dim_text(CHdr* h, string dim) {
+    if (sema_all_digits(dim) == 1) {
+        return dim;
+    }
+    int64 v = (int64)0;
+    *Sema s = h.s;
+    int ok = ast_fold_dim(dim, int(string nm, *int64 out) {
+        if (ast_has_prefix(nm, "sizeof(") == 1) {
+            return 0;
+        }
+        return sema_layout_dim_name(s, nm, out);
+    }, &v);
+    if (ok == 0) {
+        ch_fail(h, sema_cat("the array size '", sema_cat(dim, "' cannot be written in a C header")));
+    }
+    return sema_i64_text(v);
+}
+
+void ch_record(CHdr* h, string name);
+
+string ch_spell(CHdr* h, string t, int by_value) {
+    if (sema_streq(t, "void") == 1 || sema_streq(t, "bool") == 1 || sema_streq(t, "char") == 1
+        || sema_streq(t, "float") == 1 || sema_streq(t, "double") == 1) {
+        return t;
+    }
+    if (sema_streq(t, "string") == 1) {
+        return "char*";
+    }
+    if (sema_is_fn_type(t) == 1) {
+        return "struct { void* fn; void* env; }";
+    }
+    int n = sema_slen(t);
+    if (n > 2 && (int)t[n - 1] == 93 && (int)t[n - 2] == 91) {
+        return "struct { void* ptr; int64_t len; }";
+    }
+    if ((int)t[0] == 42 || (int)t[n - 1] == 42) {
+        string pt = (int)t[0] == 42 ? sema_sub_str(t, 1, n) : sema_sub_str(t, 0, n - 1);
+        int pn = sema_slen(pt);
+        if (sema_streq(pt, "void") == 1 || (pn > 0 && (int)pt[pn - 1] == 93 && sema_is_fn_type(pt) == 0)) {
+            return "void*";
+        }
+        return sema_cat(ch_spell(h, pt, 0), "*");
+    }
+    string ci = ch_int_name(t);
+    if (ci[0] != 0) {
+        return ci;
+    }
+    if (ch_plain_enum(h, t) != null) {
+        return ch_use_enum(h, t);
+    }
+    if (sema_has_lt(t) == 1) {
+        ch_fail(h, "a generic instance has no stable C name (wrap it in a named struct)");
+        return t;
+    }
+    if (sema_is_enum(h.s, t) == 1) {
+        ch_fail(h, sema_cat("the sum type '", sema_cat(t, "' has no C layout")));
+        return t;
+    }
+    if (sema_find_iface(h.s, t) != null) {
+        return "struct { void* data; void* vtable; }";
+    }
+    if (ch_record_decl(h, t) == null) {
+        ch_fail(h, sema_cat("the type '", sema_cat(t, "' has no C spelling")));
+        return t;
+    }
+    if (by_value == 1) {
+        ch_record(h, t);
+    } else if (StrTab_has(&h.done, t) == 0 && StrTab_get(&h.visiting, t, 0) == 0) {
+        List_push<string>(&h.queued, t);
+    }
+    return t;
+}
+
+// The C spelling of `raw` as a declarator around `name` (`int32_t name[4]`), queueing the
+// records it names: a record by value is defined before the one that holds it.
+string ch_decl(CHdr* h, string raw, string name, int by_value) {
+    string bare = sema_strip_const(raw);
+    if (ch_plain_enum(h, bare) != null) {
+        return ch_with_name(ch_use_enum(h, bare), name);
+    }
+    string t = sema_canon(h.s, sema_strip_nullable(bare));
+    // The array dimensions, outer first (`T[2][3]`), unless t is a closure or a slice.
+    string dims = "";
+    int tn = sema_slen(t);
+    if (sema_is_fn_type(t) == 0 && tn > 0 && (int)t[tn - 1] == 93) {
+        int n = tn;
+        int ob = -1;
+        int i = 0;
+        while (i < n) {
+            if ((int)t[i] == 91) {
+                ob = i;
+                break;
+            }
+            i = i + 1;
+        }
+        while (ob > 0 && ob < n && (int)t[ob] == 91 && (int)t[ob + 1] != 93) {
+            int cb = sema_dim_close(t, ob);
+            dims = sema_cat(dims, sema_cat("[", sema_cat(ch_dim_text(h, sema_trim_sub(t, ob + 1, cb)), "]")));
+            string rest = sema_cat(sema_sub_str(t, 0, ob), sema_sub_str(t, cb + 1, n));
+            t = rest;
+            n = sema_slen(t);
+        }
+    }
+    return sema_cat(ch_with_name(ch_spell(h, t, by_value), name), dims);
+}
+
+void ch_record(CHdr* h, string name) {
+    if (StrTab_has(&h.done, name) == 1 || StrTab_get(&h.visiting, name, 0) == 1) {
+        return;
+    }
+    StrTab_set(&h.visiting, name, 1);
+    *DeclNode d = ch_record_decl(h, name);
+    String os;
+    String_init(&os, 128);
+    int pack = d.is_packed == 1 ? 1 : d.pack_align;
+    if (pack > 0) {
+        String_append(&os, sema_cat("#pragma pack(push, ", sema_cat(sema_i64_text((int64)pack), ")\n")));
+    }
+    String_append(&os, d.kind == DK_UNION ? "union " : "struct ");
+    String_append(&os, name);
+    String_append(&os, " {\n");
+    int nf = List_len<Param>(&d.params);
+    int np = List_len<string>(&d.pad_tys);
+    int pad = 0;
+    int i = 0;
+    while (i <= nf) {
+        while (pad < np && List_get<int>(&d.pad_at, pad) == i) {
+            int pw = List_get<int>(&d.pad_bits, pad);
+            if (pw < 0) {
+                pw = 0;
+            }
+            String_append(&os, "    ");
+            String_append(&os, ch_decl(h, List_get<string>(&d.pad_tys, pad), "", 1));
+            String_append(&os, sema_cat(" : ", sema_cat(sema_i64_text((int64)pw), ";\n")));
+            pad = pad + 1;
+        }
+        if (i == nf) {
+            break;
+        }
+        Param f = List_get<Param>(&d.params, i);
+        String_append(&os, "    ");
+        String_append(&os, ch_decl(h, f.ty, f.name, 1));
+        int bw = 0;
+        if (i < List_len<int>(&d.field_bits)) {
+            bw = List_get<int>(&d.field_bits, i);
+        }
+        if (bw > 0) {
+            String_append(&os, sema_cat(" : ", sema_i64_text((int64)bw)));
+        }
+        String_append(&os, ";\n");
+        i = i + 1;
+    }
+    String_append(&os, "};\n");
+    if (pack > 0) {
+        String_append(&os, "#pragma pack(pop)\n");
+    }
+    StrTab_set(&h.visiting, name, 0);
+    StrTab_set(&h.done, name, 1);
+    StrTab_set(&h.text, name, List_len<string>(&h.texts));
+    List_push<string>(&h.texts, (string)String_cstr(&os));
+    List_push<string>(&h.records, name);
+}
+
+// The header text; *err says why a type has no C spelling (null: none).
+string sema_c_header(Sema* s, *Program prog, string source, string guard, *string err) {
+    let h: CHdr;
+    memset((*void)&h, 0, sizeof(CHdr));
+    h.s = s;
+    h.err = null;
+    String protos;
+    String_init(&protos, 256);
+    int di = 0;
+    while (di < List_len<*DeclNode>(&prog.decls)) {
+        *DeclNode f = List_get<*DeclNode>(&prog.decls, di);
+        di = di + 1;
+        if (f.kind != DK_FUNCTION || f.is_export == 0 || f.body == null) {
+            continue;
+        }
+        String ps;
+        String_init(&ps, 64);
+        int pi = 0;
+        while (pi < List_len<Param>(&f.params)) {
+            Param p = List_get<Param>(&f.params, pi);
+            if (pi > 0) {
+                String_append(&ps, ", ");
+            }
+            String_append(&ps, ch_decl(&h, p.ty, p.name, 1));
+            pi = pi + 1;
+        }
+        String_append(&protos, ch_decl(&h, f.ret_type, f.name, 1));
+        String_append(&protos, "(");
+        String_append(&protos, pi == 0 ? "void" : (string)String_cstr(&ps));
+        String_append(&protos, ");\n");
+    }
+    int qi = 0;
+    while (qi < List_len<string>(&h.queued)) {
+        ch_record(&h, List_get<string>(&h.queued, qi));
+        qi = qi + 1;
+    }
+    String os;
+    String_init(&os, 1024);
+    String_append(&os, sema_cat("/* Generated by eskiuc --emit-header from ", sema_cat(source, ". Do not edit. */\n")));
+    String_append(&os, sema_cat("#ifndef ", sema_cat(guard, sema_cat("\n#define ", sema_cat(guard, "\n\n")))));
+    String_append(&os, "#include <stdbool.h>\n#include <stdint.h>\n\n");
+    String_append(&os, "#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n");
+    int nr = List_len<string>(&h.records);
+    if (nr > 0) {
+        for (ri in 0..nr) {
+            string r = List_get<string>(&h.records, ri);
+            String_append(&os, ch_record_decl(&h, r).kind == DK_UNION ? "typedef union " : "typedef struct ");
+            String_append(&os, sema_cat(r, sema_cat(" ", sema_cat(r, ";\n"))));
+        }
+        String_append(&os, "\n");
+    }
+    for (ei in 0..List_len<string>(&h.enums)) {
+        string e = List_get<string>(&h.enums, ei);
+        *DeclNode ed = ch_plain_enum(&h, e);
+        String_append(&os, sema_cat("typedef int32_t ", sema_cat(e, ";\nenum {")));
+        for (mi in 0..List_len<Param>(&ed.params)) {
+            Param m = List_get<Param>(&ed.params, mi);
+            String_append(&os, mi > 0 ? ",\n    " : "\n    ");
+            String_append(&os, sema_cat(m.name, sema_cat(" = ", sema_i64_text(sema_parse_int(m.ty)))));
+        }
+        String_append(&os, "\n};\n\n");
+    }
+    for (ri in 0..nr) {
+        string r = List_get<string>(&h.records, ri);
+        String_append(&os, List_get<string>(&h.texts, StrTab_get(&h.text, r, 0)));
+        String_append(&os, "\n");
+    }
+    String_append(&os, (string)String_cstr(&protos));
+    String_append(&os, "\n#ifdef __cplusplus\n}\n#endif\n\n#endif\n");
+    *err = h.err;
+    return (string)String_cstr(&os);
+}

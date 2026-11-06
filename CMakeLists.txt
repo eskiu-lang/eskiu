@@ -53,6 +53,7 @@ set(SOURCES
     sema/typecheck_stmt.cpp
     sema/typecheck_expr.cpp
     sema/typecheck_type.cpp
+    sema/c_header.cpp
     sema/async_transform.cpp
     codegen/codegen_module.cpp
     codegen/codegen_type.cpp
