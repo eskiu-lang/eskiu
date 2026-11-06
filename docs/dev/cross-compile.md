@@ -24,6 +24,13 @@ position-independent by default). A library is how an Eskiu module goes into an 
 another build system links, such as an Xcode project, a Gradle module or an emscripten
 build.
 
+`eskiuc doctor` lists what this machine has for each kind of build: the C driver native
+builds link with, git, curl, tar and unzip for packages, OpenSSL for `<fetch>`'s https, SDL3
+for the gpu and audio packages, and the toolchain of each cross target (Emscripten, the
+Android NDK, the iOS SDK, devkitARM), with what to install for the missing ones. It looks
+the same places a build does and changes nothing; it exits 1 only when native programs
+cannot be built (no standard library or no C driver).
+
 ## Platform macros
 
 The preprocessor predefines a platform macro so `import`ed stdlib code can branch per OS:

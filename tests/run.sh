@@ -556,6 +556,10 @@ else
     bad "export/c-library" "building the library, its header or the C program failed"
 fi
 
+# `eskiuc doctor` finds the standard library and a C driver here (it exits 1 without them).
+if dr_out=$("$ESKIUC" doctor 2>&1) && grep -q 'ok       standard library' <<< "$dr_out"; then ok "cli/doctor"
+else bad "cli/doctor" "$(head -5 <<< "$dr_out")"; fi
+
 # Narrow C integers: like clang, AArch64 outside Darwin and Windows x64 put no signext or
 # zeroext on extern params and results (bool stays zeroext on Windows x64); Darwin does.
 na_l=$("$ESKIUC" "$here/c_abi_narrow.esk" --target aarch64-unknown-linux-gnu --test-codegen 2>/dev/null | grep -cE '^declare .*(signext|zeroext)')

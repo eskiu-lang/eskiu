@@ -591,6 +591,13 @@ static int compilerMain(int argc, char** argv) {
     // Package commands (new, add, build, fetch, test, and run inside a package): pkg.cpp.
     if (int rc = 0; pkgCommand(argc, argv, rc)) return rc;
 
+    // `eskiuc doctor`: what this machine has for each kind of build (doctor.cpp).
+    if (argc == 2 && std::string(argv[1]) == "doctor") {
+        std::string v = std::string(VERSION) + " (LLVM " + std::to_string(LLVM_VERSION_MAJOR) + "." +
+                        std::to_string(LLVM_VERSION_MINOR) + "." + std::to_string(LLVM_VERSION_PATCH) + ")";
+        return doctorCommand(v);
+    }
+
     // `eskiuc fmt [--check] file.esk …` — reformat files in place. Handled before
     // option parsing; it does not use the compiler pipeline.
     if (argc >= 2 && std::string(argv[1]) == "fmt") {

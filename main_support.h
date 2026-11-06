@@ -17,6 +17,8 @@ class Program;
 extern std::string stdlibRoot;
 
 std::string resolveStdlibPath();
+// `eskiuc doctor` (doctor.cpp): the tools each kind of build needs, found or missing.
+int doctorCommand(const std::string& version);
 std::string readFile(const std::string& filename);
 std::string dirOf(const std::string& path);
 std::string formatSource(const std::string& src);

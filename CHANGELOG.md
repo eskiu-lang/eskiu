@@ -17,6 +17,9 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   (records with their bitfields and packing), so `eskiuc lib.esk -o liblib.a
   --emit-header lib.h` gives C a library and its header. Both compilers; the EIR backends
   reject an exported function with a struct or union by value for now.
+- `eskiuc doctor` lists what the machine has for each kind of build (the C driver, git,
+  curl, tar, OpenSSL, SDL3, Emscripten, the Android NDK, the iOS SDK, devkitARM) and what
+  to install for what is missing.
 - `-ffp-contract=fast` lets the compiler fuse a multiply and an add into one fused
   multiply-add (rounded once); without it each floating-point operation rounds, so results
   stay the same on every target. Both compilers.
