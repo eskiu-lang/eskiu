@@ -98,7 +98,7 @@ Module
  ├── Type Definitions (Structs, Unions, Interfaces)
  ├── Global Variables & Constants
  ├── External Function Declarations (extern C)
- └── Function Definitions
+ └── Function Definitions (`export fn` for an `export` function, a C entry point)
       └── Basic Blocks
            └── Instructions (terminating in Br, BrCond, Ret, etc.)
 ```
@@ -383,9 +383,10 @@ Nothing here is scheduled; this is where to pick the work up again.
    `eir_asm_parity_pass.txt`); `esk_main --emit-asm` prints it, and `--backend=eir` takes
    the assembly path exactly where `eirUsesAsm` does (arm64 outside Windows), joining the
    standalone runtime (`EC_RT_STANDALONE`, generated from `runtimeStandaloneSource`) as
-   `eir_obj.cpp` does. The bootstrap through EIR then goes through assembly on arm64. Next:
-   `export` of records in both back ends, then deciding whether the EIR path becomes the
-   self-hosted compiler's default.
+   `eir_obj.cpp` does. The bootstrap through EIR then goes through assembly on arm64. Both back
+   ends give an `export` function with a record by value its C entry (`export_c` is on
+   every list). Next: deciding whether the EIR path becomes the self-hosted compiler's
+   default.
 3. **Release.** The EIR is under `[Unreleased]` in the CHANGELOG; it can ship as an
    experimental `--backend=eir` whenever the next version goes out.
 

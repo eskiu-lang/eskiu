@@ -58,7 +58,9 @@ backend classifies it as AAPCS64 does (`classifyC`): a homogeneous floating-poin
 consecutive v registers, else up to 16 bytes in x registers, else by address of a copy; the
 stack when the registers run out; a result in v0-v3, x0/x1, or the buffer x8 points to. A
 function handed to C by address whose signature has a record or a `va_list` is reached
-through a thunk with the C signature (`__cabi_<name>`, `__eskc_cabi_<name>`).
+through a thunk with the C signature (`__cabi_<name>`, `__eskc_cabi_<name>`). An `export`
+function with such a signature is that thunk under its own name, its body renamed
+(`<name>.esk`, `__eskc_body_<name>`).
 
 ## Runtime
 

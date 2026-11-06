@@ -15,8 +15,8 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   unions by value included, while Eskiu code calls it as before. `--emit-header FILE`
   writes the C declarations of a program's exported functions and of the types they reach
   (records with their bitfields and packing), so `eskiuc lib.esk -o liblib.a
-  --emit-header lib.h` gives C a library and its header. Both compilers; the EIR backends
-  reject an exported function with a struct or union by value for now.
+  --emit-header lib.h` gives C a library and its header. Both compilers, every back end
+  (LLVM, and the EIR C and ARM64 ones).
 - Prebuilt binaries for Intel Macs (`eskiuc-macos-x86_64.tar.gz`), which `install.sh`
   picks on an x86_64 Mac.
 - On Windows, `install.ps1` also installs llvm-mingw (checked against a pinned SHA-256)

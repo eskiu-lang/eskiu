@@ -298,8 +298,11 @@ The include guard is `ESKIU_` plus the file name in capitals. `run.sh` builds
 `tests/run_cmd/export_lib.esk` as a static library, compiles a C program against its header
 (which also compiles as C++) and checks each record's `sizeof` against Eskiu's.
 
-The EIR backends do not give an exported function with a record by value its C entry yet,
-and reject it.
+The EIR back ends do the same with their own C-ABI thunks: an export entry (an `export`
+function whose signature has a record or a `va_list`) has its body as `__eskc_body_NAME`
+in C or `NAME.esk` in ARM64 assembly, and `NAME` is the thunk (`exportEntry` in
+`eir_c.cpp` and `eir_asm_arm64.cpp`, `ec_export_entry` in the self-host). The EIR text
+prints such a function as `export fn @NAME`.
 
 ---
 
