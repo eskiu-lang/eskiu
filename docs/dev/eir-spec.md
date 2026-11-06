@@ -356,39 +356,32 @@ merge:
    builder. All 563 run tests are byte-identical, gated in CI by
    `tests/selfhost/eir_parity.sh`. Done.
 
-## 8. Next Steps
+## 8. Status and Direction
 
-Nothing here is scheduled; this is where to pick the work up again.
+EIR is an **experimental back end**, kept working and tested but not where the compiler is
+going for release builds or for shipping the self-hosted compiler (2026-11-06; see
+[`roadmap.md`](roadmap.md)). Measured, it does not even compile faster than LLVM today
+([`eir-backends.md`](eir-backends.md#compile-time)), and a native back end will not match
+LLVM's optimized code; the self-hosted compiler will reach LLVM through its C API instead.
+What EIR already gives stays valuable and is kept green in CI:
 
-1. **C backend gate on Linux.** The Linux `test` job of `ci.yml` runs
-   `tests/eir/check.sh c` against its own list, `tests/eir/pass_c_linux.txt` (macOS keeps
-   `pass_c.txt`: libc output and type widths may differ). The generated C is compiled at
-   `-O1` in the gate, as `eskiuc -O1 --backend=eir` builds it (the driver passes its `-O`
-   level to the C compiler, with `-fno-strict-aliasing`). The Linux list starts empty: the
-   first CI run prints every passing test as "newly passing"; record them with
-   `UPDATE=1`, and look at each test that passes on macOS but not on Linux (a backend bug,
-   or a legitimate difference that stays off the Linux list).
-2. **Back ends in the self-hosted compiler.** The C99 emitter is ported:
-   `selfhost/eir_c.esk` reads the instructions the builder now keeps beside their text
-   (`EBlock.insts`) and writes the same C as `eir/eir_c.cpp` for every run test
-   (`tests/selfhost/eir_c_parity.sh`, list `eir_c_parity_pass.txt`); the C it copies
-   (prelude, runtime, the table of C functions) is generated from the C++ sources into
-   `selfhost/eir_c_text.esk` by `tools/gen_eir_c_text.py`, which the parity script checks.
-   `esk_main --emit-c` prints it and `--backend=eir` builds through it with any C compiler
-   (`tests/eir/check.sh driver`); `tests/selfhost/eir_bootstrap.sh` builds the compiler
-   itself that way and checks it writes the same C for its own source. The ARM64 emitter
-   and the object driver are ported too: `selfhost/eir_asm.esk` (`eir_a_core.esk`,
-   `eir_a_fn.esk`, a port of `eir_asm_arm64.cpp`) writes the same assembly as the C++ for
-   every run test, Mach-O and ELF (`tests/selfhost/eir_asm_parity.sh`,
-   `eir_asm_parity_pass.txt`); `esk_main --emit-asm` prints it, and `--backend=eir` takes
-   the assembly path exactly where `eirUsesAsm` does (arm64 outside Windows, at -O0), joining the
-   standalone runtime (`EC_RT_STANDALONE`, generated from `runtimeStandaloneSource`) as
-   `eir_obj.cpp` does. The bootstrap through EIR then goes through assembly on arm64. Both back
-   ends give an `export` function with a record by value its C entry (`export_c` is on
-   every list). Next: deciding whether the EIR path becomes the self-hosted compiler's
-   default.
-3. **Release.** The EIR is under `[Unreleased]` in the CHANGELOG; it can ship as an
-   experimental `--backend=eir` whenever the next version goes out.
+- **A definition of the semantics.** The EVM (`--run-eir`) runs EIR as the spec says, and
+  three independent back ends (LLVM, the C99 emitter, the ARM64 emitter) run the same
+  corpus, which has found compiler bugs none of them showed alone.
+- **The back ends**, in both compilers: the builder, the C99 emitter and the ARM64 emitter
+  and object driver are ported to the self-host with byte parity (`eir_parity.sh`,
+  `eir_c_parity.sh`, `eir_asm_parity.sh`), the gate runs every run test through each back
+  end (`tests/eir/check.sh`, a list per host), and the self-hosted compiler builds itself
+  through EIR (`eir_bootstrap.sh`). `--backend=eir` writes C at `-O1` and up and ARM64
+  assembly at `-O0` on arm64; `export` functions get their C entry in both back ends.
+- **An integrated ARM64 assembler and object writer** (C++ only, in progress) so the
+  assembly path runs no external assembler; it is the last piece of EIR work scheduled.
+
+Not planned, and where to start if EIR is picked up again: the register allocator and
+`mem2reg` the design leaves room for (§1), an x86-64 emitter, the runtime in Eskiu instead
+of C, the options EIR rejects (`--safe`, `--freestanding`, the sanitizers, `--mcpu`,
+`--mattr`, `--reloc`), cross targets through it, and LLVM fed from EIR. The C99 emitter
+stays a portable option rather than a path to invest in.
 
 Lessons from the builder port, for the next one:
 

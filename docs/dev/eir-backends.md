@@ -95,8 +95,9 @@ assembling the textual output with the system C driver is EIR's largest extra co
 assembly is large because every value lives on the stack: there is no register allocator
 yet); the builder itself is no longer a hot spot since `Module::getFunction` uses an index
 (`functionIndex`; it was a linear scan, and building the compiler's own source took 1.5 s
-more). The next steps are an object writer, so that no external assembler runs, and a
-register allocator.
+more). An integrated assembler (in progress) removes the external one; past that, the front end is where
+compile time can improve for every back end, and EIR stays experimental
+([`eir-spec.md` §8](eir-spec.md#8-status-and-direction)).
 
 ## Testing
 

@@ -44,8 +44,8 @@ first-class in the language without giving up general systems use.
   binary because it bundles LLVM. See [`self-hosting.md`](self-hosting.md).
 - **EIR.** An IR of its own and native back ends that skip LLVM's code generator
   (`--backend=eir`: ARM64 assembly, C99), passing every run test, with the self-hosted
-  compiler building the same EIR byte for byte. What is left:
-  [`eir-spec.md` §8](eir-spec.md#8-next-steps).
+  compiler building the same EIR byte for byte. It is an experimental back end, not the path
+  for release builds: [`eir-spec.md` §8](eir-spec.md#8-status-and-direction).
 - **Quality.** Every fix ships with a regression test. CI runs the test suite, the parity
   checks between the two compilers, an `-O0` against `-O2` differential, and fuzzers (a C
   oracle checked against clang, a negative-program corpus, and the stdlib parsers under
@@ -84,12 +84,20 @@ first-class in the language without giving up general systems use.
   in `eskiu.lock`.
   A registry and version ranges would let packages depend on "1.2 or later" instead of a
   commit.
-- **Shipping the self-hosted compiler.** It already matches the C++ one, and with
-  `--backend=eir` it builds programs through its port of the EIR C99 emitter, so it needs a
-  C compiler but not clang or LLVM. What is left before it can be the released binary:
-  deciding whether the EIR C path becomes its default (it trades LLVM's optimizer for the C
-  compiler's), and the ARM64 emitter and object driver ([`eir-spec.md`
-  §8](eir-spec.md#8-next-steps)).
+- **Shipping the self-hosted compiler.** It already matches the C++ one, but it writes LLVM
+  IR as text and runs `clang` to build it, so it cannot ship without clang. The plan is to
+  have it drive LLVM through LLVM's C API (`libLLVM`, called with `extern` from Eskiu)
+  instead: the same optimizer and the same performance as the C++ compiler, no clang, and a
+  binary that ships with libLLVM as the C++ one does. EIR is not the path to this: a native
+  back end will not match LLVM's optimized code (no language that has tried, Rust with
+  Cranelift or Zig with its own back ends, uses one for release builds), and building one
+  that covers every target and option is many months of work. EIR stays an experimental
+  back end ([`eir-spec.md` §8](eir-spec.md#8-status-and-direction)).
+- **A faster front end.** It takes more than 100 ms to type-check a program of a few lines,
+  because the type checker runs twice (before and after the `async` lowering) and the
+  standard library a program imports is parsed and checked again on every build
+  ([`eir-backends.md`](eir-backends.md#compile-time) has the measurements). Every back end
+  pays this, LLVM included, so it is where compile time can improve most.
 
 ## Later, not scheduled
 
