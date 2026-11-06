@@ -448,7 +448,7 @@ void Function::dump(std::ostream& os) const {
         return;
     }
 
-    os << "fn @" << name << "(";
+    os << (isExport ? "export fn @" : "fn @") << name << "(";
     for (size_t i = 0; i < params.size(); ++i) {
         if (i > 0) os << ", ";
         os << params[i].second->str() << " %" << params[i].first;

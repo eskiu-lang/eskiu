@@ -1035,16 +1035,13 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
                 }
                 params.emplace_back(p.second, toEirType(p.first));
             }
-            if (module->getFunction(f->name)) continue;
+            if (Function* have = module->getFunction(f->name)) {
+                if (f->isExport && f->body) have->isExport = true;   // a prototype came first
+                continue;
+            }
             auto fn = module->createFunction(f->name, toEirType(f->returnType), params);
             fn->isVariadic = hasVarargs;
-            // An `export` entry with a record by value needs the C convention under its own
-            // name, which the backends do not give a function yet (only a `__cabi_` thunk).
-            bool rec = fn->returnType && fn->returnType->isStruct();
-            for (const auto& p : params) rec = rec || (p.second && p.second->isStruct());
-            if (f->isExport && f->body && rec)
-                throw std::runtime_error("EIR: exported function '" + f->name +
-                                         "' takes or returns a struct or union by value, which the EIR backends do not support yet");
+            fn->isExport = f->isExport && f->body;
         } else if (auto ext = dynamic_cast<ExternDecl*>(decl.get())) {
             if (module->getFunction(ext->name)) continue;
             std::vector<std::pair<std::string, TypePtr>> params;

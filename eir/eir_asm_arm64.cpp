@@ -105,6 +105,9 @@ public:
             emitFunction(fn.get(), idx++, os);
         }
         for (const auto& name : cabiOrder) emitCabiThunk(mod->getFunction(name), os);
+        for (const auto& fn : mod->functions)
+            if (exportEntry(fn.get()) && !cabiFns.count(fn->name) && emitted.insert("export:" + fn->name).second)
+                emitCabiThunk(fn.get(), os);
     }
 
 private:
@@ -154,6 +157,27 @@ private:
             } else ss << c;
         }
         return ss.str();
+    }
+
+    // An `export` function whose signature has a record or a va_list: C calls the thunk under
+    // the function's own name, and its body is `<name>.esk`.
+    bool exportEntry(const Function* f) const {
+        if (!f || !f->isExport || f->isExtern || f->blocks.empty()) return false;
+        bool rec = isCAggregate(f->returnType);
+        for (const auto& p : f->params) rec = rec || isCAggregate(p.second) || isVaListType(p.second);
+        return rec;
+    }
+
+    // The symbol Eskiu code calls a function by: an export entry's body, else its name.
+    std::string bodySym(const std::string& name) const {
+        const Function* f = currentMod ? currentMod->getFunction(name) : nullptr;
+        return mangleSym(exportEntry(f) ? name + ".esk" : name);
+    }
+
+    // The C-ABI thunk of a function: the export entry's own name, else `__cabi_<name>`.
+    std::string cabiSym(const std::string& name) const {
+        const Function* f = currentMod ? currentMod->getFunction(name) : nullptr;
+        return mangleSym(exportEntry(f) ? name : "__cabi_" + name);
     }
 
     // A symbol name: characters an assembler identifier cannot hold are spelled `$XX`.
@@ -257,7 +281,7 @@ private:
                 os << "    .quad " << stringTable[v.text] << "\n";
                 esz = 8;
             } else if (v.kind == OperandKind::GlobalRef) {
-                os << "    .quad " << mangleSym(v.text) << "\n";
+                os << "    .quad " << bodySym(v.text) << "\n";
                 esz = 8;
             } else {
                 os << "    .zero " << esz << "\n";
@@ -346,7 +370,7 @@ private:
     }
 
     void loadAddrOfSym(const std::string& reg, const std::string& name, std::ostream& os) {
-        std::string sym = cabiFns.count(name) ? mangleSym("__cabi_" + name) : mangleSym(name);
+        std::string sym = cabiFns.count(name) ? cabiSym(name) : bodySym(name);
         bool local = definedSyms.count(name) > 0;
         if (isDarwin) {
             if (local) {
@@ -709,7 +733,7 @@ private:
         bool recRet = isCAggregate(inst->type);
         if (recRet && !inst->resultVar.empty() && sizeOf(inst->type) > 16 && !hfaRet(inst->type))
             addImm("x8", "sp", slotOf(inst->resultVar), os);
-        os << "    bl " << mangleSym(inst->operands[0].text) << "\n";
+        os << "    bl " << bodySym(inst->operands[0].text) << "\n";
         if (inst->resultVar.empty()) return;
         if (recRet) {
             bool dbl = false;
@@ -786,7 +810,8 @@ private:
         size_t x8Slot = alloc(8);
         size_t frame = alignUp(local, 16);
 
-        std::string sym = mangleSym("__cabi_" + fn->name);
+        std::string sym = cabiSym(fn->name);
+        if (exportEntry(fn)) os << "    .globl " << sym << "\n";
         os << "    .p2align 2\n" << sym << ":\n";
         os << "    stp x29, x30, [sp, #-16]!\n    mov x29, sp\n";
         movImm("x16", static_cast<int64_t>(frame), os);
@@ -867,7 +892,7 @@ private:
             if (bigRet) memOp("ldr", "x8", "sp", x8Slot, 8, os);
             else addImm("x8", "sp", retBuf, os);
         }
-        os << "    bl " << mangleSym(fn->name) << "\n";
+        os << "    bl " << bodySym(fn->name) << "\n";
         if (recRet && !bigRet) {
             bool dbl = false;
             int hfa = hfaOf(fn->returnType, dbl);
@@ -994,8 +1019,8 @@ private:
         size_t frameSize = alignUp(local, 16);
         if (frameSize == 0) frameSize = 16;
 
-        std::string sym = mangleSym(fn->name);
-        if (!isRuntimeName(fn->name)) os << "    .globl " << sym << "\n";
+        std::string sym = bodySym(fn->name);
+        if (!isRuntimeName(fn->name) && !exportEntry(fn)) os << "    .globl " << sym << "\n";
         os << "    .p2align 2\n" << sym << ":\n";
         os << "    stp x29, x30, [sp, #-16]!\n";
         os << "    mov x29, sp\n";
@@ -1800,7 +1825,7 @@ private:
         if (isAggregate(inst->type) && !inst->resultVar.empty()) addImm("x8", "sp", slotOf(inst->resultVar), os);
 
         if (inst->op == Opcode::CallIndirect) os << "    blr x17\n";
-        else os << "    bl " << mangleSym(target) << "\n";
+        else os << "    bl " << bodySym(target) << "\n";
 
         if (!inst->resultVar.empty() && !isAggregate(inst->type)) {
             if (inst->type && inst->type->isFloat()) {

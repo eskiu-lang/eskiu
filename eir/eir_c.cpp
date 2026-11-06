@@ -129,7 +129,7 @@ public:
             if (!seen.insert(fn->name).second) continue;
             emitPrototype(fn.get(), protos);
         }
-        for (const auto& name : cabiOrder) {
+        for (const auto& name : thunkOrder()) {
             const Function* f = mod->getFunction(name);
             if (isCAggregate(f->returnType)) cRecord(f->returnType);
             for (const auto& p : f->params) if (isCAggregate(p.second)) cRecord(p.second);
@@ -147,7 +147,7 @@ public:
         }
         os << "\n";
 
-        for (const auto& name : cabiOrder) emitCabiThunk(mod->getFunction(name), os);
+        for (const auto& name : thunkOrder()) emitCabiThunk(mod->getFunction(name), os);
         emitGlobalDefs(mod, os);
 
         seen.clear();
@@ -199,9 +199,28 @@ private:
                 out += buf;
             }
         }
-        if (!external && n != "main" && cKeywords().count(out)) out = "__eskc_" + out;
+        if (exportEntry(f)) out = "__eskc_body_" + out;
+        else if (!external && n != "main" && cKeywords().count(out)) out = "__eskc_" + out;
         nameCache[n] = out;
         return out;
+    }
+
+    // An `export` function whose signature has a record or a va_list: C calls the thunk
+    // under the function's own name, and its body is `__eskc_body_<name>`.
+    bool exportEntry(const Function* f) const {
+        return f && f->isExport && !f->isExtern && !f->blocks.empty() && cabiSignature(f);
+    }
+
+    static bool cabiSignature(const Function* f) {
+        bool rec = isCAggregate(f->returnType);
+        for (const auto& p : f->params) rec = rec || isCAggregate(p.second) || isVaListType(p.second);
+        return rec;
+    }
+
+    // The C name of an export entry's thunk: the function's name, spelled as cName does.
+    std::string exportName(const std::string& n) {
+        std::string body = cName(n);
+        return body.substr(std::string("__eskc_body_").size());
     }
 
     static std::string sanitize(const std::string& prefix, const std::string& v) {
@@ -308,7 +327,9 @@ private:
     }
 
     std::string symAddr(const std::string& n) {
-        if (cabiFns.count(n)) return "((void*)__eskc_cabi_" + cName(n) + ")";
+        if (cabiFns.count(n))
+            return exportEntry(currentMod->getFunction(n)) ? "((void*)" + exportName(n) + ")"
+                                                         : "((void*)__eskc_cabi_" + cName(n) + ")";
         if (currentMod->getFunction(n)) return "((void*)" + cName(n) + ")";
         return "((void*)&" + cName(n) + ")";
     }
@@ -509,19 +530,28 @@ private:
                         if (i == 0 && (inst->op == Opcode::Call || inst->op == Opcode::MakeClosure)) continue;
                         const Function* f = mod->getFunction(op.text);
                         if (!f || f->isExtern || f->blocks.empty()) continue;
-                        bool rec = isCAggregate(f->returnType);
-                        for (const auto& p : f->params) rec = rec || isCAggregate(p.second) || isVaListType(p.second);
-                        if (rec && cabiFns.insert(f->name).second) cabiOrder.push_back(f->name);
+                        if (cabiSignature(f) && cabiFns.insert(f->name).second) cabiOrder.push_back(f->name);
                     }
                 }
             }
         }
     }
 
+    // The C-ABI thunks to emit: those of the functions handed to C, then the export
+    // entries' (in module order).
+    std::vector<std::string> thunkOrder() const {
+        std::vector<std::string> out = cabiOrder;
+        std::unordered_set<std::string> seen(cabiOrder.begin(), cabiOrder.end());
+        for (const auto& fn : currentMod->functions)
+            if (exportEntry(fn.get()) && seen.insert(fn->name).second) out.push_back(fn->name);
+        return out;
+    }
+
     void emitCabiThunk(const Function* fn, std::ostream& os) {
         bool recRet = isCAggregate(fn->returnType);
         std::string ret = recRet ? cRecord(fn->returnType) : cType(fn->returnType);
-        os << "static " << ret << " __eskc_cabi_" << cName(fn->name) << "(";
+        if (exportEntry(fn)) os << ret << " " << exportName(fn->name) << "(";
+        else os << "static " << ret << " __eskc_cabi_" << cName(fn->name) << "(";
         for (size_t i = 0; i < fn->params.size(); ++i) {
             const TypePtr& pt = fn->params[i].second;
             os << (i ? ", " : "") << (isVaListType(pt) ? "va_list" : isCAggregate(pt) ? cRecord(pt) : cType(pt)) << " a" << i;

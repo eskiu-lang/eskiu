@@ -230,6 +230,9 @@ struct Function {
     std::vector<std::unique_ptr<BasicBlock>> blocks;
     bool isExtern = false;
     bool isVariadic = false;
+    // `export`: a C entry point under its own name. With a record or a va_list in its
+    // signature the back ends give it the C convention through the C-ABI thunk.
+    bool isExport = false;
 
     BasicBlock* createBlock(const std::string& name = "");
     void dump(std::ostream& os) const;
