@@ -30,7 +30,8 @@ case "$os" in
   Darwin)
     case "$arch" in
       arm64|aarch64) asset="eskiuc-macos-arm64.tar.gz" ;;
-      *) err "No prebuilt macOS binary for $arch (arm64 only). Build from source: https://github.com/$REPO" ;;
+      x86_64) asset="eskiuc-macos-x86_64.tar.gz" ;;
+      *) err "No prebuilt macOS binary for $arch (arm64/x86_64 only). Build from source: https://github.com/$REPO" ;;
     esac ;;
   Linux)
     case "$arch" in
@@ -39,7 +40,7 @@ case "$os" in
       *) err "No prebuilt Linux binary for $arch (x86_64/arm64 only). Build from source: https://github.com/$REPO" ;;
     esac ;;
   *)
-    err "Unsupported OS: $os. On Windows, download the .zip from https://github.com/$REPO/releases." ;;
+    err "Unsupported OS: $os. On Windows, use install.ps1 (https://eskiu-lang.org/install.ps1) or the .zip from https://github.com/$REPO/releases." ;;
 esac
 
 if [ "$VERSION" = "latest" ]; then

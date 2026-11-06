@@ -1,6 +1,7 @@
 # Homebrew formula for Eskiu. This is the source of truth; copy it to the tap repo
-# (homebrew-eskiu/Formula/eskiu.rb) and refresh the three sha256 values (macOS arm64,
-# Linux x86_64, Linux arm64) from the release's SHA256SUMS on each version bump.
+# (homebrew-eskiu/Formula/eskiu.rb) and refresh the sha256 values (macOS arm64, Linux
+# x86_64, Linux arm64) from the release's SHA256SUMS on each version bump. From the first
+# release with eskiuc-macos-x86_64.tar.gz, add it as an on_intel block under on_macos.
 # See packaging/homebrew/README.md.
 class Eskiu < Formula
   desc "Self-hosting systems language with a C-style surface and an LLVM backend"
