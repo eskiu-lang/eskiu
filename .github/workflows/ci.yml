@@ -311,3 +311,7 @@ jobs:
         run: |
           tests/eir/check.sh asm
           CC=$CLANG tests/eir/check.sh c
+      # The integrated ARM64 assembler (eir/eir_as_arm64.cpp): every run test's object,
+      # Mach-O and ELF, the same as clang's from the same assembly.
+      - name: EIR integrated assembler
+        run: CC=$CLANG tests/eir/obj_check.sh both
