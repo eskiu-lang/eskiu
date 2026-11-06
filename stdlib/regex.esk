@@ -175,6 +175,9 @@ struct _ReScratch {
     *_ReDfa fdfa;       // the forward and reverse DFAs, made by the first search
     *_ReDfa rdfa;
     int dfa_off;        // 1 once a DFA outgrew its budget: the Pike VM alone
+    *uint32 bt_vis;     // the backtracker's (pc, position) bits, RE_BT_BITS
+    *int bt_stack;      // its stack: pairs (pc, position) or (-slot - 1, old value)
+    int bt_cap;         // pairs the stack holds
 }
 
 // A lazily built DFA over a program (the forward one or the reversed one). A
@@ -1590,6 +1593,8 @@ void _re_scratch_free(*_ReScratch sc) {
     free(sc.capsA);
     free(sc.capsB);
     free(sc.work);
+    free(sc.bt_vis);
+    free(sc.bt_stack);
     free(sc);
 }
 
@@ -2631,11 +2636,34 @@ int _re_dfa_reverse(_ReDfa* d, string text, int len, int start, int end) {
             if (start > 0) {
                 la = _re_decode_last(text, len, 0, start, &w[0]);
             }
-            _re_dfa_next(d, st, la, false, &m[0]);
+            // A cached transition on an ASCII lookahead carries the same hit.
+            const int t = la >= 0 && la < 128 ? d.trans[st * 128 + la] : 0;
+            if (t != 0) {
+                m[0] = t & 1;
+            } else {
+                _re_dfa_next(d, st, la, false, &m[0]);
+            }
             if (m[0] == 1) {
                 best = p;
             }
             break;
+        }
+        // The cached ASCII transitions first, as in _re_dfa_forward.
+        const int b0 = (int)((uint8)text[p - 1]);
+        if (b0 < 128) {
+            const int t = d.trans[st * 128 + b0];
+            if (t != 0) {
+                if ((t & 1) != 0) {
+                    best = p;
+                }
+                const int nx = (t >> 1) - 3;
+                if (nx == RE_DFA_DEAD) {
+                    break;
+                }
+                st = nx;
+                p--;
+                continue;
+            }
         }
         const int ch = _re_decode_last(text, len, start, p, &w[0]);
         const int nx = _re_dfa_step(d, st, ch, &m[0]);
@@ -2656,6 +2684,133 @@ int _re_dfa_reverse(_ReDfa* d, string text, int len, int start, int end) {
 
 // Set to make every search run the Pike VM alone (tests compare it with the DFA).
 bool _re_force_vm = false;
+
+// The groups of the match the DFAs found over [b, e], by a bounded backtracker
+// (RE2's BitState): the paths from b in priority order, each (pc, position)
+// followed once and none past e; the first to reach MATCH is the Pike VM's
+// thread, and it ends at e. For a short span it costs far less than the VM's
+// thread lists. False when the span is over the budget, or when that match does
+// not end at e (the DFA and the VM would disagree): the caller runs the VM.
+#define RE_BT_BITS 32768
+
+bool _re_bt_push(*_ReScratch sc, *int n, int a, int v) {
+    if (*n == sc.bt_cap) {
+        const int nc = sc.bt_cap == 0 ? 64 : sc.bt_cap * 2;
+        *int ns = alloc<int>(2 * nc);
+        for (i in 0..2 * *n) {
+            ns[i] = sc.bt_stack[i];
+        }
+        free(sc.bt_stack);
+        sc.bt_stack = ns;
+        sc.bt_cap = nc;
+    }
+    sc.bt_stack[2 * *n] = a;
+    sc.bt_stack[2 * *n + 1] = v;
+    *n = *n + 1;
+    return true;
+}
+
+// Mark (pc, sp) as tried: false when it already was.
+bool _re_bt_mark(*_ReScratch sc, int span, int b, int pc, int sp) {
+    const int bit = pc * span + (sp - b);
+    const uint32 mask = (uint32)1 << (uint32)(bit & 31);
+    if ((sc.bt_vis[bit >> 5] & mask) != (uint32)0) {
+        return false;
+    }
+    sc.bt_vis[bit >> 5] = sc.bt_vis[bit >> 5] | mask;
+    return true;
+}
+
+bool _re_backtrack(Regex* re, *_ReScratch sc, string text, int len, int b, int e, *int caps) {
+    const int span = e - b + 1;
+    if ((int64)re.ninst * span > (int64)RE_BT_BITS) {
+        return false;
+    }
+    if (sc.bt_vis == null) {
+        sc.bt_vis = alloc<uint32>(RE_BT_BITS / 32);
+    }
+    const int words = (re.ninst * span + 31) / 32;
+    for (i in 0..words) {
+        sc.bt_vis[i] = (uint32)0;
+    }
+    const int ncap = 2 * (re.ngroup + 1);
+    for (k in 0..ncap) {
+        caps[k] = -1;
+    }
+    *uint64 am = re._amask;
+    int n = 0;
+    int[1] w;
+    _re_bt_push(sc, &n, 0, b);
+    while (n > 0) {
+        n--;
+        const int a = sc.bt_stack[2 * n];
+        const int v = sc.bt_stack[2 * n + 1];
+        if (a < 0) {
+            caps[-a - 1] = v;
+            continue;
+        }
+        int pc = a;
+        int sp = v;
+        // Follow the path's first choice, pushing the others; leave it at a
+        // dead end or a (pc, position) already tried. A point is marked when
+        // the path reaches it, as the VM does, not when it is pushed.
+        bool alive = _re_bt_mark(sc, span, b, pc, sp);
+        while (alive) {
+            _ReInst* ins = &re.inst[pc];
+            const int op = ins.op;
+            int npc = pc + 1;
+            int nsp = sp;
+            if (op == OP_MATCH) {
+                caps[0] = b;
+                caps[1] = sp;
+                return sp == e;
+            } else if (op == OP_JMP) {
+                npc = ins.a;
+            } else if (op == OP_SPLIT) {
+                _re_bt_push(sc, &n, ins.b, sp);
+                npc = ins.a;
+            } else if (op == OP_SAVE) {
+                _re_bt_push(sc, &n, -ins.a - 1, caps[ins.a]);
+                caps[ins.a] = sp;
+            } else if (op == OP_BOL) {
+                alive = sp == 0 || (ins.a == 1 && text[sp - 1] == '\n');
+            } else if (op == OP_EOL) {
+                alive = sp == len || (ins.a == 1 && text[sp] == '\n');
+            } else if (op == OP_WORDB) {
+                const bool before = sp > 0 && _re_is_word((int)((uint8)text[sp - 1]));
+                const bool after = sp < len && _re_is_word((int)((uint8)text[sp]));
+                alive = (before != after) != (ins.a == 1);
+            } else {
+                // CHAR / ANY / CLASS: the code point at sp, inside the span.
+                alive = false;
+                if (sp < e) {
+                    w[0] = 1;
+                    int ch = _re_decode(text, len, sp, &w[0]);
+                    if (ch < 0) {
+                        ch = 0xFFFD;
+                    }
+                    if (ch < 128) {
+                        alive = ((am[2 * pc + (ch >> 6)] >> (uint64)(ch & 63)) & (uint64)1) != (uint64)0;
+                    } else if (op == OP_CHAR) {
+                        alive = _re_char_eq(ins.a, ins.b, ch) == 1;
+                    } else if (op == OP_ANY) {
+                        alive = ch != '\n' || ins.a == 1;
+                    } else {
+                        alive = _re_in_class(re, ins.a, ch) == 1;
+                    }
+                    nsp = sp + w[0];
+                    alive = alive && nsp <= e;
+                }
+            }
+            if (alive) {
+                alive = _re_bt_mark(sc, span, b, npc, nsp);
+                pc = npc;
+                sp = nsp;
+            }
+        }
+    }
+    return false;
+}
 
 // Regex_search_at, writing the groups of a match into `buf` (2 * (ngroup + 1)
 // ints, or null to allocate them). `buf` is not freed when there is no match.
@@ -2701,7 +2856,8 @@ int _re_search(Regex* re, string text, int64 len, int64 start, Match* m, *int bu
                     caps[0] = b;
                     caps[1] = e[0];
                 } else {
-                    matched = _re_pike(re, sc, text, len, (int64)b, true, caps);
+                    matched = _re_backtrack(re, sc, text, (int)len, b, e[0], caps)
+                        || _re_pike(re, sc, text, len, (int64)b, true, caps);
                 }
             }
         }

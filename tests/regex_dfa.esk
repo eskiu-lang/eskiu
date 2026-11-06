@@ -1,5 +1,5 @@
-// The lazy DFA search (forward DFA for the end, reversed DFA for the start, the Pike
-// VM over the span for the groups) finds exactly what the Pike VM alone finds: every
+// The lazy DFA search (forward DFA for the end, reversed DFA for the start, a bounded
+// backtracker or the Pike VM over the span for the groups) finds exactly what the Pike VM alone finds: every
 // match and group of Regex_iter, over hand-picked patterns (anchors, multi-line mode,
 // word boundaries, alternation and lazy priority, empty matches, assertions in a loop,
 // Unicode, invalid UTF-8)

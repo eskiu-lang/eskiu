@@ -32,9 +32,12 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ### Changed
 - `<regex>` searches with a lazily built DFA for where the match ends and one over the
-  reversed pattern for where it starts, and runs the Pike VM only over the match, for its
-  groups: two to three times faster on log-like text, with the same results (checked
-  against the Pike VM alone by a test and the regex fuzz target).
+  reversed pattern for where it starts, and finds the groups over the match only, with a
+  bounded backtracker (the Pike VM when the match is long): two to three times faster on
+  log-like text and about 12% faster on short, dense matches with groups (a `{{(.*?)}}`
+  template), with the same results (checked against the Pike VM alone by a test and the
+  regex fuzz target). A pattern with an assertion that can repeat in a loop without
+  consuming (`(?:^|a)*`) runs on the Pike VM alone.
 - TLS (`<tls>` servers and `<fetch>`'s HTTPS client) asks for TLS 1.2 or newer and turns
   off compression and renegotiation, whatever the OpenSSL defaults; a server whose key
   does not match its certificate is refused when the context is made. The client loads
