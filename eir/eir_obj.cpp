@@ -59,12 +59,13 @@ bool runDriver(const std::string& driver, const std::vector<std::string>& ccArgs
 
 } // namespace
 
-// The system C driver turns the backend's output (ARM64 assembly, or C99 for any other
-// target) into an object. The assembly path compiles the runtime as a second object and
+// The system C driver turns the backend's output (ARM64 assembly at -O0 outside Windows,
+// else C99, which the C compiler optimizes at -O1 and up) into an object. The assembly path compiles the runtime as a second object and
 // joins the two with a relocatable link, so the result is still one object file. The C is
 // compiled at `optLevel` (eskiuc's -O) with strict aliasing off: Eskiu defines a pointer
 // cast that reads one type through another.
-bool eirUsesAsm(const std::string& triple) {
+bool eirUsesAsm(const std::string& triple, unsigned optLevel) {
+    if (optLevel > 0) return false;
     bool isArm64 = triple.find("aarch64") != std::string::npos ||
                    triple.find("arm64") != std::string::npos;
 #if defined(__aarch64__) || defined(__arm64__)
@@ -79,7 +80,7 @@ bool eirUsesAsm(const std::string& triple) {
 
 bool emitEirObject(const Module* mod, const std::string& outFile, const std::string& triple,
                    unsigned optLevel) {
-    bool isArm64 = eirUsesAsm(triple);
+    bool isArm64 = eirUsesAsm(triple, optLevel);
 
     std::vector<std::string> ccArgs;
     std::string driver = findCDriver(false, &ccArgs, triple);
