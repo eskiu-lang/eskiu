@@ -376,8 +376,16 @@ Nothing here is scheduled; this is where to pick the work up again.
    `selfhost/eir_c_text.esk` by `tools/gen_eir_c_text.py`, which the parity script checks.
    `esk_main --emit-c` prints it and `--backend=eir` builds through it with any C compiler
    (`tests/eir/check.sh driver`); `tests/selfhost/eir_bootstrap.sh` builds the compiler
-   itself that way and checks it writes the same C for its own source. The ARM64 emitter (`eir_asm_arm64.cpp`) and the object
-   driver (`eir_obj.cpp`) come next.
+   itself that way and checks it writes the same C for its own source. The ARM64 emitter
+   and the object driver are ported too: `selfhost/eir_asm.esk` (`eir_a_core.esk`,
+   `eir_a_fn.esk`, a port of `eir_asm_arm64.cpp`) writes the same assembly as the C++ for
+   every run test, Mach-O and ELF (`tests/selfhost/eir_asm_parity.sh`,
+   `eir_asm_parity_pass.txt`); `esk_main --emit-asm` prints it, and `--backend=eir` takes
+   the assembly path exactly where `eirUsesAsm` does (arm64 outside Windows), joining the
+   standalone runtime (`EC_RT_STANDALONE`, generated from `runtimeStandaloneSource`) as
+   `eir_obj.cpp` does. The bootstrap through EIR then goes through assembly on arm64. Next:
+   `export` of records in both back ends, then deciding whether the EIR path becomes the
+   self-hosted compiler's default.
 3. **Release.** The EIR is under `[Unreleased]` in the CHANGELOG; it can ship as an
    experimental `--backend=eir` whenever the next version goes out.
 

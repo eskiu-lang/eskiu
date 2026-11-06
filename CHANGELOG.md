@@ -41,9 +41,12 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   is read-only and `JsonDoc_free` frees it.
 - The self-hosted compiler links a package's `[native.NAME]` libraries, fetching and
   checking them as the C++ compiler does.
-- The self-hosted compiler has the EIR C99 backend: `eskiuc-esk --emit-c` writes the same C
-  as `eskiuc --emit-c`, and `eskiuc-esk --backend=eir` builds programs through it with any C
-  compiler (`$CC`), without clang or LLVM.
+- The self-hosted compiler has the EIR backends: `eskiuc-esk --emit-c` and `--emit-asm`
+  write the same C and ARM64 assembly as `eskiuc`, and `eskiuc-esk --backend=eir` builds
+  programs through them (assembly on arm64 outside Windows, C with any `$CC` elsewhere),
+  without clang or LLVM.
+- `--emit-asm` rejects the options its assembly cannot honor (`-O1` and up, `--safe`,
+  `--mcpu`, ...), as `--backend=eir` does on that path; they were ignored.
 - `tests/index.sh` prints the test catalog from each test's first comment, and `run.sh`
   fails on a test without one.
 

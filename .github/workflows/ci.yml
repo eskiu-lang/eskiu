@@ -238,6 +238,10 @@ jobs:
       # self-hosted driver's `--backend=eir` builds (C, no LLVM IR) passing the C list.
       - name: EIR C self-host parity
         run: tests/selfhost/eir_c_parity.sh
+      # The self-hosted ARM64 emitter (selfhost/eir_asm.esk): `--emit-asm` byte-identical to
+      # the C++ one, Mach-O and ELF, for every test in tests/selfhost/eir_asm_parity_pass.txt.
+      - name: EIR ARM64 self-host parity
+        run: tests/selfhost/eir_asm_parity.sh
       - name: EIR backend in the self-hosted driver
         run: ESKIUC=build/eskiuc-esk CC=clang-22 tests/eir/check.sh driver
       # The self-hosted compiler built through its own EIR C backend writes the same C for
