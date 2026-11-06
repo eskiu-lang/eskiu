@@ -275,7 +275,7 @@ jobs:
   # macOS arm64: the release platform for Apple Silicon. The full test suite and a smoke of
   # the self-host parity gates (the Linux job runs the complete set).
   macos:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
