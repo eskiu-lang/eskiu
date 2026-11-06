@@ -1685,12 +1685,12 @@ int esk_main(int argc, string* argv) {
 
     // The EIR backend emits the program as written, so an option that changes how LLVM
     // generates code is an error under it (C++ checkEirOptions). -O reaches the C compiler
-    // when the backend writes C; the ARM64 assembly has no levels.
+    // (an optimized build writes C on arm64 too); the assembly --emit-asm prints has no levels.
     int emit_asm = cg_streq(mode, "--emit-asm");
     if (emit_asm == 1 || (backend_eir == 1 && mode[0] == 0)) {
         List<string> bad;
         List_init<string>(&bad, 4);
-        if (optflag[0] != 0 && optflag[2] != '0' && (emit_asm == 1 || ea_uses_asm(triple) == 1)) {
+        if (optflag[0] != 0 && optflag[2] != '0' && emit_asm == 1) {
             List_push<string>(&bad, optflag);
         }
         if (safe != 0) {
@@ -1953,7 +1953,7 @@ int esk_main(int argc, string* argv) {
         let eeb: EB;
         eb_init(&eeb, triple);
         eb_build(&eeb, prog);
-        if (ea_uses_asm(triple) == 1) {
+        if (ea_uses_asm(triple, optflag[0] != 0 && optflag[2] != '0' ? 1 : 0) == 1) {
             let eas: String = ea_emit_module(eeb.m, triple);
             eir_csrc = (string)String_cstr(&eas);
             eir_asm = 1;

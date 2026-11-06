@@ -1284,8 +1284,11 @@ String ea_emit_module(*EModule m, string triple) {
 }
 
 // eirUsesAsm: the EIR backend builds `triple` (or the host, for an empty one) through
-// ARM64 assembly rather than C.
-int ea_uses_asm(string triple) {
+// ARM64 assembly rather than C: at -O0 only, since the C compiler optimizes the C.
+int ea_uses_asm(string triple, int opt) {
+    if (opt > 0) {
+        return 0;
+    }
     string t = et_s(triple);
     int arm64 = et_find(t, "aarch64", 0) >= 0 || et_find(t, "arm64", 0) >= 0 ? 1 : 0;
     int windows = et_find(t, "windows", 0) >= 0 || et_find(t, "mingw", 0) >= 0 ? 1 : 0;
