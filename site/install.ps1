@@ -4,10 +4,14 @@
 #
 # It downloads the release's zip, checks it against the release's SHA256SUMS, unpacks it
 # into %USERPROFILE%\.eskiu (bin and lib, kept together: eskiuc finds its standard library
-# beside itself) and adds its bin to your PATH.
+# beside itself) and adds its bin to your PATH. eskiuc links programs with a MinGW C
+# driver: when none is on PATH (gcc, clang or cc), it also installs llvm-mingw (about
+# 190 MB, checked against a pinned SHA-256) into %USERPROFILE%\.eskiu\toolchain, where
+# eskiuc finds it.
 #
-#   ESKIU_VERSION   the release tag to install (default: the latest), e.g. v0.14.0
-#   ESKIU_PREFIX    where to unpack it (default: %USERPROFILE%\.eskiu)
+#   ESKIU_VERSION       the release tag to install (default: the latest), e.g. v0.14.0
+#   ESKIU_PREFIX        where to unpack it (default: %USERPROFILE%\.eskiu)
+#   ESKIU_TOOLCHAIN     1: install llvm-mingw even with a C driver on PATH; 0: never
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -72,4 +76,43 @@ $env:Path = "$bin;$env:Path"
 
 $installed = & $exe --version
 Write-Host "Installed $installed to $exe"
-Write-Host 'To build programs it needs MinGW-w64 (gcc or clang) on PATH: MSYS2 (pacman -S mingw-w64-x86_64-gcc) or llvm-mingw.'
+
+# A C driver for linking: one on PATH, else llvm-mingw beside eskiuc.
+$tcVersion = '20261020'
+$tcSha256 = 'fd5462b7f5d93b2ff981fcd3f9c7e427e47f3203c64ea91c27bcc444eebd74cd'
+$toolchain = Join-Path $prefix 'toolchain'
+$haveCC = @('gcc', 'clang', 'cc') | Where-Object { Get-Command $_ -ErrorAction SilentlyContinue }
+$want = if ($env:ESKIU_TOOLCHAIN -eq '1') { $true } elseif ($env:ESKIU_TOOLCHAIN -eq '0') { $false }
+        else { -not $haveCC -and -not (Test-Path (Join-Path $toolchain 'bin\clang.exe')) }
+if ($want) {
+    $tcName = "llvm-mingw-$tcVersion-ucrt-x86_64"
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ('eskiu-tc-' + [Guid]::NewGuid())
+    New-Item -ItemType Directory -Path $tmp | Out-Null
+    try {
+        $zip = Join-Path $tmp "$tcName.zip"
+        Write-Host "No C driver on PATH: downloading $tcName (about 190 MB) ..."
+        Invoke-WebRequest -Uri "https://github.com/mstorsjo/llvm-mingw/releases/download/$tcVersion/$tcName.zip" -OutFile $zip -UseBasicParsing
+        $actual = (Get-FileHash -Algorithm SHA256 -Path $zip).Hash.ToLower()
+        if ($actual -ne $tcSha256) { Write-Error "Checksum mismatch for $tcName.zip (expected $tcSha256, got $actual)." }
+        Expand-Archive -Path $zip -DestinationPath $tmp -Force
+        if (Test-Path $toolchain) { Remove-Item -Recurse -Force $toolchain }
+        Move-Item -Path (Join-Path $tmp $tcName) -Destination $toolchain
+    } finally {
+        Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+    }
+    Write-Host "Installed llvm-mingw $tcVersion to $toolchain (eskiuc links with it)."
+}
+# The toolchain's bin holds the runtime DLLs (libc++, libunwind, winpthread) the programs
+# it links load, so it goes on PATH too.
+$tcBin = Join-Path $toolchain 'bin'
+if (Test-Path (Join-Path $tcBin 'clang.exe')) {
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $parts = if ($userPath) { $userPath -split ';' } else { @() }
+    if ($parts -notcontains $tcBin) {
+        [Environment]::SetEnvironmentVariable('Path', (($parts + $tcBin) -join ';').Trim(';'), 'User')
+    }
+    $env:Path = "$env:Path;$tcBin"
+} elseif (-not $haveCC -and -not (Test-Path (Join-Path $toolchain 'bin\clang.exe'))) {
+    Write-Host 'To build programs eskiuc needs a MinGW-w64 C driver: rerun with ESKIU_TOOLCHAIN=1, or install MSYS2 (pacman -S mingw-w64-x86_64-gcc).'
+}
+Write-Host 'eskiuc doctor lists what each kind of build needs.'

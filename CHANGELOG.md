@@ -19,6 +19,11 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   reject an exported function with a struct or union by value for now.
 - Prebuilt binaries for Intel Macs (`eskiuc-macos-x86_64.tar.gz`), which `install.sh`
   picks on an x86_64 Mac.
+- On Windows, `install.ps1` also installs llvm-mingw (checked against a pinned SHA-256)
+  into the install's `toolchain` folder when no C driver is on PATH, so programs link with
+  no separate toolchain install (`ESKIU_TOOLCHAIN=1` forces it, `0` skips it). `eskiuc`
+  finds a toolchain there when none is on PATH, and with llvm-mingw it links exceptions
+  against libc++ instead of libstdc++.
 - `eskiuc doctor` lists what the machine has for each kind of build (the C driver, git,
   curl, tar, OpenSSL, SDL3, Emscripten, the Android NDK, the iOS SDK, devkitARM) and what
   to install for what is missing.

@@ -1184,7 +1184,26 @@ std::string findCDriver(bool sanitized, std::vector<std::string>* ccArgs, const 
     for (const char* name : {"cc", "clang", "gcc"}) {
         if (auto p = llvm::sys::findProgramByName(name)) return *p;
     }
+    // A toolchain installed beside the compiler (install.ps1 puts llvm-mingw in
+    // <prefix>\toolchain next to <prefix>\bin\eskiuc.exe).
+    std::string exe = llvm::sys::fs::getMainExecutable(nullptr, (void*)&resolveStdlibPath);
+    llvm::SmallString<256> tc(llvm::sys::path::parent_path(llvm::sys::path::parent_path(exe)));
+    llvm::sys::path::append(tc, "toolchain", "bin", "clang");
+    for (const char* ext : {"", ".exe"})
+        if (llvm::sys::fs::can_execute(std::string(tc) + ext)) return std::string(tc) + ext;
     return "";
+}
+
+// A MinGW driver whose C++ runtime is libc++ (llvm-mingw), not libstdc++: exceptions then
+// link -lc++ (its libc++abi and libunwind come with it).
+bool mingwLibcxxDriver(const std::string& driver) {
+    llvm::SmallString<256> root(llvm::sys::path::parent_path(llvm::sys::path::parent_path(driver)));
+    for (const char* arch : {"x86_64", "aarch64", "i686", "armv7"}) {
+        llvm::SmallString<256> lib(root);
+        llvm::sys::path::append(lib, std::string(arch) + "-w64-mingw32", "lib", "libc++.a");
+        if (llvm::sys::fs::exists(lib)) return true;
+    }
+    return false;
 }
 
 // Link an object file into an executable by invoking the system C driver

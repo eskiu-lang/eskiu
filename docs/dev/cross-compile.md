@@ -31,6 +31,12 @@ Android NDK, the iOS SDK, devkitARM), with what to install for the missing ones.
 the same places a build does and changes nothing; it exits 1 only when native programs
 cannot be built (no standard library or no C driver).
 
+When no C driver is on PATH, `eskiuc` also looks for `toolchain/bin/clang` beside its own
+install (`<prefix>/bin/eskiuc`, `<prefix>/toolchain`): on Windows, `install.ps1` puts
+llvm-mingw there when the machine has no MinGW driver. A MinGW driver whose C++ runtime is
+libc++ (llvm-mingw: `<arch>-w64-mingw32/lib/libc++.a` beside its `bin`) gets `-lc++` for a
+program with exceptions instead of `-lstdc++` (`mingwLibcxxDriver`).
+
 ## Platform macros
 
 The preprocessor predefines a platform macro so `import`ed stdlib code can branch per OS:

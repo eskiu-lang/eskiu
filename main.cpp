@@ -1094,7 +1094,10 @@ static int compilerMain(int argc, char** argv) {
                     usesThreads = mod->getFunction("pthread_create") != nullptr;
                 }
                 std::vector<std::string> implied = pragmaLibs;
-                for (const auto& l : implicitLinkLibs(macros, usesEH, usesThreads)) implied.push_back(l);
+                bool libcxx = usesEH && macros.count("_WIN32") &&
+                              mingwLibcxxDriver(findCDriver(false, nullptr, std::string(TargetTriple)));
+                for (const auto& l : implicitLinkLibs(macros, usesEH, usesThreads))
+                    implied.push_back(libcxx && l == "stdc++" ? "c++" : l);
                 // emscripten catches exceptions only when linked to (its JavaScript runtime).
                 if (usesEH && macros.count("__EMSCRIPTEN__")) extra.push_back("-sDISABLE_EXCEPTION_CATCHING=0");
                 std::set<std::string> seen(libs.begin(), libs.end());

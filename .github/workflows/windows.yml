@@ -230,6 +230,42 @@ jobs:
           if (!(Test-Path hello.obj)) { throw "eskiuc.exe did not produce an object file" }
           Write-Host "smoke OK: eskiuc.exe runs and emits an object"
 
+      - name: Bundled llvm-mingw toolchain (no C driver on PATH)
+        shell: pwsh
+        run: |
+          # install.ps1 installs llvm-mingw into <prefix>\toolchain when no C driver is on
+          # PATH. With only System32 on PATH, eskiuc must find it there, and link exceptions
+          # against its libc++ (-lc++, not -lstdc++). The pin is read from install.ps1.
+          $v = (Select-String -Path site/install.ps1 -Pattern "^\`$tcVersion = '(.+)'").Matches[0].Groups[1].Value
+          $sha = (Select-String -Path site/install.ps1 -Pattern "^\`$tcSha256 = '(.+)'").Matches[0].Groups[1].Value
+          $n = "llvm-mingw-$v-ucrt-x86_64"
+          Invoke-WebRequest "https://github.com/mstorsjo/llvm-mingw/releases/download/$v/$n.zip" -OutFile tc.zip -UseBasicParsing
+          if ((Get-FileHash -Algorithm SHA256 tc.zip).Hash.ToLower() -ne $sha) { throw "llvm-mingw checksum mismatch" }
+          Expand-Archive tc.zip -DestinationPath tcx -Force
+          Move-Item "tcx\$n" smoke\toolchain
+          Set-Content eh2.esk @'
+          extern int printf(string fmt, ...);
+          int main() {
+              int n = 0;
+              *void t = thread_create(void() { printf("thread ran\n"); });
+              thread_join(t);
+              try { throw 42; }
+              catch (int e) { n = e; }
+              printf("caught %d\n", n);
+              return 0;
+          }
+          '@
+          $env:Path = "$PWD\smoke\bin;C:\Windows\System32;C:\Windows"
+          Remove-Item Env:CC -ErrorAction SilentlyContinue
+          .\smoke\bin\eskiuc.exe doctor
+          if ($LASTEXITCODE -ne 0) { throw "eskiuc doctor found no C driver" }
+          .\smoke\bin\eskiuc.exe eh2.esk -o eh2.exe
+          if ($LASTEXITCODE -ne 0) { throw "linking with the bundled toolchain failed" }
+          $env:Path = "$env:Path;$PWD\smoke\toolchain\bin"
+          $out = (.\eh2.exe) -join "`n"
+          Write-Host "program output: $out"
+          if ($out -ne "thread ran`ncaught 42") { throw "unexpected output" }
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
