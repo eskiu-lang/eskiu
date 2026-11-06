@@ -170,6 +170,25 @@ string ea_escape_n(string str, int n) {
     return (string)String_cstr(&o);
 }
 
+string ea_mangle(EA* a, string name);
+
+// bodySym: the symbol Eskiu code calls a function by, an export entry's body
+// (`<name>.esk`, ec_export_entry) or its name.
+string ea_body_sym(EA* a, string name) {
+    if (ec_export_entry(em_func(a.m, name)) == 1) {
+        return ea_mangle(a, et_cat(name, ".esk"));
+    }
+    return ea_mangle(a, name);
+}
+
+// cabiSym: the C-ABI thunk of a function, the export entry's own name or `__cabi_<name>`.
+string ea_cabi_sym(EA* a, string name) {
+    if (ec_export_entry(em_func(a.m, name)) == 1) {
+        return ea_mangle(a, name);
+    }
+    return ea_mangle(a, et_cat("__cabi_", name));
+}
+
 // mangleSym: characters an assembler identifier cannot hold are spelled `$XX`.
 string ea_mangle(EA* a, string name) {
     String o;
@@ -309,7 +328,7 @@ int64 ea_global_scalar(EA* a, EOp* v, *ETy ty, String* os) {
         ea_w(os, et_cat3("    .quad ", ea_string_label(a, v), "\n"));
         esz = 8;
     } else if (v.kind == EOK_GLOBAL) {
-        ea_w(os, et_cat3("    .quad ", ea_mangle(a, v.text), "\n"));
+        ea_w(os, et_cat3("    .quad ", ea_body_sym(a, v.text), "\n"));
         esz = 8;
     } else {
         ea_w(os, et_cat3("    .zero ", ea_l(esz), "\n"));
@@ -445,7 +464,7 @@ void ea_store_float(EA* a, int fr, int is32, string v, String* os) {
 }
 
 void ea_load_sym_addr(EA* a, string reg, string name, String* os) {
-    string sym = StrTab_has(&a.cabi_set, name) == 1 ? ea_mangle(a, et_cat("__cabi_", name)) : ea_mangle(a, name);
+    string sym = StrTab_has(&a.cabi_set, name) == 1 ? ea_cabi_sym(a, name) : ea_body_sym(a, name);
     int local = StrTab_has(&a.defined, name);
     string adrp = et_cat3("    adrp ", reg, ", ");
     if (a.darwin == 1) {
@@ -1007,7 +1026,7 @@ void ea_c_record_call(EA* a, EInst* ins, EaShape* cs, String* os) {
     if (rec_ret == 1 && has_res == 1 && ea_size_of(a, ins.ty) > 16 && ea_hfa_ret(a, ins.ty) == 0) {
         ea_add_imm("x8", "sp", ea_slot_of(a, ins.res), os);
     }
-    ea_w(os, et_cat3("    bl ", ea_mangle(a, ei_op(ins, 0).text), "\n"));
+    ea_w(os, et_cat3("    bl ", ea_body_sym(a, ei_op(ins, 0).text), "\n"));
     if (has_res == 0) {
         return;
     }
@@ -1121,7 +1140,10 @@ void ea_cabi_thunk(EA* a, *EFunc fun, String* os) {
     int64 x8_slot = ea_thunk_alloc(&local, 8);
     int64 frame = ea_align_up(local, 16);
 
-    string sym = ea_mangle(a, et_cat("__cabi_", fun.name));
+    string sym = ea_cabi_sym(a, fun.name);
+    if (ec_export_entry(fun) == 1) {
+        ea_w(os, et_cat3("    .globl ", sym, "\n"));
+    }
     ea_w(os, et_cat3("    .p2align 2\n", sym, ":\n"));
     ea_w(os, "    stp x29, x30, [sp, #-16]!\n    mov x29, sp\n");
     ea_mov_imm("x16", frame, os);
@@ -1216,7 +1238,7 @@ void ea_cabi_thunk(EA* a, *EFunc fun, String* os) {
             ea_add_imm("x8", "sp", ret_buf, os);
         }
     }
-    ea_w(os, et_cat3("    bl ", ea_mangle(a, fun.name), "\n"));
+    ea_w(os, et_cat3("    bl ", ea_body_sym(a, fun.name), "\n"));
     if (rec_ret == 1 && big_ret == 0) {
         int dbl = 0;
         int hfa = ea_hfa_of(a, fun.ret, &dbl);

@@ -171,8 +171,8 @@ void ea_function(EA* a, *EFunc fun, int idx, String* os) {
         frame = 16;
     }
 
-    string sym = ea_mangle(a, fun.name);
-    if (ec_is_runtime(fun.name) == 0) {
+    string sym = ea_body_sym(a, fun.name);
+    if (ec_is_runtime(fun.name) == 0 && ec_export_entry(fun) == 0) {
         ea_w(os, et_cat3("    .globl ", sym, "\n"));
     }
     ea_w(os, et_cat3("    .p2align 2\n", sym, ":\n"));
@@ -971,7 +971,7 @@ void ea_call(EA* a, EInst* ins, string unwind_label, String* os) {
     if (ins.op == EO_CALLINDIRECT) {
         ea_w(os, "    blr x17\n");
     } else {
-        ea_w(os, et_cat3("    bl ", ea_mangle(a, target), "\n"));
+        ea_w(os, et_cat3("    bl ", ea_body_sym(a, target), "\n"));
     }
 
     if (has_res == 1 && et_is_agg(ins.ty) == 0) {
@@ -1271,6 +1271,14 @@ String ea_emit_module(*EModule m, string triple) {
     }
     for (i in 0..List_len<string>(&a.cabi_order)) {
         ea_cabi_thunk(&a, em_func(m, List_get<string>(&a.cabi_order, i)), &out);
+    }
+    for (i in 0..nf) {
+        *EFunc fun = List_get<*EFunc>(&m.funcs, i);
+        string key = et_cat("export:", fun.name);
+        if (ec_export_entry(fun) == 1 && StrTab_has(&a.cabi_set, fun.name) == 0 && StrTab_has(&emitted, key) == 0) {
+            StrTab_set(&emitted, key, 1);
+            ea_cabi_thunk(&a, fun, &out);
+        }
     }
     return out;
 }

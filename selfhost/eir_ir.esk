@@ -749,6 +749,7 @@ struct EFunc {
     List<*EBlock> blocks;
     int is_extern;
     int is_variadic;
+    int is_export;      // `export`: a C entry point under its own name (Function::isExport)
     StrTab slots;       // the variable slots named so far (EIRBuilder::functionSlots)
 }
 
@@ -804,7 +805,7 @@ void efn_dump(*EFunc f, String* os) {
         String_append(os, "\n\n");
         return;
     }
-    String_append(os, "fn @");
+    String_append(os, f.is_export == 1 ? "export fn @" : "fn @");
     String_append(os, f.name);
     String_append(os, "(");
     int i = 0;

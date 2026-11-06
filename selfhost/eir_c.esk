@@ -135,6 +135,27 @@ int ec_is_global(EC* c, string n) {
 }
 
 // cName: other characters spelled `_xHH`, a C keyword prefixed (an extern keeps its name).
+// A signature with a record or a va_list: C reaches it through a C-ABI thunk.
+int ec_cabi_sig(*EFunc f) {
+    int rec = ec_is_cagg(f.ret);
+    for (pi in 0..List_len<*ETy>(&f.ptypes)) {
+        *ETy pt = List_get<*ETy>(&f.ptypes, pi);
+        if (ec_is_cagg(pt) == 1 || ec_is_valist(pt) == 1) {
+            rec = 1;
+        }
+    }
+    return rec;
+}
+
+// An `export` function whose signature has a record or a va_list: C calls the thunk
+// under the function's own name, and its body is `__eskc_body_<name>` (exportEntry).
+int ec_export_entry(*EFunc f) {
+    if (f == null || f.is_export == 0 || ec_fn_external(f) == 1) {
+        return 0;
+    }
+    return ec_cabi_sig(f);
+}
+
 string ec_c_name(EC* c, string n) {
     int hit = StrTab_get(&c.name_ix, n, -1);
     if (hit >= 0) {
@@ -161,11 +182,40 @@ string ec_c_name(EC* c, string n) {
         i = i + 1;
     }
     string out = (string)String_cstr(&o);
-    if (external == 0 && et_eq(n, "main") == 0 && ec_is_keyword(out) == 1) {
+    if (ec_export_entry(f) == 1) {
+        out = et_cat("__eskc_body_", out);
+    } else if (external == 0 && et_eq(n, "main") == 0 && ec_is_keyword(out) == 1) {
         out = et_cat("__eskc_", out);
     }
     StrTab_set(&c.name_ix, n, List_len<string>(&c.names));
     List_push<string>(&c.names, out);
+    return out;
+}
+
+// The C name of an export entry's thunk: the function's name, spelled as ec_c_name does.
+string ec_export_name(EC* c, string n) {
+    string body = ec_c_name(c, n);
+    return et_sub(body, 12, et_len(body));
+}
+
+// The C-ABI thunks to emit: those of the functions handed to C, then the export
+// entries' (in module order).
+List<string> ec_thunk_order(EC* c) {
+    List<string> out;
+    List_init<string>(&out, 4);
+    StrTab seen;
+    memset((*void)&seen, 0, sizeof(StrTab));
+    for (i in 0..List_len<string>(&c.cabi_order)) {
+        List_push<string>(&out, List_get<string>(&c.cabi_order, i));
+        StrTab_set(&seen, List_get<string>(&c.cabi_order, i), 1);
+    }
+    for (i in 0..List_len<*EFunc>(&c.m.funcs)) {
+        *EFunc f = List_get<*EFunc>(&c.m.funcs, i);
+        if (ec_export_entry(f) == 1 && StrTab_has(&seen, f.name) == 0) {
+            StrTab_set(&seen, f.name, 1);
+            List_push<string>(&out, f.name);
+        }
+    }
     return out;
 }
 
@@ -364,6 +414,9 @@ int ec_is_cabi(EC* c, string n) {
 
 string ec_sym_addr(EC* c, string n) {
     if (ec_is_cabi(c, n) == 1) {
+        if (ec_export_entry(ec_fn(c, n)) == 1) {
+            return et_cat3("((void*)", ec_export_name(c, n), ")");
+        }
         return et_cat3("((void*)__eskc_cabi_", ec_c_name(c, n), ")");
     }
     if (ec_fn(c, n) != null) {
@@ -616,14 +669,7 @@ void ec_find_cabi(EC* c) {
                     if (f == null || ec_fn_external(f) == 1) {
                         continue;
                     }
-                    int rec = ec_is_cagg(f.ret);
-                    for (pi in 0..List_len<*ETy>(&f.ptypes)) {
-                        *ETy pt = List_get<*ETy>(&f.ptypes, pi);
-                        if (ec_is_cagg(pt) == 1 || ec_is_valist(pt) == 1) {
-                            rec = 1;
-                        }
-                    }
-                    if (rec == 1 && StrTab_has(&c.cabi_set, f.name) == 0) {
+                    if (ec_cabi_sig(f) == 1 && StrTab_has(&c.cabi_set, f.name) == 0) {
                         StrTab_set(&c.cabi_set, f.name, 1);
                         List_push<string>(&c.cabi_order, f.name);
                     }
@@ -637,8 +683,12 @@ void ec_cabi_thunk(EC* c, *EFunc fun) {
     int rec_ret = ec_is_cagg(fun.ret);
     string ret = rec_ret == 1 ? ec_record(c, fun.ret) : ec_ctype(fun.ret);
     int np = List_len<*ETy>(&fun.ptypes);
-    ec_w(c, et_cat3("static ", ret, " __eskc_cabi_"));
-    ec_w(c, ec_c_name(c, fun.name));
+    if (ec_export_entry(fun) == 1) {
+        ec_w(c, et_cat3(ret, " ", ec_export_name(c, fun.name)));
+    } else {
+        ec_w(c, et_cat3("static ", ret, " __eskc_cabi_"));
+        ec_w(c, ec_c_name(c, fun.name));
+    }
     ec_w(c, "(");
     for (i in 0..np) {
         *ETy pt = List_get<*ETy>(&fun.ptypes, i);
@@ -2057,8 +2107,9 @@ String ec_emit_module(*EModule m) {
         StrTab_set(&seen, fun.name, 1);
         ec_prototype(&c, fun, &protos);
     }
-    for (i in 0..List_len<string>(&c.cabi_order)) {
-        *EFunc f = ec_fn(&c, List_get<string>(&c.cabi_order, i));
+    List<string> thunks = ec_thunk_order(&c);
+    for (i in 0..List_len<string>(&thunks)) {
+        *EFunc f = ec_fn(&c, List_get<string>(&thunks, i));
         if (ec_is_cagg(f.ret) == 1) {
             ec_record(&c, f.ret);
         }
@@ -2092,8 +2143,8 @@ String ec_emit_module(*EModule m) {
     }
     ec_w(&c, (string)String_cstr(&defs));
     ec_w(&c, "\n");
-    for (i in 0..List_len<string>(&c.cabi_order)) {
-        ec_cabi_thunk(&c, ec_fn(&c, List_get<string>(&c.cabi_order, i)));
+    for (i in 0..List_len<string>(&thunks)) {
+        ec_cabi_thunk(&c, ec_fn(&c, List_get<string>(&thunks, i)));
     }
     ec_global_defs(&c);
     memset((*void)&seen, 0, sizeof(StrTab));
