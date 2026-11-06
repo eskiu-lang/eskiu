@@ -77,6 +77,27 @@ Exceptions are not table-driven unwinding. A frame keeps a stack of handler ids
 unwind block, which resumes at the innermost handler or returns; after each call that may
 throw, the caller checks for a pending exception. A program with no `throw` pays nothing.
 
+## Compile time
+
+One of EIR's goals (`eir-spec.md` §1) is a fast debug build. Measured on an M-series Mac
+(2026-11-06, C++ `eskiuc`, wall time):
+
+| Program | Type check only | LLVM `-O0` to executable | EIR (ARM64) to executable | `cc -c` of the EIR `.s` |
+|---|---|---|---|---|
+| `examples/hello.esk` | 118 ms | 137 ms | 284 ms | 101 ms |
+| `tests/json_build.esk` | 128 ms | 269 ms | 690 ms | 364 ms |
+| LangArena's 50 benchmarks | 661 ms | 1.4 s | 4.5 s | 2.8 s |
+| `selfhost/esk_main.esk` | 3.5 s | 7.3 s | 19.2 s | 8.4 s |
+
+So the EIR path is slower than LLVM's today. The front end (both type-checker runs and the
+standard library a program imports) already takes more than 100 ms for a small program;
+assembling the textual output with the system C driver is EIR's largest extra cost (the
+assembly is large because every value lives on the stack: there is no register allocator
+yet); the builder itself is no longer a hot spot since `Module::getFunction` uses an index
+(`functionIndex`; it was a linear scan, and building the compiler's own source took 1.5 s
+more). The next steps are an object writer, so that no external assembler runs, and a
+register allocator.
+
 ## Testing
 
 `tests/eir/check.sh [asm|c]` compiles every run test with the backend, runs it, and
