@@ -10,9 +10,10 @@
 # $CC (default cc) at -O1 (EIR_OPT below), as `eskiuc -O1 --backend=eir` builds it (without
 # optimization http_serve_slow_reader misses its deadline). Default: asm on arm64, c elsewhere.
 #
-# driver: `$BIN --backend=eir -O1 -o exe` builds and links each test through the C path
-# of the compiler's own driver (the self-hosted compiler's on every target:
-# ESKIUC=build/eskiuc-esk); it is held to the C mode's list of this host.
+# driver: `$BIN --backend=eir -O1 -o exe` builds and links each test through the
+# compiler's own driver (ESKIUC=build/eskiuc-esk for the self-hosted one): C, or ARM64
+# assembly on arm64 outside Windows, which has no -O levels (the level is not passed
+# there); it is held to the C mode's list of this host.
 #
 # EIR_OPT=N (default 1) sets the -O level of the c and driver modes: the emitted C must
 # mean the same at every level (CI runs both at -O2 on Linux).
@@ -40,6 +41,12 @@ fi
 case "$mode" in asm|c|driver) ;; *) echo "usage: tests/eir/check.sh [asm|c|driver]"; exit 2 ;; esac
 cmode="$mode"
 [ "$mode" = driver ] && cmode=c
+
+# The driver's -O: none where it assembles ARM64 (eirUsesAsm of the host).
+drvopt=("$OPT")
+case "$(uname -m)" in
+    arm64|aarch64) case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ;; *) drvopt=() ;; esac ;;
+esac
 
 list="tests/eir/pass_$cmode.txt"
 other=""
@@ -92,7 +99,7 @@ for f in tests/*.esk; do
     if [ "$mode" = driver ]; then
         link=()
         [ ${#companion[@]} -gt 0 ] && link=(--link-arg "${companion[0]}")
-        "$BIN" "$f" ${link[@]+"${link[@]}"} -o "$exe" --backend=eir "$OPT" >"$work/$n.err" 2>&1 \
+        "$BIN" "$f" ${link[@]+"${link[@]}"} -o "$exe" --backend=eir ${drvopt[@]+"${drvopt[@]}"} >"$work/$n.err" 2>&1 \
             || { explain "$n" "--backend=eir: $(head -1 "$work/$n.err")"; continue; }
     elif [ "$mode" = asm ]; then
         link=()
