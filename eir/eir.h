@@ -303,6 +303,8 @@ struct Module {
     std::unordered_map<std::string, StructInfo> structLayouts;
     std::vector<GlobalVar> globals;
     std::vector<std::unique_ptr<Function>> functions;
+    // name -> the first function created with it (what a scan of `functions` finds).
+    std::unordered_map<std::string, Function*> functionIndex;
 
     Function* getFunction(const std::string& name) const;
     Function* createFunction(const std::string& name, TypePtr ret, const std::vector<std::pair<std::string, TypePtr>>& params);

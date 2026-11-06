@@ -465,10 +465,8 @@ void Function::dump(std::ostream& os) const {
 // ============================================================================
 
 Function* Module::getFunction(const std::string& name) const {
-    for (const auto& f : functions) {
-        if (f->name == name) return f.get();
-    }
-    return nullptr;
+    auto it = functionIndex.find(name);
+    return it == functionIndex.end() ? nullptr : it->second;
 }
 
 Function* Module::createFunction(const std::string& name, TypePtr ret, const std::vector<std::pair<std::string, TypePtr>>& params) {
@@ -477,6 +475,7 @@ Function* Module::createFunction(const std::string& name, TypePtr ret, const std
     fn->returnType = ret;
     fn->params = params;
     functions.push_back(std::move(fn));
+    functionIndex.emplace(name, functions.back().get());
     return functions.back().get();
 }
 
