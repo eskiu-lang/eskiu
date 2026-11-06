@@ -1,7 +1,8 @@
 // The lazy DFA search (forward DFA for the end, reversed DFA for the start, the Pike
 // VM over the span for the groups) finds exactly what the Pike VM alone finds: every
 // match and group of Regex_iter, over hand-picked patterns (anchors, multi-line mode,
-// word boundaries, alternation and lazy priority, empty matches, Unicode, invalid UTF-8)
+// word boundaries, alternation and lazy priority, empty matches, assertions in a loop,
+// Unicode, invalid UTF-8)
 // and over random patterns and texts, searched as Regex_iter does and from every byte
 // offset.
 import <regex>;
@@ -66,18 +67,18 @@ void compare(string pat, string text, int64 len) {
     Regex_free(&re);
 }
 
-const string[40] PATS = {
+const string[45] PATS = {
     "a", "ab|a", "a|ab", "a*", "a*?", "a+?b", "(a|b)*c", "^abc", "abc$", "^$", "(?m)^\\w+$",
     "(?m)^", "(?m)$", "\\bfoo\\b", "\\B\\w\\B", "\\b", "x*", "(a*)(b*)", "(?i)hello", "[[:digit:]]+",
     "\\d{2,3}", "(\\w+)@(\\w+)\\.com", "é+", "\\pL+", "[^a]+", ".", "(?s).+", "a.c", "(foo|foobar)x",
     "(a+)(a+)", "(?U)a+", "colou?r", "^(a|b)*?$", "\\A\\w", "\\w\\z", "[a-c]{2}|z", "()", "(|a)+",
-    "\\x{FFFD}", "(?m)^a|b$"};
+    "\\x{FFFD}", "(?m)^a|b$", "(?:^|a)*", "(^|a*)*", "(?:\\b|a)*", "(?m)(?:$|a)+", "(?:^^|b)*a"};
 const string[12] TEXTS = {
     "", "a", "ab", "aab", "abc", "xabcx", "foo foobar foo_x foox", "hello HeLLo", "a\nbb\n\nc",
     "2024-01-15 12:30:45 user@host.com", "caf\xc3\xa9 \xc3\xa9\xc3\xa9 \xce\xb1\xce\xb2", "a\xffb\xe2\x82c"};
 
 int main() {
-    for (i in 0..40) {
+    for (i in 0..45) {
         for (j in 0..12) {
             compare(PATS[i], TEXTS[j], (int64)strlen(TEXTS[j]));
         }

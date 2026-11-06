@@ -1594,6 +1594,7 @@ void _re_scratch_free(*_ReScratch sc) {
 }
 
 void _re_analyze(Regex* re);
+bool _re_assert_loops(Regex* re);
 
 // Mark in req the ASCII bytes that every match of `n` contains: those of its
 // case-sensitive literals that it cannot skip (outside optional repeats, and in
@@ -1725,6 +1726,10 @@ Regex regex_compile(string pattern) {
     }
     re.inst = fwd;
     re.ninst = nfwd;
+    if (re._rinst != null && _re_assert_loops(&re)) {
+        free(re._rinst);
+        re._rinst = null;
+    }
 
     re._scratch = _re_scratch_new(&re);
     _re_analyze(&re);
@@ -1734,6 +1739,56 @@ Regex regex_compile(string pattern) {
     re._req = _re_pick_required(&re, ast);
     re.ok = 1;
     return re;
+}
+
+// True when a zero-width assertion can lead back into its own loop without
+// consuming (`(?:^|a)*`). The VM decides the assertion where it reaches it and
+// cuts that path at the loop's head; the DFA decides it one character later,
+// after the head was passed again, and may then keep a path the VM cuts. Such a
+// pattern runs on the VM alone. Programs only jump back at a loop, so the test
+// is a path of non-consuming instructions from the assertion to a pc at or
+// before it.
+bool _re_assert_loops(Regex* re) {
+    const int ninst = re.ninst;
+    *int seen = alloc<int>(ninst);
+    *int stack = alloc<int>(2 * ninst + 2);
+    bool found = false;
+    for (a in 0..ninst) {
+        const int op = re.inst[a].op;
+        if (found || (op != OP_BOL && op != OP_EOL && op != OP_WORDB)) {
+            continue;
+        }
+        int n = 0;
+        stack[n] = a + 1;
+        n++;
+        while (n > 0 && !found) {
+            n--;
+            const int pc = stack[n];
+            if (pc >= ninst || seen[pc] == a + 1) {
+                continue;
+            }
+            if (pc <= a) {
+                found = true;
+                break;
+            }
+            seen[pc] = a + 1;
+            _ReInst* ins = &re.inst[pc];
+            if (ins.op == OP_JMP) {
+                stack[n] = ins.a;
+                n++;
+            } else if (ins.op == OP_SPLIT) {
+                stack[n] = ins.a;
+                stack[n + 1] = ins.b;
+                n += 2;
+            } else if (ins.op == OP_SAVE || ins.op == OP_BOL || ins.op == OP_EOL || ins.op == OP_WORDB) {
+                stack[n] = pc + 1;
+                n++;
+            }
+        }
+    }
+    free(seen);
+    free(stack);
+    return found;
 }
 
 void Regex_free(Regex* re) {
