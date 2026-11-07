@@ -556,6 +556,27 @@ else
     bad "export/c-library" "building the library, its header or the C program failed"
 fi
 
+# A shared library with `export` functions offers only those: every other symbol (the
+# stdlib's, globals) is hidden. The C program links against it and runs the same.
+case "$(uname -s)" in
+    Darwin) el_so="$el/libexport_lib.dylib"; el_syms() { nm -gU "$1" | awk '{print $3}' | sed 's/^_//'; } ;;
+    Linux) el_so="$el/libexport_lib.so"; el_syms() { nm -D --defined-only "$1" | awk '$2 ~ /[TDBRS]/ {print $3}' | grep -v '^_' ; } ;;
+    *) el_so="" ;;
+esac
+if [[ -n "$el_so" ]]; then
+    if "$ESKIUC" "$here/run_cmd/export_lib.esk" -o "$el_so" >/dev/null 2>&1 &&
+       $CC -I"$el" "$here/run_cmd/export_lib_main.c" -L"$el" -lexport_lib -Wl,-rpath,"$el" \
+           -o "$el/main_so" >/dev/null 2>&1; then
+        es_syms=$(el_syms "$el_so" | sort | tr '\n' ' ')
+        es_want="body_len body_make cell_of next_mode node_sum size_of wire_stamp "
+        es_out=$("$el/main_so" 2>&1)
+        if [[ "$es_syms" == "$es_want" && "$es_out" == "$el_want" ]]; then ok "export/shared-library"
+        else bad "export/shared-library" "symbols: $es_syms; output: $es_out"; fi
+    else
+        bad "export/shared-library" "building the shared library or the C program failed"
+    fi
+fi
+
 # `eskiuc doctor` finds the standard library and a C driver here (it exits 1 without them).
 if dr_out=$("$ESKIUC" doctor 2>&1) && grep -q 'ok       standard library' <<< "$dr_out"; then ok "cli/doctor"
 else bad "cli/doctor" "$(head -5 <<< "$dr_out")"; fi
