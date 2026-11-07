@@ -753,17 +753,19 @@ PACKAGES_CATALOG = [
         "name": "ar",
         "ui": True,
         "section": None,
-        "tag_es": "Realidad aumentada para apps hechas con eskiu-lang/ui: ARKit en iOS, ARCore en Android.",
+        "tag_es": "Realidad aumentada para apps hechas con eskiu-lang/ui: ARKit en iOS, ARCore en Android y WebXR en la web.",
         "note_en": "<code>use_ar_session</code> gives each frame's camera pose, planes, anchors, hit tests, "
-                   "light and depth, and the camera image in the same layout as the camera's frames, so "
+                   "image targets, light and depth, and the camera image in the same layout as the camera's frames, so "
                    "<code>&lt;gpu/yuv&gt;</code> draws the background and <a href=\"#scene\">scene</a> the "
-                   "content. ARCore runs with no OpenGL context, and the projection is computed in Eskiu "
-                   "the same way on both platforms.",
+                   "content. ARCore runs with no OpenGL context, the projection is computed in Eskiu "
+                   "the same way on every platform, and in Chrome on Android a WebXR session gives the "
+                   "same data.",
         "note_es": "<code>use_ar_session</code> da en cada cuadro la pose de la cámara, planos, anclas, hit "
-                   "tests, luz y profundidad, y la imagen de la cámara con el mismo formato que los cuadros "
+                   "tests, imágenes objetivo, luz y profundidad, y la imagen de la cámara con el mismo formato que los cuadros "
                    "de la cámara, así que <code>&lt;gpu/yuv&gt;</code> dibuja el fondo y "
-                   "<a href=\"#scene\">scene</a> el contenido. ARCore corre sin contexto de OpenGL, y la "
-                   "proyección se calcula en Eskiu igual en las dos plataformas.",
+                   "<a href=\"#scene\">scene</a> el contenido. ARCore corre sin contexto de OpenGL, la "
+                   "proyección se calcula en Eskiu igual en todas las plataformas, y en Chrome en Android "
+                   "una sesión de WebXR da los mismos datos.",
         "needs_en": "An app made with eskiu-lang/ui (ui new), on a phone with ARKit or ARCore.",
         "needs_es": "Una app hecha con eskiu-lang/ui (ui new), en un teléfono con ARKit o ARCore.",
         "setup": ["ui new myapp && cd myapp"],
