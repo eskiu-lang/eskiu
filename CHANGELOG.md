@@ -13,6 +13,8 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 - `HttpLimits.max_body` sets the largest request body the HTTP/1.1 and HTTP/2 servers
   accept (default `HTTP_SERVE_MAX_BODY`, 1 MiB; a body past it is answered 413), so a
   server taking uploads no longer needs its own copy of the stdlib.
+- `log_set_rotation(max_bytes, keep)` in `<log>` rotates the log file by size, keeping
+  `keep` old files (`app.log.1` the newest).
 - `export` before a function definition makes it a C entry point: C, Rust or any language
   that calls C calls it by its name with the target's C calling convention, structs and
   unions by value included, while Eskiu code calls it as before. `--emit-header FILE`

@@ -2593,7 +2593,7 @@ Eskiu ships a set of standard library files in the `stdlib/` directory. Import a
 | `stdlib/hash.esk`     | Pure-Eskiu digests: `Sha256`, `Sha1`, `Md5`, `HmacSha256` (streaming `_init`/`_update`/`_update_str`/`_final`/`_final_hex`) and one-shot `hash_sha256`/`hash_sha256_hex`/`hash_sha256_str` (same for `hash_sha1`, `hash_md5`), `hash_hmac_sha256`/`hash_hmac_sha256_str`, `hash_hex_encode`/`hash_hex_decode`, constant-time `hash_equal`/`hash_equal_str` |
 | `stdlib/args.esk`     | Command-line parsing: `ArgParser` (`_init`/`_parse`/`_parse_or_exit`/`_help`/`_usage`/`_error`/`_free`), declared with `ArgParser_flag`, `ArgParser_option`, `ArgParser_option_int`, `ArgParser_argument`, read with `ArgParser_get`, `ArgParser_get_int`, `ArgParser_get_flag`, `ArgParser_count`, `ArgParser_get_at`, `ArgParser_get_all`, `ArgParser_positional`, `ArgParser_rest` |
 | `stdlib/term.esk`     | Terminal output: styles as `int64` bit sets (`TERM_BOLD`, `TERM_RED`, `TERM_BG_BLUE`, `term_fg256`, `term_fg_rgb`, ...), `term_style`/`term_style_fd`/`term_print`/`term_println`/`term_sgr`/`term_reset`/`term_strip`, `term_is_tty`, `term_width`, `term_color_enabled`, `term_set_color_mode` |
-| `stdlib/log.esk`      | Leveled logging: `log_trace`/`log_debug`/`log_info`/`log_warn`/`log_error`/`log_at` (printf-style), `log_set_level` (or `LOG_LEVEL`), `log_set_file`/`log_set_stderr`, `log_set_time`, `log_set_color`, `log_freeze_time` |
+| `stdlib/log.esk`      | Leveled logging: `log_trace`/`log_debug`/`log_info`/`log_warn`/`log_error`/`log_at` (printf-style), `log_set_level` (or `LOG_LEVEL`), `log_set_file`/`log_set_stderr`, `log_set_rotation`, `log_set_time`, `log_set_color`, `log_freeze_time` |
 | `stdlib/sysheap.esk`  | `Heap`, a general-purpose heap that `mmap`s OS pages and runs `FirstFit` over them, providing allocation with no libc `malloc` (suitable as a freestanding backend) |
 | `stdlib/future.esk`   | The async runtime's `Future<T>` (the interface the compiler's async lowering targets): the `state`/`waker`/`on_drop` handshake, `future_new`/`Future_complete`/`Future_poll`/`Future_drop`/`Future_free`/`Future_free_polled` (the latter also frees the waker a hand-driven `Future_poll` installed), and the generic combinators `spawn<T>`, `select2<A,B>` (first of two), `join2<A,B>` (all of two) |
 | `stdlib/executor.esk` | `Executor`, a thread that owns an event loop plus a thread-safe ready-queue of wakers woken through a self-pipe, so a waker (a coroutine resume) always runs on the executor's own thread: `executor_new`, `Executor_schedule`, `Executor_run`, `Executor_stop`, `Executor_free` |
@@ -3419,7 +3419,12 @@ Timestamps are UTC with milliseconds by default; `log_set_time(LOG_TIME_LOCAL)` 
 the local time with its offset (`2026-10-11T04:30:05.123-04:00`) and `LOG_TIME_NONE` none.
 `log_freeze_time(ms)` stamps every line with a fixed time (for tests) until
 `log_unfreeze_time()`. `log_set_file(path)` appends to a file (0, or -1 if it cannot be
-opened), flushed after every line; `log_set_stderr()` returns to stderr. On stderr the
+opened), flushed after every line; `log_set_stderr()` returns to stderr.
+`log_set_rotation(max_bytes, keep)` rotates that file by size: a line that would take it
+past `max_bytes` first renames it to `PATH.1` (`PATH.1` to `PATH.2` and so on, the oldest
+past `PATH.keep` removed) and starts a new `PATH`; `keep` 0 truncates it instead, and
+`max_bytes` 0 turns rotation off. The size counts from the file's size when it was opened.
+On stderr the
 level tag is colored through `<term>` when colors are enabled for stderr;
 `log_set_color(TERM_ALWAYS / TERM_NEVER / TERM_AUTO)` changes that.
 

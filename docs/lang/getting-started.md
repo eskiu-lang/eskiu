@@ -1096,7 +1096,7 @@ Available modules:
 | `<process>`  | `process_run` (capture output, stdin text, cwd, env, timeout), `sh`, `sh_with`, `process_spawn` + `Process_write_stdin`/`_read`/`_wait`/`_kill`, `process_exit`, `process_pid` |
 | `<args>`     | command-line parsing: `ArgParser`, `ArgParser_flag`, `ArgParser_option`, `ArgParser_option_int`, `ArgParser_argument`, generated `--help`, `ArgParser_parse_or_exit`, `ArgParser_get`/`ArgParser_get_int`/`ArgParser_get_flag`/`ArgParser_count` |
 | `<term>`     | ANSI styles and colors (`TERM_BOLD \| TERM_RED`, `term_fg256`, `term_fg_rgb`), `term_style`, `term_println`, `term_is_tty`, `term_width`; honors `NO_COLOR`/`FORCE_COLOR` |
-| `<log>`      | `log_info`/`log_warn`/`log_error`/`log_debug`/`log_trace` (printf-style), `LOG_LEVEL` or `log_set_level`, timestamps, `log_set_file` |
+| `<log>`      | `log_info`/`log_warn`/`log_error`/`log_debug`/`log_trace` (printf-style), `LOG_LEVEL` or `log_set_level`, timestamps, `log_set_file`, `log_set_rotation` |
 | `<path>`     | `path_join`, `path_basename`, `path_dirname`, `path_extension`, `path_is_absolute` |
 | `<threading>`| `Mutex`, `Cond`, `Sem` over pthread (pairs with `thread_create`/`thread_join`) |
 | `<eventloop>`| readiness reactor over kqueue/epoll: `el_new`/`EventLoop_add_read`/`EventLoop_run`/`EventLoop_stop`/`EventLoop_add_timer` |
