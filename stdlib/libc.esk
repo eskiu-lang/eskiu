@@ -77,7 +77,6 @@ extern int snprintf(*char buf, size_t n, string fmt, ...);
 extern int sscanf(string s, string fmt, ...);
 extern int fputc(int c, *void fp);
 extern void perror(string s);
-extern int remove(string path);
 
 // ── ctype.h ──────────────────────────────────────────────────────────────────
 extern int isalpha(int c);

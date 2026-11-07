@@ -16,4 +16,5 @@ extern void rewind(*void fp);
 extern int feof(*void fp);
 extern int ferror(*void fp);
 extern int rename(string from, string to);
+extern int remove(string path);
 extern int vsnprintf(*char buf, size_t n, string fmt, va_list ap);

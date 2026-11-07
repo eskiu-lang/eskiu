@@ -26,6 +26,12 @@
 // that. stdout is flushed before a line goes to stderr, so the two stay in
 // order when they share a destination. A file gets no colors and is flushed
 // after every line.
+//
+// A log file can rotate by size: after log_set_rotation(max_bytes, keep), a
+// line that would take the file past max_bytes first renames it to PATH.1
+// (PATH.1 to PATH.2 and so on, the oldest past PATH.keep removed) and starts
+// a new PATH. keep 0 truncates PATH instead of keeping old files. A single
+// line longer than max_bytes still goes whole into a fresh file.
 
 import <c/stdio>;   // fopen, fclose
 import <term>;
@@ -50,6 +56,10 @@ int _log_time = 0;
 int _log_color = 0;          // TERM_AUTO / TERM_ALWAYS / TERM_NEVER
 bool _log_frozen = false;
 int64 _log_frozen_ms = 0;
+String _log_path;              // the file of log_set_file, empty for none
+int64 _log_size = 0;           // its size in bytes
+int64 _log_max_bytes = 0;      // 0: no rotation
+int _log_keep = 0;
 
 char _log_lower(char c) {
     return c >= 'A' && c <= 'Z' ? (char)((int)c + 32) : c;
@@ -123,6 +133,13 @@ int log_set_file(string path) {
         fclose(_log_fp);
     }
     _log_fp = fp;
+    fseek(fp, (c_long)0, 2);
+    _log_size = (int64)ftell(fp);
+    if (_log_size < 0) {
+        _log_size = 0;
+    }
+    _log_path.clear();
+    _log_path.append(path);
     return 0;
 }
 
@@ -132,6 +149,55 @@ void log_set_stderr() {
         fclose(_log_fp);
     }
     _log_fp = null;
+    _log_path.clear();
+}
+
+// Rotate the log file when a line would take it past `max_bytes`, keeping
+// `keep` old files (PATH.1 the newest). max_bytes 0 turns rotation off.
+// Applies to the current file and to later log_set_file calls.
+void log_set_rotation(int64 max_bytes, int keep) {
+    _log_max_bytes = max_bytes < 0 ? (int64)0 : max_bytes;
+    _log_keep = keep < 0 ? 0 : keep;
+}
+
+// "PATH.i" into `out`.
+void _log_numbered(String* out, int i) {
+    out.clear();
+    out.append(_log_path.cstr());
+    if (i > 0) {
+        out.appendf(".%d", i);
+    }
+}
+
+// Close the file, shift PATH.i to PATH.i+1 (the oldest removed) and PATH to
+// PATH.1, and open a fresh PATH. On a failure to reopen, logging goes to
+// stderr.
+void _log_rotate() {
+    fclose(_log_fp);
+    _log_fp = null;
+    let a: String;
+    a.init(64);
+    let b: String;
+    b.init(64);
+    if (_log_keep > 0) {
+        _log_numbered(&a, _log_keep);
+        remove(a.cstr());
+        int i = _log_keep - 1;
+        while (i >= 0) {
+            _log_numbered(&a, i);
+            _log_numbered(&b, i + 1);
+            rename(a.cstr(), b.cstr());
+            i -= 1;
+        }
+    }
+    _log_numbered(&a, 0);
+    _log_fp = fopen(a.cstr(), "wb");
+    _log_size = 0;
+    if (_log_fp == null) {
+        _log_path.clear();
+    }
+    a.free();
+    b.free();
 }
 
 // Timestamps in UTC (LOG_TIME_UTC, the default), local time (LOG_TIME_LOCAL)
@@ -250,9 +316,14 @@ void _log_emit(int level, String* msg) {
     line.push(' ');
     line.concat(msg);
     line.push('\n');
+    if (_log_fp != null && _log_path.len > 0 && _log_max_bytes > 0 && _log_size > 0
+            && _log_size + line.len > _log_max_bytes) {
+        _log_rotate();
+    }
     if (_log_fp != null) {
         fwrite((*void)line.data, 1, line.len, _log_fp);
         fflush(_log_fp);
+        _log_size += line.len;
     } else {
         fflush(io_stdout());
         *void err = io_stderr();

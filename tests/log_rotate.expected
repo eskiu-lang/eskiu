@@ -1,0 +1,10 @@
+current
+app.log: 100 bytes, first INFO  line 08 0123
+app.log.1: 100 bytes, first INFO  line 04 0123
+app.log.2: 100 bytes, first INFO  line 00 0123
+app.log.3: missing
+after reopen
+app.log: 50 bytes, first INFO  line 12 0123
+app.log.1: 100 bytes, first INFO  line 08 0123
+keep 0
+app.log: 25 bytes, first INFO  line 14 0123

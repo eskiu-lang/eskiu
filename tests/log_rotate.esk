@@ -1,0 +1,65 @@
+// log_set_rotation: a line that would take the log file past max_bytes renames
+// it to PATH.1 (older ones shifted, the oldest past PATH.keep removed) first.
+import <log>;
+import <fs>;
+import <string>;
+extern int printf(string fmt, ...);
+
+void show(string label, string path) {
+    let s: String;
+    s.init(16);
+    if (fs_read_text(path, &s) == 0) {
+        printf("%s: %lld bytes, first %.18s\n", label, s.len, s.cstr());
+    } else {
+        printf("%s: missing\n", label);
+    }
+    s.free();
+}
+
+int main() {
+    let dir: String;
+    dir.init(64);
+    fs_temp_dir("logrot", &dir);
+    let p: String;
+    p.init(64);
+    p.appendf("%s/app.log", dir.cstr());
+    log_set_time(LOG_TIME_NONE);
+    log_set_rotation(100, 2);
+    log_set_file(p.cstr());
+    for (i in 0..12) {
+        log_info("line %02d 0123456789", i);   // 25 bytes a line: 4 per file
+    }
+    log_set_stderr();
+    printf("current\n");
+    let q: String;
+    q.init(64);
+    show("app.log", p.cstr());
+    for (i in 1..4) {
+        q.clear();
+        q.appendf("%s.%d", p.cstr(), i);
+        let l: String;
+        l.init(16);
+        l.appendf("app.log.%d", i);
+        show(l.cstr(), q.cstr());
+        l.free();
+    }
+    // Reopening keeps counting from the file's size.
+    log_set_file(p.cstr());
+    log_info("line 12 0123456789");
+    log_info("line 13 0123456789");
+    log_set_stderr();
+    printf("after reopen\n");
+    show("app.log", p.cstr());
+    q.clear();
+    q.appendf("%s.1", p.cstr());
+    show("app.log.1", q.cstr());
+    // keep 0 truncates.
+    log_set_rotation(30, 0);
+    log_set_file(p.cstr());
+    log_info("line 14 0123456789");
+    log_set_stderr();
+    printf("keep 0\n");
+    show("app.log", p.cstr());
+    fs_remove_all(dir.cstr());
+    return 0;
+}
