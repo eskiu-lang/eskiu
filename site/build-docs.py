@@ -463,22 +463,28 @@ PKG_REV = "v0.1.0"   # the release a package is shown at, unless its entry has "
 PACKAGES_CATALOG = [
     {
         "name": "gpu",
-        "rev": "v0.3.0",
-        "section": "Models",
+        "rev": "v0.5.0",
+        "section": "Compute",
         "tag_es": "Cómputo en GPU, renderizado, modelos 3D y machine learning para Eskiu, sobre WebGPU.",
         "note_en": "One API runs on Metal (macOS, iOS), Vulkan (Linux, Android) and DirectX 12 (Windows) through "
                    "wgpu-native, with shaders in WGSL. It draws glTF and OBJ models with physically "
                    "based shading, runs Llama models from GGUF or safetensors files (Llama 2 7B Q4_0 "
                    "at 45 tokens per second on an M4 Pro; llama.cpp does 58 on the same machine) and "
-                   "trains small networks (97% test accuracy on MNIST). On iOS and Android it draws into a "
-                   "<code>GpuView</code> of a ui app (Eskiu 0.14). "
+                   "trains small networks (97% test accuracy on MNIST). It has what a 3D renderer needs: "
+                   "several render targets, cube maps, GPU mipmaps, shadow maps, image-based lighting, "
+                   "morph targets, KTX2 and HDR textures, and camera and video frames drawn from YUV. "
+                   "On iOS and Android it draws into a <code>GpuView</code> of a ui app, and the same "
+                   "programs build for the browser through emdawnwebgpu. "
                    "<a href=\"gpu.html\">What it does, with its benchmarks →</a>",
         "note_es": "Una sola API corre sobre Metal (macOS, iOS), Vulkan (Linux, Android) y DirectX 12 (Windows) a "
                    "través de wgpu-native, con shaders en WGSL. Dibuja modelos glTF y OBJ con "
                    "sombreado físico (PBR), corre modelos Llama desde archivos GGUF o safetensors "
                    "(Llama 2 7B Q4_0 a 45 tokens por segundo en un M4 Pro; llama.cpp da 58 en la "
-                   "misma máquina) y entrena redes pequeñas (97% de precisión en MNIST). En iOS y Android "
-                   "dibuja en un <code>GpuView</code> de una app de ui (Eskiu 0.14). "
+                   "misma máquina) y entrena redes pequeñas (97% de precisión en MNIST). Trae lo que necesita "
+                   "un motor 3D: varios render targets, cube maps, mipmaps en la GPU, mapas de sombras, "
+                   "iluminación basada en imágenes, morph targets, texturas KTX2 y HDR, y cuadros de cámara "
+                   "y video dibujados desde YUV. En iOS y Android dibuja en un <code>GpuView</code> de una "
+                   "app de ui, y los mismos programas compilan para el navegador con emdawnwebgpu. "
                    "<a href=\"gpu.html\">Qué hace, con sus mediciones →</a>",
         "needs_en": "The first build downloads wgpu-native 29 for you. Opening a window "
                     "(<code>&lt;gpu/window&gt;</code>) also needs SDL3 from the system: "
@@ -492,16 +498,40 @@ PACKAGES_CATALOG = [
         "build": ["eskiuc build"],
     },
     {
+        "name": "scene",
+        "section": "A lit sphere",
+        "tag_es": "Un grafo de escena y un renderizador de materiales para Eskiu, sobre gpu.",
+        "note_en": "Nodes, cameras, shapes and glTF scenes, drawn with Constant, Lambert, Phong, Blinn or "
+                   "PBR materials under ambient, directional, point and spot lights, transparency sorted "
+                   "back to front, HDR with tone mapping and bloom, skyboxes, image-based lighting and "
+                   "shadow maps. Checked against analytic values on Metal, Vulkan and DirectX 12.",
+        "note_es": "Nodos, cámaras, figuras y escenas glTF, dibujados con materiales Constant, Lambert, Phong, "
+                   "Blinn o PBR bajo luces ambiental, direccional, puntual y spot, transparencias ordenadas "
+                   "de atrás hacia adelante, HDR con tone mapping y bloom, skyboxes, iluminación basada en "
+                   "imágenes y mapas de sombras. Probado contra valores analíticos en Metal, Vulkan y "
+                   "DirectX 12.",
+        "needs_en": "The first build downloads wgpu-native through gpu.",
+        "needs_es": "El primer build descarga wgpu-native a través de gpu.",
+        "setup": [],
+        "build": ["eskiuc build"],
+    },
+    {
         "name": "onnx",
+        "rev": "v0.2.0",
         "section": "Inference",
         "tag_es": "Inferencia de modelos ONNX para Eskiu, sobre ONNX Runtime.",
         "note_en": "A model exported from PyTorch, TensorFlow or scikit-learn runs on the CPU "
                    "everywhere, and on CoreML, CUDA, DirectML or WebGPU when the ONNX Runtime build "
-                   "has them. Wrong input names, types or shapes come back as error messages.",
+                   "has them. Wrong input names, types or shapes come back as error messages. Its image "
+                   "resizers give the same bytes as Pillow and OpenCV, and <code>&lt;onnx/detect&gt;</code> "
+                   "decodes SSD boxes and runs NMS bit for bit as numpy, so a Python vision pipeline "
+                   "moves over with the same numbers.",
         "note_es": "Un modelo exportado desde PyTorch, TensorFlow o scikit-learn corre en el CPU en "
                    "cualquier sistema, y en CoreML, CUDA, DirectML o WebGPU cuando el build de ONNX "
                    "Runtime los trae. Un nombre, tipo o shape de entrada equivocado regresa como "
-                   "mensaje de error.",
+                   "mensaje de error. Sus redimensionadores de imagen dan los mismos bytes que Pillow y "
+                   "OpenCV, y <code>&lt;onnx/detect&gt;</code> decodifica cajas SSD y corre NMS bit por "
+                   "bit como numpy, así que un pipeline de visión en Python se pasa con los mismos números.",
         "needs_en": "Nothing to install: the first build downloads ONNX Runtime 1.31 (macOS arm64, "
                     "Linux and Windows).",
         "needs_es": "Nada que instalar: el primer build descarga ONNX Runtime 1.31 (macOS arm64, "
@@ -530,7 +560,7 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "compress",
-        "section": "ZIP archives",
+        "section": "gzip and zlib",
         "tag_es": "zlib, gzip, DEFLATE crudo y archivos ZIP para Eskiu, escrito en Eskiu.",
         "note_en": "DEFLATE at levels 0 to 9, zlib and gzip in both directions, and ZIP archives "
                    "with ZIP64. Every read is bounds checked and the output is capped by a size "
@@ -544,8 +574,24 @@ PACKAGES_CATALOG = [
         "build": [],
     },
     {
+        "name": "yaml",
+        "section": "Reading a file",
+        "tag_es": "Archivos de configuración YAML para Eskiu, leídos al árbol JSON de la biblioteca estándar.",
+        "note_en": "One YAML document under the YAML 1.2 core schema (block and flow collections, every "
+                   "scalar style, comments) becomes a <code>JsonValue</code>, so settings are read with "
+                   "<code>json_get</code> paths. Errors say the line and column. Pure Eskiu.",
+        "note_es": "Un documento YAML con el esquema core de YAML 1.2 (colecciones en bloque y en línea, "
+                   "todos los estilos de escalares, comentarios) se vuelve un <code>JsonValue</code>, así "
+                   "que la configuración se lee con rutas de <code>json_get</code>. Los errores dicen línea "
+                   "y columna. Eskiu puro.",
+        "needs_en": "Nothing to install.",
+        "needs_es": "No hay que instalar nada.",
+        "setup": [],
+        "build": [],
+    },
+    {
         "name": "audio",
-        "rev": "v0.2.0",
+        "rev": "v0.3.0",
         "section": "Playing a sound",
         "tag_es": "Sonido para Eskiu: archivos WAV, un mezclador y salida con SDL3.",
         "note_en": "Reads WAV files in every common encoding (PCM, float, IMA and Microsoft ADPCM) "
@@ -603,7 +649,8 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "nds",
-        "section": "Archives and ROMs",
+        "rev": "v0.2.0",
+        "section": "Example",
         "tag_es": "Formatos de archivo de la Nintendo DS para Eskiu: ROMs, archivos NARC, sonido, "
                   "gráficos 2D y texturas 3D.",
         "note_en": "ROM file systems and overlays, NARC archives, LZ compression, SDAT sound with a "
@@ -661,21 +708,66 @@ PACKAGES_CATALOG = [
     {
         "name": "camera",
         "repo": "ui-camera",
-        "rev": "v0.1.2",
+        "rev": "v0.2.0",
         "section": None,
         "tag_es": "Fotos para apps hechas con eskiu-lang/ui: la galería, la cámara y una vista en vivo.",
         "note_en": "Pick a photo from the library, take one with the system's camera, or show the camera "
                    "live in a <code>CameraView</code> and capture it. Each photo comes back upright as a "
                    "JPEG that <code>Image</code> shows. PHPicker and AVFoundation on iOS, the photo picker "
-                   "and Camera2 on Android, a file input and getUserMedia on the web.",
+                   "and Camera2 on Android, a file input and getUserMedia on the web. "
+                   "<code>use_camera_frames</code> lends each live frame to Eskiu by pointer (YUV planes, "
+                   "newest frame wins) for vision code or for <code>&lt;gpu/yuv&gt;</code> to draw.",
         "note_es": "Elige una foto de la galería, toma una con la cámara del sistema, o muestra la cámara en "
                    "vivo en un <code>CameraView</code> y captúrala. Cada foto regresa derecha como un JPEG que "
                    "<code>Image</code> muestra. PHPicker y AVFoundation en iOS, el selector de fotos y Camera2 "
-                   "en Android, un input de archivo y getUserMedia en la web.",
+                   "en Android, un input de archivo y getUserMedia en la web. "
+                   "<code>use_camera_frames</code> le presta a Eskiu cada cuadro en vivo por puntero (planos "
+                   "YUV, gana el más nuevo) para código de visión o para dibujarlo con "
+                   "<code>&lt;gpu/yuv&gt;</code>.",
         "needs_en": "An app made with eskiu-lang/ui (ui new).",
         "needs_es": "Una app hecha con eskiu-lang/ui (ui new).",
         "setup": ["ui new myapp && cd myapp"],
         "build": ["ui run android"],
+    },
+    {
+        "name": "video",
+        "ui": True,
+        "section": "Use it",
+        "tag_es": "Reproducción de video para apps hechas con eskiu-lang/ui, con los cuadros decodificados en Eskiu.",
+        "note_en": "<code>use_video</code> plays files, URLs and app assets with the platform's own player "
+                   "(AVPlayer on iOS, MediaPlayer on Android, the video element on the web), "
+                   "<code>VideoView</code> shows it, and <code>use_video_frames</code> lends the decoded "
+                   "frames to Eskiu in the same layout as the camera's, for <code>&lt;gpu/yuv&gt;</code> "
+                   "to draw.",
+        "note_es": "<code>use_video</code> reproduce archivos, URLs y recursos de la app con el reproductor de "
+                   "cada plataforma (AVPlayer en iOS, MediaPlayer en Android, el elemento video en la web), "
+                   "<code>VideoView</code> lo muestra, y <code>use_video_frames</code> le presta a Eskiu los "
+                   "cuadros decodificados con el mismo formato que los de la cámara, para dibujarlos con "
+                   "<code>&lt;gpu/yuv&gt;</code>.",
+        "needs_en": "An app made with eskiu-lang/ui (ui new).",
+        "needs_es": "Una app hecha con eskiu-lang/ui (ui new).",
+        "setup": ["ui new myapp && cd myapp"],
+        "build": ["ui run ios"],
+    },
+    {
+        "name": "ar",
+        "ui": True,
+        "section": None,
+        "tag_es": "Realidad aumentada para apps hechas con eskiu-lang/ui: ARKit en iOS, ARCore en Android.",
+        "note_en": "<code>use_ar_session</code> gives each frame's camera pose, planes, anchors, hit tests, "
+                   "light and depth, and the camera image in the same layout as the camera's frames, so "
+                   "<code>&lt;gpu/yuv&gt;</code> draws the background and <a href=\"#scene\">scene</a> the "
+                   "content. ARCore runs with no OpenGL context, and the projection is computed in Eskiu "
+                   "the same way on both platforms.",
+        "note_es": "<code>use_ar_session</code> da en cada cuadro la pose de la cámara, planos, anclas, hit "
+                   "tests, luz y profundidad, y la imagen de la cámara con el mismo formato que los cuadros "
+                   "de la cámara, así que <code>&lt;gpu/yuv&gt;</code> dibuja el fondo y "
+                   "<a href=\"#scene\">scene</a> el contenido. ARCore corre sin contexto de OpenGL, y la "
+                   "proyección se calcula en Eskiu igual en las dos plataformas.",
+        "needs_en": "An app made with eskiu-lang/ui (ui new), on a phone with ARKit or ARCore.",
+        "needs_es": "Una app hecha con eskiu-lang/ui (ui new), en un teléfono con ARKit o ARCore.",
+        "setup": ["ui new myapp && cd myapp"],
+        "build": ["ui run ios"],
     },
     {
         "name": "canvas",
@@ -1009,7 +1101,7 @@ def build_packages():
              f'    <nav class="pkg-grid" aria-label="{T["chips"]}">' +
              "".join(f'<a href="#{pkg["name"]}"><b>{pkg["name"]}</b>'
                      f'<span>{html.escape(tagline if lang == "en" else pkg["tag_es"])}</span>'
-                     + (f'<em>ui</em>' if pkg.get("repo", "").startswith("ui-") else "") + '</a>'
+                     + (f'<em>ui</em>' if pkg.get("repo", "").startswith("ui-") or pkg.get("ui") else "") + '</a>'
                      for pkg, tagline, _ in data) +
              f'<a class="pkg-grid-soon" href="#vision"><b>vision</b><span>{T["vision_line"]}</span>'
              f'<em>{T["soon_tag"]}</em></a></nav>',
