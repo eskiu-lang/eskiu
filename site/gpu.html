@@ -88,7 +88,7 @@
     <div class="bar">
       <section class="g-hero">
         <div>
-          <div class="eyebrow">Package · eskiu-lang/gpu · v0.3.0</div>
+          <div class="eyebrow">Package · eskiu-lang/gpu · v0.5.0</div>
           <h1>Compute, graphics and machine learning on the GPU</h1>
           <p class="lede">Kernels, PBR models, LLM inference and training over WebGPU. One API for Metal, Vulkan and DirectX 12, on desktops and phones, with shaders in WGSL.</p>
           <div class="g-cta">
@@ -98,7 +98,7 @@
         </div>
         <img src="../assets/gpu-helmet.jpg" alt="The DamagedHelmet glTF model, drawn by Eskiu's gpu package with physically based shading" width="1200" height="1200" />
       </section>
-      <section class="g-stats"><div class="g-stat"><b>45 tok/s</b><span>Llama 2 7B Q4_0 on an Apple M4 Pro</span></div><div class="g-stat"><b>97%</b><span>MNIST test accuracy in three epochs</span></div><div class="g-stat"><b>5 platforms</b><span>macOS, Linux, Windows, iOS and Android</span></div><div class="g-stat"><b>MIT</b><span>Open source</span></div></section>
+      <section class="g-stats"><div class="g-stat"><b>45 tok/s</b><span>Llama 2 7B Q4_0 on an Apple M4 Pro</span></div><div class="g-stat"><b>97%</b><span>MNIST test accuracy in three epochs</span></div><div class="g-stat"><b>6 platforms</b><span>macOS, Linux, Windows, iOS, Android and the browser</span></div><div class="g-stat"><b>MIT</b><span>Open source</span></div></section>
 
       <section class="g-row" id="compute">
         <div>
@@ -134,7 +134,7 @@ Result&lt;int, string&gt; run() {
       <section class="g-row flip" id="models">
         <div>
           <h2>3D models, the format of AR and VR</h2>
-          <p><code>&lt;gpu/gltf&gt;</code> loads glTF 2.0 (<code>.gltf</code> and <code>.glb</code>) and <code>&lt;gpu/obj&gt;</code> Wavefront OBJ with its MTL materials, and <code>&lt;gpu/model&gt;</code> draws either with physically based shading, normal maps, alpha modes, skinning and animation.</p><p>PNG and JPEG (baseline and progressive) decode in pure Eskiu, and textures can be sRGB and mipmapped. <code>&lt;gpu/window&gt;</code> opens a window over SDL3 with its keyboard and mouse.</p>
+          <p><code>&lt;gpu/gltf&gt;</code> loads glTF 2.0 (<code>.gltf</code> and <code>.glb</code>) and <code>&lt;gpu/obj&gt;</code> Wavefront OBJ with its MTL materials, and <code>&lt;gpu/model&gt;</code> draws either with physically based shading, normal maps, alpha modes, skinning, morph targets and animation, lit by image-based lighting (<code>&lt;gpu/ibl&gt;</code>) and casting shadows.</p><p>Underneath are the pieces of a full renderer: several render targets, stencil, multisampling, cube and array textures, mipmaps made on the GPU, shadow maps with comparison samplers, BC, ETC2 and ASTC textures from KTX2 files, and camera and video frames drawn from YUV (<code>&lt;gpu/yuv&gt;</code>). The <a href="packages.html#scene">scene</a> package builds a scene graph with lights and materials on top.</p><p>PNG, JPEG (baseline and progressive, with its EXIF orientation) and Radiance HDR decode in pure Eskiu. <code>&lt;gpu/window&gt;</code> opens a window over SDL3 with its keyboard and mouse.</p>
           <pre><code>Gltf data = model_load("helmet.glb")?;   <span class="c">// or a .gltf, or an .obj</span>
 defer data.free();
 GpuModel model = gpu.model(&amp;data, surface.format)?;
@@ -185,10 +185,10 @@ g.adam(0.001);       <span class="c">// and the optimizer step</span></code></pr
       <section class="g-row" id="platforms">
         <div>
           <h2>Where it runs</h2>
-          <p>The GPU modules go through wgpu-native, on desktops and phones. In an <a href="ui.html">eskiu-lang/ui</a> app, <code>&lt;gpu/ui&gt;</code> mounts a <code>GpuView</code> to draw into (a <code>CAMetalLayer</code> on iOS, a <code>SurfaceView</code> on Android). In a browser WebGPU is the browser's own, which cannot block on the GPU, so the GPU modules are planned there. The rest is plain Eskiu and runs on every target.</p>
+          <p>The GPU modules go through wgpu-native, on desktops and phones. In an <a href="ui.html">eskiu-lang/ui</a> app, <code>&lt;gpu/ui&gt;</code> mounts a <code>GpuView</code> to draw into (a <code>CAMetalLayer</code> on iOS, a <code>SurfaceView</code> on Android). In a browser the same programs build through emscripten's emdawnwebgpu, with JSPI or Asyncify standing in for the waits the browser cannot block on. The rest is plain Eskiu and runs on every target.</p>
         </div>
         <div class="tablewrap"><table>
-          <tr><th>Platform</th><th>Backend</th></tr><tr><td>macOS arm64</td><td>Metal</td></tr><tr><td>Linux x86-64</td><td>Vulkan</td></tr><tr><td>Windows x86-64</td><td>DirectX 12, Vulkan</td></tr><tr><td>iOS (arm64, simulator)</td><td>Metal</td></tr><tr><td>Android (arm64, x86-64)</td><td>Vulkan</td></tr><tr><td>WebAssembly</td><td>The pure Eskiu modules (glTF, OBJ, images, GGUF, safetensors, math) today; the GPU modules are planned</td></tr>
+          <tr><th>Platform</th><th>Backend</th></tr><tr><td>macOS arm64</td><td>Metal</td></tr><tr><td>Linux x86-64</td><td>Vulkan</td></tr><tr><td>Windows x86-64</td><td>DirectX 12, Vulkan</td></tr><tr><td>iOS (arm64, simulator)</td><td>Metal</td></tr><tr><td>Android (arm64, x86-64)</td><td>Vulkan</td></tr><tr><td>WebAssembly</td><td>The browser's WebGPU (emdawnwebgpu)</td></tr>
         </table></div>
       </section>
 
@@ -199,7 +199,7 @@ g.adam(0.001);       <span class="c">// and the optimizer step</span></code></pr
           <div class="g-cards"><a href="https://github.com/eskiu-lang/gpu"><b>GitHub</b><span>Source, tests and issues</span></a><a href="https://github.com/eskiu-lang/gpu/tree/main/examples"><b>Examples</b><span>A triangle, a textured cube, a glTF and OBJ viewer, Llama 2, MNIST</span></a><a href="packages.html"><b>All packages</b><span>What else is one eskiuc add away</span></a></div>
         </div>
         <pre><code>eskiuc new myapp &amp;&amp; cd myapp
-eskiuc add gpu --git https://github.com/eskiu-lang/gpu --rev v0.3.0
+eskiuc add gpu --git https://github.com/eskiu-lang/gpu --rev v0.5.0
 eskiuc build</code></pre>
       </section>
     </div>
