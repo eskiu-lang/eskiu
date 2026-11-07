@@ -1391,6 +1391,7 @@ async void http2_serve_conn_async_with(EventLoop* lp, int fd,
     if (good) {
         H2Server* s = alloc<H2Server>(1);
         H2Server_init(s, fd);
+        s.max_body = lim.max_body;
         s.start_ms = start;
         int FBCAP = 16384 + H2_FRAME_HEADER_LEN;       // a full MAX_FRAME_SIZE payload + header
         *uint8 fb = alloc<uint8>(FBCAP);

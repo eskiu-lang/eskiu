@@ -1,0 +1,7 @@
+default=1048576
+cap=1048576 st=413 body=0
+cap=4194304 st=0 body=2097152
+cap=1048576 st=413 body=0
+cap=4194304 st=0 body=2097152
+cap=100 st=413 body=0
+cap=100 st=0 body=100

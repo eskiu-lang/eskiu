@@ -885,7 +885,7 @@ void _http_render(HttpResponse* self, String* out, bool head) {
 
 // Limits of the http_serve / http_serve_async servers: a request head
 // longer than HTTP_SERVE_MAX_HEAD bytes is answered 400, a body longer than
-// HTTP_SERVE_MAX_BODY bytes 413.
+// HttpLimits.max_body (HTTP_SERVE_MAX_BODY by default) 413.
 const int HTTP_SERVE_MAX_HEAD = 65536;
 const int HTTP_SERVE_MAX_BODY = 1048576;
 
@@ -907,7 +907,10 @@ const int HTTP_SERVE_MAX_BODY = 1048576;
 //              stays open;
 //   max_open   the async servers hold at most this many connections at once; one
 //              accepted past it is closed at once (so idle peers cannot use up
-//              every file descriptor).
+//              every file descriptor);
+//   max_body   a request body (Content-Length or decoded chunks, HTTP/1.1 and
+//              HTTP/2) longer than this many bytes is answered 413 (default
+//              HTTP_SERVE_MAX_BODY, 1 MiB); a server taking uploads raises it.
 // A request cut by header_ms or body_ms after some of it arrived is answered 408
 // before the connection closes (HTTP/1.1); nothing is sent to a peer that sent
 // nothing. The HTTP/1.1 servers answer one request per connection, so they have
@@ -926,6 +929,7 @@ struct HttpLimits {
     int64 write_ms;
     int max_open;
     int64 write_total_ms;
+    int64 max_body;
 }
 
 // Set `self` to the defaults above; change the fields after, then pass it to a
@@ -938,6 +942,7 @@ void HttpLimits_init(HttpLimits* self) {
     self.write_ms = HTTP_WRITE_TIMEOUT_MS;
     self.max_open = HTTP_MAX_OPEN_CONNS;
     self.write_total_ms = HTTP_WRITE_TOTAL_MS;
+    self.max_body = HTTP_SERVE_MAX_BODY;
 }
 
 // The default limits, by value.
@@ -960,6 +965,7 @@ struct HttpConnBuf {
     int64 bpos;     // chunked: where the undecoded input starts
     int64 tbytes;   // chunked: trailer bytes consumed
     HttpChunkOut out;   // chunked: the body decoded so far
+    int64 max_body;     // the body cap (HttpLimits.max_body)
 }
 
 void HttpConnBuf_init(HttpConnBuf* self) {
@@ -976,6 +982,7 @@ void HttpConnBuf_init(HttpConnBuf* self) {
     self.out.data = null;
     self.out.len = 0;
     self.out.cap = 0;
+    self.max_body = HTTP_SERVE_MAX_BODY;
 }
 
 void HttpConnBuf_free(HttpConnBuf* self) {
@@ -1010,7 +1017,7 @@ int HttpConnBuf_feed(HttpConnBuf* b, HttpRequest* req) {
             b.hend = h;
             _http_request_clear(req);
             int64 clen = 0;
-            const int framing = _http_request_head(req, b.data, h, HTTP_SERVE_MAX_BODY, &clen);
+            const int framing = _http_request_head(req, b.data, h, b.max_body, &clen);
             if (framing > 1) {
                 return framing;
             }
@@ -1028,7 +1035,7 @@ int HttpConnBuf_feed(HttpConnBuf* b, HttpRequest* req) {
             // Decoded input is dropped, so tiny chunks (many framing bytes
             // per body byte) do not run into the buffer limit below.
             int64 n = b.len;
-            const int st = _http_chunked_feed(b.data, &n, &b.bpos, b.hend, &b.out, HTTP_SERVE_MAX_BODY, &b.trailer, &b.tbytes);
+            const int st = _http_chunked_feed(b.data, &n, &b.bpos, b.hend, &b.out, b.max_body, &b.trailer, &b.tbytes);
             b.len = (int)n;
             if (st == 1) {
                 for (i in 0..b.out.len) {
@@ -1049,21 +1056,25 @@ int HttpConnBuf_feed(HttpConnBuf* b, HttpRequest* req) {
     if (b.len < b.cap) {
         return -1;
     }
-    // A Content-Length request needs at most HEAD + MAX_BODY bytes; a chunked
-    // one holds its head and one unfinished chunk (at most MAX_BODY) or line.
-    const int limit = HTTP_SERVE_MAX_HEAD + 2 * HTTP_SERVE_MAX_BODY;
-    if (b.cap >= limit) {
+    // A Content-Length request needs at most HEAD + max_body bytes; a chunked
+    // one holds its head and one unfinished chunk (at most max_body) or line.
+    // The buffer is an int-sized allocation, so the bound stops below 2 GiB.
+    int64 limit = (int64)HTTP_SERVE_MAX_HEAD + 2 * b.max_body;
+    if (limit > (int64)2147483647) {
+        limit = (int64)2147483647;
+    }
+    if ((int64)b.cap >= limit) {
         return 413;
     }
-    int nc = b.cap * 2;
-    if ((int64)nc < b.need) {
-        nc = (int)b.need;
+    int64 nc = (int64)b.cap * 2;
+    if (nc < b.need) {
+        nc = b.need;
     }
     if (nc > limit) {
         nc = limit;
     }
-    b.data = http_buf_grow(b.data, b.len, nc);
-    b.cap = nc;
+    b.data = http_buf_grow(b.data, b.len, (int)nc);
+    b.cap = (int)nc;
     return -1;
 }
 
@@ -1172,6 +1183,7 @@ void http_worker_loop_with(int fd, fn(HttpRequest*, HttpResponse*)->void handler
         }
         let b: HttpConnBuf;
         b.init();
+        b.max_body = lim.max_body;
         let req: HttpRequest;
         req.init();
         const int st = _http_conn_read(c, &b, &req, &lim);

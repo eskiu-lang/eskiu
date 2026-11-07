@@ -43,6 +43,7 @@ async void http_conn_async_with(EventLoop* lp, int c,
     net_set_nonblocking(c);                     // never block the loop thread
     let b: HttpConnBuf;
     b.init();
+    b.max_body = lim.max_body;
     let req: HttpRequest;
     req.init();
     int64 head_dl = net_deadline(lim.header_ms);

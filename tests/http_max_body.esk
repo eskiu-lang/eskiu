@@ -1,0 +1,61 @@
+// HttpLimits.max_body sets the HTTP/1.1 body cap (HttpConnBuf.max_body, set by
+// the servers from their HttpLimits): a 2 MiB Content-Length body is 413 at the
+// default 1 MiB cap and accepted at 4 MiB, chunked bodies the same, and a body
+// one byte past a small cap is 413.
+import <http>;
+import <string>;
+import <mem>;
+extern int printf(string fmt, ...);
+
+int feed(String* r, int64 cap) {
+    let b: HttpConnBuf;  b.init();
+    b.max_body = cap;
+    let req: HttpRequest;  req.init();
+    int64 off = 0;
+    int st = -1;
+    while (st == -1 && off < r.len) {
+        int64 k = r.len - off;
+        if (k > 65536) { k = 65536; }
+        if (k > (int64)(b.cap - b.len)) { k = (int64)(b.cap - b.len); }
+        memcpy(b.data + b.len, (*uint8)r.data + off, k);
+        b.len += (int)k;
+        off += k;
+        st = b.feed(&req);
+    }
+    printf("cap=%lld st=%d body=%lld\n", cap, st, req.body.len);
+    req.free();
+    b.free();
+    return st;
+}
+
+void sized(String* r, int n) {
+    r.clear();
+    r.appendf("POST / HTTP/1.1\r\nHost: a\r\nContent-Length: %d\r\n\r\n", n);
+    for (i in 0..n) { r.push('x'); }
+}
+
+void chunked(String* r, int n) {
+    r.clear();
+    r.append("POST / HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\n\r\n");
+    r.appendf("%x\r\n", n);
+    for (i in 0..n) { r.push('y'); }
+    r.append("\r\n0\r\n\r\n");
+}
+
+int main() {
+    HttpLimits lim = http_limits();
+    printf("default=%lld\n", lim.max_body);
+    let r: String;  r.init(1 << 23);
+    sized(&r, 2 << 20);
+    feed(&r, lim.max_body);
+    feed(&r, 4 << 20);
+    chunked(&r, 2 << 20);
+    feed(&r, lim.max_body);
+    feed(&r, 4 << 20);
+    sized(&r, 101);
+    feed(&r, 100);
+    sized(&r, 100);
+    feed(&r, 100);
+    r.free();
+    return 0;
+}
