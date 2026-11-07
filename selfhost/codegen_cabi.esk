@@ -1763,6 +1763,129 @@ void cg_emit_exports(Codegen* g, *Program prog) {
     }
 }
 
+// 1 when the text at `p` starts a linkage keyword (the symbol is not external).
+int cg_local_linkage(*char p) {
+    string[10] kws = {"internal ", "private ", "linkonce", "weak", "available_externally ",
+                      "extern_weak ", "common ", "appending ", "external ", "hidden "};
+    int k = 0;
+    while (k < 10) {
+        if (cg_has_prefix((string)p, kws[k]) == 1) {
+            return 1;
+        }
+        k = k + 1;
+    }
+    return 0;
+}
+
+// The name after `@` at `p` (quoted or not) is one of `names`.
+int cg_sym_in(*char p, List<string>* names) {
+    int64 n = 0;
+    *char s = p;
+    if (p[0] == '"') {
+        s = p + 1;
+        while (s[n] != 0 && s[n] != '"') {
+            n = n + 1;
+        }
+    } else {
+        while (cg_ir_ident_ch((int)s[n]) == 1) {
+            n = n + 1;
+        }
+    }
+    int i = 0;
+    while (i < List_len<string>(names)) {
+        string e = List_get<string>(names, i);
+        if ((int64)cg_strlen(e) == n && memcmp((*void)s, (*void)e, (size_t)n) == 0) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// CodeGen::hideNonExports over the IR text in `s`: each external definition (a
+// `define` line or an `@x = global/constant` line) that is not an export gets `hidden`,
+// or on Windows each export gets `dllexport` instead.
+void cg_hide_text(Codegen* g, String* s, List<string>* exports) {
+    *char src = (*char)String_cstr(s);
+    const int64 n = String_len(s);
+    let out: String;
+    String_init(&out, n + 1024);
+    int64 i = 0;
+    while (i < n) {
+        int64 e = i;
+        while (e < n && src[e] != '\n') {
+            e = e + 1;
+        }
+        int64 ins = -1;
+        *char name = null;
+        if (cg_has_prefix((string)(src + i), "define ") == 1 && cg_local_linkage(src + i + 7) == 0) {
+            ins = i + 7;
+            int64 j = ins;
+            while (j < e && src[j] != '@') {
+                j = j + 1;
+            }
+            name = src + j + 1;
+        } else if (src[i] == '@') {
+            int64 j = i + 1;
+            if (src[j] == '"') {
+                j = j + 1;
+                while (j < e && src[j] != '"') {
+                    j = j + 1;
+                }
+                j = j + 1;
+            } else {
+                while (j < e && cg_ir_ident_ch((int)src[j]) == 1) {
+                    j = j + 1;
+                }
+            }
+            if (j + 3 <= e && src[j] == ' ' && src[j + 1] == '=' && src[j + 2] == ' '
+                && cg_local_linkage(src + j + 3) == 0
+                && cg_has_prefix((string)(src + i + 1), "llvm.") == 0) {
+                ins = j + 3;
+                name = src + i + 1;
+            }
+        }
+        if (ins >= 0) {
+            const int isexp = cg_sym_in(name, exports);
+            String_append_bytes(&out, src + i, ins - i);
+            if (g.wintgt == 1) {
+                if (isexp == 1) {
+                    String_append(&out, "dllexport ");
+                }
+            } else if (isexp == 0) {
+                String_append(&out, "hidden ");
+            }
+            String_append_bytes(&out, src + ins, e - ins);
+        } else {
+            String_append_bytes(&out, src + i, e - i);
+        }
+        if (e < n) {
+            String_append(&out, "\n");
+        }
+        i = e + 1;
+    }
+    String_free(s);
+    *s = out;
+}
+
+void cg_hide_non_exports(Codegen* g, *Program prog) {
+    List<string> exports;
+    List_init<string>(&exports, 4);
+    int i = 0;
+    while (i < List_len<*DeclNode>(&prog.decls)) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        i = i + 1;
+        if (d.kind == DK_FUNCTION && d.is_export == 1 && d.body != null) {
+            List_push<string>(&exports, d.name);
+        }
+    }
+    if (List_len<string>(&exports) > 0) {
+        cg_hide_text(g, &g.out, &exports);
+        cg_hide_text(g, &g.globals, &exports);
+    }
+    List_free<string>(&exports);
+}
+
 // An enum is an ADT (tagged union) when some variant carries a payload.
 int cg_enum_is_adt(*DeclNode d) {
     int j = 0;
@@ -3362,5 +3485,8 @@ void cg_program(Codegen* g, *Program prog) {
     cg_align_packed(g);
     if (g.strict_alias == 1) {
         cg_tbaa(g);
+    }
+    if (g.shared == 1) {
+        cg_hide_non_exports(g, prog);
     }
 }

@@ -228,6 +228,7 @@ struct Codegen {
     int uses_heap_env;       // a closure heap-allocated its env → ensure malloc is declared
     int safe;                // --safe[=LIST]: run-time checks, 1 bounds | 2 overflow | 4 null
     int freestanding;        // --freestanding: closure envs use esk_alloc/esk_free, not malloc/free
+    int shared;              // a .so/.dylib/.dll output: with exports, only they are visible (cg_hide_non_exports)
     int fp_contract;         // -ffp-contract=fast: fadd/fsub/fmul carry `contract` (C++ fpContract)
     int strict_alias;        // -fstrict-aliasing: scalar !tbaa on typed accesses (cg_tbaa; C++ strictAliasing)
     int no_split;            // folding a byte image: arrays keep their `[N x T]` constant form

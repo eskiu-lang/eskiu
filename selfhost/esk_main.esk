@@ -1971,6 +1971,10 @@ int esk_main(int argc, string* argv) {
     cg_set_target(&g, triple);         // the C ABI (and pointer size) follow --target
     g.safe = safe;                     // --safe[=LIST]: the run-time checks to emit
     g.freestanding = freestanding;     // closure envs on esk_alloc/esk_free
+    if (outfile != null && runmode == 0
+        && (str_ends(outfile, ".so") == 1 || str_ends(outfile, ".dylib") == 1 || str_ends(outfile, ".dll") == 1)) {
+        g.shared = 1;                  // only the exports are visible (cg_hide_non_exports)
+    }
     g.fp_contract = fp_contract;       // -ffp-contract=fast
     g.strict_alias = strict_alias;     // -fstrict-aliasing
     if (eir_csrc == null) {
