@@ -607,6 +607,25 @@ void CodeGen::emitExportEntries() {
     }
 }
 
+// A shared library that exports functions offers only those: every other definition
+// with external linkage gets hidden visibility (ELF, Mach-O), or on COFF the exports are
+// marked dllexport, which stops the linker exporting every symbol.
+void CodeGen::hideNonExports(const llvm::Triple& triple) {
+    std::set<std::string> exported(exportedFns.begin(), exportedFns.end());
+    auto apply = [&](llvm::GlobalValue& gv) {
+        if (gv.isDeclaration() || gv.hasLocalLinkage() || gv.hasAppendingLinkage()) return;
+        if (gv.getName().starts_with("llvm.")) return;
+        bool isExport = exported.count(gv.getName().str()) > 0;
+        if (triple.isOSBinFormatCOFF()) {
+            if (isExport) gv.setDLLStorageClass(llvm::GlobalValue::DLLExportStorageClass);
+        } else if (!isExport) {
+            gv.setVisibility(llvm::GlobalValue::HiddenVisibility);
+        }
+    };
+    for (llvm::Function& fn : *module) apply(fn);
+    for (llvm::GlobalVariable& gv : module->globals()) apply(gv);
+}
+
 // C calls an Eskiu function through a raw pointer (`(*void)f`): the thunk takes the
 // lowered C signature, rebuilds the Eskiu-level values and calls `target` with the
 // Eskiu convention (first-class aggregates, hidden result pointer for a large struct),

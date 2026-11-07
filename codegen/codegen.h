@@ -64,6 +64,9 @@ public:
     // --freestanding: no libc, so the optimizer may not introduce calls to memset,
     // memcpy and the like (clang -ffreestanding).
     bool freestanding = false;
+    // A shared library (.so, .dylib, .dll) with `export` functions: only those are
+    // visible to its users (hideNonExports).
+    bool sharedLibrary = false;
     // Safe mode (--safe[=LIST]): the run-time checks to insert, a set of the Safe*
     // bits (array/slice bounds, signed + - * overflow, null dereference). Off by
     // default, so release builds carry no overhead. A violation calls @llvm.trap.
@@ -516,6 +519,7 @@ private:
     // `export` functions, in declaration order; emitExportEntries gives each its C entry.
     std::vector<std::string> exportedFns;
     void emitExportEntries();
+    void hideNonExports(const llvm::Triple& triple);
     llvm::Attribute::AttrKind cabiExtAttr(const std::string& eskiuType, llvm::Type* llty) const;
     // An `extern` parameter of fn type is a C function pointer (a bare `ptr`), per
     // extern: which parameters are. Functions the program defines are never lowered.

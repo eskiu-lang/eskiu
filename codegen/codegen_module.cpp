@@ -442,6 +442,7 @@ llvm::Module* CodeGen::generateCode(std::shared_ptr<Program> program) {
     program->accept(this);
     emitExportEntries();
     emitUncaughtReporter();
+    if (sharedLibrary && !exportedFns.empty()) hideNonExports(triple);
     alignPackedAccesses(*module);
     if (strictAliasing) addTypeBasedAliasInfo(*module);
     if (triple.isWasm()) passLargeAggregatesByPointer(*module);

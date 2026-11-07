@@ -1020,6 +1020,10 @@ static int compilerMain(int argc, char** argv) {
             if (!TargetFeatures.empty()) codegen.targetFeatures = std::string(TargetFeatures);
             if (!RelocModel.empty()) codegen.relocModel = std::string(RelocModel);
             codegen.freestanding = Freestanding;
+            {
+                std::string o = std::string(OutputFilename);
+                codegen.sharedLibrary = !g_runMode && (endsWith(o, ".so") || endsWith(o, ".dylib") || endsWith(o, ".dll"));
+            }
             codegen.safeChecks = safeChecks;
             codegen.asan = Asan;
             codegen.ubsan = Ubsan;
