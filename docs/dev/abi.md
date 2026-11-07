@@ -284,6 +284,14 @@ handed to C as a callback gets (`__cabi_NAME`: C++ `emitExportEntries` over
 callers keep calling the body. `tests/selfhost/cabi_parity.sh` compares the entries' lowered
 signatures between the two compilers on every target.
 
+In a shared library output (`.so`, `.dylib`, `.dll`) that has exported functions, every
+other definition with external linkage is hidden: hidden visibility on ELF and Mach-O, and
+on Windows the exports are `dllexport`, which stops the linker exporting every symbol (C++
+`CodeGen::hideNonExports`, run after `emitExportEntries` when the driver sets
+`sharedLibrary`; self-host `cg_hide_non_exports` over the IR text when `esk_main` sets
+`g.shared`). `run.sh` (`export/shared-library`) and `tests/windows/run.sh` (`export_dll`)
+check the library's symbol table and run a C program against it.
+
 `--emit-header FILE` writes the C declarations of the exported functions (C++
 `TypeChecker::cHeader` in `sema/c_header.cpp`, self-host `sema_c_header` in
 `selfhost/sema_header.esk`, byte for byte). The header uses `<stdint.h>` integer types,

@@ -13,6 +13,9 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 - `HttpLimits.max_body` sets the largest request body the HTTP/1.1 and HTTP/2 servers
   accept (default `HTTP_SERVE_MAX_BODY`, 1 MiB; a body past it is answered 413), so a
   server taking uploads no longer needs its own copy of the stdlib.
+- A shared library (`.so`, `.dylib`, `.dll`) with `export` functions now offers only those:
+  the rest of the program and the standard library it uses are hidden, with no linker
+  version script or `.def` file.
 - `log_set_rotation(max_bytes, keep)` in `<log>` rotates the log file by size, keeping
   `keep` old files (`app.log.1` the newest).
 - `export` before a function definition makes it a C entry point: C, Rust or any language
