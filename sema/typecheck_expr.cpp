@@ -925,6 +925,14 @@ void TypeChecker::visit(CallExpr* node) {
             expressionTypes[node] = t;
             return;
         }
+        // `src_file()` / `src_line()` / `src_col()`: the position of a call, so only a
+        // parameter's default value (paramDefaultsOf) can use one.
+        if (callSiteBuiltin(node) && lookupSymbol(bid->name).empty()) {
+            errorAt(bid, "the call-site value '" + bid->name + "()' is only allowed as a parameter's default value, "
+                          "where it gives the position of each call");
+            expressionTypes[node] = bid->name == "src_file" ? "string" : "int";
+            return;
+        }
         // `exception_text()`: inside a `catch` block, yields a string describing the caught
         // exception (as the uncaught reporter prints it).
         if (bid->name == "exception_text" && lookupSymbol("exception_text").empty() &&
@@ -1580,8 +1588,23 @@ void TypeChecker::checkVariadicArg(Expr* call, Expr* arg, size_t i) {
 // integer constant expression over literals, enum members and `const` globals (folded in
 // the global scope, so a caller's locals never rebind it), or a struct literal whose
 // values are all of these (`V3 up = V3{0.0, 1.0, 0.0}`). Null when it is none of them.
+namespace {
+bool isCallSiteName(const std::string& n) { return n == "src_file" || n == "src_line" || n == "src_col"; }
+}  // namespace
+
+bool TypeChecker::callSiteBuiltin(const Expr* e) const {
+    auto* c = dynamic_cast<const CallExpr*>(e);
+    auto* id = c ? dynamic_cast<const IdentExpr*>(c->callee.get()) : nullptr;
+    if (!id || !c->args.empty() || !isCallSiteName(id->name)) return false;
+    if (functionSignatures.count(id->name) || funcTemplateDecls.count(id->name)) return false;
+    return scopes.empty() || !scopes[0].count(id->name);
+}
+
 ExprPtr TypeChecker::foldParamDefault(Expr* def) {
     if (auto* l = dynamic_cast<LiteralExpr*>(def)) return std::make_shared<LiteralExpr>(l->kind, l->value);
+    // `int line = src_line()`: kept as is, it becomes the call's line at each call.
+    if (callSiteBuiltin(def))
+        return std::make_shared<CallExpr>(std::make_shared<IdentExpr>(static_cast<IdentExpr*>(static_cast<CallExpr*>(def)->callee.get())->name));
     auto* u = dynamic_cast<UnaryExpr*>(def);
     auto* ul = u && u->op == "-" ? dynamic_cast<LiteralExpr*>(u->operand.get()) : nullptr;
     if (ul && ul->kind == LiteralExpr::Kind::FLOAT) return std::make_shared<LiteralExpr>(ul->kind, "-" + ul->value);
@@ -1608,19 +1631,31 @@ ExprPtr TypeChecker::foldParamDefault(Expr* def) {
 }
 
 namespace {
-// A fresh copy of a folded default (a literal, or a struct literal of them) at a call.
-ExprPtr cloneParamDefault(const Expr* d, int line, int col) {
+// The position a call reports to `src_line()` / `src_col()`: the called name (`f` in
+// `f(x)` and in `x.f()`), or the call's own position for `f<T>(x)`.
+struct CallSite {
+    std::string file;
+    int line = 0, col = 0;
+};
+
+// A fresh copy of a folded default (a literal, or a struct literal of them) at a call;
+// a `src_file()` / `src_line()` / `src_col()` in it becomes `site`.
+ExprPtr cloneParamDefault(const Expr* d, int line, int col, const CallSite& site) {
     ExprPtr out;
     if (auto* l = dynamic_cast<const LiteralExpr*>(d)) {
         out = std::make_shared<LiteralExpr>(l->kind, l->value);
+    } else if (auto* c = dynamic_cast<const CallExpr*>(d)) {
+        const std::string& n = static_cast<const IdentExpr*>(c->callee.get())->name;
+        if (n == "src_file") out = std::make_shared<LiteralExpr>(LiteralExpr::Kind::STRING, site.file);
+        else out = std::make_shared<LiteralExpr>(LiteralExpr::Kind::INT, std::to_string(n == "src_line" ? site.line : site.col));
     } else if (auto* si = dynamic_cast<const StructInitExpr*>(d)) {
         std::vector<std::pair<std::string, ExprPtr>> fields;
-        for (const auto& f : si->fieldInits) fields.emplace_back(f.first, cloneParamDefault(f.second.get(), line, col));
+        for (const auto& f : si->fieldInits) fields.emplace_back(f.first, cloneParamDefault(f.second.get(), line, col, site));
         out = std::make_shared<StructInitExpr>(si->structName, std::move(fields));
     }
-    if (out) {
-        out->line = line;
-        out->col = col;
+    if (out) {                         // line 0: each node keeps its own position
+        out->line = line > 0 ? line : d->line;
+        out->col = line > 0 ? col : d->col;
     }
     return out;
 }
@@ -1694,8 +1729,9 @@ const std::vector<ExprPtr>& TypeChecker::paramDefaultsOf(const std::string& fn) 
             continue;
         }
         if (fd->typeParams.empty()) {   // its type is checked where it is declared
-            lit->accept(this);
-            std::string e = assignabilityError(fd->params[i].first, getExpressionType(lit.get()), lit.get());
+            ExprPtr probe = cloneParamDefault(lit.get(), 0, 0, CallSite{diagFile(), def->line, def->col});
+            probe->accept(this);
+            std::string e = assignabilityError(fd->params[i].first, getExpressionType(probe.get()), probe.get());
             if (!e.empty()) errorAt(def, "default value of parameter '" + pname + "': " + e);
         }
         out.push_back(lit);
@@ -1727,7 +1763,13 @@ void TypeChecker::appendDefaultArgs(std::vector<ExprPtr>& args, size_t given, co
     if (given >= defs.size()) return;
     for (size_t i = given; i < defs.size(); ++i)
         if (!defs[i]) return;
-    for (size_t i = given; i < defs.size(); ++i) args.push_back(cloneParamDefault(defs[i].get(), at->line, at->col));
+    CallSite site{diagFile(), at->line, at->col};
+    if (auto* c = dynamic_cast<const CallExpr*>(at); c && c->callee && c->callee->line > 0) {
+        auto* m = dynamic_cast<const MemberExpr*>(c->callee.get());
+        site.line = m && m->memberLine > 0 ? m->memberLine : c->callee->line;
+        site.col = m && m->memberLine > 0 ? m->memberCol : c->callee->col;
+    }
+    for (size_t i = given; i < defs.size(); ++i) args.push_back(cloneParamDefault(defs[i].get(), at->line, at->col, site));
 }
 
 void TypeChecker::checkCallArgs(CallExpr* node, const std::string& what,

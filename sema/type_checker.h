@@ -173,6 +173,9 @@ public:
     bool globalLookupOnly = false;
     const std::vector<ExprPtr>& paramDefaultsOf(const std::string& fn);
     ExprPtr foldParamDefault(Expr* def);
+    // `src_file()`, `src_line()`, `src_col()` not hidden by a program's own function or
+    // global of that name: the call site's position, as a parameter's default value.
+    bool callSiteBuiltin(const Expr* e) const;
     void fillDefaultArgs(CallExpr* node, const std::string& method);
     void appendDefaultArgs(std::vector<ExprPtr>& args, size_t given, const std::string& fn, const Expr* at);
     // Struct field definitions, keyed "Struct.field".
