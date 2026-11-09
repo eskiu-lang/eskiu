@@ -973,8 +973,9 @@ export Pair scale(Pair p, double k) { return Pair{x: p.x * k, y: p.y * k}; }
 export int add(int a, int b) { return a + b; }
 ```
 
-`eskiuc lib.esk -o liblib.a --emit-header lib.h` builds a static library and writes the C
-declarations of its exported functions and of the types they reach, so a C program can
+`eskiuc lib.esk -o liblib.a` builds a static library and `eskiuc lib.esk --emit-header lib.h`
+writes the C declarations of its exported functions and of the types they reach (with
+`--emit-header` the compiler writes the header and builds nothing else), so a C program can
 `#include "lib.h"` and link `liblib.a` (see [abi.md](../dev/abi.md#exported-functions)).
 A shared library (`-o liblib.so`, `.dylib` or `.dll`) with exported functions offers only
 those: every other symbol of the program and of the standard library it uses stays inside

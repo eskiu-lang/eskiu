@@ -34,7 +34,8 @@ floating-point and aliasing flags, and faster `<regex>` and `<json>`.
   ```
 
   ```bash
-  eskiuc lib.esk -o liblib.a --emit-header lib.h
+  eskiuc lib.esk -o liblib.a
+  eskiuc lib.esk --emit-header lib.h
   cc main.c liblib.a -o main        # main.c does #include "lib.h"
   ```
 
