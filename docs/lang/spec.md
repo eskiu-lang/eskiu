@@ -938,6 +938,28 @@ connect("example.com", 8080);      // verbose false
 
 Every parameter after one with a default needs a default too, and a variadic function takes none. A default is a literal (`"none"`, `'x'`, `true`, `null`, `-1.5`) an integer constant expression over literals, enum members and top-level `const` integers (`BASE + 43`), or a struct literal whose values are any of these, nested struct literals included (`V3 up = V3{0.0, 1.0, 0.0}`, `Seg s = Seg{a: V3{}, n: N * 2}`); fields the literal leaves out take the struct's field defaults, and each call gets its own copy. It is folded and checked against the parameter's type where the function is declared, so a local of the caller with the same name does not change it. Defaults may be written on the prototype or on the definition, not on both. They apply to direct calls, to generic functions, `async` functions and inline methods of non-generic structs (`s.add()`), and to a top-level `T_method(self, ...)` called with dot syntax, a generic one included (`c.get()` on a `Cell<int>`). Calls through a function value (`fn(...)->R`) pass every argument. `extern` and `intrinsic` prototypes, interface methods and lambdas take no defaults.
 
+A default may also be `src_file()`, `src_line()` or `src_col()`, alone or as a value of a
+struct-literal default. Each is the position of the call that leaves the argument out:
+the file that call is in (a `string`, spelled as diagnostics spell it), and the line and
+column (`int`, 1-based) of the called name (`f` in `f(x)` and in `x.f()`, the name in
+`f<T>(x)`). A library can so record where each call of it comes from:
+
+```eskiu
+struct SourceLoc { string file; int line; int col; }
+
+void Text(string s, SourceLoc at = SourceLoc{src_file(), src_line(), src_col()}) { ... }
+void log_at(string msg, string file = src_file(), int line = src_line()) { ... }
+
+Text("Hello");        // at is {"app.esk", 7, 5}: this line, where `Text` starts
+log_at("ready");      // file "app.esk", line 8
+```
+
+The value is folded to a constant at each call, so it costs a constant argument where it
+is used and nothing elsewhere. A function that passes the position on takes it as a
+parameter of its own (`void Button(string s, int line = src_line()) { Text(s, line); }`).
+Anywhere else than a default these names are an error: they have no call to report. They
+are not reserved words: a function or global variable of the same name hides them.
+
 ### 6.1.4 export
 
 `export` before a function definition makes it a C entry point: C (or Rust, or any language
@@ -3543,6 +3565,7 @@ Sections are separated by `:`. Trailing sections may be omitted if empty.
 | `eskiuc file.esk -Wno-format -o prog` | Turn off one of the default-on warnings (see Diagnostics): `-Wno-string-compare`, `-Wno-format`, `-Wno-address-of-packed-member`, `-Wno-dangling-pointer`, `-Wno-frame-larger-than`, `-Wno-unused-result`, `-Wno-await-holding-lock`, `-Wno-deprecated` |
 | `eskiuc file.esk -Werror -o prog` | Report every warning (default-on, `-Wall`, `-Wextra`, deprecated) as an error: the build fails |
 | `eskiuc file.esk -w -o prog` | Print no warnings at all |
+| `eskiuc file.esk --diagnostics=json -o prog` | Print errors and warnings on stderr as JSON lines, one object per diagnostic with a stable `id` (see Error Reporting); `--diagnostics=text` is the default |
 | `eskiuc file.esk -O2 -o prog` | Optimize: run the LLVM middle-end (`-O1`/`-O2`/`-O3`). `-O0` (default) emits naive IR straight to the backend. A level above 3 is rejected |
 | `eskiuc file.esk -o prog -lfoo` | Link, passing library flags through to the linker |
 | `eskiuc file.esk -o prog --link-arg=ARG` | Pass an extra argument to the linker (repeatable) |
@@ -3662,6 +3685,20 @@ A few warnings are on by default, because the code they flag is almost always a 
 | `-Wawait-holding-lock` | In an `async` function, an `await` while a `<threading>` `Mutex` is locked: the task parks holding the lock, and another task on the same thread that locks it deadlocks. The rule is per block: a statement that is a lock call (`Mutex_lock(&m)`, `Mutex_lock(p)`, or `m.lock()` on a `Mutex` / `*Mutex`) on a place spelled with identifiers and fields (`m`, `self.m`; `&` is dropped), followed in the same block by a statement that contains an `await` before a statement that is the unlock call on the same place. A `defer` statement does not unlock (its body runs at the end of the block) and its body is not searched. The warning is at the earliest `await` of that statement, once per lock. An unlock inside a nested statement does not end the region, and other lock shapes are not tracked |
 
 Every mode, including the `--test-*` modes, exits with a non-zero status when it reports an error.
+
+`--diagnostics=json` prints the same diagnostics on stderr as JSON lines, one object per
+diagnostic, for editors and build tools:
+
+```
+{"severity":"error","id":"undefined-variable","message":"undefined variable 'cuont'","file":"app.esk","line":12,"col":20,"end_line":12,"end_col":25,"hints":["did you mean 'count'?"],"notes":[]}
+```
+
+`severity` is `error`, `warning` or `note`; `id` names the kind of diagnostic and stays
+the same across messages of that kind (`undefined-variable` for every undefined variable);
+`end_line`/`end_col` (just past the token at the position) appear when the position is on
+an identifier, a number or a string literal; a warning's flag is in `option` and a "did
+you mean" suggestion in `hints`. The members, the id rule and the list of ids are in
+[docs/dev/diagnostics.md](../dev/diagnostics.md).
 
 Reading a scalar local (a number, `bool`, `char`, pointer, `string` or fn value) declared without an initializer before any assignment to it is an error ("use of uninitialized variable"), although such a local holds zero (11.1): a read nothing assigns is usually a mistake. It applies when the read is in the function's straight-line prefix, where no path assigns it. Elsewhere a read that some path reaches without an assignment is not an error, since the program's logic may guarantee it (as in C), but `-Wall` reports it as `variable 'x' may be used uninitialized`. The check follows every path through `if`/`else`, loops (a loop body may run zero times; the loop exits when its condition fails or at a `break`), `switch` fall-through, `match` arms, `try`/`catch`/`finally` (a handler or the `finally` may run before the body assigned anything), `defer` bodies (at each exit that runs them), early `return`/`break`/`continue`, and a lambda, which reads the variables it captures when it is created. Taking the address (`&x`) counts as an assignment, and `sizeof(x)` is not a read. Only whole-variable reads of scalar locals are tracked: a struct, union, array, slice or interface local set field by field or element by element never warns. `static` locals start at zero and are never reported, and the body of an `async` function is not checked.
 

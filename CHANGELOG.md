@@ -10,6 +10,16 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 ## [Unreleased]
 
 ### Added
+- `--diagnostics=json` prints errors and warnings on stderr as JSON lines, one object per
+  diagnostic: severity, a stable `id` per kind (`undefined-variable`), message, file,
+  line, column, the range of the token there, the warning's flag and "did you mean"
+  hints as their own fields, and the notes that go with it. It carries the same
+  diagnostics as the text form, which stays the default. Both compilers print the same
+  JSON; the format and the id list are in docs/dev/diagnostics.md.
+- `src_file()`, `src_line()` and `src_col()` as a parameter's default value give the
+  position of each call that leaves the argument out, so a library can record where it
+  is called from (`void Text(string s, int line = src_line())`). Each is a constant at
+  the call, with no cost in code that does not use them.
 - `HttpLimits.max_body` sets the largest request body the HTTP/1.1 and HTTP/2 servers
   accept (default `HTTP_SERVE_MAX_BODY`, 1 MiB; a body past it is answered 413), so a
   server taking uploads no longer needs its own copy of the stdlib.

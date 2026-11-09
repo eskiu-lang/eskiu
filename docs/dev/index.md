@@ -35,6 +35,7 @@ Each test mode exits 0 on success and prints a human-readable dump to stdout. A 
 | Document            | What it covers                                                                                 |
 | ------------------- | ---------------------------------------------------------------------------------------------- |
 | [`architecture.md`](architecture.md)   | Pipeline stages, AST node hierarchy, visitor pattern, type mappings (Eskiu → LLVM)             |
+| [`diagnostics.md`](diagnostics.md) | `--diagnostics=json`: the JSON lines, the diagnostic ids and how both compilers produce them |
 | [`abi.md`](abi.md)            | Type lowering, calling convention (sret, varargs), fat pointers, name mangling: the C-ABI contract |
 | [`roadmap.md`](roadmap.md)         | Where the project stands, release history, and the road to 1.0 |
 | [`self-hosting.md`](self-hosting.md) | How the compiler is written in Eskiu (`selfhost/`) and how parity/bootstrap keep it honest |

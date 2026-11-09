@@ -97,6 +97,7 @@ postfix     f() a[i] a.b ++ -- ?
 | `eskiuc doctor` | What this machine has for native, package and cross builds, and what is missing |
 | `eskiuc fmt [--check] [--width N] file.esk` | Format source in place; `--width` also breaks code lines longer than N |
 | `-Wall` / `-Wextra`         | Lint warnings / signed-unsigned comparison warnings |
+| `--diagnostics=json`        | Errors and warnings as JSON lines on stderr, with stable ids |
 | `--asan` / `--ubsan`        | AddressSanitizer / trapping bounds checks       |
 | `--safe[=LIST]`             | Run-time checks that trap: `bounds`, `overflow`, `null` (all without a list) |
 | `--target TRIPLE`           | Cross-compile for the given target triple        |

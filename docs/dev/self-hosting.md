@@ -48,6 +48,7 @@ tests/selfhost/lex_parity.sh   --full   # lexer
 tests/selfhost/pp_parity.sh    --full   # preprocessor
 tests/selfhost/parse_parity.sh --full   # parser
 tests/selfhost/tc_parity.sh             # type checker, valid and invalid programs
+tests/selfhost/diag_parity.sh           # --diagnostics=json, byte for byte
 tests/selfhost/cg_parity.sh             # code generator
 tests/selfhost/corpus_parity.sh         # every runnable test through eskiuc-esk
 tests/selfhost/driver_parity.sh         # building with -o
