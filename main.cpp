@@ -392,6 +392,17 @@ static int testTypeChecker(const std::string& filename) {
     }
 }
 
+// Does the program have an async function for the async lowering to rewrite? The
+// lowering replaces each one with ordinary code (a frame struct, a resume function, a
+// constructor) that the type checker must check again before codegen reads its types.
+// Without one the lowering leaves the program as it was, so the first check's results
+// stand and the second run is skipped (docs/dev/compile-speed.md).
+static bool programHasAsync(const Program* program) {
+    for (const auto& decl : program->declarations)
+        if (auto* fd = dynamic_cast<const FunctionDecl*>(decl.get()); fd && fd->isAsync) return true;
+    return false;
+}
+
 // Test codegen: tokenize, parse, generate LLVM IR, and print it
 static int testCodegen(const std::string& filename) {
     auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding);
@@ -412,17 +423,24 @@ static int testCodegen(const std::string& filename) {
             if (!g_jsonDiagnostics) std::cerr << "Type checking failed!" << std::endl;
             return 1;
         }
-        AsyncTransform(&tc.expressionTypeMap(), &tc.instanceArgsMap(), &tc.instanceExprTypeMap()).run(program.get());
         // Single resolver: re-resolve the post-transform AST; codegen consumes it.
-        TypeChecker postTc; postTc.targetTriple = std::string(TargetTriple); postTc.warnDeprecated = false; postTc.warnDefaults = false; postTc.sourceFile = filename;
-        if (!postTc.check(program.get())) {
-            std::cerr << "error: internal: the async lowering produced a program that does not type-check" << std::endl;
-            return 1;
+        std::unique_ptr<TypeChecker> postOwn;
+        TypeChecker* post = &tc;
+        if (programHasAsync(program.get())) {
+            AsyncTransform(&tc.expressionTypeMap(), &tc.instanceArgsMap(), &tc.instanceExprTypeMap()).run(program.get());
+            postOwn = std::make_unique<TypeChecker>();
+            TypeChecker& postTc = *postOwn;
+            postTc.targetTriple = std::string(TargetTriple); postTc.warnDeprecated = false; postTc.warnDefaults = false; postTc.sourceFile = filename;
+            if (!postTc.check(program.get())) {
+                std::cerr << "error: internal: the async lowering produced a program that does not type-check" << std::endl;
+                return 1;
+            }
+            post = &postTc;
         }
         // Codegen
         CodeGen codegen;
-        codegen.resolvedExprTypes = &postTc.expressionTypeMap();
-        codegen.semaInstanceArgs = &postTc.instanceArgsMap();
+        codegen.resolvedExprTypes = &post->expressionTypeMap();
+        codegen.semaInstanceArgs = &post->instanceArgsMap();
         if (!TargetTriple.empty()) codegen.targetTriple = std::string(TargetTriple);
         if (!TargetCPU.empty()) codegen.targetCPU = std::string(TargetCPU);
         if (!TargetFeatures.empty()) codegen.targetFeatures = std::string(TargetFeatures);
@@ -1014,24 +1032,33 @@ static int compilerMain(int argc, char** argv) {
         phaseMark("typecheck");
         if (!EmitHeader.empty()) return writeCHeader(typeChecker, program.get());
 
-        AsyncTransform(&typeChecker.expressionTypeMap(), &typeChecker.instanceArgsMap(), &typeChecker.instanceExprTypeMap()).run(program.get());
-        phaseMark("async-lower");
-        // Single resolver: re-resolve the post-transform AST; codegen consumes it.
-        TypeChecker postTc; postTc.targetTriple = std::string(TargetTriple); postTc.warnDeprecated = false; postTc.warnDefaults = false; postTc.sourceFile = std::string(InputFilename);
-        postTc.recordInstanceTypes = useEir;
-        if (!postTc.check(program.get())) {
-            std::cerr << "error: internal: the async lowering produced a program that does not type-check" << std::endl;
-            return 1;
+        // Single resolver: re-resolve the post-transform AST; codegen consumes it. The EIR
+        // builder needs the per-instance records only a checker with recordInstanceTypes
+        // keeps, so it always gets a second run.
+        std::unique_ptr<TypeChecker> postOwn;
+        TypeChecker* post = &typeChecker;
+        if (useEir || programHasAsync(program.get())) {
+            AsyncTransform(&typeChecker.expressionTypeMap(), &typeChecker.instanceArgsMap(), &typeChecker.instanceExprTypeMap()).run(program.get());
+            phaseMark("async-lower");
+            postOwn = std::make_unique<TypeChecker>();
+            TypeChecker& postTc = *postOwn;
+            postTc.targetTriple = std::string(TargetTriple); postTc.warnDeprecated = false; postTc.warnDefaults = false; postTc.sourceFile = std::string(InputFilename);
+            postTc.recordInstanceTypes = useEir;
+            if (!postTc.check(program.get())) {
+                std::cerr << "error: internal: the async lowering produced a program that does not type-check" << std::endl;
+                return 1;
+            }
+            post = &postTc;
+            phaseMark("re-check");
         }
-        phaseMark("re-check");
         CodeGen codegen;
         std::unique_ptr<eir::Module> eirModule;
         if (useEir) {
-            eirModule = lowerToEir(program.get(), postTc);
+            eirModule = lowerToEir(program.get(), *post);
             if (!eirModule) return 1;
         } else {
-            codegen.resolvedExprTypes = &postTc.expressionTypeMap();
-            codegen.semaInstanceArgs = &postTc.instanceArgsMap();
+            codegen.resolvedExprTypes = &post->expressionTypeMap();
+            codegen.semaInstanceArgs = &post->instanceArgsMap();
             if (!TargetTriple.empty()) codegen.targetTriple = std::string(TargetTriple);
             if (!TargetCPU.empty()) codegen.targetCPU = std::string(TargetCPU);
             if (!TargetFeatures.empty()) codegen.targetFeatures = std::string(TargetFeatures);
