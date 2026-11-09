@@ -1,0 +1,6 @@
+// DIAG-FLAGS:
+// A parse error: located, with no range when the token is punctuation.
+int main() {
+    int x = 1 +;
+    return x;
+}

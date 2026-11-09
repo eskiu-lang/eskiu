@@ -1,0 +1,3 @@
+{"severity":"error","id":"undefined-variable","message":"undefined variable 'cuont'","file":"tests/diag/errors.esk","line":12,"col":20,"end_line":12,"end_col":25,"hints":["did you mean 'count'?"],"notes":[]}
+{"severity":"error","id":"cannot-convert-to","message":"initializing 'n': cannot convert 'string' to 'int'","file":"tests/diag/errors.esk","line":14,"col":9,"end_line":14,"end_col":10,"hints":[],"notes":[]}
+{"severity":"error","id":"argument-type-mismatch","message":"argument 1 type mismatch: expected int, got string (cannot convert 'string' to 'int')","file":"tests/diag/errors.esk","line":15,"col":17,"hints":[],"notes":[]}

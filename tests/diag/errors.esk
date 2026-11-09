@@ -1,0 +1,16 @@
+// DIAG-FLAGS:
+// Errors as JSON lines: an id per kind, the range of the token at the position, the
+// "did you mean" hint as its own field.
+import <io>;
+
+int twice(int x) {
+    return x * 2;
+}
+
+int main() {
+    int count = 3;
+    printf("%d\n", cuont);
+    string s = "a \"quoted\" text";
+    int n = s;
+    return twice("a \"quoted\" text") + n;
+}

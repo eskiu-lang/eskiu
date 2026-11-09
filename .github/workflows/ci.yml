@@ -145,6 +145,11 @@ jobs:
       - name: Sema self-host parity
         run: tests/selfhost/tc_parity.sh
 
+      # --diagnostics=json: both compilers print the same JSON lines over tests/errors,
+      # tests/warnings and tests/diag, and the ids are docs/dev/diagnostic-ids.txt.
+      - name: JSON diagnostics self-host parity
+        run: tests/selfhost/diag_parity.sh
+
       # Editor modes (--hover-at/--definition-at/--complete-at/--symbols): every
       # tests/lsp query gives byte-identical output from both compilers.
       - name: Editor modes self-host parity

@@ -198,6 +198,28 @@ if [[ -d "$here/warnings" ]]; then
     done
 fi
 
+# ---- --diagnostics=json ------------------------------------------------------
+# tests/diag/NAME.esk is built from the repository root with --diagnostics=json and the
+# flags on its `// DIAG-FLAGS:` first line; stderr must match NAME.expected (one JSON
+# object per line, docs/dev/diagnostics.md) and the exit code says whether it had errors.
+echo "Diagnostics as JSON:"
+for esk in "$here"/diag/*.esk; do
+    [[ -e "$esk" ]] || continue
+    name="$(basename "$esk" .esk)"
+    flags="$(head -1 "$esk" | sed -n 's|^// DIAG-FLAGS:[[:space:]]*||p')"
+    (cd "$root" && "$ESKIUC" --diagnostics=json $flags "tests/diag/$name.esk" -o "$work/diag_bin") \
+        >/dev/null 2>"$work/diag_json"; code=$?
+    want_code=0
+    grep -q '^{"severity":"error"' "$here/diag/$name.expected" && want_code=1
+    if ! diff -q "$work/diag_json" "$here/diag/$name.expected" >/dev/null; then
+        bad "diag/$name" "JSON differs: $(diff "$here/diag/$name.expected" "$work/diag_json" | head -3 | tr '\n' ' ')"
+    elif [[ $code -ne $want_code ]]; then
+        bad "diag/$name" "exit $code, expected $want_code"
+    else
+        ok "diag/$name"
+    fi
+done
+
 # ---- single-file test modes ------------------------------------------------
 # --test-lexer/--test-parser/--test-typechecker/--test-codegen must see the same
 # program a real build does (same predefined macros), and exit 0 on success. A

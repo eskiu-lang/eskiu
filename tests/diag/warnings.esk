@@ -1,0 +1,10 @@
+// DIAG-FLAGS: -Wall
+// Warnings as JSON lines: the option that controls one is its own field.
+import <io>;
+
+int main() {
+    int count = 3;
+    int unused = 1;
+    printf("%s\n", count);
+    return 0;
+}

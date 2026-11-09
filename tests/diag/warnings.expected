@@ -1,0 +1,2 @@
+{"severity":"warning","id":"format-expects-string","message":"format '%s' expects a string, but argument 2 has type 'int'","file":"tests/diag/warnings.esk","line":8,"col":11,"option":"-Wformat","hints":[],"notes":[]}
+{"severity":"warning","id":"unused-variable","message":"unused variable 'unused'","file":"tests/diag/warnings.esk","line":7,"col":9,"end_line":7,"end_col":15,"hints":[],"notes":[]}

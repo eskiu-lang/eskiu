@@ -1,0 +1,1 @@
+{"severity":"error","id":"expected-expression","message":"Expected expression, got SEMICOLON","file":"tests/diag/parse.esk","line":4,"col":16,"hints":[],"notes":[]}
