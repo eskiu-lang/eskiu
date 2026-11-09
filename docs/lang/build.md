@@ -142,6 +142,9 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 ```
 
+Without `-DCMAKE_BUILD_TYPE` the build is Release: a compiler built with no optimization
+compiles programs about three times slower.
+
 ### Incremental builds
 
 After changing source files, just re-run the build step; CMake tracks dependencies:

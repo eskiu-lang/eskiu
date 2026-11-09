@@ -4,6 +4,13 @@ project(eskiuc VERSION 0.14.1 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Without a build type CMake compiles with no optimization, and such an eskiuc compiles a
+# program about three times slower than a Release one (docs/dev/compile-speed.md). The
+# plain `cmake -S . -B build` builds Release; -DCMAKE_BUILD_TYPE=Debug still gets a debug build.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
 # -DESKIU_STATIC=ON links LLVM statically (used for release binaries)
 option(ESKIU_STATIC "Link LLVM libraries statically" OFF)
 
