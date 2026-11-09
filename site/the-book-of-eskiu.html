@@ -373,6 +373,7 @@ pre.code-block {
 <a href="#sec-14-2" class="toc-sec">14.2 Calling OpenSSL: a real example</a>
 <a href="#sec-14-3" class="toc-sec">14.3 Linking</a>
 <a href="#sec-14-4" class="toc-sec">14.4 Passing Eskiu functions as C callbacks</a>
+<a href="#sec-14-5" class="toc-sec">14.5 Calling Eskiu from C</a>
 <a href="#chapter-15" class="toc-ch">Chapter 15</a>
 <a href="#sec-15-1" class="toc-sec">15.1 result: errors as values</a>
 <a href="#sec-15-2" class="toc-sec">15.2 list: dynamic arrays</a>
@@ -420,6 +421,8 @@ pre.code-block {
 <a href="#sec-20-3" class="toc-sec">20.3 Memory leak detection</a>
 <a href="#sec-20-4" class="toc-sec">20.4 Inspecting generated IR</a>
 <a href="#sec-20-5" class="toc-sec">20.5 Run-time checks with --safe</a>
+<a href="#sec-20-6" class="toc-sec">20.6 Diagnostics for tools</a>
+<a href="#sec-20-7" class="toc-sec">20.7 Checking the toolchain with eskiuc doctor</a>
 <a href="#chapter-21" class="toc-ch">Chapter 21</a>
 <a href="#sec-21-1" class="toc-sec">21.1 Test functions</a>
 <a href="#sec-21-2" class="toc-sec">21.2 The .esk + .expected pattern</a>
@@ -517,13 +520,13 @@ pre.code-block {
   <div class="toc-entry"><a href="#chapter-11"><strong>Chapter 11: Concurrency</strong> <span class="toc-entry-desc">(Threads, closures, and shared state)</span></a></div>
   <div class="toc-entry"><a href="#chapter-12"><strong>Chapter 12: Operators</strong> <span class="toc-entry-desc">(Arithmetic, bitwise, sizeof, preprocessor)</span></a></div>
   <div class="toc-entry"><a href="#chapter-13"><strong>Chapter 13: Multi-file Programs</strong> <span class="toc-entry-desc">(import, multi-file CLI, and project structure)</span></a></div>
-  <div class="toc-entry"><a href="#chapter-14"><strong>Chapter 14: C Interop</strong> <span class="toc-entry-desc">(Calling any C library from Eskiu)</span></a></div>
+  <div class="toc-entry"><a href="#chapter-14"><strong>Chapter 14: C Interop</strong> <span class="toc-entry-desc">(Calling any C library from Eskiu, and Eskiu from C)</span></a></div>
   <div class="toc-entry"><a href="#chapter-15"><strong>Chapter 15: The Standard Library</strong> <span class="toc-entry-desc">(result, list, string, math, io, mem, fs, net)</span></a></div>
   <div class="toc-entry"><a href="#chapter-16"><strong>Chapter 16: Inline Assembly</strong> <span class="toc-entry-desc">(Talking directly to hardware)</span></a></div>
   <div class="toc-entry"><a href="#chapter-17"><strong>Chapter 17: Cross-compilation</strong> <span class="toc-entry-desc">(Building for ARM, x86-64, Windows, WebAssembly, Android, iOS and bare metal)</span></a></div>
   <div class="toc-entry"><a href="#chapter-18"><strong>Chapter 18: Bare-metal Programming</strong> <span class="toc-entry-desc">(A kernel in Eskiu: no libc, no OS)</span></a></div>
   <div class="toc-entry"><a href="#chapter-19"><strong>Chapter 19: Ownership and Resources</strong> <span class="toc-entry-desc">(Designing safe code with alloc and free)</span></a></div>
-  <div class="toc-entry"><a href="#chapter-20"><strong>Chapter 20: Debugging</strong> <span class="toc-entry-desc">(Segfaults, leaks, and diagnostic strategies)</span></a></div>
+  <div class="toc-entry"><a href="#chapter-20"><strong>Chapter 20: Debugging</strong> <span class="toc-entry-desc">(Segfaults, leaks, JSON diagnostics and eskiuc doctor)</span></a></div>
   <div class="toc-entry"><a href="#chapter-21"><strong>Chapter 21: Testing</strong> <span class="toc-entry-desc">(Assertions, unit tests, and test organisation)</span></a></div>
   <div class="toc-entry"><a href="#chapter-22"><strong>Chapter 22: Common Bugs</strong> <span class="toc-entry-desc">(The mistakes everyone makes and how to avoid them)</span></a></div>
   <div class="toc-entry"><a href="#chapter-23"><strong>Chapter 23: Networking</strong> <span class="toc-entry-desc">(TCP sockets, echo servers, and HTTP in Eskiu)</span></a></div>
@@ -803,6 +806,20 @@ pre.code-block {
  connect(&quot;example.com&quot;);          // example.com:443 0
  connect(&quot;example.com&quot;, 8080);    // example.com:8080 0</pre>
 <p>A default must be a constant: a literal, an integer expression over literals, enum members and <code>const</code> globals, or a struct literal made of those (<code>V3 up = V3{0.0, 1.0, 0.0}</code>). Each call gets its own copy. Once a parameter has a default, every parameter after it needs one too.</p>
+<h3>Where a call comes from: src_file, src_line, src_col</h3>
+<p>Three builtins can stand as a parameter&#x27;s default value: <code>src_file()</code>, <code>src_line()</code> and <code>src_col()</code>. A call that leaves the argument out gets the file name, line or column of that call, so a logging or tracing helper can say where it was called from without the caller writing it:</p>
+<pre class="code-block"> import &lt;io&gt;;
+
+ void trace(string msg, string file = src_file(), int line = src_line(), int col = src_col()) {
+       printf(&quot;%s:%d:%d: %s\n&quot;, file, line, col, msg);
+ }
+
+ int main() {
+       trace(&quot;starting&quot;);     // where.esk:8:5: starting
+       trace(&quot;done&quot;);         // where.esk:9:5: done
+       return 0;
+ }</pre>
+<p>Each value is a constant written into the call, so the feature costs nothing in code that does not use it. The three are allowed only as defaults; a caller that passes the argument decides the value itself.</p>
 <h2 class="section" id="sec-3-4">3.4 Recursion</h2>
 <p>A function can call itself. Useful when a problem is naturally defined in terms of a smaller version of itself:</p>
 <pre class="code-block"> int factorial(int n) {
@@ -1996,6 +2013,39 @@ pre.code-block {
 <p class="output"><em>Output:</em> 1 1 3 4 5</p>
 <p>Only a top-level function (or <code>null</code>) is accepted there. Passing a lambda or a fn-typed variable is a compile error (&quot;is a C function pointer&quot;), because its environment cannot cross into C.</p>
 <p>A callback may take or return a struct by value. C then calls it through a small thunk the compiler generates with the target&#x27;s C calling convention, so the struct arrives the way the C side passed it. The same holds for a <code>va_list</code> parameter, which C error-reporter callbacks often take (<code>void (*)(void* ud, const char* fmt, va_list ap)</code>): the function can pass it to <code>vsnprintf</code> or read it with <code>va_arg&lt;T&gt;</code>. Your own Eskiu calls to the function are unaffected.</p>
+<h2 class="section" id="sec-14-5">14.5 Calling Eskiu from C</h2>
+<p>The other direction works too. Write <code>export</code> before a function definition and it becomes a C entry point under its own name, with the target&#x27;s C calling convention. C, Rust, or any language that can call C can then call it, structs and unions by value included. Eskiu code calls it as any other function.</p>
+<pre class="code-block"> // geom.esk
+ struct Vec2 { double x; double y; }
+
+ export Vec2 vec2_scale(Vec2 v, double k) {
+       return Vec2 { x: v.x * k, y: v.y * k };
+ }
+
+ export int sum_ints(*int xs, int n) {
+       int s = 0;
+       for (i in 0..n) { s += xs[i]; }
+       return s;
+ }</pre>
+<p>An exported function must be a definition with types C can name: numbers, pointers, <code>bool</code>, structs, unions and enums. Generic, <code>async</code> and variadic functions, closures, interfaces and slices are compile errors there. <code>--emit-header FILE</code> writes the C declarations of the exported functions and of the types they reach, and an <code>.a</code> output builds a static library:</p>
+<pre class="code-block"> eskiuc geom.esk --emit-header geom.h      # the C header
+ eskiuc geom.esk -o libgeom.a              # the static library</pre>
+<p>The generated header declares <code>struct Vec2</code> with the same layout and the two prototypes (<code>int</code> becomes <code>int32_t</code>). A C program includes it and links the library:</p>
+<pre class="code-block"> // main.c
+ #include &lt;stdio.h&gt;
+ #include &quot;geom.h&quot;
+
+ int main(void) {
+       struct Vec2 v = vec2_scale((struct Vec2){1.5, 2.0}, 2.0);
+       int xs[] = {1, 2, 3, 4};
+       printf(&quot;%.1f %.1f %d\n&quot;, v.x, v.y, sum_ints(xs, 4));
+       return 0;
+ }</pre>
+<pre class="code-block"> cc main.c -L. -lgeom -o prog
+ ./prog</pre>
+<p class="output"><em>Output:</em> 3.0 4.0 10</p>
+<p>An output ending in <code>.so</code>, <code>.dylib</code> or <code>.dll</code> builds a shared library instead. When the program has <code>export</code> functions, the library offers only those: the rest of the program and the parts of the standard library it uses stay hidden, with no linker version script or <code>.def</code> file. <code>nm -gU libgeom.dylib</code> lists just <code>_sum_ints</code> and <code>_vec2_scale</code>:</p>
+<pre class="code-block"> eskiuc geom.esk -o libgeom.dylib          # libgeom.so on Linux, geom.dll on Windows</pre>
 <div class="chapter-start" id="chapter-15"><span class="chapter-label">Chapter 15</span>
 <h1 class="chapter-title">The Standard Library</h1><hr class="chapter-rule"></div>
 <p>Eskiu&#x27;s standard library ships as 42 plain .esk files with the compiler. There is no magic: they are Eskiu code, readable at lib/eskiu/stdlib/ in your installation. Import each module with an angle-bracket <code>import</code>.</p>
@@ -2852,6 +2902,22 @@ pre.code-block {
  ./prog                     # traps at the first out-of-bounds index</pre>
 <p><code>--safe</code> is off by default, so release builds pay nothing for it. Turn it on during development and testing so silent memory corruption becomes a clean, immediate failure, then ship without it (or keep it on where a trap is preferable to undefined behaviour).</p>
 <p>The same flag also traps on a signed <code>+</code>, <code>-</code> or <code>*</code> of <code>int</code> or <code>int64</code> that overflows (which otherwise wraps) and on dereferencing a null pointer through <code>*p</code>, <code>p.field</code> or <code>p[i]</code>. Unsigned and narrow arithmetic still wraps.</p>
+<h2 class="section" id="sec-20-6">20.6 Diagnostics for tools</h2>
+<p>Errors and warnings print as <code>error: file:line:col: message</code> by default. With <code>--diagnostics=json</code> the compiler prints each one on stderr as a line of JSON instead, which an editor, a CI script or an agent can read without parsing text:</p>
+<pre class="code-block"> eskiuc bad.esk --diagnostics=json -o bad</pre>
+<pre class="code-block"> {&quot;severity&quot;:&quot;error&quot;,&quot;id&quot;:&quot;undefined-variable&quot;,&quot;message&quot;:&quot;undefined variable &#x27;cout&#x27;&quot;,&quot;file&quot;:&quot;bad.esk&quot;,&quot;line&quot;:3,&quot;col&quot;:12,&quot;end_line&quot;:3,&quot;end_col&quot;:16,&quot;hints&quot;:[&quot;did you mean &#x27;count&#x27;?&quot;],&quot;notes&quot;:[]}</pre>
+<p>The <code>id</code> names the kind of diagnostic and stays the same across releases, so a tool can match on it rather than on the message. <code>end_line</code> and <code>end_col</code> give the range of the token at the position, a warning carries the flag that controls it, and the &quot;did you mean&quot; hints and any notes are their own fields. The set of diagnostics is the same as in the text form.</p>
+<h2 class="section" id="sec-20-7">20.7 Checking the toolchain with eskiuc doctor</h2>
+<p>When a program compiles but does not link, or a cross build cannot find its SDK, <code>eskiuc doctor</code> lists what the machine has for each kind of build: the C driver that links programs, git, curl and tar for packages, OpenSSL for HTTPS in <code>&lt;fetch&gt;</code>, SDL3, Emscripten, the Android NDK, the iOS SDK and devkitARM. Each missing tool comes with what to install:</p>
+<pre class="code-block"> eskiuc doctor</pre>
+<pre class="code-block"> Compiler:
+   ok       standard library            /opt/homebrew/lib/eskiu/stdlib
+   ok       C driver (links programs)   /usr/bin/cc: Apple clang version 21.0.0
+
+ Packages and the standard library:
+   ok       git                         git version 2.54.0
+   ok       OpenSSL (https in &lt;fetch&gt;)  /opt/homebrew/opt/openssl@3/lib/libssl.3.dylib
+   ...</pre>
 <div class="chapter-start" id="chapter-21"><span class="chapter-label">Chapter 21</span>
 <h1 class="chapter-title">Testing</h1><hr class="chapter-rule"></div>
 <p>Eskiu has no built-in test framework. The language gives you functions, return values, and <code>printf</code>. That is all you need. The pattern described here is the one used by Eskiu&#x27;s own test suite, which holds nearly two thousand programs (run tests with expected output, and error tests that must be rejected).</p>
@@ -3157,8 +3223,9 @@ pre.code-block {
 <pre class="code-block"> HttpLimits lim = http_limits();     // start from the defaults
  lim.header_ms = 5000;               // 5 s for the request head
  lim.max_open = 256;                 // at most 256 connections at once
+ lim.max_body = 16 * 1024 * 1024;    // accept uploads up to 16 MiB
  http_serve_with(8080, 4, hello, lim);</pre>
-<p>Sizes are bounded as well. An HTTP/1.1 request head over 64 KiB is answered 400 and a body over 1 MiB 413. The parser follows RFC 9112: a chunked body is decoded before the handler sees it, <code>Transfer-Encoding</code> together with <code>Content-Length</code> is 400, a transfer coding other than <code>chunked</code> is 501, and a missing, repeated or malformed <code>Host</code> header (it must be a host with an optional <code>:port</code>) is 400. Both HTTP/1.1 servers read until the request is complete, so a request split across several TCP segments reaches the handler whole. On the way out, <code>HttpResponse_header</code> refuses a value containing a CR or LF (it returns 0 and adds nothing), so a handler that echoes client input cannot be used to inject a header line.</p>
+<p>Sizes are bounded as well. An HTTP/1.1 request head over 64 KiB is answered 400 and a body over 1 MiB 413. The body limit is the <code>max_body</code> field of <code>HttpLimits</code> (default <code>HTTP_SERVE_MAX_BODY</code>, 1 MiB), and it applies to the HTTP/1.1 and HTTP/2 servers alike, so a server that takes uploads raises it there. The parser follows RFC 9112: a chunked body is decoded before the handler sees it, <code>Transfer-Encoding</code> together with <code>Content-Length</code> is 400, a transfer coding other than <code>chunked</code> is 501, and a missing, repeated or malformed <code>Host</code> header (it must be a host with an optional <code>:port</code>) is 400. Both HTTP/1.1 servers read until the request is complete, so a request split across several TCP segments reaches the handler whole. On the way out, <code>HttpResponse_header</code> refuses a value containing a CR or LF (it returns 0 and adds nothing), so a handler that echoes client input cannot be used to inject a header line.</p>
 <p>The HTTP/2 engine buffers at most 1 MiB of body per request and 4 MiB across a connection (<code>s.max_body</code> and <code>s.max_buffered</code> on the <code>H2Server</code>); past either the request is answered 413 without calling the handler. A decoded header list over 64 KiB is 431. A malformed request (a missing <code>:method</code> or <code>:path</code>, a connection-specific header, a content-length the DATA frames do not add up to) is reset with <code>RST_STREAM</code> and never reaches the handler. The HTTP/1.1 Host rules apply here too: an invalid host or <code>:authority</code> is 400, two host fields or a host that disagrees with <code>:authority</code> reset the stream, and a request without a host field shows its <code>:authority</code> to the handler as the Host header.</p>
 <div class="chapter-start" id="chapter-24"><span class="chapter-label">Chapter 24</span>
 <h1 class="chapter-title">Async and Await</h1><hr class="chapter-rule"></div>
@@ -3493,7 +3560,7 @@ pre.code-block {
  }</pre>
 <p class="output"><em>Output:</em> llvm/llvm-project has 41012 stars</p>
 <p>The <code>Response</code> holds the status, the headers, the body and the final URL. <code>Response_header</code> finds a header by name in any case, <code>Response_text</code> returns the body as a string and <code>Response_json</code> parses it (null if it is not JSON). Redirects are followed, up to ten. A body can be text, bytes or a JSON document (<code>FetchOptions_body_text</code>, <code>FetchOptions_body_json</code>), and <code>FetchOptions_header</code> refuses a header that would split the request. Free the response with <code>Response_free</code> in every case, also after an error.</p>
-<p>HTTPS uses OpenSSL 3 (or 1.1). <code>&lt;fetch&gt;</code> does not link it: it loads the library the first time a script asks for an <code>https://</code> URL. A program that imports <code>&lt;fetch&gt;</code> therefore builds and runs on a machine without OpenSSL, and only its HTTPS requests fail there, with <code>FETCH_ERR_NO_TLS</code>. Most Linux systems and Homebrew on macOS already have it (on Debian and Ubuntu the package is <code>libssl3</code>); <code>fetch_tls_available()</code> tells whether it was found, and <code>ESKIU_LIBSSL</code> names the library file when it is somewhere unusual. The certificate is checked against the system's trusted certificates and the host name. On Windows that store is usually empty, so set <code>o.ca_file</code> to a PEM bundle.</p>
+<p>HTTPS uses OpenSSL 3 (or 1.1). <code>&lt;fetch&gt;</code> does not link it: it loads the library the first time a script asks for an <code>https://</code> URL. A program that imports <code>&lt;fetch&gt;</code> therefore builds and runs on a machine without OpenSSL, and only its HTTPS requests fail there, with <code>FETCH_ERR_NO_TLS</code>. Most Linux systems and Homebrew on macOS already have it (on Debian and Ubuntu the package is <code>libssl3</code>); <code>fetch_tls_available()</code> tells whether it was found, and <code>ESKIU_LIBSSL</code> names the library file when it is somewhere unusual. The certificate is checked against the system's trusted certificates and the host name, and the connection uses TLS 1.2 or newer with compression and renegotiation off, whatever the OpenSSL defaults are (the <code>&lt;tls&gt;</code> servers apply the same minimum). On Windows that store is usually empty, so set <code>o.ca_file</code> to a PEM bundle.</p>
 <p><code>fetch_async</code> sends the same request on an event loop (chapter 24) and returns a <code>Future&lt;int&gt;</code> with the same result code. Two requests started one after the other are in flight at the same time:</p>
 <pre class="code-block"> import &lt;fetch&gt;;
  import &lt;future&gt;;
@@ -3584,6 +3651,12 @@ pre.code-block {
  sha256(abc) = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
  hmac = 8b5f48702995c159...</pre>
 <p><code>json_get</code> follows a path of member names and <code>[N]</code> indices and returns a pointer into the document, or null when a step is missing. The builders (<code>JsonValue_object</code>, <code>_array</code>, <code>_string</code>, <code>_number</code>, <code>_int</code>, <code>_bool</code>, <code>_null</code>) make new values, and <code>JsonValue_set</code> and <code>JsonValue_push</code> add them to a container, which then owns them: freeing the root frees the whole document. <code>JsonValue_stringify</code> writes compact text and <code>JsonValue_pretty</code> indents it.</p>
+<p>A program that only reads a document can use <code>json_parse_doc(text)</code> instead. It returns a <code>JsonDoc</code> whose nodes and strings live in one arena, which parses about three times faster than <code>json_parse</code> followed by <code>JsonValue_free</code>. The document is read-only (<code>JsonValue_set</code> and <code>_push</code> refuse it), its <code>root</code> is null when the text is not valid JSON, and <code>JsonDoc_free</code> frees all of it at once:</p>
+<pre class="code-block"> JsonDoc d = json_parse_doc(&quot;{\&quot;items\&quot;:[10,20,30]}&quot;);
+ if (d.root != null) {
+       printf(&quot;%d\n&quot;, JsonValue_len(json_get(d.root, &quot;items&quot;)));    // 3
+ }
+ JsonDoc_free(&amp;d);</pre>
 <p>A <code>CsvTable</code> keeps every row, the header included, so data starts at row 1, and <code>CsvTable_get</code> finds a cell by its column name. Quoted fields may hold commas, quotes and line breaks, and <code>csv_write_row</code> quotes only the fields that need it. <code>dotenv_load(".env")</code> sets the file's variables that are not already set in the environment; <code>dotenv_parse</code>, used above, reads the same syntax into a map instead. Each hash also has a streaming form (<code>Sha256_init</code>, <code>_update</code>, <code>_final</code>) for data that arrives in pieces, and <code>hash_equal</code> compares two digests in constant time.</p>
 <h2 class="section" id="sec-25-6">25.6 Command-line tools: arguments, colors and logs</h2>
 <p>A script that other people run needs options with defaults, a <code>--help</code> text and clear errors. <code>&lt;args&gt;</code> parses the command line from a declaration of the options, <code>&lt;term&gt;</code> colors text, and <code>&lt;log&gt;</code> writes leveled messages to standard error:</p>
@@ -3628,7 +3701,7 @@ pre.code-block {
  countdown: error: invalid value &#x27;x&#x27; for --from: expected an integer</pre>
 <p>The third prints a help text built from the declarations and exits with 0. Options can be given as <code>-f 2</code>, <code>-f2</code>, <code>--from 2</code> or <code>--from=2</code>, short flags combine (<code>-vf 2</code>), and everything after <code>--</code> is positional. <code>ArgParser_argument</code> declares positional arguments, required or optional, and the last one may take many values.</p>
 <p>A style is a set of attributes and colors combined with <code>|</code>, such as <code>TERM_BOLD | TERM_GREEN</code>. <code>term_print</code>, <code>term_println</code> and <code>term_style</code> add the escape sequences only when standard output is a terminal, so the same script writes plain text into a pipe or a file. <code>NO_COLOR</code> turns colors off and <code>FORCE_COLOR</code> turns them on. On Windows the console's support for escape sequences is enabled the first time a color is used.</p>
-<p>The log functions take a format like <code>printf</code>. Messages below the current level are skipped without being formatted. The level comes from <code>log_set_level</code>, or else from the <code>LOG_LEVEL</code> environment variable, so a user can run <code>LOG_LEVEL=debug ./countdown.esk</code> without a <code>-v</code> option. <code>log_set_file</code> sends the messages to a file instead.</p>
+<p>The log functions take a format like <code>printf</code>. Messages below the current level are skipped without being formatted. The level comes from <code>log_set_level</code>, or else from the <code>LOG_LEVEL</code> environment variable, so a user can run <code>LOG_LEVEL=debug ./countdown.esk</code> without a <code>-v</code> option. <code>log_set_file</code> sends the messages to a file instead, and <code>log_set_rotation(max_bytes, keep)</code> rotates that file by size: when a line would take it past <code>max_bytes</code>, <code>app.log</code> becomes <code>app.log.1</code> (the newest of the <code>keep</code> old files) and a new <code>app.log</code> starts.</p>
 <h2 class="section" id="sec-25-7">25.7 Dates and time</h2>
 <p><code>&lt;time&gt;</code> formats and parses times given in seconds since 1970, in UTC or in the local time zone, and measures durations:</p>
 <pre class="code-block"> import &lt;time&gt;;
@@ -4031,6 +4104,7 @@ pre.code-block {
  Json_cstr / Json_free
  // Parser
  *JsonValue json_parse(string text)
+ JsonDoc json_parse_doc(string text)      // read-only, one arena; d.root, JsonDoc_free(&amp;d)
  *JsonValue JsonValue_get(*JsonValue obj, string key)
  int JsonValue_kind / int JsonValue_len / *JsonValue JsonValue_at(v, i)
  int64 JsonValue_as_int / double JsonValue_as_double / int JsonValue_as_bool / *char JsonValue_as_cstr
@@ -4102,6 +4176,13 @@ pre.code-block {
 <pre class="code-block">        eskiuc run file.esk [args...]            Compile to a temp exe, run it, delete it</pre>
 <pre class="code-block">        eskiuc repl [file.esk ...]               Interactive session (JIT), files loaded first</pre>
 <pre class="code-block">        eskiuc fmt file.esk [--check]            Reformat in place, or --check formatting</pre>
+<pre class="code-block">        eskiuc fmt file.esk --width N            Also break lines longer than N at commas</pre>
+<pre class="code-block">        eskiuc doctor                            List the tools found and missing per build kind</pre>
+<pre class="code-block">        eskiuc lib.esk --emit-header lib.h       C header of the export functions</pre>
+<pre class="code-block">        eskiuc lib.esk -o liblib.a               Static library (.so/.dylib/.dll: shared)</pre>
+<pre class="code-block">        eskiuc file.esk --diagnostics=json       Errors and warnings as JSON lines on stderr</pre>
+<pre class="code-block">        eskiuc file.esk -ffp-contract=fast       Allow fused multiply-add (one rounding)</pre>
+<pre class="code-block">        eskiuc file.esk -fstrict-aliasing        Give the optimizer C&#x27;s type-based aliasing</pre>
 <pre class="code-block">        eskiuc file.esk --target TRIPLE          Cross-compile for target triple</pre>
 <pre class="code-block">        eskiuc ... --mcpu CPU --mattr F --reloc R   Tune the target (CPU, features, relocation)</pre>
 <pre class="code-block">        eskiuc file.esk --freestanding           No libc; alloc/free → esk_alloc/esk_free</pre>
@@ -4112,6 +4193,9 @@ pre.code-block {
 <pre class="code-block">        eskiuc file.esk --hover-at L:C           Print inferred type at 1-based line:col</pre>
 <pre class="code-block">        eskiuc file.esk --definition-at L:C      Print definition location of symbol</pre>
 <pre class="code-block">        eskiuc --version                         Print compiler and LLVM versions</pre>
+<h3 class="subsection">Floating-point and aliasing options</h3>
+<p>Both are off by default, and both only give the optimizer more freedom. <code>-ffp-contract=fast</code> lets it fuse a multiply and an add (<code>a * x + y</code>) into one fused multiply-add instruction, which rounds once instead of twice: faster on most CPUs, but the last bit of a result can differ between targets. Without it every floating-point operation rounds on its own, so a program prints the same numbers everywhere.</p>
+<p><code>-fstrict-aliasing</code> gives the optimizer C&#x27;s aliasing rule for scalar types: a store through an <code>*int</code> is assumed not to change a <code>double</code> or an <code>int64</code>, so loads can be reused across it. Unions, byte access (<code>*uint8</code>, <code>*char</code>) and a variable read through a pointer cast still alias everything. Use it only for code that does not reinterpret memory through casts to another scalar type.</p>
 <h3 class="subsection">Cross-compilation target triples</h3>
 <pre class="code-block">        Triple                                   Description</pre>
 <pre class="code-block">        x86_64-pc-linux-gnu                      Linux x86-64</pre>
@@ -4160,6 +4244,10 @@ pre.code-block {
  eskiuc repl                         # interactive session
  eskiuc fmt file.esk                 # reformat in place
  eskiuc fmt --check file.esk         # check formatting
+ eskiuc fmt --width 100 file.esk     # also wrap long lines
+ eskiuc doctor                       # tools found and missing
+ eskiuc lib.esk --emit-header lib.h  # C header of export functions
+ eskiuc file.esk --diagnostics=json  # errors as JSON lines
  eskiuc file.esk -Wall               # unused, assign-in-cond, maybe-uninitialized
  eskiuc file.esk -Wextra             # signed/unsigned warnings
  eskiuc file.esk --asan -o prog      # AddressSanitizer
