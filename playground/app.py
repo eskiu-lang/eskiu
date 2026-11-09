@@ -22,6 +22,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from client_ip import client_ip, parse_trusted_proxies
+
 # ── Configuration (override via environment) ────────────────────────────────
 ESKIUC = os.environ.get("ESKIUC", "/opt/eskiu/bin/eskiuc")
 # eskiuc resolves the stdlib from $ESKIU_ROOT (dir containing stdlib/).
@@ -40,6 +42,11 @@ ALLOWED_ORIGINS = os.environ.get(
     "ALLOWED_ORIGINS",
     "https://eskiu-lang.org,https://www.eskiu-lang.org,http://localhost:8000",
 ).split(",")
+
+# Only these immediate proxy peers may supply X-Forwarded-For. CIDRs are accepted.
+TRUSTED_PROXIES = parse_trusted_proxies(
+    os.environ.get("TRUSTED_PROXIES", "127.0.0.1/32,::1/128")
+)
 
 # Simple per-IP rate limit: REQUESTS requests per WINDOW seconds.
 RATE_REQUESTS = int(os.environ.get("RATE_REQUESTS", 20))
@@ -108,10 +115,8 @@ def healthz():
 
 @app.post("/run", response_model=RunResponse)
 def run(req: RunRequest, request: Request):
-    ip = (request.client.host if request.client else "?")
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        ip = fwd.split(",")[0].strip()
+    peer = request.client.host if request.client else "?"
+    ip = client_ip(peer, request.headers.get("x-forwarded-for"), TRUSTED_PROXIES)
     if _rate_limited(ip):
         return RunResponse(ok=False, error="Rate limit exceeded. Slow down a moment.")
 

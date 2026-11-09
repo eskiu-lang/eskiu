@@ -38,6 +38,7 @@ docker build --build-arg ESKIU_VERSION=0.14.1 -t eskiu-playground .   # a specif
 docker run -d --name eskiu-playground --restart unless-stopped \
   -p 127.0.0.1:8080:8080 \
   -e ALLOWED_ORIGINS="https://eskiu-lang.org,https://www.eskiu-lang.org" \
+  -e TRUSTED_PROXIES="172.17.0.1/32" \
   --read-only \
   --tmpfs /tmp:size=512m,exec \
   --tmpfs /home/runner:size=64m \
@@ -73,6 +74,13 @@ docker rm -f eskiu-playground
 docker run -d ... eskiu-playground   # same flags as above
 ```
 
+`TRUSTED_PROXIES` is a comma-separated list of IP addresses or CIDRs for the
+reverse proxies that connect directly to the container. The playground ignores
+`X-Forwarded-For` from every other peer and walks a trusted chain from right
+to left, so a client-supplied leftmost value cannot bypass the rate limit.
+Use the actual Docker bridge/proxy address for your deployment; the default
+trusts only `127.0.0.1` and `::1`.
+
 ## Threat model & limits
 
 User code is untrusted. Isolation is the container plus, per request:
@@ -87,6 +95,7 @@ User code is untrusted. Isolation is the container plus, per request:
 | Source size        | 64 KiB             | `MAX_CODE_BYTES` |
 | Output per stream  | 64 KiB             | `MAX_OUTPUT_BYTES` |
 | Rate limit / IP    | 20 per 60 s        | `RATE_REQUESTS`, `RATE_WINDOW` |
+| Trusted proxies    | loopback only      | `TRUSTED_PROXIES` |
 
 Runs as an unprivileged user (`uid 10001`), its own session/process group
 (killed as a tree on timeout), with a fresh ephemeral work directory per
