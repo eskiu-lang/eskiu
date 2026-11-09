@@ -110,6 +110,9 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   Windows build does.
 
 ### Fixed
+- A `?:` with a `null` arm inside a generic function (`key == null ? null : copy(key)`) no
+  longer fails with an invalid phi: the literal is a pointer even where the checker records no
+  type for it.
 - The EIR builders (C++ and self-hosted) treated a prototype as an `extern` until its
   definition was built: a call written before the definition passed a closure argument as a
   C function pointer (the C++ compiler rejected the program, the self-hosted one built a
