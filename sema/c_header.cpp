@@ -149,7 +149,7 @@ struct CHeaderWriter {
     std::string write(Program* program, const std::string& source, const std::string& guard) {
         std::ostringstream protos;
         for (auto& d : program->declarations) {
-            auto* f = dynamic_cast<FunctionDecl*>(d.get());
+            auto* f = nodeCast<FunctionDecl>(d.get());
             if (!f || !f->isExport || !f->body) continue;
             std::string ps;
             for (const auto& p : f->params) ps += (ps.empty() ? "" : ", ") + decl(p.first, p.second, true);

@@ -37,7 +37,7 @@ DeclPtr Parser::parseDeclaration() {
         // `async T f(...) { ... }` — function modifier before the return type.
         if (match(TokenType::ASYNC)) {
             auto decl = parseFunctionDecl();
-            if (auto* fd = dynamic_cast<FunctionDecl*>(decl.get())) fd->isAsync = true;
+            if (auto* fd = nodeCast<FunctionDecl>(decl.get())) fd->isAsync = true;
             return decl;
         }
         // `deprecated("use X") T f(...)`: a contextual attribute (a top-level call is not
@@ -50,7 +50,7 @@ DeclPtr Parser::parseDeclaration() {
             std::string msg = advance().value;
             advance();
             auto decl = parseDeclaration();
-            auto* fd = dynamic_cast<FunctionDecl*>(decl.get());
+            auto* fd = nodeCast<FunctionDecl>(decl.get());
             if (!fd) fail("'deprecated' applies to a function", at);
             fd->deprecatedMsg = msg.empty() ? std::string(" ") : msg;
             return decl;
@@ -59,7 +59,7 @@ DeclPtr Parser::parseDeclaration() {
         if (exportAhead()) {
             Token at = advance();
             auto decl = parseDeclaration();
-            auto* fd = dynamic_cast<FunctionDecl*>(decl.get());
+            auto* fd = nodeCast<FunctionDecl>(decl.get());
             if (!fd) fail("'export' applies to a function", at);
             fd->isExport = true;
             return decl;
@@ -67,7 +67,7 @@ DeclPtr Parser::parseDeclaration() {
         // `must_use T f(...) { ... }` — discarding a call to f is an error.
         if (match(TokenType::MUST_USE)) {
             auto decl = parseFunctionDecl();
-            if (auto* fd = dynamic_cast<FunctionDecl*>(decl.get())) fd->mustUse = true;
+            if (auto* fd = nodeCast<FunctionDecl>(decl.get())) fd->mustUse = true;
             return decl;
         }
         if (match(TokenType::STRUCT)) {
@@ -77,7 +77,7 @@ DeclPtr Parser::parseDeclaration() {
         if (match(TokenType::PACKED)) {
             consume(TokenType::STRUCT, "Expected 'struct' after 'packed'");
             auto decl = parseStructDecl();
-            if (auto* sd = dynamic_cast<StructDecl*>(decl.get())) { sd->isPacked = true; sd->packAlign = 1; }
+            if (auto* sd = nodeCast<StructDecl>(decl.get())) { sd->isPacked = true; sd->packAlign = 1; }
             return decl;
         }
 

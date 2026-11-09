@@ -43,16 +43,16 @@ void CodeGen::visit(Program* node) {
     // Pre-pass: fold top-level `const` ints so they can be used as array sizes
     // in struct fields / globals declared anywhere (resolved during phase 1).
     for (auto& decl : node->declarations)
-        if (auto* v = dynamic_cast<VarDecl*>(decl.get())) foldConstDecl(v);
+        if (auto* v = nodeCast<VarDecl>(decl.get())) foldConstDecl(v);
     // Does the program throw or catch anywhere? Only then do defers get landingpads.
     for (auto& decl : node->declarations) {
-        if (auto* f = dynamic_cast<FunctionDecl*>(decl.get())) {
+        if (auto* f = nodeCast<FunctionDecl>(decl.get())) {
             if (astwalk::containsEH(f->body.get())) programUsesEH = true;
-        } else if (auto* s = dynamic_cast<StructDecl*>(decl.get())) {
+        } else if (auto* s = nodeCast<StructDecl>(decl.get())) {
             for (auto& m : s->methods)
-                if (auto* mf = dynamic_cast<FunctionDecl*>(m.get()); mf && astwalk::containsEH(mf->body.get()))
+                if (auto* mf = nodeCast<FunctionDecl>(m.get()); mf && astwalk::containsEH(mf->body.get()))
                     programUsesEH = true;
-        } else if (auto* v = dynamic_cast<VarDecl*>(decl.get())) {
+        } else if (auto* v = nodeCast<VarDecl>(decl.get())) {
             if (astwalk::containsEH(v->initializer.get())) programUsesEH = true;
         }
     }
@@ -62,9 +62,9 @@ void CodeGen::visit(Program* node) {
     std::map<std::string, Decl*> typeDeclOf;
     for (auto& decl : node->declarations) {
         Decl* d = decl.get();
-        bool isType = dynamic_cast<StructDecl*>(d) || dynamic_cast<UnionDecl*>(d) ||
-                      dynamic_cast<InterfaceDecl*>(d) || dynamic_cast<EnumDecl*>(d) ||
-                      dynamic_cast<TypeAliasDecl*>(d);
+        bool isType = nodeCast<StructDecl>(d) || nodeCast<UnionDecl>(d) ||
+                      nodeCast<InterfaceDecl>(d) || nodeCast<EnumDecl>(d) ||
+                      nodeCast<TypeAliasDecl>(d);
         if (isType && !typeDeclOf.count(d->name)) typeDeclOf[d->name] = d;
     }
     std::set<Decl*> typeDone, typeVisiting;
@@ -86,42 +86,42 @@ void CodeGen::visit(Program* node) {
     declareTypeDecl = [&](Decl* d) {
         if (typeDone.count(d) || typeVisiting.count(d)) return;
         typeVisiting.insert(d);
-        if (auto* s = dynamic_cast<StructDecl*>(d)) {
+        if (auto* s = nodeCast<StructDecl>(d)) {
             if (s->typeParams.empty()) for (const auto& f : s->fields) needStr(f.type);
-        } else if (auto* u = dynamic_cast<UnionDecl*>(d)) {
+        } else if (auto* u = nodeCast<UnionDecl>(d)) {
             for (const auto& f : u->fields) needStr(f.type);
-        } else if (auto* e = dynamic_cast<EnumDecl*>(d)) {
+        } else if (auto* e = nodeCast<EnumDecl>(d)) {
             if (e->typeParams.empty())
                 for (const auto& pl : e->payloads) for (const auto& ft : pl) needStr(ft);
-        } else if (auto* a = dynamic_cast<TypeAliasDecl*>(d)) {
+        } else if (auto* a = nodeCast<TypeAliasDecl>(d)) {
             needStr(a->aliased);
         }
         typeVisiting.erase(d);
         typeDone.insert(d);
-        if (auto* s = dynamic_cast<StructDecl*>(d)) declareStructType(s);  // registers templates too
+        if (auto* s = nodeCast<StructDecl>(d)) declareStructType(s);  // registers templates too
         else d->accept(this);
     };
     // Generic templates first: a concrete type may hold an instance of one declared later.
     for (auto& decl : node->declarations) {
-        if (auto* s = dynamic_cast<StructDecl*>(decl.get()); s && !s->typeParams.empty()) declareTypeDecl(s);
-        if (auto* e = dynamic_cast<EnumDecl*>(decl.get()); e && !e->typeParams.empty()) declareTypeDecl(e);
+        if (auto* s = nodeCast<StructDecl>(decl.get()); s && !s->typeParams.empty()) declareTypeDecl(s);
+        if (auto* e = nodeCast<EnumDecl>(decl.get()); e && !e->typeParams.empty()) declareTypeDecl(e);
     }
     for (auto& decl : node->declarations) {
-        if (dynamic_cast<StructDecl*>(decl.get()) || dynamic_cast<UnionDecl*>(decl.get()) ||
-            dynamic_cast<InterfaceDecl*>(decl.get()) || dynamic_cast<EnumDecl*>(decl.get()) ||
-            dynamic_cast<TypeAliasDecl*>(decl.get())) {
+        if (nodeCast<StructDecl>(decl.get()) || nodeCast<UnionDecl>(decl.get()) ||
+            nodeCast<InterfaceDecl>(decl.get()) || nodeCast<EnumDecl>(decl.get()) ||
+            nodeCast<TypeAliasDecl>(decl.get())) {
             declareTypeDecl(decl.get());
-        } else if (dynamic_cast<IntrinsicDecl*>(decl.get())) {
+        } else if (nodeCast<IntrinsicDecl>(decl.get())) {
             decl->accept(this);
         }
     }
     // Externs after every type shell: a by-value struct parameter declared later in
     // the source must already have its layout for the C-ABI signature.
     for (auto& decl : node->declarations)
-        if (auto* f = dynamic_cast<FunctionDecl*>(decl.get()))
+        if (auto* f = nodeCast<FunctionDecl>(decl.get()))
             if (f->body) definedFunctionNames.insert(f->name);
     for (auto& decl : node->declarations) {
-        auto* e = dynamic_cast<ExternDecl*>(decl.get());
+        auto* e = nodeCast<ExternDecl>(decl.get());
         if (!e) continue;
         std::vector<char>& k = externCInts[e->name];
         size_t n = 0;
@@ -142,17 +142,17 @@ void CodeGen::visit(Program* node) {
         }
     }
     for (auto& decl : node->declarations)
-        if (dynamic_cast<ExternDecl*>(decl.get())) decl->accept(this);
+        if (nodeCast<ExternDecl>(decl.get())) decl->accept(this);
     for (auto& decl : node->declarations) {
-        if (auto* f = dynamic_cast<FunctionDecl*>(decl.get())) {
+        if (auto* f = nodeCast<FunctionDecl>(decl.get())) {
             if (f->typeParams.empty())
                 declareFunction(f->name, f->returnType, f->params);
             else
                 f->accept(this);   // register the template up front: a use may precede it
-        } else if (auto* s = dynamic_cast<StructDecl*>(decl.get())) {
+        } else if (auto* s = nodeCast<StructDecl>(decl.get())) {
             if (!s->typeParams.empty()) continue;
             for (auto& method : s->methods) {
-                if (auto* mf = dynamic_cast<FunctionDecl*>(method.get())) {
+                if (auto* mf = nodeCast<FunctionDecl>(method.get())) {
                     std::vector<std::pair<std::string, std::string>> params;
                     params.push_back({"*" + s->name, "self"});
                     for (auto& p : mf->params) params.push_back(p);
@@ -163,12 +163,12 @@ void CodeGen::visit(Program* node) {
     }
     for (auto& decl : node->declarations) {
         // Externs, unions, interfaces, enums, and aliases were handled in phase 1.
-        if (dynamic_cast<ExternDecl*>(decl.get()) ||
-            dynamic_cast<IntrinsicDecl*>(decl.get()) ||
-            dynamic_cast<UnionDecl*>(decl.get()) ||
-            dynamic_cast<InterfaceDecl*>(decl.get()) ||
-            dynamic_cast<EnumDecl*>(decl.get()) ||
-            dynamic_cast<TypeAliasDecl*>(decl.get()))
+        if (nodeCast<ExternDecl>(decl.get()) ||
+            nodeCast<IntrinsicDecl>(decl.get()) ||
+            nodeCast<UnionDecl>(decl.get()) ||
+            nodeCast<InterfaceDecl>(decl.get()) ||
+            nodeCast<EnumDecl>(decl.get()) ||
+            nodeCast<TypeAliasDecl>(decl.get()))
             continue;
         decl->accept(this);
     }
@@ -447,10 +447,10 @@ void CodeGen::visit(VarDecl* node) {
     // The name is bound after its initializer: in `{ int64 x = x + 1; }` the `x`
     // on the right is the outer one (sema resolves it that way too).
     if (node->initializer) {
-        if (auto structInit = dynamic_cast<StructInitExpr*>(node->initializer.get())) {
+        if (auto structInit = nodeCast<StructInitExpr>(node->initializer.get())) {
             // Fill the alloca directly — no temporary needed
             emitStructInitInto(alloca, structInit);
-        } else if (auto arrLit = dynamic_cast<ArrayLitExpr*>(node->initializer.get())) {
+        } else if (auto arrLit = nodeCast<ArrayLitExpr>(node->initializer.get())) {
             emitArrayInitInto(alloca, arrLit, varType);
         } else {
             llvm::Value* val = evalForType(node->initializer, varType);
@@ -845,7 +845,7 @@ void CodeGen::visit(StructDecl* node) {
 
     // Emit methods as mangled functions: StructName_methodName(self: *Struct, ...)
     for (const auto& method : node->methods) {
-        if (auto func = dynamic_cast<FunctionDecl*>(method.get())) {
+        if (auto func = nodeCast<FunctionDecl>(method.get())) {
             std::vector<std::pair<std::string, std::string>> params;
             params.push_back({"*" + node->name, "self"});
             for (const auto& p : func->params) params.push_back(p);

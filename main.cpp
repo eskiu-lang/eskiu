@@ -399,7 +399,7 @@ static int testTypeChecker(const std::string& filename) {
 // stand and the second run is skipped (docs/dev/compile-speed.md).
 static bool programHasAsync(const Program* program) {
     for (const auto& decl : program->declarations)
-        if (auto* fd = dynamic_cast<const FunctionDecl*>(decl.get()); fd && fd->isAsync) return true;
+        if (auto* fd = nodeCast<const FunctionDecl>(decl.get()); fd && fd->isAsync) return true;
     return false;
 }
 
@@ -963,26 +963,26 @@ static int compilerMain(int argc, char** argv) {
         };
         for (const auto& d : program->declarations) {
             if (!mine(d.get()) || d->line <= 0) continue;   // not an implicit one (a script's argc)
-            if (auto* f = dynamic_cast<FunctionDecl*>(d.get())) {
+            if (auto* f = nodeCast<FunctionDecl>(d.get())) {
                 emit("function", f->name, pos(f->line, f->col), "", sig(f, f->name));
-            } else if (auto* s = dynamic_cast<StructDecl*>(d.get())) {
+            } else if (auto* s = nodeCast<StructDecl>(d.get())) {
                 emit("struct", s->name, pos(s->line, s->col), "", "struct " + s->name);
                 for (const auto& fl : s->fields)
                     emit("field", fl.name, pos(fl.line, fl.col), s->name, fl.type);
                 for (const auto& m : s->methods)
-                    if (auto* f = dynamic_cast<FunctionDecl*>(m.get()))
+                    if (auto* f = nodeCast<FunctionDecl>(m.get()))
                         emit("method", f->name, pos(f->line, f->col), s->name, sig(f, f->name));
-            } else if (auto* u = dynamic_cast<UnionDecl*>(d.get())) {
+            } else if (auto* u = nodeCast<UnionDecl>(d.get())) {
                 emit("struct", u->name, pos(u->line, u->col), "", "union " + u->name);
                 for (const auto& fl : u->fields)
                     emit("field", fl.name, pos(fl.line, fl.col), u->name, fl.type);
-            } else if (auto* e = dynamic_cast<EnumDecl*>(d.get())) {
+            } else if (auto* e = nodeCast<EnumDecl>(d.get())) {
                 emit("enum", e->name, pos(e->line, e->col), "", "enum " + e->name);
-            } else if (auto* i = dynamic_cast<InterfaceDecl*>(d.get())) {
+            } else if (auto* i = nodeCast<InterfaceDecl>(d.get())) {
                 emit("interface", i->name, pos(i->line, i->col), "", "interface " + i->name);
-            } else if (auto* a = dynamic_cast<TypeAliasDecl*>(d.get())) {
+            } else if (auto* a = nodeCast<TypeAliasDecl>(d.get())) {
                 emit("type", a->name, pos(a->line, a->col), "", "type " + a->name + " = " + a->aliased);
-            } else if (auto* v = dynamic_cast<VarDecl*>(d.get())) {
+            } else if (auto* v = nodeCast<VarDecl>(d.get())) {
                 emit(v->isConst ? "constant" : "variable", v->name, pos(v->line, v->col), "", v->type);
             }
         }

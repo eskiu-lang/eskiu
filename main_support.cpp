@@ -1043,7 +1043,7 @@ std::shared_ptr<Program> loadProgram(const std::vector<std::string>& inputs, con
     const FunctionDecl* scriptMain = nullptr;
     const FunctionDecl* namedMain = nullptr;
     for (const auto& d : merged) {
-        auto* f = dynamic_cast<FunctionDecl*>(d.get());
+        auto* f = nodeCast<FunctionDecl>(d.get());
         if (!f || f->name != "main" || f->fromImport) continue;
         bool script = f->params.size() == 2 && f->params[0].second == "__argc" && f->body;
         if (!script) { if (!namedMain) namedMain = f; continue; }

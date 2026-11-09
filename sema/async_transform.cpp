@@ -41,7 +41,7 @@ StmtPtr ret(ExprPtr v) { return std::make_shared<ReturnStmt>(std::move(v)); }
 // etc.) is covered.
 void rewrite(ExprPtr& e, const std::set<std::string>& vars) {
     if (!e) return;
-    if (auto* id = dynamic_cast<IdentExpr*>(e.get())) {
+    if (auto* id = nodeCast<IdentExpr>(e.get())) {
         if (vars.count(id->name)) e = fr(id->name);
         return;
     }
@@ -52,7 +52,7 @@ void rewrite(ExprPtr& e, const std::set<std::string>& vars) {
 // be bound in a `let` rather than nested inside a larger expression).
 bool hasAwait(const ExprPtr& e) {
     if (!e) return false;
-    if (dynamic_cast<AwaitExpr*>(e.get())) return true;
+    if (nodeCast<AwaitExpr>(e.get())) return true;
     bool found = false;
     astwalk::forEachChildExprFlat(e.get(), [&](ExprPtr& c) { if (hasAwait(c)) found = true; });
     return found;
@@ -61,52 +61,52 @@ bool hasAwait(const ExprPtr& e) {
 // True if a statement contains an `await` anywhere (decides plain vs state-split).
 bool stmtHasAwait(const StmtPtr& s) {
     if (!s) return false;
-    if (auto* b = dynamic_cast<BlockStmt*>(s.get())) {
+    if (auto* b = nodeCast<BlockStmt>(s.get())) {
         for (auto& it : b->items) {
             if (std::holds_alternative<DeclPtr>(it)) {
-                if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get()))
+                if (auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get()))
                     if (vd->initializer && hasAwait(vd->initializer)) return true;
             } else if (stmtHasAwait(std::get<StmtPtr>(it))) return true;
         }
         return false;
     }
-    if (auto* i = dynamic_cast<IfStmt*>(s.get()))
+    if (auto* i = nodeCast<IfStmt>(s.get()))
         return hasAwait(i->condition) || stmtHasAwait(i->thenBranch) || stmtHasAwait(i->elseBranch);
-    if (auto* w = dynamic_cast<WhileStmt*>(s.get()))
+    if (auto* w = nodeCast<WhileStmt>(s.get()))
         return hasAwait(w->condition) || stmtHasAwait(w->body);
-    if (auto* dw = dynamic_cast<DoWhileStmt*>(s.get()))
+    if (auto* dw = nodeCast<DoWhileStmt>(s.get()))
         return stmtHasAwait(dw->body) || hasAwait(dw->condition);
-    if (auto* ds = dynamic_cast<DeferStmt*>(s.get()))
+    if (auto* ds = nodeCast<DeferStmt>(s.get()))
         return stmtHasAwait(ds->body);
-    if (auto* ts = dynamic_cast<ThrowStmt*>(s.get()))
+    if (auto* ts = nodeCast<ThrowStmt>(s.get()))
         return hasAwait(ts->value);
-    if (auto* f = dynamic_cast<ForStmt*>(s.get()))
+    if (auto* f = nodeCast<ForStmt>(s.get()))
         return stmtHasAwait(f->init) || hasAwait(f->condition) || hasAwait(f->step) || stmtHasAwait(f->body);
-    if (auto* fi = dynamic_cast<ForInStmt*>(s.get()))
+    if (auto* fi = nodeCast<ForInStmt>(s.get()))
         return hasAwait(fi->iterable) || stmtHasAwait(fi->body);
-    if (auto* sw = dynamic_cast<SwitchStmt*>(s.get())) {
+    if (auto* sw = nodeCast<SwitchStmt>(s.get())) {
         if (hasAwait(sw->subject)) return true;
         for (auto& c : sw->cases)
             for (auto& it : c.stmts) {
                 if (std::holds_alternative<DeclPtr>(it)) {
-                    if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get()))
+                    if (auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get()))
                         if (vd->initializer && hasAwait(vd->initializer)) return true;
                 } else if (stmtHasAwait(std::get<StmtPtr>(it))) return true;
             }
         return false;
     }
-    if (auto* m = dynamic_cast<MatchStmt*>(s.get())) {
+    if (auto* m = nodeCast<MatchStmt>(s.get())) {
         if (hasAwait(m->subject)) return true;
         for (auto& arm : m->arms) if (stmtHasAwait(arm.body)) return true;
         return false;
     }
-    if (auto* t = dynamic_cast<TryStmt*>(s.get())) {
+    if (auto* t = nodeCast<TryStmt>(s.get())) {
         if (stmtHasAwait(t->body) || stmtHasAwait(t->finally)) return true;
         for (auto& c : t->catches) if (stmtHasAwait(c.body)) return true;
         return false;
     }
-    if (auto* rs = dynamic_cast<ReturnStmt*>(s.get())) return hasAwait(rs->value);
-    if (auto* es = dynamic_cast<ExprStmt*>(s.get()))  return hasAwait(es->expr);
+    if (auto* rs = nodeCast<ReturnStmt>(s.get())) return hasAwait(rs->value);
+    if (auto* es = nodeCast<ExprStmt>(s.get()))  return hasAwait(es->expr);
     return false;
 }
 
@@ -115,30 +115,30 @@ bool stmtHasAwait(const StmtPtr& s) {
 // machine (it may target a loop that no longer exists as a real loop), so we reject it.
 bool stmtHasLabeledBreak(const StmtPtr& s) {
     if (!s) return false;
-    if (auto* bs = dynamic_cast<BreakStmt*>(s.get()))    return !bs->label.empty();
-    if (auto* cs = dynamic_cast<ContinueStmt*>(s.get())) return !cs->label.empty();
-    if (auto* b = dynamic_cast<BlockStmt*>(s.get())) {
+    if (auto* bs = nodeCast<BreakStmt>(s.get()))    return !bs->label.empty();
+    if (auto* cs = nodeCast<ContinueStmt>(s.get())) return !cs->label.empty();
+    if (auto* b = nodeCast<BlockStmt>(s.get())) {
         for (auto& it : b->items)
             if (std::holds_alternative<StmtPtr>(it) && stmtHasLabeledBreak(std::get<StmtPtr>(it))) return true;
         return false;
     }
-    if (auto* i = dynamic_cast<IfStmt*>(s.get()))
+    if (auto* i = nodeCast<IfStmt>(s.get()))
         return stmtHasLabeledBreak(i->thenBranch) || stmtHasLabeledBreak(i->elseBranch);
-    if (auto* w = dynamic_cast<WhileStmt*>(s.get()))    return stmtHasLabeledBreak(w->body);
-    if (auto* d = dynamic_cast<DoWhileStmt*>(s.get()))  return stmtHasLabeledBreak(d->body);
-    if (auto* f = dynamic_cast<ForStmt*>(s.get()))      return stmtHasLabeledBreak(f->body);
-    if (auto* fi = dynamic_cast<ForInStmt*>(s.get()))   return stmtHasLabeledBreak(fi->body);
-    if (auto* sw = dynamic_cast<SwitchStmt*>(s.get())) {
+    if (auto* w = nodeCast<WhileStmt>(s.get()))    return stmtHasLabeledBreak(w->body);
+    if (auto* d = nodeCast<DoWhileStmt>(s.get()))  return stmtHasLabeledBreak(d->body);
+    if (auto* f = nodeCast<ForStmt>(s.get()))      return stmtHasLabeledBreak(f->body);
+    if (auto* fi = nodeCast<ForInStmt>(s.get()))   return stmtHasLabeledBreak(fi->body);
+    if (auto* sw = nodeCast<SwitchStmt>(s.get())) {
         for (auto& c : sw->cases)
             for (auto& it : c.stmts)
                 if (std::holds_alternative<StmtPtr>(it) && stmtHasLabeledBreak(std::get<StmtPtr>(it))) return true;
         return false;
     }
-    if (auto* m = dynamic_cast<MatchStmt*>(s.get())) {
+    if (auto* m = nodeCast<MatchStmt>(s.get())) {
         for (auto& arm : m->arms) if (stmtHasLabeledBreak(arm.body)) return true;
         return false;
     }
-    if (auto* t = dynamic_cast<TryStmt*>(s.get())) {
+    if (auto* t = nodeCast<TryStmt>(s.get())) {
         if (stmtHasLabeledBreak(t->body) || stmtHasLabeledBreak(t->finally)) return true;
         for (auto& c : t->catches) if (stmtHasLabeledBreak(c.body)) return true;
         return false;
@@ -149,43 +149,43 @@ bool stmtHasLabeledBreak(const StmtPtr& s) {
 // Every AwaitExpr in a function body (lambda bodies excluded: an await belongs to
 // the async function it is spelled in).
 void collectAwaits(Expr* e, std::vector<AwaitExpr*>& out) {
-    if (!e || dynamic_cast<LambdaExpr*>(e)) return;
-    if (auto* a = dynamic_cast<AwaitExpr*>(e)) out.push_back(a);
+    if (!e || nodeCast<LambdaExpr>(e)) return;
+    if (auto* a = nodeCast<AwaitExpr>(e)) out.push_back(a);
     astwalk::forEachChildExprFlat(e, [&](ExprPtr& c) { collectAwaits(c.get(), out); });
 }
 void collectAwaits(Stmt* s, std::vector<AwaitExpr*>& out) {
     if (!s) return;
     auto E = [&](const ExprPtr& e) { collectAwaits(e.get(), out); };
     auto S = [&](const StmtPtr& st) { collectAwaits(st.get(), out); };
-    if (auto* b = dynamic_cast<BlockStmt*>(s)) {
+    if (auto* b = nodeCast<BlockStmt>(s)) {
         for (auto& it : b->items) {
             if (std::holds_alternative<StmtPtr>(it)) { S(std::get<StmtPtr>(it)); continue; }
-            if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get())) E(vd->initializer);
+            if (auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get())) E(vd->initializer);
         }
     }
-    else if (auto* i = dynamic_cast<IfStmt*>(s))        { E(i->condition); S(i->thenBranch); S(i->elseBranch); }
-    else if (auto* f = dynamic_cast<ForStmt*>(s))       { S(f->init); E(f->condition); E(f->step); S(f->body); }
-    else if (auto* fi = dynamic_cast<ForInStmt*>(s))    { E(fi->iterable); S(fi->body); }
-    else if (auto* w = dynamic_cast<WhileStmt*>(s))     { E(w->condition); S(w->body); }
-    else if (auto* dw = dynamic_cast<DoWhileStmt*>(s))  { S(dw->body); E(dw->condition); }
-    else if (auto* r = dynamic_cast<ReturnStmt*>(s))    { E(r->value); }
-    else if (auto* sw = dynamic_cast<SwitchStmt*>(s)) {
+    else if (auto* i = nodeCast<IfStmt>(s))        { E(i->condition); S(i->thenBranch); S(i->elseBranch); }
+    else if (auto* f = nodeCast<ForStmt>(s))       { S(f->init); E(f->condition); E(f->step); S(f->body); }
+    else if (auto* fi = nodeCast<ForInStmt>(s))    { E(fi->iterable); S(fi->body); }
+    else if (auto* w = nodeCast<WhileStmt>(s))     { E(w->condition); S(w->body); }
+    else if (auto* dw = nodeCast<DoWhileStmt>(s))  { S(dw->body); E(dw->condition); }
+    else if (auto* r = nodeCast<ReturnStmt>(s))    { E(r->value); }
+    else if (auto* sw = nodeCast<SwitchStmt>(s)) {
         E(sw->subject);
         for (auto& c : sw->cases) {
             E(c.value);
             for (auto& it : c.stmts) {
                 if (std::holds_alternative<StmtPtr>(it)) { S(std::get<StmtPtr>(it)); continue; }
-                if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get())) E(vd->initializer);
+                if (auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get())) E(vd->initializer);
             }
         }
     }
-    else if (auto* m = dynamic_cast<MatchStmt*>(s))     { E(m->subject); for (auto& a : m->arms) S(a.body); }
-    else if (auto* th = dynamic_cast<ThrowStmt*>(s))    { E(th->value); }
-    else if (auto* t = dynamic_cast<TryStmt*>(s))       { S(t->body); for (auto& c : t->catches) S(c.body); S(t->finally); }
-    else if (auto* d = dynamic_cast<DeferStmt*>(s))     { S(d->body); }
-    else if (auto* es = dynamic_cast<ExprStmt*>(s))     { E(es->expr); }
-    else if (auto* tj = dynamic_cast<ThreadJoinStmt*>(s)) { E(tj->tid); }
-    else if (auto* as = dynamic_cast<AsmStmt*>(s)) {
+    else if (auto* m = nodeCast<MatchStmt>(s))     { E(m->subject); for (auto& a : m->arms) S(a.body); }
+    else if (auto* th = nodeCast<ThrowStmt>(s))    { E(th->value); }
+    else if (auto* t = nodeCast<TryStmt>(s))       { S(t->body); for (auto& c : t->catches) S(c.body); S(t->finally); }
+    else if (auto* d = nodeCast<DeferStmt>(s))     { S(d->body); }
+    else if (auto* es = nodeCast<ExprStmt>(s))     { E(es->expr); }
+    else if (auto* tj = nodeCast<ThreadJoinStmt>(s)) { E(tj->tid); }
+    else if (auto* as = nodeCast<AsmStmt>(s)) {
         for (auto& o : as->outputs) E(o.second);
         for (auto& in : as->inputs) E(in.second);
     }
@@ -198,13 +198,13 @@ bool isAssignOp(const std::string& op) {
     return op == "=" || (op.size() >= 2 && op.back() == '=' && op != "==" && op != "!=" && op != "<=" && op != ">=");
 }
 bool hasSideEffects(Expr* e) {
-    if (!e || dynamic_cast<LambdaExpr*>(e) || dynamic_cast<SizeofExpr*>(e)) return false;
-    if (dynamic_cast<CallExpr*>(e) || dynamic_cast<TemplateCallExpr*>(e) || dynamic_cast<AwaitExpr*>(e)
-        || dynamic_cast<IncDecExpr*>(e) || dynamic_cast<QuestionExpr*>(e) || dynamic_cast<AllocWithExpr*>(e)
-        || dynamic_cast<ThreadCreateExpr*>(e) || dynamic_cast<FreeClosureExpr*>(e)) return true;
-    if (auto* b = dynamic_cast<BinaryExpr*>(e); b && (isAssignOp(b->op) || !b->opFunc.empty())) return true;
-    if (auto* u = dynamic_cast<UnaryExpr*>(e); u && !u->opFunc.empty()) return true;
-    if (auto* ix = dynamic_cast<IndexExpr*>(e); ix && !ix->opFunc.empty()) return true;
+    if (!e || nodeCast<LambdaExpr>(e) || nodeCast<SizeofExpr>(e)) return false;
+    if (nodeCast<CallExpr>(e) || nodeCast<TemplateCallExpr>(e) || nodeCast<AwaitExpr>(e)
+        || nodeCast<IncDecExpr>(e) || nodeCast<QuestionExpr>(e) || nodeCast<AllocWithExpr>(e)
+        || nodeCast<ThreadCreateExpr>(e) || nodeCast<FreeClosureExpr>(e)) return true;
+    if (auto* b = nodeCast<BinaryExpr>(e); b && (isAssignOp(b->op) || !b->opFunc.empty())) return true;
+    if (auto* u = nodeCast<UnaryExpr>(e); u && !u->opFunc.empty()) return true;
+    if (auto* ix = nodeCast<IndexExpr>(e); ix && !ix->opFunc.empty()) return true;
     bool found = false;
     astwalk::forEachChildExprFlat(e, [&](ExprPtr& c) { if (!found) found = hasSideEffects(c.get()); });
     return found;
@@ -213,27 +213,27 @@ bool hasSideEffects(Expr* e) {
 // Whether a statement contains a `return` (a lambda is an expression: not descended).
 bool stmtHasReturn(const StmtPtr& s) {
     if (!s) return false;
-    if (dynamic_cast<ReturnStmt*>(s.get())) return true;
+    if (nodeCast<ReturnStmt>(s.get())) return true;
     auto items = [](const std::vector<BlockItem>& its) {
         for (auto& it : its)
             if (std::holds_alternative<StmtPtr>(it) && stmtHasReturn(std::get<StmtPtr>(it))) return true;
         return false;
     };
-    if (auto* b = dynamic_cast<BlockStmt*>(s.get())) return items(b->items);
-    if (auto* i = dynamic_cast<IfStmt*>(s.get())) return stmtHasReturn(i->thenBranch) || stmtHasReturn(i->elseBranch);
-    if (auto* w = dynamic_cast<WhileStmt*>(s.get())) return stmtHasReturn(w->body);
-    if (auto* d = dynamic_cast<DoWhileStmt*>(s.get())) return stmtHasReturn(d->body);
-    if (auto* f = dynamic_cast<ForStmt*>(s.get())) return stmtHasReturn(f->body);
-    if (auto* fi = dynamic_cast<ForInStmt*>(s.get())) return stmtHasReturn(fi->body);
-    if (auto* sw = dynamic_cast<SwitchStmt*>(s.get())) {
+    if (auto* b = nodeCast<BlockStmt>(s.get())) return items(b->items);
+    if (auto* i = nodeCast<IfStmt>(s.get())) return stmtHasReturn(i->thenBranch) || stmtHasReturn(i->elseBranch);
+    if (auto* w = nodeCast<WhileStmt>(s.get())) return stmtHasReturn(w->body);
+    if (auto* d = nodeCast<DoWhileStmt>(s.get())) return stmtHasReturn(d->body);
+    if (auto* f = nodeCast<ForStmt>(s.get())) return stmtHasReturn(f->body);
+    if (auto* fi = nodeCast<ForInStmt>(s.get())) return stmtHasReturn(fi->body);
+    if (auto* sw = nodeCast<SwitchStmt>(s.get())) {
         for (auto& c : sw->cases) if (items(c.stmts)) return true;
         return false;
     }
-    if (auto* m = dynamic_cast<MatchStmt*>(s.get())) {
+    if (auto* m = nodeCast<MatchStmt>(s.get())) {
         for (auto& a : m->arms) if (stmtHasReturn(a.body)) return true;
         return false;
     }
-    if (auto* t = dynamic_cast<TryStmt*>(s.get())) {
+    if (auto* t = nodeCast<TryStmt>(s.get())) {
         if (stmtHasReturn(t->body) || stmtHasReturn(t->finally)) return true;
         for (auto& c : t->catches) if (stmtHasReturn(c.body)) return true;
         return false;
@@ -324,15 +324,15 @@ struct OwnedClosureScan {
     std::set<std::string> bad;
     void expr(Expr* e, bool inLambda) {
         if (!e) return;
-        if (auto* id = dynamic_cast<IdentExpr*>(e)) { uses[id->name]++; return; }
-        if (auto* lam = dynamic_cast<LambdaExpr*>(e)) { stmt(lam->body.get(), true); return; }
-        if (auto* c = dynamic_cast<CallExpr*>(e); c && !inLambda)
-            if (auto* id = dynamic_cast<IdentExpr*>(c->callee.get())) allowed[id->name]++;
+        if (auto* id = nodeCast<IdentExpr>(e)) { uses[id->name]++; return; }
+        if (auto* lam = nodeCast<LambdaExpr>(e)) { stmt(lam->body.get(), true); return; }
+        if (auto* c = nodeCast<CallExpr>(e); c && !inLambda)
+            if (auto* id = nodeCast<IdentExpr>(c->callee.get())) allowed[id->name]++;
         astwalk::forEachChildExprFlat(e, [&](ExprPtr& c) { expr(c.get(), inLambda); });
     }
     void decl(VarDecl* vd, bool inLambda, bool forInit) {
         if (!inLambda) {
-            if (forInit || (vd->initializer && !dynamic_cast<LambdaExpr*>(vd->initializer.get())))
+            if (forInit || (vd->initializer && !nodeCast<LambdaExpr>(vd->initializer.get())))
                 bad.insert(vd->name);
             else if (vd->initializer) bindings[vd->name]++;
         }
@@ -341,40 +341,40 @@ struct OwnedClosureScan {
     void items(const std::vector<BlockItem>& its, bool inLambda, bool forInit = false) {
         for (auto& it : its) {
             if (std::holds_alternative<StmtPtr>(it)) { stmt(std::get<StmtPtr>(it).get(), inLambda); continue; }
-            if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get())) decl(vd, inLambda, forInit);
+            if (auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get())) decl(vd, inLambda, forInit);
         }
     }
     void stmt(Stmt* s, bool inLambda) {
         if (!s) return;
         auto E = [&](const ExprPtr& e) { expr(e.get(), inLambda); };
         auto S = [&](const StmtPtr& st) { stmt(st.get(), inLambda); };
-        if (auto* b = dynamic_cast<BlockStmt*>(s)) items(b->items, inLambda);
-        else if (auto* es = dynamic_cast<ExprStmt*>(s)) {
-            auto* a = dynamic_cast<BinaryExpr*>(es->expr.get());
-            if (a && a->op == "=" && !inLambda && dynamic_cast<LambdaExpr*>(a->right.get()))
-                if (auto* id = dynamic_cast<IdentExpr*>(a->left.get())) { allowed[id->name]++; bindings[id->name]++; }
+        if (auto* b = nodeCast<BlockStmt>(s)) items(b->items, inLambda);
+        else if (auto* es = nodeCast<ExprStmt>(s)) {
+            auto* a = nodeCast<BinaryExpr>(es->expr.get());
+            if (a && a->op == "=" && !inLambda && nodeCast<LambdaExpr>(a->right.get()))
+                if (auto* id = nodeCast<IdentExpr>(a->left.get())) { allowed[id->name]++; bindings[id->name]++; }
             E(es->expr);
         }
-        else if (auto* i = dynamic_cast<IfStmt*>(s)) { E(i->condition); S(i->thenBranch); S(i->elseBranch); }
-        else if (auto* f = dynamic_cast<ForStmt*>(s)) {
-            if (auto* ib = dynamic_cast<BlockStmt*>(f->init.get())) items(ib->items, inLambda, true);
+        else if (auto* i = nodeCast<IfStmt>(s)) { E(i->condition); S(i->thenBranch); S(i->elseBranch); }
+        else if (auto* f = nodeCast<ForStmt>(s)) {
+            if (auto* ib = nodeCast<BlockStmt>(f->init.get())) items(ib->items, inLambda, true);
             else S(f->init);
             E(f->condition); E(f->step); S(f->body);
         }
-        else if (auto* fi = dynamic_cast<ForInStmt*>(s))    { E(fi->iterable); S(fi->body); }
-        else if (auto* w = dynamic_cast<WhileStmt*>(s))     { E(w->condition); S(w->body); }
-        else if (auto* dw = dynamic_cast<DoWhileStmt*>(s))  { S(dw->body); E(dw->condition); }
-        else if (auto* r = dynamic_cast<ReturnStmt*>(s))    { E(r->value); }
-        else if (auto* sw = dynamic_cast<SwitchStmt*>(s)) {
+        else if (auto* fi = nodeCast<ForInStmt>(s))    { E(fi->iterable); S(fi->body); }
+        else if (auto* w = nodeCast<WhileStmt>(s))     { E(w->condition); S(w->body); }
+        else if (auto* dw = nodeCast<DoWhileStmt>(s))  { S(dw->body); E(dw->condition); }
+        else if (auto* r = nodeCast<ReturnStmt>(s))    { E(r->value); }
+        else if (auto* sw = nodeCast<SwitchStmt>(s)) {
             E(sw->subject);
             for (auto& c : sw->cases) { E(c.value); items(c.stmts, inLambda); }
         }
-        else if (auto* m = dynamic_cast<MatchStmt*>(s))     { E(m->subject); for (auto& a : m->arms) S(a.body); }
-        else if (auto* th = dynamic_cast<ThrowStmt*>(s))    { E(th->value); }
-        else if (auto* t = dynamic_cast<TryStmt*>(s))       { S(t->body); for (auto& c : t->catches) S(c.body); S(t->finally); }
-        else if (auto* d = dynamic_cast<DeferStmt*>(s))     { S(d->body); }
-        else if (auto* tj = dynamic_cast<ThreadJoinStmt*>(s)) { E(tj->tid); }
-        else if (auto* as = dynamic_cast<AsmStmt*>(s)) {
+        else if (auto* m = nodeCast<MatchStmt>(s))     { E(m->subject); for (auto& a : m->arms) S(a.body); }
+        else if (auto* th = nodeCast<ThrowStmt>(s))    { E(th->value); }
+        else if (auto* t = nodeCast<TryStmt>(s))       { S(t->body); for (auto& c : t->catches) S(c.body); S(t->finally); }
+        else if (auto* d = nodeCast<DeferStmt>(s))     { S(d->body); }
+        else if (auto* tj = nodeCast<ThreadJoinStmt>(s)) { E(tj->tid); }
+        else if (auto* as = nodeCast<AsmStmt>(s)) {
             for (auto& o : as->outputs) E(o.second);
             for (auto& in : as->inputs) E(in.second);
         }
@@ -400,33 +400,33 @@ void freeBeforeRebind(std::vector<BlockItem>& its, const std::set<std::string>& 
 StmtPtr freeBeforeRebind(const StmtPtr& s, const std::set<std::string>& owned) {
     if (!s) return s;
     auto S = [&](StmtPtr& st) { st = freeBeforeRebind(st, owned); };
-    if (auto* b = dynamic_cast<BlockStmt*>(s.get())) freeBeforeRebind(b->items, owned);
-    else if (auto* es = dynamic_cast<ExprStmt*>(s.get())) {
-        auto* a = dynamic_cast<BinaryExpr*>(es->expr.get());
-        auto* id = a && a->op == "=" ? dynamic_cast<IdentExpr*>(a->left.get()) : nullptr;
-        if (id && owned.count(id->name) && dynamic_cast<LambdaExpr*>(a->right.get()))
+    if (auto* b = nodeCast<BlockStmt>(s.get())) freeBeforeRebind(b->items, owned);
+    else if (auto* es = nodeCast<ExprStmt>(s.get())) {
+        auto* a = nodeCast<BinaryExpr>(es->expr.get());
+        auto* id = a && a->op == "=" ? nodeCast<IdentExpr>(a->left.get()) : nullptr;
+        if (id && owned.count(id->name) && nodeCast<LambdaExpr>(a->right.get()))
             return std::make_shared<BlockStmt>(std::vector<BlockItem>{ freeClosureOf(id->name), s });
     }
-    else if (auto* i = dynamic_cast<IfStmt*>(s.get())) { S(i->thenBranch); S(i->elseBranch); }
-    else if (auto* f = dynamic_cast<ForStmt*>(s.get())) S(f->body);
-    else if (auto* fi = dynamic_cast<ForInStmt*>(s.get())) S(fi->body);
-    else if (auto* w = dynamic_cast<WhileStmt*>(s.get())) S(w->body);
-    else if (auto* dw = dynamic_cast<DoWhileStmt*>(s.get())) S(dw->body);
-    else if (auto* sw = dynamic_cast<SwitchStmt*>(s.get())) { for (auto& c : sw->cases) freeBeforeRebind(c.stmts, owned); }
-    else if (auto* m = dynamic_cast<MatchStmt*>(s.get())) { for (auto& a : m->arms) S(a.body); }
-    else if (auto* t = dynamic_cast<TryStmt*>(s.get())) {
+    else if (auto* i = nodeCast<IfStmt>(s.get())) { S(i->thenBranch); S(i->elseBranch); }
+    else if (auto* f = nodeCast<ForStmt>(s.get())) S(f->body);
+    else if (auto* fi = nodeCast<ForInStmt>(s.get())) S(fi->body);
+    else if (auto* w = nodeCast<WhileStmt>(s.get())) S(w->body);
+    else if (auto* dw = nodeCast<DoWhileStmt>(s.get())) S(dw->body);
+    else if (auto* sw = nodeCast<SwitchStmt>(s.get())) { for (auto& c : sw->cases) freeBeforeRebind(c.stmts, owned); }
+    else if (auto* m = nodeCast<MatchStmt>(s.get())) { for (auto& a : m->arms) S(a.body); }
+    else if (auto* t = nodeCast<TryStmt>(s.get())) {
         S(t->body);
         for (auto& c : t->catches) S(c.body);
         S(t->finally);
     }
-    else if (auto* d = dynamic_cast<DeferStmt*>(s.get())) S(d->body);
+    else if (auto* d = nodeCast<DeferStmt>(s.get())) S(d->body);
     return s;
 }
 void freeBeforeRebind(std::vector<BlockItem>& its, const std::set<std::string>& owned) {
     std::vector<BlockItem> out;
     for (auto& it : its) {
         if (std::holds_alternative<DeclPtr>(it)) {
-            auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get());
+            auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get());
             // Every declaration resets the field (to its initializer, or to zero), so the
             // env the field held is freed first (null on the first pass: a no-op).
             if (vd && owned.count(vd->name)) out.push_back(freeClosureOf(vd->name));
@@ -467,8 +467,8 @@ struct ShadowRenamer {
     }
     void expr(ExprPtr& e) {
         if (!e) return;
-        if (auto* id = dynamic_cast<IdentExpr*>(e.get())) { id->name = lookup(id->name); return; }
-        if (auto* lam = dynamic_cast<LambdaExpr*>(e.get())) {
+        if (auto* id = nodeCast<IdentExpr>(e.get())) { id->name = lookup(id->name); return; }
+        if (auto* lam = nodeCast<LambdaExpr>(e.get())) {
             // A lambda body referring to a renamed local must follow the rename (and so
             // must its capture list); its own params shadow the enclosing names.
             for (auto& cap : lam->captures) cap.first = lookup(cap.first);
@@ -486,7 +486,7 @@ struct ShadowRenamer {
         std::vector<BlockItem> kept;
         for (auto& it : its) {
             if (std::holds_alternative<DeclPtr>(it)) {
-                if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get())) {
+                if (auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get())) {
                     // The initializer still sees the outer binding.
                     expr(vd->initializer);
                     if (vd->isStatic && lambdaDepth == 0) {
@@ -507,28 +507,28 @@ struct ShadowRenamer {
     void scoped(StmtPtr& s) { scopes.emplace_back(); stmt(s); scopes.pop_back(); }
     void stmt(StmtPtr& s) {
         if (!s) return;
-        if (auto* b = dynamic_cast<BlockStmt*>(s.get())) { scopes.emplace_back(); items(b->items); scopes.pop_back(); }
-        else if (auto* i = dynamic_cast<IfStmt*>(s.get())) { expr(i->condition); scoped(i->thenBranch); scoped(i->elseBranch); }
-        else if (auto* w = dynamic_cast<WhileStmt*>(s.get())) { expr(w->condition); scoped(w->body); }
-        else if (auto* d = dynamic_cast<DoWhileStmt*>(s.get())) { scoped(d->body); expr(d->condition); }
-        else if (auto* f = dynamic_cast<ForStmt*>(s.get())) {
+        if (auto* b = nodeCast<BlockStmt>(s.get())) { scopes.emplace_back(); items(b->items); scopes.pop_back(); }
+        else if (auto* i = nodeCast<IfStmt>(s.get())) { expr(i->condition); scoped(i->thenBranch); scoped(i->elseBranch); }
+        else if (auto* w = nodeCast<WhileStmt>(s.get())) { expr(w->condition); scoped(w->body); }
+        else if (auto* d = nodeCast<DoWhileStmt>(s.get())) { scoped(d->body); expr(d->condition); }
+        else if (auto* f = nodeCast<ForStmt>(s.get())) {
             scopes.emplace_back();
-            if (auto* ib = dynamic_cast<BlockStmt*>(f->init.get())) items(ib->items);
+            if (auto* ib = nodeCast<BlockStmt>(f->init.get())) items(ib->items);
             else stmt(f->init);
             expr(f->condition); expr(f->step); scoped(f->body);
             scopes.pop_back();
-        } else if (auto* fi = dynamic_cast<ForInStmt*>(s.get())) {
+        } else if (auto* fi = nodeCast<ForInStmt>(s.get())) {
             expr(fi->iterable);
             scopes.emplace_back();
             fi->varName = declare(fi->varName);
             scoped(fi->body);
             scopes.pop_back();
-        } else if (auto* sw = dynamic_cast<SwitchStmt*>(s.get())) {
+        } else if (auto* sw = nodeCast<SwitchStmt>(s.get())) {
             expr(sw->subject);
             scopes.emplace_back();
             for (auto& c : sw->cases) { expr(c.value); items(c.stmts); }
             scopes.pop_back();
-        } else if (auto* m = dynamic_cast<MatchStmt*>(s.get())) {
+        } else if (auto* m = nodeCast<MatchStmt>(s.get())) {
             expr(m->subject);
             for (auto& arm : m->arms) {
                 scopes.emplace_back();
@@ -538,7 +538,7 @@ struct ShadowRenamer {
                 scoped(arm.body);
                 scopes.pop_back();
             }
-        } else if (auto* t = dynamic_cast<TryStmt*>(s.get())) {
+        } else if (auto* t = nodeCast<TryStmt>(s.get())) {
             scoped(t->body);
             for (auto& c : t->catches) {
                 scopes.emplace_back();
@@ -547,12 +547,12 @@ struct ShadowRenamer {
                 scopes.pop_back();
             }
             scoped(t->finally);
-        } else if (auto* r = dynamic_cast<ReturnStmt*>(s.get())) expr(r->value);
-        else if (auto* es = dynamic_cast<ExprStmt*>(s.get())) expr(es->expr);
-        else if (auto* th = dynamic_cast<ThrowStmt*>(s.get())) expr(th->value);
-        else if (auto* df = dynamic_cast<DeferStmt*>(s.get())) scoped(df->body);
-        else if (auto* tj = dynamic_cast<ThreadJoinStmt*>(s.get())) expr(tj->tid);
-        else if (auto* as = dynamic_cast<AsmStmt*>(s.get())) {
+        } else if (auto* r = nodeCast<ReturnStmt>(s.get())) expr(r->value);
+        else if (auto* es = nodeCast<ExprStmt>(s.get())) expr(es->expr);
+        else if (auto* th = nodeCast<ThrowStmt>(s.get())) expr(th->value);
+        else if (auto* df = nodeCast<DeferStmt>(s.get())) scoped(df->body);
+        else if (auto* tj = nodeCast<ThreadJoinStmt>(s.get())) expr(tj->tid);
+        else if (auto* as = nodeCast<AsmStmt>(s.get())) {
             for (auto& out : as->outputs) expr(out.second);
             for (auto& in : as->inputs) expr(in.second);
         }
@@ -597,7 +597,7 @@ void AsyncTransform::run(Program* program) {
     for (auto& decl : program->declarations) topNames.insert(decl->name);
 
     for (auto& decl : program->declarations) {
-        auto* fn = dynamic_cast<FunctionDecl*>(decl.get());
+        auto* fn = nodeCast<FunctionDecl>(decl.get());
         if (!fn || !fn->isAsync) { out.push_back(decl); continue; }
 
         const std::string name   = fn->name;
@@ -646,7 +646,7 @@ void AsyncTransform::run(Program* program) {
         // `async void` uses a 1-byte unit (uint8) as the Future's value type.
         const std::string Tret = isVoid ? "uint8" : T;
 
-        auto* block = dynamic_cast<BlockStmt*>(fn->body.get());
+        auto* block = nodeCast<BlockStmt>(fn->body.get());
         if (!block)
             throw std::runtime_error("async function '" + name + "': missing body");
         if (stmtHasLabeledBreak(fn->body))
@@ -731,8 +731,8 @@ void AsyncTransform::run(Program* program) {
             else if (hasSideEffects(c.get())) spill(c, pre);
         };
         auto placeShaped = [](Expr* x) {
-            if (dynamic_cast<IdentExpr*>(x) || dynamic_cast<MemberExpr*>(x) || dynamic_cast<IndexExpr*>(x)) return true;
-            auto* u = dynamic_cast<UnaryExpr*>(x);
+            if (nodeCast<IdentExpr>(x) || nodeCast<MemberExpr>(x) || nodeCast<IndexExpr>(x)) return true;
+            auto* u = nodeCast<UnaryExpr>(x);
             return u && u->op == "*";
         };
         // An assignment target keeps its place; the sub-expressions that compute it are
@@ -743,17 +743,17 @@ void AsyncTransform::run(Program* program) {
                     if (hasAwait(c)) hoist(c, pre);
                     else if (spillParts && hasSideEffects(c.get())) spill(c, pre);
                 };
-                if (dynamic_cast<IdentExpr*>(e.get())) return;
-                if (auto* m = dynamic_cast<MemberExpr*>(e.get())) {
+                if (nodeCast<IdentExpr>(e.get())) return;
+                if (auto* m = nodeCast<MemberExpr>(e.get())) {
                     if (placeShaped(m->base.get())) place(m->base, pre, spillParts); else sub(m->base);
                     return;
                 }
-                if (auto* ix = dynamic_cast<IndexExpr*>(e.get()); ix && ix->opFunc.empty() && !ix->highIndex) {
+                if (auto* ix = nodeCast<IndexExpr>(e.get()); ix && ix->opFunc.empty() && !ix->highIndex) {
                     if (placeShaped(ix->base.get())) place(ix->base, pre, spillParts); else sub(ix->base);
                     sub(ix->index);
                     return;
                 }
-                if (auto* u = dynamic_cast<UnaryExpr*>(e.get()); u && u->op == "*" && u->opFunc.empty()) {
+                if (auto* u = nodeCast<UnaryExpr>(e.get()); u && u->op == "*" && u->opFunc.empty()) {
                     sub(u->operand);
                     return;
                 }
@@ -762,15 +762,15 @@ void AsyncTransform::run(Program* program) {
                         "bind the value to a local first");
             };
         hoist = [&](ExprPtr& e, std::vector<BlockItem>& pre) {
-            if (auto* aw = dynamic_cast<AwaitExpr*>(e.get())) {
+            if (auto* aw = nodeCast<AwaitExpr>(e.get())) {
                 if (hasAwait(aw->operand)) hoist(aw->operand, pre);
                 std::string tn = fresh("__aw_t");
                 letTmp(pre, tn, awType(aw), e);
                 e = ident(tn);
                 return;
             }
-            if (dynamic_cast<LambdaExpr*>(e.get()) || dynamic_cast<SizeofExpr*>(e.get())) return;   // not evaluated here
-            if (auto* b = dynamic_cast<BinaryExpr*>(e.get())) {
+            if (nodeCast<LambdaExpr>(e.get()) || nodeCast<SizeofExpr>(e.get())) return;   // not evaluated here
+            if (auto* b = nodeCast<BinaryExpr>(e.get())) {
                 if ((b->op == "&&" || b->op == "||") && hasAwait(b->right)) {
                     if (hasAwait(b->left)) hoist(b->left, pre);
                     std::string tn = fresh("__sc_t");
@@ -792,7 +792,7 @@ void AsyncTransform::run(Program* program) {
                     return;
                 }
             }
-            if (auto* te = dynamic_cast<TernaryExpr*>(e.get()); te && (hasAwait(te->thenExpr) || hasAwait(te->elseExpr))) {
+            if (auto* te = nodeCast<TernaryExpr>(e.get()); te && (hasAwait(te->thenExpr) || hasAwait(te->elseExpr))) {
                 std::string t = typeOf(e.get());
                 if (t.empty())
                     throw locError(e.get(), "an 'await' in a '?:' arm needs the expression's type, which is "
@@ -810,17 +810,17 @@ void AsyncTransform::run(Program* program) {
                 e = ident(tn);
                 return;
             }
-            if (auto* id = dynamic_cast<IncDecExpr*>(e.get())) { place(id->operand, pre, false); return; }
-            if (auto* u = dynamic_cast<UnaryExpr*>(e.get()); u && u->op == "&" && u->opFunc.empty()) {
+            if (auto* id = nodeCast<IncDecExpr>(e.get())) { place(id->operand, pre, false); return; }
+            if (auto* u = nodeCast<UnaryExpr>(e.get()); u && u->op == "&" && u->opFunc.empty()) {
                 place(u->operand, pre, false);
                 return;
             }
             // Any other node: its operands in evaluation order. Those before the last one
             // that awaits are held when they have an effect; those after it run after it.
             std::vector<ExprPtr*> ch;
-            if (auto* call = dynamic_cast<CallExpr*>(e.get())) {
-                if (auto* m = dynamic_cast<MemberExpr*>(call->callee.get())) ch.push_back(&m->base);   // a method's receiver
-                else if (!dynamic_cast<IdentExpr*>(call->callee.get())) ch.push_back(&call->callee);
+            if (auto* call = nodeCast<CallExpr>(e.get())) {
+                if (auto* m = nodeCast<MemberExpr>(call->callee.get())) ch.push_back(&m->base);   // a method's receiver
+                else if (!nodeCast<IdentExpr>(call->callee.get())) ch.push_back(&call->callee);
                 for (auto& a : call->args) ch.push_back(&a);
             } else {
                 astwalk::forEachChildExpr(e.get(), [&](ExprPtr& c) { ch.push_back(&c); });
@@ -837,9 +837,9 @@ void AsyncTransform::run(Program* program) {
                 std::vector<BlockItem> out2;
                 for (auto& it : its) {
                     if (std::holds_alternative<DeclPtr>(it)) {
-                        auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get());
+                        auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get());
                         if (vd && vd->initializer && hasAwait(vd->initializer)) {
-                            if (auto* aw = dynamic_cast<AwaitExpr*>(vd->initializer.get())) {
+                            if (auto* aw = nodeCast<AwaitExpr>(vd->initializer.get())) {
                                 if (hasAwait(aw->operand)) hoist(aw->operand, out2);
                             } else {
                                 hoist(vd->initializer, out2);
@@ -864,25 +864,25 @@ void AsyncTransform::run(Program* program) {
                 pre.push_back(st);
                 return blockOf(pre);
             };
-            if (auto* es = dynamic_cast<ExprStmt*>(s.get())) {
+            if (auto* es = nodeCast<ExprStmt>(s.get())) {
                 if (!hasAwait(es->expr)) return s;
                 ExprPtr ex = es->expr;
-                if (auto* aw = dynamic_cast<AwaitExpr*>(ex.get())) {      // `await E;`: the value is discarded
+                if (auto* aw = nodeCast<AwaitExpr>(ex.get())) {      // `await E;`: the value is discarded
                     if (hasAwait(aw->operand)) hoist(aw->operand, pre);
                     letTmp(pre, fresh("__aw_t"), awType(aw), ex);
                     return blockOf(pre);
                 }
                 hoist(ex, pre);
-                if (!dynamic_cast<IdentExpr*>(ex.get())) pre.push_back(StmtPtr(std::make_shared<ExprStmt>(ex)));
+                if (!nodeCast<IdentExpr>(ex.get())) pre.push_back(StmtPtr(std::make_shared<ExprStmt>(ex)));
                 return blockOf(pre);
             }
-            if (auto* rs = dynamic_cast<ReturnStmt*>(s.get())) {
+            if (auto* rs = nodeCast<ReturnStmt>(s.get())) {
                 if (!rs->value || !hasAwait(rs->value)) return s;
                 ExprPtr v = rs->value;
                 hoist(v, pre);
                 return withPre(std::make_shared<ReturnStmt>(v));
             }
-            if (auto* ts = dynamic_cast<ThrowStmt*>(s.get())) {
+            if (auto* ts = nodeCast<ThrowStmt>(s.get())) {
                 if (!hasAwait(ts->value)) return s;
                 ExprPtr v = ts->value;
                 hoist(v, pre);
@@ -890,16 +890,16 @@ void AsyncTransform::run(Program* program) {
                 nt->line = ts->line; nt->col = ts->col;
                 return withPre(nt);
             }
-            if (auto* b = dynamic_cast<BlockStmt*>(s.get()))
+            if (auto* b = nodeCast<BlockStmt>(s.get()))
                 return blockOf(desugarItems(b->items));
-            if (auto* i = dynamic_cast<IfStmt*>(s.get())) {
+            if (auto* i = nodeCast<IfStmt>(s.get())) {
                 ExprPtr c = i->condition;
                 if (hasAwait(c)) hoist(c, pre);
                 StmtPtr th = desugarStmt(i->thenBranch);   // in this order on every host compiler
                 StmtPtr el = desugarStmt(i->elseBranch);
                 return withPre(std::make_shared<IfStmt>(c, th, el));
             }
-            if (auto* w = dynamic_cast<WhileStmt*>(s.get())) {
+            if (auto* w = nodeCast<WhileStmt>(s.get())) {
                 if (!hasAwait(w->condition))
                     return std::make_shared<WhileStmt>(w->condition, desugarStmt(w->body));
                 // while (C) B  ->  while (true) { <C's awaits>; if (C) {} else break; B }
@@ -912,7 +912,7 @@ void AsyncTransform::run(Program* program) {
             }
             // A do/while or for whose condition or step awaits: a `while (true)` whose first
             // pass skips the test (do/while) or the step (for), so `continue` still runs them.
-            if (auto* dw = dynamic_cast<DoWhileStmt*>(s.get())) {
+            if (auto* dw = nodeCast<DoWhileStmt>(s.get())) {
                 if (!hasAwait(dw->condition))
                     return std::make_shared<DoWhileStmt>(desugarStmt(dw->body), dw->condition);
                 std::string first = fresh("__first");
@@ -929,7 +929,7 @@ void AsyncTransform::run(Program* program) {
                 outer.push_back(StmtPtr(std::make_shared<WhileStmt>(boolLit(true), blockOf(body))));
                 return blockOf(outer);
             }
-            if (auto* f = dynamic_cast<ForStmt*>(s.get())) {
+            if (auto* f = nodeCast<ForStmt>(s.get())) {
                 StmtPtr init = f->init ? desugarStmt(f->init) : nullptr;
                 if (!hasAwait(f->condition) && !hasAwait(f->step))
                     return std::make_shared<ForStmt>(init, f->condition, f->step, desugarStmt(f->body));
@@ -938,7 +938,7 @@ void AsyncTransform::run(Program* program) {
                 if (f->step) {
                     ExprPtr st = f->step;
                     if (hasAwait(st)) hoist(st, step);
-                    if (!dynamic_cast<IdentExpr*>(st.get())) step.push_back(StmtPtr(std::make_shared<ExprStmt>(st)));
+                    if (!nodeCast<IdentExpr>(st.get())) step.push_back(StmtPtr(std::make_shared<ExprStmt>(st)));
                 }
                 std::vector<BlockItem> body;
                 body.push_back(StmtPtr(std::make_shared<IfStmt>(ident(first),
@@ -955,7 +955,7 @@ void AsyncTransform::run(Program* program) {
                 outer.push_back(StmtPtr(std::make_shared<WhileStmt>(boolLit(true), blockOf(body))));
                 return blockOf(outer);
             }
-            if (auto* fi = dynamic_cast<ForInStmt*>(s.get())) {
+            if (auto* fi = nodeCast<ForInStmt>(s.get())) {
                 // The iterable is evaluated once, before the loop (an await in it is hoisted).
                 ExprPtr iterable = fi->iterable;
                 if (hasAwait(iterable)) hoist(iterable, pre);
@@ -997,7 +997,7 @@ void AsyncTransform::run(Program* program) {
                 return withPre(std::make_shared<ForStmt>(init, cond, step,
                     std::make_shared<BlockStmt>(bodyItems)));
             }
-            if (auto* sw = dynamic_cast<SwitchStmt*>(s.get())) {
+            if (auto* sw = nodeCast<SwitchStmt>(s.get())) {
                 // The subject is evaluated once, before the dispatch. Normalize awaits inside
                 // each case. Wrap the case body in a block so its statements run through
                 // desugarItems (which let-binds awaits and may introduce VarDecls); all
@@ -1013,7 +1013,7 @@ void AsyncTransform::run(Program* program) {
                 }
                 return withPre(out);
             }
-            if (auto* m = dynamic_cast<MatchStmt*>(s.get())) {
+            if (auto* m = nodeCast<MatchStmt>(s.get())) {
                 ExprPtr subj = m->subject;
                 if (hasAwait(subj)) hoist(subj, pre);
                 auto out = std::make_shared<MatchStmt>(subj, std::vector<MatchStmt::Arm>{});
@@ -1026,7 +1026,7 @@ void AsyncTransform::run(Program* program) {
                 }
                 return withPre(out);
             }
-            if (auto* t = dynamic_cast<TryStmt*>(s.get())) {
+            if (auto* t = nodeCast<TryStmt>(s.get())) {
                 std::vector<TryStmt::CatchClause> cs;
                 for (auto& c : t->catches) {
                     TryStmt::CatchClause nc = c;
@@ -1039,7 +1039,7 @@ void AsyncTransform::run(Program* program) {
                 nt->line = t->line; nt->col = t->col;
                 return nt;
             }
-            if (auto* d = dynamic_cast<DeferStmt*>(s.get())) {
+            if (auto* d = nodeCast<DeferStmt>(s.get())) {
                 if (!stmtHasAwait(d->body)) return s;
                 auto nd = std::make_shared<DeferStmt>(desugarStmt(d->body), d->isErr);
                 nd->line = d->line; nd->col = d->col;
@@ -1067,11 +1067,11 @@ void AsyncTransform::run(Program* program) {
             [&](const std::vector<BlockItem>& its) {
                 for (auto& it : its) {
                     if (std::holds_alternative<DeclPtr>(it)) {
-                        auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get());
+                        auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get());
                         if (!vd) continue;
                         if (!vars.count(vd->name)) { vars.insert(vd->name); fields.push_back({vd->type, vd->name}); }
                         if (vd->initializer)
-                            if (auto* aw = dynamic_cast<AwaitExpr*>(vd->initializer.get())) {
+                            if (auto* aw = nodeCast<AwaitExpr>(vd->initializer.get())) {
                                 awIdx[aw] = (int)awaits.size();
                                 awNames.push_back(astwalk::freshName("__aw" + std::to_string(awaits.size()), used));
                                 fields.push_back({"*Future<" + awType(aw) + ">", awNames.back()});
@@ -1082,18 +1082,18 @@ void AsyncTransform::run(Program* program) {
             };
         scanS = [&](const StmtPtr& s) {
             if (!s) return;
-            if (auto* b = dynamic_cast<BlockStmt*>(s.get())) scanB(b->items);
-            else if (auto* i = dynamic_cast<IfStmt*>(s.get())) { scanS(i->thenBranch); scanS(i->elseBranch); }
-            else if (auto* w = dynamic_cast<WhileStmt*>(s.get())) scanS(w->body);
-            else if (auto* dw = dynamic_cast<DoWhileStmt*>(s.get())) scanS(dw->body);
-            else if (auto* ds = dynamic_cast<DeferStmt*>(s.get())) scanS(ds->body);
-            else if (auto* f = dynamic_cast<ForStmt*>(s.get())) { scanS(f->init); scanS(f->body); }
-            else if (auto* fi = dynamic_cast<ForInStmt*>(s.get())) scanS(fi->body);
-            else if (auto* sw = dynamic_cast<SwitchStmt*>(s.get()))
+            if (auto* b = nodeCast<BlockStmt>(s.get())) scanB(b->items);
+            else if (auto* i = nodeCast<IfStmt>(s.get())) { scanS(i->thenBranch); scanS(i->elseBranch); }
+            else if (auto* w = nodeCast<WhileStmt>(s.get())) scanS(w->body);
+            else if (auto* dw = nodeCast<DoWhileStmt>(s.get())) scanS(dw->body);
+            else if (auto* ds = nodeCast<DeferStmt>(s.get())) scanS(ds->body);
+            else if (auto* f = nodeCast<ForStmt>(s.get())) { scanS(f->init); scanS(f->body); }
+            else if (auto* fi = nodeCast<ForInStmt>(s.get())) scanS(fi->body);
+            else if (auto* sw = nodeCast<SwitchStmt>(s.get()))
                 for (auto& c : sw->cases) scanB(c.stmts);
-            else if (auto* m = dynamic_cast<MatchStmt*>(s.get()))
+            else if (auto* m = nodeCast<MatchStmt>(s.get()))
                 for (auto& arm : m->arms) scanS(arm.body);
-            else if (auto* t = dynamic_cast<TryStmt*>(s.get())) {
+            else if (auto* t = nodeCast<TryStmt>(s.get())) {
                 scanS(t->body);
                 for (auto& c : t->catches) scanS(c.body);
                 scanS(t->finally);
@@ -1172,9 +1172,9 @@ void AsyncTransform::run(Program* program) {
         auto rewriteCatchExText = [&](StmtPtr& root) -> std::string {
             std::string tf;
             std::function<void(ExprPtr&)> rwE = [&](ExprPtr& e) {
-                if (!e || dynamic_cast<LambdaExpr*>(e.get())) return;
-                if (auto* call = dynamic_cast<CallExpr*>(e.get()))
-                    if (auto* id = dynamic_cast<IdentExpr*>(call->callee.get()))
+                if (!e || nodeCast<LambdaExpr>(e.get())) return;
+                if (auto* call = nodeCast<CallExpr>(e.get()))
+                    if (auto* id = nodeCast<IdentExpr>(call->callee.get()))
                         if (id->name == "exception_text" && call->args.empty()) {
                             if (tf.empty()) {
                                 tf = astwalk::freshName("__extxt", used);
@@ -1192,30 +1192,30 @@ void AsyncTransform::run(Program* program) {
                 auto items = [&](std::vector<BlockItem>& its) {
                     for (auto& it : its) {
                         if (std::holds_alternative<StmtPtr>(it)) rwS(std::get<StmtPtr>(it));
-                        else if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get())) rwE(vd->initializer);
+                        else if (auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get())) rwE(vd->initializer);
                     }
                 };
-                if (auto* b = dynamic_cast<BlockStmt*>(s.get())) items(b->items);
-                else if (auto* i = dynamic_cast<IfStmt*>(s.get())) { rwE(i->condition); rwS(i->thenBranch); rwS(i->elseBranch); }
-                else if (auto* w = dynamic_cast<WhileStmt*>(s.get())) { rwE(w->condition); rwS(w->body); }
-                else if (auto* dw = dynamic_cast<DoWhileStmt*>(s.get())) { rwS(dw->body); rwE(dw->condition); }
-                else if (auto* f = dynamic_cast<ForStmt*>(s.get())) { rwS(f->init); rwE(f->condition); rwE(f->step); rwS(f->body); }
-                else if (auto* fi = dynamic_cast<ForInStmt*>(s.get())) { rwE(fi->iterable); rwS(fi->body); }
-                else if (auto* sw = dynamic_cast<SwitchStmt*>(s.get())) {
+                if (auto* b = nodeCast<BlockStmt>(s.get())) items(b->items);
+                else if (auto* i = nodeCast<IfStmt>(s.get())) { rwE(i->condition); rwS(i->thenBranch); rwS(i->elseBranch); }
+                else if (auto* w = nodeCast<WhileStmt>(s.get())) { rwE(w->condition); rwS(w->body); }
+                else if (auto* dw = nodeCast<DoWhileStmt>(s.get())) { rwS(dw->body); rwE(dw->condition); }
+                else if (auto* f = nodeCast<ForStmt>(s.get())) { rwS(f->init); rwE(f->condition); rwE(f->step); rwS(f->body); }
+                else if (auto* fi = nodeCast<ForInStmt>(s.get())) { rwE(fi->iterable); rwS(fi->body); }
+                else if (auto* sw = nodeCast<SwitchStmt>(s.get())) {
                     rwE(sw->subject);
                     for (auto& c : sw->cases) { rwE(c.value); items(c.stmts); }
-                } else if (auto* m = dynamic_cast<MatchStmt*>(s.get())) {
+                } else if (auto* m = nodeCast<MatchStmt>(s.get())) {
                     rwE(m->subject);
                     for (auto& arm : m->arms) rwS(arm.body);
-                } else if (auto* t = dynamic_cast<TryStmt*>(s.get())) {
+                } else if (auto* t = nodeCast<TryStmt>(s.get())) {
                     rwS(t->body);
                     rwS(t->finally);
-                } else if (auto* d = dynamic_cast<DeferStmt*>(s.get())) rwS(d->body);
-                else if (auto* r = dynamic_cast<ReturnStmt*>(s.get())) rwE(r->value);
-                else if (auto* th = dynamic_cast<ThrowStmt*>(s.get())) rwE(th->value);
-                else if (auto* es = dynamic_cast<ExprStmt*>(s.get())) rwE(es->expr);
-                else if (auto* tj = dynamic_cast<ThreadJoinStmt*>(s.get())) rwE(tj->tid);
-                else if (auto* as = dynamic_cast<AsmStmt*>(s.get())) {
+                } else if (auto* d = nodeCast<DeferStmt>(s.get())) rwS(d->body);
+                else if (auto* r = nodeCast<ReturnStmt>(s.get())) rwE(r->value);
+                else if (auto* th = nodeCast<ThrowStmt>(s.get())) rwE(th->value);
+                else if (auto* es = nodeCast<ExprStmt>(s.get())) rwE(es->expr);
+                else if (auto* tj = nodeCast<ThreadJoinStmt>(s.get())) rwE(tj->tid);
+                else if (auto* as = nodeCast<AsmStmt>(s.get())) {
                     for (auto& o : as->outputs) rwE(o.second);
                     for (auto& in : as->inputs) rwE(in.second);
                 }
@@ -1261,25 +1261,25 @@ void AsyncTransform::run(Program* program) {
         // the break/continue reach the transitions above. (A switch captures only `break`.)
         std::function<bool(const StmtPtr&, bool)> escapesIn = [&](const StmtPtr& s, bool contOnly) -> bool {
             if (!s) return false;
-            if (dynamic_cast<ContinueStmt*>(s.get())) return true;
-            if (dynamic_cast<BreakStmt*>(s.get())) return !contOnly;
+            if (nodeCast<ContinueStmt>(s.get())) return true;
+            if (nodeCast<BreakStmt>(s.get())) return !contOnly;
             auto items = [&](const std::vector<BlockItem>& its, bool co) {
                 for (auto& it : its)
                     if (std::holds_alternative<StmtPtr>(it) && escapesIn(std::get<StmtPtr>(it), co)) return true;
                 return false;
             };
-            if (auto* b = dynamic_cast<BlockStmt*>(s.get())) return items(b->items, contOnly);
-            if (auto* i = dynamic_cast<IfStmt*>(s.get()))
+            if (auto* b = nodeCast<BlockStmt>(s.get())) return items(b->items, contOnly);
+            if (auto* i = nodeCast<IfStmt>(s.get()))
                 return escapesIn(i->thenBranch, contOnly) || escapesIn(i->elseBranch, contOnly);
-            if (auto* sw = dynamic_cast<SwitchStmt*>(s.get())) {
+            if (auto* sw = nodeCast<SwitchStmt>(s.get())) {
                 for (auto& c : sw->cases) if (items(c.stmts, true)) return true;
                 return false;
             }
-            if (auto* m = dynamic_cast<MatchStmt*>(s.get())) {
+            if (auto* m = nodeCast<MatchStmt>(s.get())) {
                 for (auto& a : m->arms) if (escapesIn(a.body, contOnly)) return true;
                 return false;
             }
-            if (auto* t = dynamic_cast<TryStmt*>(s.get())) {
+            if (auto* t = nodeCast<TryStmt>(s.get())) {
                 if (escapesIn(t->body, contOnly) || escapesIn(t->finally, contOnly)) return true;
                 for (auto& c : t->catches) if (escapesIn(c.body, contOnly)) return true;
                 return false;
@@ -1295,14 +1295,14 @@ void AsyncTransform::run(Program* program) {
         // state transition *after* the return, producing a mid-block terminator.
         std::function<bool(const StmtPtr&)> stmtTerminates = [&](const StmtPtr& s) -> bool {
             if (!s) return false;
-            if (dynamic_cast<ReturnStmt*>(s.get()) || dynamic_cast<ThrowStmt*>(s.get())) return true;
-            if (auto* b = dynamic_cast<BlockStmt*>(s.get())) {
+            if (nodeCast<ReturnStmt>(s.get()) || nodeCast<ThrowStmt>(s.get())) return true;
+            if (auto* b = nodeCast<BlockStmt>(s.get())) {
                 for (auto& it : b->items)
                     if (std::holds_alternative<StmtPtr>(it) && stmtTerminates(std::get<StmtPtr>(it)))
                         return true;
                 return false;
             }
-            if (auto* i = dynamic_cast<IfStmt*>(s.get()))
+            if (auto* i = nodeCast<IfStmt>(s.get()))
                 return i->elseBranch && stmtTerminates(i->thenBranch) && stmtTerminates(i->elseBranch);
             return false;
         };
@@ -1393,7 +1393,7 @@ void AsyncTransform::run(Program* program) {
                 return std::make_shared<BlockStmt>(blk);
             }
             rewrite(vd->initializer, vars);
-            if (!dynamic_cast<ArrayLitExpr*>(vd->initializer.get()))
+            if (!nodeCast<ArrayLitExpr>(vd->initializer.get()))
                 return assign(fr(vd->name), vd->initializer);
             std::string tn = astwalk::freshName("__init_t" + std::to_string(initTmp++), used);
             std::vector<BlockItem> blk;
@@ -1405,17 +1405,17 @@ void AsyncTransform::run(Program* program) {
         // Recursively rewrite a NO-await statement for inclusion in a state:
         // let -> fr.x = E; return -> completion; recurse into control-flow bodies.
         std::function<StmtPtr(const StmtPtr&)> rewritePlain = [&](const StmtPtr& s) -> StmtPtr {
-            if (auto* b = dynamic_cast<BlockStmt*>(s.get())) {
+            if (auto* b = nodeCast<BlockStmt>(s.get())) {
                 std::vector<BlockItem> out2;
                 for (auto& it : b->items) {
                     if (std::holds_alternative<DeclPtr>(it)) {
-                        auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get());
+                        auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get());
                         if (vd) out2.push_back(initField(vd));
                     } else out2.push_back(rewritePlain(std::get<StmtPtr>(it)));
                 }
                 return std::make_shared<BlockStmt>(out2);
             }
-            if (auto* t = dynamic_cast<TryStmt*>(s.get())) {
+            if (auto* t = nodeCast<TryStmt>(s.get())) {
                 std::vector<TryStmt::CatchClause> cs;
                 for (auto& c : t->catches) {
                     TryStmt::CatchClause nc = c;
@@ -1426,51 +1426,51 @@ void AsyncTransform::run(Program* program) {
                 StmtPtr fin = t->finally ? rewritePlain(t->finally) : nullptr;
                 return std::make_shared<TryStmt>(body, cs, fin);
             }
-            if (auto* rs = dynamic_cast<ReturnStmt*>(s.get())) {
+            if (auto* rs = nodeCast<ReturnStmt>(s.get())) {
                 ExprPtr v = rs->value ? rs->value : intlit(0); rewrite(v, vars);
                 std::vector<BlockItem> cb; completeInto(cb, v);
                 return std::make_shared<BlockStmt>(cb);
             }
-            if (auto* es = dynamic_cast<ExprStmt*>(s.get())) { rewrite(es->expr, vars); return s; }
+            if (auto* es = nodeCast<ExprStmt>(s.get())) { rewrite(es->expr, vars); return s; }
             // An asm operand naming a local reads or writes its frame field.
-            if (auto* as = dynamic_cast<AsmStmt*>(s.get())) {
+            if (auto* as = nodeCast<AsmStmt>(s.get())) {
                 for (auto& o : as->outputs) rewrite(o.second, vars);
                 for (auto& in : as->inputs) rewrite(in.second, vars);
                 return s;
             }
-            if (auto* i = dynamic_cast<IfStmt*>(s.get())) {
+            if (auto* i = nodeCast<IfStmt>(s.get())) {
                 rewrite(i->condition, vars);
                 return std::make_shared<IfStmt>(i->condition, rewritePlain(i->thenBranch),
                     i->elseBranch ? rewritePlain(i->elseBranch) : nullptr);
             }
-            if (auto* w = dynamic_cast<WhileStmt*>(s.get())) {
+            if (auto* w = nodeCast<WhileStmt>(s.get())) {
                 rewrite(w->condition, vars);
                 return std::make_shared<WhileStmt>(w->condition, rewritePlain(w->body));
             }
-            if (auto* dw = dynamic_cast<DoWhileStmt*>(s.get())) {
+            if (auto* dw = nodeCast<DoWhileStmt>(s.get())) {
                 rewrite(dw->condition, vars);
                 return std::make_shared<DoWhileStmt>(rewritePlain(dw->body), dw->condition);
             }
-            if (auto* ds = dynamic_cast<DeferStmt*>(s.get()))
+            if (auto* ds = nodeCast<DeferStmt>(s.get()))
                 return std::make_shared<DeferStmt>(rewritePlain(ds->body), ds->isErr);
-            if (auto* ts = dynamic_cast<ThrowStmt*>(s.get())) { rewrite(ts->value, vars); return s; }
-            if (auto* f = dynamic_cast<ForStmt*>(s.get())) {
+            if (auto* ts = nodeCast<ThrowStmt>(s.get())) { rewrite(ts->value, vars); return s; }
+            if (auto* f = nodeCast<ForStmt>(s.get())) {
                 StmtPtr in2 = f->init ? rewritePlain(f->init) : nullptr;
                 rewrite(f->condition, vars); rewrite(f->step, vars);
                 return std::make_shared<ForStmt>(in2, f->condition, f->step, rewritePlain(f->body));
             }
-            if (auto* fi = dynamic_cast<ForInStmt*>(s.get())) {
+            if (auto* fi = nodeCast<ForInStmt>(s.get())) {
                 rewrite(fi->iterable, vars);
                 return std::make_shared<ForInStmt>(fi->varName, fi->iterable, rewritePlain(fi->body));
             }
-            if (auto* sw = dynamic_cast<SwitchStmt*>(s.get())) {
+            if (auto* sw = nodeCast<SwitchStmt>(s.get())) {
                 rewrite(sw->subject, vars);
                 auto out2 = std::make_shared<SwitchStmt>(sw->subject, std::vector<SwitchStmt::Case>{});
                 for (auto& c : sw->cases) {
                     SwitchStmt::Case nc; nc.value = c.value;
                     for (auto& it : c.stmts) {
                         if (std::holds_alternative<DeclPtr>(it)) {
-                            auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get());
+                            auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get());
                             if (vd) nc.stmts.push_back(initField(vd));
                         } else nc.stmts.push_back(rewritePlain(std::get<StmtPtr>(it)));
                     }
@@ -1478,7 +1478,7 @@ void AsyncTransform::run(Program* program) {
                 }
                 return out2;
             }
-            if (auto* m = dynamic_cast<MatchStmt*>(s.get())) {
+            if (auto* m = nodeCast<MatchStmt>(s.get())) {
                 rewrite(m->subject, vars);
                 auto out2 = std::make_shared<MatchStmt>(m->subject, std::vector<MatchStmt::Arm>{});
                 out2->enumName = m->enumName;   // stamped by the type checker
@@ -1497,10 +1497,10 @@ void AsyncTransform::run(Program* program) {
         std::function<int(const std::vector<BlockItem>&, int)> lowerSeq;
         auto lowerItem = [&](BlockItem& it, int cur) -> int {
             if (std::holds_alternative<DeclPtr>(it)) {
-                auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get());
+                auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get());
                 if (!vd) return cur;
                 if (!vd->initializer) { states[cur].push_back(initField(vd)); return cur; }
-                if (auto* aw = dynamic_cast<AwaitExpr*>(vd->initializer.get())) {
+                if (auto* aw = nodeCast<AwaitExpr>(vd->initializer.get())) {
                     int i = awIdx[aw]; std::string awf = awNames[i];
                     const std::string Tp = awType(aw);   // the future's inner type T'
                     ExprPtr callE = aw->operand; rewrite(callE, vars);
@@ -1545,7 +1545,7 @@ void AsyncTransform::run(Program* program) {
             for (auto& it : its) {
                 if (cur == -1) break;            // rest is unreachable
                 if (std::holds_alternative<StmtPtr>(it))
-                    if (auto* ds = dynamic_cast<DeferStmt*>(std::get<StmtPtr>(it).get())) {
+                    if (auto* ds = nodeCast<DeferStmt>(std::get<StmtPtr>(it).get())) {
                         if (!ds->isErr) {
                             deferFrames.back().push_back(stmtHasAwait(ds->body) ? ds->body : rewritePlain(ds->body));
                             // In a split try a state's pending defers are fixed: begin a new one.
@@ -1566,7 +1566,7 @@ void AsyncTransform::run(Program* program) {
         };
         lowerStmt = [&](const StmtPtr& s, int cur) -> int {
             // return E  -> complete the future and terminate this path.
-            if (auto* rs = dynamic_cast<ReturnStmt*>(s.get())) {
+            if (auto* rs = nodeCast<ReturnStmt>(s.get())) {
                 if (hasAwait(rs->value))
                     throw std::runtime_error("async function '" + name + "': `return await ...` "
                         "must be bound first (`let r = await ...; return r;`)");
@@ -1576,13 +1576,13 @@ void AsyncTransform::run(Program* program) {
                 return -1;
             }
             // break/continue bind to the enclosing split loop -> state transition.
-            if (dynamic_cast<BreakStmt*>(s.get())) {
+            if (nodeCast<BreakStmt>(s.get())) {
                 if (brkTargets.empty())
                     throw std::runtime_error("async function '" + name + "': `break` outside a loop");
                 emitExit(cur, brkDeferDepth.back(), brkTargets.back(), false);
                 return -1;
             }
-            if (dynamic_cast<ContinueStmt*>(s.get())) {
+            if (nodeCast<ContinueStmt>(s.get())) {
                 if (contTargets.empty())
                     throw std::runtime_error("async function '" + name + "': `continue` outside a loop");
                 emitExit(cur, contDeferDepth.back(), contTargets.back(), false);
@@ -1597,7 +1597,7 @@ void AsyncTransform::run(Program* program) {
                 states[cur].push_back(rewritePlain(s));
                 return stmtTerminates(s) ? -1 : cur;   // -1: control left this state
             }
-            if (auto* i = dynamic_cast<IfStmt*>(s.get())) {
+            if (auto* i = nodeCast<IfStmt>(s.get())) {
                 rewrite(i->condition, vars);
                 int thenE = newState(), elseE = newState(), join = newState();
                 std::vector<BlockItem> tb; tb.push_back(assign(fr(frn.st), intlit(thenE)));
@@ -1610,7 +1610,7 @@ void AsyncTransform::run(Program* program) {
                 if (ee != -1) goTo(ee, join);
                 return (te == -1 && ee == -1) ? -1 : join;
             }
-            if (auto* w = dynamic_cast<WhileStmt*>(s.get())) {
+            if (auto* w = nodeCast<WhileStmt>(s.get())) {
                 rewrite(w->condition, vars);
                 int header = newState(), bodyE = newState(), after = newState();
                 goTo(cur, header);
@@ -1624,7 +1624,7 @@ void AsyncTransform::run(Program* program) {
                 if (be != -1) goTo(be, header);    // back-edge
                 return after;                       // the loop may not execute -> reachable
             }
-            if (auto* dw = dynamic_cast<DoWhileStmt*>(s.get())) {
+            if (auto* dw = nodeCast<DoWhileStmt>(s.get())) {
                 // do body while (cond): body first, then cond(test) -> body | after. The
                 // test is its own state so `continue` re-tests the condition (C semantics).
                 rewrite(dw->condition, vars);
@@ -1640,7 +1640,7 @@ void AsyncTransform::run(Program* program) {
                 if (be != -1) goTo(be, test);
                 return after;
             }
-            if (auto* f = dynamic_cast<ForStmt*>(s.get())) {
+            if (auto* f = nodeCast<ForStmt>(s.get())) {
                 // for (init; cond; step) body  — init/step run as plain code; the
                 // loop is header(cond) -> body -> step -> back-edge -> header.
                 if (f->init) {
@@ -1672,7 +1672,7 @@ void AsyncTransform::run(Program* program) {
                 if (be != -1) goTo(be, step);      // body exit -> step
                 return after;
             }
-            if (auto* sw = dynamic_cast<SwitchStmt*>(s.get())) {
+            if (auto* sw = nodeCast<SwitchStmt>(s.get())) {
                 // Dispatch on the subject in `cur`, then C-style fall-through between
                 // per-case entry states; `break` (pushed below) exits to `join`.
                 rewrite(sw->subject, vars);
@@ -1702,7 +1702,7 @@ void AsyncTransform::run(Program* program) {
                 brkTargets.pop_back(); brkDeferDepth.pop_back();
                 return join;
             }
-            if (auto* m = dynamic_cast<MatchStmt*>(s.get())) {
+            if (auto* m = nodeCast<MatchStmt>(s.get())) {
                 // Dispatch on the subject in `cur`: each arm copies its payload bindings to
                 // frame fields and selects the arm's entry state; the arms join after.
                 rewrite(m->subject, vars);
@@ -1757,7 +1757,7 @@ void AsyncTransform::run(Program* program) {
                 }
                 return join;
             }
-            if (auto* t = dynamic_cast<TryStmt*>(s.get())) {
+            if (auto* t = nodeCast<TryStmt>(s.get())) {
                 // The body's states form one region and the handlers' another (see Region);
                 // the `finally` is a defer frame run on every exit, outside both regions.
                 if (t->finally && (loopEscapes(t->finally) || stmtHasReturn(t->finally)))
@@ -1795,7 +1795,7 @@ void AsyncTransform::run(Program* program) {
                 if (fin) deferFrames.pop_back();
                 return reach ? after : -1;
             }
-            if (auto* b = dynamic_cast<BlockStmt*>(s.get())) return lowerSeq(b->items, cur);
+            if (auto* b = nodeCast<BlockStmt>(s.get())) return lowerSeq(b->items, cur);
             throw locError(s.get(), "'await' is not supported inside this statement");
         };
 
@@ -1971,7 +1971,7 @@ void AsyncTransform::run(Program* program) {
         std::function<void(const ExprPtr&, std::vector<std::string>&)> lambdaCaps =
             [&](const ExprPtr& e, std::vector<std::string>& caps) {
                 if (!e) return;
-                if (auto* lam = dynamic_cast<LambdaExpr*>(e.get())) {
+                if (auto* lam = nodeCast<LambdaExpr>(e.get())) {
                     for (auto& c : lam->captures)
                         if (vars.count(c.first) && std::find(caps.begin(), caps.end(), c.first) == caps.end())
                             caps.push_back(c.first);
@@ -1982,45 +1982,45 @@ void AsyncTransform::run(Program* program) {
         std::function<StmtPtr(const StmtPtr&)> wrapCaps = [&](const StmtPtr& s) -> StmtPtr {
             if (!s) return s;
             std::vector<std::string> caps;
-            if (auto* b = dynamic_cast<BlockStmt*>(s.get())) {
+            if (auto* b = nodeCast<BlockStmt>(s.get())) {
                 for (auto& it : b->items)
                     if (std::holds_alternative<StmtPtr>(it)) it = BlockItem(wrapCaps(std::get<StmtPtr>(it)));
                 return s;
             }
-            if (auto* i = dynamic_cast<IfStmt*>(s.get())) {
+            if (auto* i = nodeCast<IfStmt>(s.get())) {
                 lambdaCaps(i->condition, caps);
                 i->thenBranch = wrapCaps(i->thenBranch); i->elseBranch = wrapCaps(i->elseBranch);
-            } else if (auto* w = dynamic_cast<WhileStmt*>(s.get())) {
+            } else if (auto* w = nodeCast<WhileStmt>(s.get())) {
                 lambdaCaps(w->condition, caps); w->body = wrapCaps(w->body);
-            } else if (auto* dw = dynamic_cast<DoWhileStmt*>(s.get())) {
+            } else if (auto* dw = nodeCast<DoWhileStmt>(s.get())) {
                 lambdaCaps(dw->condition, caps); dw->body = wrapCaps(dw->body);
-            } else if (auto* f = dynamic_cast<ForStmt*>(s.get())) {
+            } else if (auto* f = nodeCast<ForStmt>(s.get())) {
                 f->init = wrapCaps(f->init);
                 lambdaCaps(f->condition, caps); lambdaCaps(f->step, caps);
                 f->body = wrapCaps(f->body);
-            } else if (auto* fi = dynamic_cast<ForInStmt*>(s.get())) {
+            } else if (auto* fi = nodeCast<ForInStmt>(s.get())) {
                 lambdaCaps(fi->iterable, caps); fi->body = wrapCaps(fi->body);
-            } else if (auto* sw = dynamic_cast<SwitchStmt*>(s.get())) {
+            } else if (auto* sw = nodeCast<SwitchStmt>(s.get())) {
                 lambdaCaps(sw->subject, caps);
                 for (auto& c : sw->cases) {
                     lambdaCaps(c.value, caps);
                     for (auto& it : c.stmts)
                         if (std::holds_alternative<StmtPtr>(it)) it = BlockItem(wrapCaps(std::get<StmtPtr>(it)));
                 }
-            } else if (auto* m = dynamic_cast<MatchStmt*>(s.get())) {
+            } else if (auto* m = nodeCast<MatchStmt>(s.get())) {
                 lambdaCaps(m->subject, caps);
                 for (auto& arm : m->arms) arm.body = wrapCaps(arm.body);
-            } else if (auto* ds = dynamic_cast<DeferStmt*>(s.get())) {
+            } else if (auto* ds = nodeCast<DeferStmt>(s.get())) {
                 ds->body = wrapCaps(ds->body);
-            } else if (auto* t = dynamic_cast<TryStmt*>(s.get())) {
+            } else if (auto* t = nodeCast<TryStmt>(s.get())) {
                 t->body = wrapCaps(t->body);
                 for (auto& c : t->catches) c.body = wrapCaps(c.body);
                 t->finally = wrapCaps(t->finally);
-            } else if (auto* rs = dynamic_cast<ReturnStmt*>(s.get())) {
+            } else if (auto* rs = nodeCast<ReturnStmt>(s.get())) {
                 lambdaCaps(rs->value, caps);
-            } else if (auto* es = dynamic_cast<ExprStmt*>(s.get())) {
+            } else if (auto* es = nodeCast<ExprStmt>(s.get())) {
                 lambdaCaps(es->expr, caps);
-            } else if (auto* ts = dynamic_cast<ThrowStmt*>(s.get())) {
+            } else if (auto* ts = nodeCast<ThrowStmt>(s.get())) {
                 lambdaCaps(ts->value, caps);
             }
             if (caps.empty()) return s;

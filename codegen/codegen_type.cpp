@@ -265,9 +265,9 @@ bool CodeGen::isIntPromotingOp(const std::string& op) {
 // an arithmetic/bitwise result so every consumer extends it as the signed int it is.
 static std::string promotedResultType(const ExprPtr& expr, const std::string& t) {
     static const std::set<std::string> narrow = {"bool","char","int8","uint8","int16","uint16"};
-    if (auto* u = dynamic_cast<UnaryExpr*>(expr.get()))     // `-x` / `~x` / `+x` promote too
+    if (auto* u = nodeCast<UnaryExpr>(expr.get()))     // `-x` / `~x` / `+x` promote too
         return (u->opFunc.empty() && (u->op == "-" || u->op == "~" || u->op == "+") && narrow.count(t)) ? "int" : t;
-    auto* b = dynamic_cast<BinaryExpr*>(expr.get());
+    auto* b = nodeCast<BinaryExpr>(expr.get());
     if (!b || !b->opFunc.empty()) return t;
     static const std::set<std::string> arith = {"+","-","*","/","%","&","|","^","<<",">>"};
     if (!arith.count(b->op)) return t;
@@ -410,15 +410,15 @@ std::string CodeGen::deriveExprEskiuType(const ExprPtr& expr) const {
 }
 
 std::string CodeGen::deriveExprEskiuTypeUncached(const ExprPtr& expr) const {
-    if (auto ident = dynamic_cast<IdentExpr*>(expr.get())) {
+    if (auto ident = nodeCast<IdentExpr>(expr.get())) {
         return expandAlias(lookupVarType(ident->name));
     }
     // A cast's static type IS the cast target — important so that pointer
     // arithmetic on e.g. (*uint8)structPtr uses a byte stride, not the struct's.
-    if (auto cast = dynamic_cast<CastExpr*>(expr.get())) {
+    if (auto cast = nodeCast<CastExpr>(expr.get())) {
         return expandAlias(cast->targetType);
     }
-    if (auto lit = dynamic_cast<LiteralExpr*>(expr.get())) {
+    if (auto lit = nodeCast<LiteralExpr>(expr.get())) {
         switch (lit->kind) {
             case LiteralExpr::Kind::INT:    return "int";
             case LiteralExpr::Kind::FLOAT:  return "double"; // float literals are double
@@ -428,7 +428,7 @@ std::string CodeGen::deriveExprEskiuTypeUncached(const ExprPtr& expr) const {
             default: return "";
         }
     }
-    if (auto member = dynamic_cast<MemberExpr*>(expr.get())) {
+    if (auto member = nodeCast<MemberExpr>(expr.get())) {
         std::string base = getExprEskiuType(member->base);
         if (member->member == "len" && ty::Type::parse(base).kind == ty::Type::Kind::Slice)
             return "int64";                                   // slice length field
@@ -444,7 +444,7 @@ std::string CodeGen::deriveExprEskiuTypeUncached(const ExprPtr& expr) const {
             }
         }
     }
-    if (auto bin = dynamic_cast<BinaryExpr*>(expr.get())) {
+    if (auto bin = nodeCast<BinaryExpr>(expr.get())) {
         if (bin->opFunc.empty() && (bin->op == "&&" || bin->op == "||")) return "bool";
         // Each operand's type is derived once (a deep chain must stay linear).
         std::string lt, rt, fn = bin->opFunc;
@@ -457,7 +457,7 @@ std::string CodeGen::deriveExprEskiuTypeUncached(const ExprPtr& expr) const {
         if (!fn.empty() && it != funcEskiuReturnType.end()) return expandAlias(it->second);
         if (fn.empty()) return builtinBinaryType(lt, bin->op, rt);
     }
-    if (auto unary = dynamic_cast<UnaryExpr*>(expr.get())) {
+    if (auto unary = nodeCast<UnaryExpr>(expr.get())) {
         if (unary->op == "-" || unary->op == "!" || unary->op == "~") {
             std::string t, fn = unary->opFunc;
             if (fn.empty()) {
@@ -474,7 +474,7 @@ std::string CodeGen::deriveExprEskiuTypeUncached(const ExprPtr& expr) const {
             return tyq::isPtr(t) ? tyq::pointee(tyq::strip(t)) : "";
         }
     }
-    if (auto index = dynamic_cast<IndexExpr*>(expr.get())) {
+    if (auto index = nodeCast<IndexExpr>(expr.get())) {
         std::string base = getExprEskiuType(index->base);
         ty::Type bt = ty::Type::parse(base);
         std::string elem;
@@ -487,7 +487,7 @@ std::string CodeGen::deriveExprEskiuTypeUncached(const ExprPtr& expr) const {
     }
     // A ternary's static type is the common type of its arms (the type checker's
     // resolver table usually supplies it; this is the structural fallback).
-    if (auto tern = dynamic_cast<TernaryExpr*>(expr.get())) {
+    if (auto tern = nodeCast<TernaryExpr>(expr.get())) {
         std::string tt = getExprEskiuType(tern->thenExpr);
         std::string et = getExprEskiuType(tern->elseExpr);
         if (tt == et || et.empty() || et == "unknown") return tt;
@@ -496,13 +496,13 @@ std::string CodeGen::deriveExprEskiuTypeUncached(const ExprPtr& expr) const {
     }
     // A call's static type is its function's return type — needed so member
     // access on a temporary (e.g. make().x) can resolve the struct.
-    if (auto call = dynamic_cast<CallExpr*>(expr.get())) {
-        if (auto id = dynamic_cast<IdentExpr*>(call->callee.get())) {
+    if (auto call = nodeCast<CallExpr>(expr.get())) {
+        if (auto id = nodeCast<IdentExpr>(call->callee.get())) {
             if (id->name == "exception_text" && call->args.empty() && !funcEskiuReturnType.count("exception_text"))
                 return "string";
             auto it = funcEskiuReturnType.find(id->name);
             if (it != funcEskiuReturnType.end()) return expandAlias(it->second);
-        } else if (auto m = dynamic_cast<MemberExpr*>(call->callee.get())) {
+        } else if (auto m = nodeCast<MemberExpr>(call->callee.get())) {
             std::string bt = getExprEskiuType(m->base);
             if (bt.size() > 7 && bt.substr(0, 7) == "struct:") bt = bt.substr(7);
             if (!bt.empty() && bt.front() == '*') bt = bt.substr(1);
@@ -519,7 +519,7 @@ std::string CodeGen::deriveExprEskiuTypeUncached(const ExprPtr& expr) const {
         }
         return "";
     }
-    if (auto tc = dynamic_cast<TemplateCallExpr*>(expr.get())) {
+    if (auto tc = nodeCast<TemplateCallExpr>(expr.get())) {
         auto td = funcTemplateDecls.find(tc->templateName);
         if (td != funcTemplateDecls.end()) {
             auto& tp = td->second->typeParams;
@@ -530,7 +530,7 @@ std::string CodeGen::deriveExprEskiuTypeUncached(const ExprPtr& expr) const {
         }
         return "";
     }
-    if (auto si = dynamic_cast<StructInitExpr*>(expr.get())) {
+    if (auto si = nodeCast<StructInitExpr>(expr.get())) {
         return si->structName;
     }
     return "";

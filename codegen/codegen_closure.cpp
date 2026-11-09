@@ -428,63 +428,63 @@ llvm::Function* CodeGen::ensureExceptionTextFn() {
 static bool hasExceptionText(Expr* e);
 static bool hasExceptionText(Stmt* s) {
     if (!s) return false;
-    if (auto* b = dynamic_cast<BlockStmt*>(s)) {
+    if (auto* b = nodeCast<BlockStmt>(s)) {
         for (auto& st : b->items) {
             if (std::holds_alternative<StmtPtr>(st)) {
                 if (hasExceptionText(std::get<StmtPtr>(st).get())) return true;
-            } else if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(st).get())) {
+            } else if (auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(st).get())) {
                 if (hasExceptionText(vd->initializer.get())) return true;
             }
         }
         return false;
     }
-    if (auto* i = dynamic_cast<IfStmt*>(s))
+    if (auto* i = nodeCast<IfStmt>(s))
         return hasExceptionText(i->condition.get()) || hasExceptionText(i->thenBranch.get()) || hasExceptionText(i->elseBranch.get());
-    if (auto* w = dynamic_cast<WhileStmt*>(s))
+    if (auto* w = nodeCast<WhileStmt>(s))
         return hasExceptionText(w->condition.get()) || hasExceptionText(w->body.get());
-    if (auto* dw = dynamic_cast<DoWhileStmt*>(s))
+    if (auto* dw = nodeCast<DoWhileStmt>(s))
         return hasExceptionText(dw->body.get()) || hasExceptionText(dw->condition.get());
-    if (auto* f = dynamic_cast<ForStmt*>(s))
+    if (auto* f = nodeCast<ForStmt>(s))
         return hasExceptionText(f->init.get()) || hasExceptionText(f->condition.get()) || hasExceptionText(f->step.get()) || hasExceptionText(f->body.get());
-    if (auto* fi = dynamic_cast<ForInStmt*>(s))
+    if (auto* fi = nodeCast<ForInStmt>(s))
         return hasExceptionText(fi->iterable.get()) || hasExceptionText(fi->body.get());
-    if (auto* r = dynamic_cast<ReturnStmt*>(s)) return hasExceptionText(r->value.get());
-    if (auto* sw = dynamic_cast<SwitchStmt*>(s)) {
+    if (auto* r = nodeCast<ReturnStmt>(s)) return hasExceptionText(r->value.get());
+    if (auto* sw = nodeCast<SwitchStmt>(s)) {
         if (hasExceptionText(sw->subject.get())) return true;
         for (auto& c : sw->cases) {
             if (hasExceptionText(c.value.get())) return true;
             for (auto& it : c.stmts) {
                 if (std::holds_alternative<StmtPtr>(it)) {
                     if (hasExceptionText(std::get<StmtPtr>(it).get())) return true;
-                } else if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get())) {
+                } else if (auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get())) {
                     if (hasExceptionText(vd->initializer.get())) return true;
                 }
             }
         }
         return false;
     }
-    if (auto* m = dynamic_cast<MatchStmt*>(s)) {
+    if (auto* m = nodeCast<MatchStmt>(s)) {
         if (hasExceptionText(m->subject.get())) return true;
         for (auto& a : m->arms) if (hasExceptionText(a.body.get())) return true;
         return false;
     }
-    if (auto* th = dynamic_cast<ThrowStmt*>(s)) return hasExceptionText(th->value.get());
-    if (auto* tr = dynamic_cast<TryStmt*>(s))
+    if (auto* th = nodeCast<ThrowStmt>(s)) return hasExceptionText(th->value.get());
+    if (auto* tr = nodeCast<TryStmt>(s))
         return hasExceptionText(tr->body.get()) || hasExceptionText(tr->finally.get());
-    if (auto* d = dynamic_cast<DeferStmt*>(s)) return hasExceptionText(d->body.get());
-    if (auto* tj = dynamic_cast<ThreadJoinStmt*>(s)) return hasExceptionText(tj->tid.get());
-    if (auto* a = dynamic_cast<AsmStmt*>(s)) {
+    if (auto* d = nodeCast<DeferStmt>(s)) return hasExceptionText(d->body.get());
+    if (auto* tj = nodeCast<ThreadJoinStmt>(s)) return hasExceptionText(tj->tid.get());
+    if (auto* a = nodeCast<AsmStmt>(s)) {
         for (auto& out : a->outputs) if (hasExceptionText(out.second.get())) return true;
         for (auto& in : a->inputs) if (hasExceptionText(in.second.get())) return true;
         return false;
     }
-    if (auto* es = dynamic_cast<ExprStmt*>(s)) return hasExceptionText(es->expr.get());
+    if (auto* es = nodeCast<ExprStmt>(s)) return hasExceptionText(es->expr.get());
     return false;
 }
 static bool hasExceptionText(Expr* e) {
-    if (!e || dynamic_cast<LambdaExpr*>(e)) return false;
-    if (auto* c = dynamic_cast<CallExpr*>(e))
-        if (auto* id = dynamic_cast<IdentExpr*>(c->callee.get());
+    if (!e || nodeCast<LambdaExpr>(e)) return false;
+    if (auto* c = nodeCast<CallExpr>(e))
+        if (auto* id = nodeCast<IdentExpr>(c->callee.get());
             id && ((id->name == "exception_text" && c->args.empty()) || (id->name == "__exception_text_into" && c->args.size() == 1)))
             return true;
     bool found = false;
@@ -821,7 +821,7 @@ void CodeGen::visit(ThreadCreateExpr* node) {
     // so the thread owns it: start it through a trampoline that frees its env once the
     // body returns. A closure value passed in stays its owner's (free_closure after
     // thread_join), since the same closure may start several threads.
-    if (dynamic_cast<LambdaExpr*>(node->worker.get())) {
+    if (nodeCast<LambdaExpr>(node->worker.get())) {
         llvm::Type* szTy = module->getDataLayout().getIntPtrType(*context);
         llvm::Function* mallocFn = getOrDeclareFunc("malloc", ptrTy, {szTy}, false);
         llvm::Value* pack = builder->CreateCall(mallocFn,

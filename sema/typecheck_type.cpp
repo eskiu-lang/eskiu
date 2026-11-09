@@ -869,14 +869,14 @@ std::string TypeChecker::assignabilityError(const std::string& targetIn,
     // An integer literal that provably does not fit the target is rejected even though
     // integer-width narrowing is otherwise implicit (its value is statically known).
     if (isIntType(nt)) {
-        if (auto* l = dynamic_cast<LiteralExpr*>(srcExpr);
+        if (auto* l = nodeCast<LiteralExpr>(srcExpr);
             l && l->kind == LiteralExpr::Kind::INT && !intLiteralFits(nt, srcExpr))
             return "integer literal " + l->value + " is out of range for '" + targetType + "'";
         // Either arm of a `?:` is the assigned value, so each literal arm must fit too.
-        if (auto* t = dynamic_cast<TernaryExpr*>(srcExpr))
+        if (auto* t = nodeCast<TernaryExpr>(srcExpr))
             for (Expr* arm : {t->thenExpr.get(), t->elseExpr.get()}) {
                 std::string e = assignabilityError(targetType, getExpressionType(arm), arm);
-                if (!e.empty() && dynamic_cast<LiteralExpr*>(arm)) return e;
+                if (!e.empty() && nodeCast<LiteralExpr>(arm)) return e;
             }
     }
     if (isValidAssignment(targetType, srcType)) return "";
@@ -931,7 +931,7 @@ std::string TypeChecker::resolveOperator(const std::string& op,
 }
 
 bool TypeChecker::intLiteralFits(const std::string& targetType, Expr* e) {
-    auto* lit = dynamic_cast<LiteralExpr*>(e);
+    auto* lit = nodeCast<LiteralExpr>(e);
     if (!lit || lit->kind != LiteralExpr::Kind::INT) return false;
     std::string t = tyq::strip(targetType);
     bool neg = !lit->value.empty() && lit->value[0] == '-';
@@ -1136,7 +1136,7 @@ std::string TypeChecker::normalizeType(const std::string& rawType) {
                 // per instance. Like codegen, which emits one on its first call, a method's
                 // body is checked (with the instance's type arguments) once it is called.
                 for (const auto& m : templ->second->methods) {
-                    auto* mf = dynamic_cast<FunctionDecl*>(m.get());
+                    auto* mf = nodeCast<FunctionDecl>(m.get());
                     if (!mf) continue;
                     std::vector<std::string> pts{"*" + mangled};
                     for (const auto& p : mf->params) pts.push_back(substType(p.first, subs));

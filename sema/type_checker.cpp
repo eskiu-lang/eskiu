@@ -25,18 +25,18 @@ bool TypeChecker::check(Program* program) {
 
     // Every `&name` in the program: a global whose address is taken is never narrowed.
     for (const auto& decl : program->declarations) {
-        if (auto* fd = dynamic_cast<FunctionDecl*>(decl.get())) astwalk::collectAddressTaken(fd->body.get(), globalAddrTaken);
-        else if (auto* vd = dynamic_cast<VarDecl*>(decl.get())) astwalk::collectAddressTaken(vd->initializer.get(), globalAddrTaken);
-        else if (auto* sd = dynamic_cast<StructDecl*>(decl.get()))
+        if (auto* fd = nodeCast<FunctionDecl>(decl.get())) astwalk::collectAddressTaken(fd->body.get(), globalAddrTaken);
+        else if (auto* vd = nodeCast<VarDecl>(decl.get())) astwalk::collectAddressTaken(vd->initializer.get(), globalAddrTaken);
+        else if (auto* sd = nodeCast<StructDecl>(decl.get()))
             for (const auto& m : sd->methods)
-                if (auto* mf = dynamic_cast<FunctionDecl*>(m.get())) astwalk::collectAddressTaken(mf->body.get(), globalAddrTaken);
+                if (auto* mf = nodeCast<FunctionDecl>(m.get())) astwalk::collectAddressTaken(mf->body.get(), globalAddrTaken);
     }
 
     // First pass: register all struct declarations and function signatures
     std::set<std::string> definedFnBodies;   // names of functions WITH a body, for redefinition
     for (const auto& decl : program->declarations) {
         curFile = decl->sourceFile;
-        if (auto enumDecl = dynamic_cast<EnumDecl*>(decl.get())) {
+        if (auto enumDecl = nodeCast<EnumDecl>(decl.get())) {
             enumTypes.insert(enumDecl->name);
             if (enumDecl->isADT() && !enumDecl->typeParams.empty()) {
                 // Generic algebraic enum (Option<T>): a template; instances are
@@ -58,16 +58,16 @@ bool TypeChecker::check(Program* program) {
             }
             continue;
         }
-        if (auto aliasDecl = dynamic_cast<TypeAliasDecl*>(decl.get())) {
+        if (auto aliasDecl = nodeCast<TypeAliasDecl>(decl.get())) {
             typeAliases[aliasDecl->name] = aliasDecl->aliased;
             templateTypeAliases()[aliasDecl->name] = aliasDecl->aliased;
             continue;
         }
-        if (auto ifaceDecl = dynamic_cast<InterfaceDecl*>(decl.get())) {
+        if (auto ifaceDecl = nodeCast<InterfaceDecl>(decl.get())) {
             interfaceDecls[ifaceDecl->name] = ifaceDecl;
             continue;
         }
-        if (auto unionDecl = dynamic_cast<UnionDecl*>(decl.get())) {
+        if (auto unionDecl = nodeCast<UnionDecl>(decl.get())) {
             // A union is a struct to the type system (all fields at offset 0 in codegen).
             StructInfo info;
             info.name = unionDecl->name;
@@ -82,7 +82,7 @@ bool TypeChecker::check(Program* program) {
             structs[unionDecl->name] = info;
             continue;
         }
-        if (auto funcDecl = dynamic_cast<FunctionDecl*>(decl.get())) {
+        if (auto funcDecl = nodeCast<FunctionDecl>(decl.get())) {
             fnDeclsAll[funcDecl->name].push_back(funcDecl);
             auto& known = fnDecls[funcDecl->name];
             if (!known.first || funcDecl->body) known = {funcDecl, ""};
@@ -97,12 +97,12 @@ bool TypeChecker::check(Program* program) {
                 continue;
             }
         }
-        if (auto structDecl = dynamic_cast<StructDecl*>(decl.get())) {
+        if (auto structDecl = nodeCast<StructDecl>(decl.get())) {
             std::string sfile = structDecl->sourceFile.empty() ? sourceFile : structDecl->sourceFile;
             for (const auto& f : structDecl->fields)
                 fieldLocations[structDecl->name + "." + f.name] = {f.line, f.col, sfile};
             for (const auto& method : structDecl->methods)
-                if (auto func = dynamic_cast<FunctionDecl*>(method.get())) {
+                if (auto func = nodeCast<FunctionDecl>(method.get())) {
                     fnDecls[structDecl->name + "_" + func->name] = {func, "*" + structDecl->name};
                     fnDeclsAll[structDecl->name + "_" + func->name].push_back(func);
                     methodLocations[structDecl->name + "_" + func->name] = {func->line, func->col, sfile};
@@ -121,7 +121,7 @@ bool TypeChecker::check(Program* program) {
 
             // Register methods as mangled functions: StructName_methodName(self, ...)
             for (const auto& method : structDecl->methods) {
-                if (auto func = dynamic_cast<FunctionDecl*>(method.get())) {
+                if (auto func = nodeCast<FunctionDecl>(method.get())) {
                     std::string mangled = structDecl->name + "_" + func->name;
                     std::vector<std::string> paramTypes;
                     paramTypes.push_back("*" + structDecl->name); // implicit self
@@ -129,7 +129,7 @@ bool TypeChecker::check(Program* program) {
                     defineFunction(mangled, func->returnType, paramTypes);
                 }
             }
-        } else if (auto funcDecl = dynamic_cast<FunctionDecl*>(decl.get())) {
+        } else if (auto funcDecl = nodeCast<FunctionDecl>(decl.get())) {
             std::vector<std::string> paramTypes;
             for (const auto& param : funcDecl->params) {
                 paramTypes.push_back(param.first);  // first = type, second = name
@@ -161,7 +161,7 @@ bool TypeChecker::check(Program* program) {
             // (with the usual numeric coercions), not by an exact mangled-name match.
             if (!funcDecl->operatorSym.empty())
                 operatorOverloads[funcDecl->operatorSym].push_back({paramTypes, funcDecl->returnType, funcDecl->name});
-        } else if (auto externDecl = dynamic_cast<ExternDecl*>(decl.get())) {
+        } else if (auto externDecl = nodeCast<ExternDecl>(decl.get())) {
             std::vector<std::string> paramTypes;
             for (const auto& param : externDecl->params) {
                 paramTypes.push_back(param.first);  // first = type, second = name
@@ -169,7 +169,7 @@ bool TypeChecker::check(Program* program) {
             defineFunction(externDecl->name, externDecl->returnType, paramTypes);
             functionParamEscaping[externDecl->name] = externDecl->paramEscaping;
             externFnNames.insert(externDecl->name);
-        } else if (auto intrinDecl = dynamic_cast<IntrinsicDecl*>(decl.get())) {
+        } else if (auto intrinDecl = nodeCast<IntrinsicDecl>(decl.get())) {
             // Intrinsics carry an ordinary signature; only codegen treats them
             // specially (inline lowering instead of a call).
             std::vector<std::string> paramTypes;
@@ -188,7 +188,7 @@ bool TypeChecker::check(Program* program) {
     {
         std::map<std::string, TypeAliasDecl*> aliasDecls;
         for (const auto& decl : program->declarations)
-            if (auto* ad = dynamic_cast<TypeAliasDecl*>(decl.get())) aliasDecls[ad->name] = ad;
+            if (auto* ad = nodeCast<TypeAliasDecl>(decl.get())) aliasDecls[ad->name] = ad;
         auto baseName = [](const std::string& t) {
             ty::Type ty = ty::Type::parse(tyq::strip(t));
             while ((ty.kind == ty::Type::Kind::Array || ty.kind == ty::Type::Kind::Slice) && ty.elem) {
@@ -236,11 +236,11 @@ bool TypeChecker::check(Program* program) {
     for (const auto& decl : program->declarations) {
         curFile = decl->sourceFile;
         posCtx = decl.get();
-        auto* sm = dynamic_cast<FunctionDecl*>(decl.get());
+        auto* sm = nodeCast<FunctionDecl>(decl.get());
         bool scriptMain = sm && sm->name == "main" && !sm->params.empty() && sm->params[0].second == "__argc";
         if (scriptMain)
             for (const auto& d : program->declarations)
-                if (auto* vd = dynamic_cast<VarDecl*>(d.get());
+                if (auto* vd = nodeCast<VarDecl>(d.get());
                     vd && !vd->fromImport && vd->sourceFile == sm->sourceFile && vd->name != "argc" && vd->name != "argv")
                     scriptGlobalPos.emplace(vd->name, std::make_pair(vd->line, vd->col));
         decl->accept(this);
@@ -353,13 +353,13 @@ void TypeChecker::checkTopLevelNames(Program* program) {
     };
     for (const auto& decl : program->declarations) {
         Decl* d = decl.get();
-        if (auto* f = dynamic_cast<FunctionDecl*>(d)) declare(f->name, "function", f);
-        else if (auto* v = dynamic_cast<VarDecl*>(d)) declare(v->name, "variable", v);
-        else if (auto* s = dynamic_cast<StructDecl*>(d)) {
+        if (auto* f = nodeCast<FunctionDecl>(d)) declare(f->name, "function", f);
+        else if (auto* v = nodeCast<VarDecl>(d)) declare(v->name, "variable", v);
+        else if (auto* s = nodeCast<StructDecl>(d)) {
             declare(s->name, "struct", s);
             // An inline method `S.m` is the function `S_m`; a free `S_m` would be a second one.
             for (const auto& m : s->methods)
-                if (auto* mf = dynamic_cast<FunctionDecl*>(m.get())) {
+                if (auto* mf = nodeCast<FunctionDecl>(m.get())) {
                     std::string mangled = s->name + "_" + mf->name;
                     auto it = seen.find(mangled);
                     if (it != seen.end() && it->second.kind == "function")
@@ -368,14 +368,14 @@ void TypeChecker::checkTopLevelNames(Program* program) {
                     else seen[mangled] = {"method", mf};
                 }
         }
-        else if (auto* u = dynamic_cast<UnionDecl*>(d)) declare(u->name, "union", u);
-        else if (auto* e = dynamic_cast<EnumDecl*>(d)) {
+        else if (auto* u = nodeCast<UnionDecl>(d)) declare(u->name, "union", u);
+        else if (auto* e = nodeCast<EnumDecl>(d)) {
             declare(e->name, "enum", e);
             // A classic member is an int constant, apart from type names; a sum type's
             // variant is a constructor, so it may not share a name with a type either.
             for (const auto& m : e->members) declare(m.first, e->isADT() ? "variant" : "enum member", e);
         }
-        else if (auto* x = dynamic_cast<ExternDecl*>(d)) {
+        else if (auto* x = nodeCast<ExternDecl>(d)) {
             // An `extern` may be declared again (modules share C functions), but with the
             // same signature: two different ones cannot both describe the C symbol.
             std::string sig = normalizeType(x->returnType) + "(";
@@ -387,8 +387,8 @@ void TypeChecker::checkTopLevelNames(Program* program) {
                 errorAtDecl(x, "conflicting declaration of extern '" + x->name + "' (" + sig +
                                " vs the earlier " + it->second + ")");
         }
-        else if (auto* i = dynamic_cast<InterfaceDecl*>(d)) declare(i->name, "interface", i);
-        else if (auto* a = dynamic_cast<TypeAliasDecl*>(d)) {
+        else if (auto* i = nodeCast<InterfaceDecl>(d)) declare(i->name, "interface", i);
+        else if (auto* a = nodeCast<TypeAliasDecl>(d)) {
             auto it = seen.find(a->name);
             if (it != seen.end() && it->second.kind == "type alias" &&
                 static_cast<TypeAliasDecl*>(it->second.decl)->aliased == a->aliased) continue;
@@ -398,7 +398,7 @@ void TypeChecker::checkTopLevelNames(Program* program) {
     // An extern names a C function, so it cannot share its name with a generic one either
     // (a call would reach the generic, or a mistyped mix of the two).
     for (const auto& decl : program->declarations)
-        if (auto* x = dynamic_cast<ExternDecl*>(decl.get())) {
+        if (auto* x = nodeCast<ExternDecl>(decl.get())) {
             auto it = seen.find(x->name);
             if (it != seen.end() && it->second.kind == "function" && it->second.decl &&
                 !static_cast<FunctionDecl*>(it->second.decl)->typeParams.empty())
@@ -417,15 +417,15 @@ void TypeChecker::checkValueCycles(Program* program) {
     struct VNode { Decl* decl; const char* kind; std::vector<std::string> tparams; std::vector<VField> fields; };
     std::map<std::string, VNode> all;
     for (const auto& decl : program->declarations) {
-        if (auto* sd = dynamic_cast<StructDecl*>(decl.get())) {
+        if (auto* sd = nodeCast<StructDecl>(decl.get())) {
             VNode n{sd, "struct", sd->typeParams, {}};
             for (const auto& f : sd->fields) n.fields.push_back({f.type, "field '" + f.name + "'"});
             all[sd->name] = n;
-        } else if (auto* ud = dynamic_cast<UnionDecl*>(decl.get())) {
+        } else if (auto* ud = nodeCast<UnionDecl>(decl.get())) {
             VNode n{ud, "struct", {}, {}};
             for (const auto& f : ud->fields) n.fields.push_back({f.type, "field '" + f.name + "'"});
             all[ud->name] = n;
-        } else if (auto* ed = dynamic_cast<EnumDecl*>(decl.get()); ed && ed->isADT()) {
+        } else if (auto* ed = nodeCast<EnumDecl>(decl.get()); ed && ed->isADT()) {
             VNode n{ed, "enum", ed->typeParams, {}};
             for (size_t i = 0; i < ed->members.size() && i < ed->payloads.size(); ++i)
                 for (const auto& pt : ed->payloads[i]) n.fields.push_back({pt, "variant '" + ed->members[i].first + "'"});
@@ -674,9 +674,9 @@ void TypeChecker::visit(Program*) {
 // composite expressions we use width 1 (match only at their exact start column),
 // which lets a more specific child identifier/literal win.
 static int hoverSpanWidth(const Expr* e) {
-    if (auto* id = dynamic_cast<const IdentExpr*>(e))
+    if (auto* id = nodeCast<const IdentExpr>(e))
         return std::max(1, (int)id->name.size());
-    if (auto* lit = dynamic_cast<const LiteralExpr*>(e)) {
+    if (auto* lit = nodeCast<const LiteralExpr>(e)) {
         int n = (int)lit->value.size();
         if (lit->kind == LiteralExpr::Kind::STRING ||
             lit->kind == LiteralExpr::Kind::CHAR)
@@ -868,21 +868,21 @@ bool TypeChecker::assignsToConst(Expr* lhs, std::string& nameOut) {
     // Root identifier of an expression, for a readable diagnostic.
     auto rootName = [](Expr* e) -> std::string {
         while (e) {
-            if (auto* id = dynamic_cast<IdentExpr*>(e)) return id->name;
-            if (auto* u = dynamic_cast<UnaryExpr*>(e))  { e = u->operand.get(); continue; }
-            if (auto* m = dynamic_cast<MemberExpr*>(e)) { e = m->base.get();    continue; }
-            if (auto* ix = dynamic_cast<IndexExpr*>(e)) { e = ix->base.get();   continue; }
+            if (auto* id = nodeCast<IdentExpr>(e)) return id->name;
+            if (auto* u = nodeCast<UnaryExpr>(e))  { e = u->operand.get(); continue; }
+            if (auto* m = nodeCast<MemberExpr>(e)) { e = m->base.get();    continue; }
+            if (auto* ix = nodeCast<IndexExpr>(e)) { e = ix->base.get();   continue; }
             return "";
         }
         return "";
     };
     while (cur) {
-        if (auto* id = dynamic_cast<IdentExpr*>(cur)) {
+        if (auto* id = nodeCast<IdentExpr>(cur)) {
             if (isConstSymbol(id->name)) { nameOut = id->name; return true; }
             return false;
         }
         // Dereference: `*p = x` writes the pointee — illegal if it is const.
-        if (auto* u = dynamic_cast<UnaryExpr*>(cur)) {
+        if (auto* u = nodeCast<UnaryExpr>(cur)) {
             if (u->op == "*" && tyq::baseConst(getPointeeType(getExpressionType(u->operand.get())))) {
                 nameOut = rootName(u->operand.get()); return true;
             }
@@ -891,7 +891,7 @@ bool TypeChecker::assignsToConst(Expr* lhs, std::string& nameOut) {
         // Member/element of a *value* aggregate keeps the same const root and we
         // keep walking; through a pointer it writes the pointee, which is illegal
         // only if that pointee (the struct/element) is const.
-        if (auto* m = dynamic_cast<MemberExpr*>(cur)) {
+        if (auto* m = nodeCast<MemberExpr>(cur)) {
             std::string bt = getExpressionType(m->base.get());
             if (tyq::isPtr(bt)) {
                 if (tyq::baseConst(getPointeeType(bt))) { nameOut = m->member; return true; }
@@ -899,7 +899,7 @@ bool TypeChecker::assignsToConst(Expr* lhs, std::string& nameOut) {
             }
             cur = m->base.get(); continue;
         }
-        if (auto* ix = dynamic_cast<IndexExpr*>(cur)) {
+        if (auto* ix = nodeCast<IndexExpr>(cur)) {
             std::string bt = getExpressionType(ix->base.get());
             if (tyq::isPtr(bt)) {
                 if (tyq::baseConst(getPointeeType(bt))) { nameOut = rootName(ix->base.get()); return true; }
@@ -1085,7 +1085,7 @@ void TypeChecker::completeMembers(const std::string& recvType) {
         if (auto td = templateDecls.find(ti->second.first); td != templateDecls.end()) {
             for (const auto& f : td->second->fields) add("field", f.name, f.type);
             for (const auto& m : td->second->methods)
-                if (auto fd = dynamic_cast<FunctionDecl*>(m.get()))
+                if (auto fd = nodeCast<FunctionDecl>(m.get()))
                     add("method", fd->name, signatureText(ti->second.first + "_" + fd->name));
         }
     }
@@ -1224,7 +1224,7 @@ void TypeChecker::noteWarning(const std::string& name, int line, int col, const 
 
 void TypeChecker::warnAssignInCondition(Expr* cond) {
     if (!warnAll) return;
-    if (auto* b = dynamic_cast<BinaryExpr*>(cond); b && b->op == "=")
+    if (auto* b = nodeCast<BinaryExpr>(cond); b && b->op == "=")
         warning(b->line, b->col,
                 "assignment used as a condition — did you mean '=='?");
 }

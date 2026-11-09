@@ -6,6 +6,7 @@
 #include <variant>
 #include <utility>
 #include <map>
+#include <type_traits>
 
 // Operator overloading: an `operator <op>(...)` decl compiles to a normal function under a
 // canonical mangled name, and a binary/unary expression whose operands are not built-in
@@ -51,6 +52,64 @@ inline std::string eskiuOpName(const std::string& op, const std::vector<std::str
     return n;
 }
 
+// The concrete class of a node. nodeCast<T>(p) is dynamic_cast<T*>(p) for a node class
+// (every one is a leaf: nothing derives from FunctionDecl, BinaryExpr, ...) at the cost
+// of one virtual call and a compare, where dynamic_cast walks the class hierarchy's
+// RTTI; every pass tests node kinds this way, and dynamic_cast was the type checker's
+// largest cost (docs/dev/compile-speed.md).
+enum class NodeKind : unsigned char {
+    FunctionDecl,
+    VarDecl,
+    InterfaceDecl,
+    StructDecl,
+    UnionDecl,
+    ExternDecl,
+    IntrinsicDecl,
+    EnumDecl,
+    TypeAliasDecl,
+    BlockStmt,
+    IfStmt,
+    ForStmt,
+    ForInStmt,
+    WhileStmt,
+    DoWhileStmt,
+    ReturnStmt,
+    BreakStmt,
+    ContinueStmt,
+    SwitchStmt,
+    MatchStmt,
+    ThrowStmt,
+    TryStmt,
+    DeferStmt,
+    ThreadJoinStmt,
+    AsmStmt,
+    ExprStmt,
+    BinaryExpr,
+    UnaryExpr,
+    IncDecExpr,
+    QuestionExpr,
+    TernaryExpr,
+    CallExpr,
+    IndexExpr,
+    MemberExpr,
+    CastExpr,
+    LiteralExpr,
+    IdentExpr,
+    AllocWithExpr,
+    TemplateCallExpr,
+    StructInitExpr,
+    ArrayLitExpr,
+    LambdaExpr,
+    SizeofExpr,
+    ThreadCreateExpr,
+    AwaitExpr,
+    FreeClosureExpr,
+    Program,
+};
+#define ESKIU_NODE_KIND(K) \
+    static constexpr NodeKind kNodeKind = NodeKind::K; \
+    NodeKind nodeKind() const override { return kNodeKind; }
+
 // Forward declarations
 class ASTNode;
 class Expr;
@@ -76,7 +135,13 @@ public:
     int col  = 0;
     virtual ~ASTNode() = default;
     virtual void accept(class ASTVisitor* visitor) = 0;
+    virtual NodeKind nodeKind() const = 0;
 };
+
+template <class T, class B>
+inline T* nodeCast(B* p) {
+    return p && p->nodeKind() == std::remove_const_t<T>::kNodeKind ? static_cast<T*>(p) : nullptr;
+}
 
 // ============================================================================
 // Declarations
@@ -97,6 +162,7 @@ public:
 
 class FunctionDecl : public Decl {
 public:
+    ESKIU_NODE_KIND(FunctionDecl)
     std::string returnType;
     std::vector<std::pair<std::string, std::string>> params; // (type, name)
     StmtPtr body;
@@ -141,6 +207,7 @@ public:
 
 class VarDecl : public Decl {
 public:
+    ESKIU_NODE_KIND(VarDecl)
     std::string type;
     ExprPtr initializer;
     bool isVolatile = false;
@@ -161,6 +228,7 @@ public:
 
 class InterfaceDecl : public Decl {
 public:
+    ESKIU_NODE_KIND(InterfaceDecl)
     // Each method signature: (return_type, name, param_types)
     struct MethodSig {
         std::string returnType;
@@ -176,6 +244,7 @@ public:
 
 class StructDecl : public Decl {
 public:
+    ESKIU_NODE_KIND(StructDecl)
     struct Field {
         std::string type;
         std::string name;
@@ -213,6 +282,7 @@ public:
 // Field access uses a cast to the field type.
 class UnionDecl : public Decl {
 public:
+    ESKIU_NODE_KIND(UnionDecl)
     std::vector<StructDecl::Field> fields;
     std::vector<StructDecl::Pad> pads;   // unnamed bitfields (size and alignment only)
     int packAlign = 0;                   // `#pragma pack(N)`: cap member alignment at N (0 = natural)
@@ -239,6 +309,7 @@ inline std::vector<StructDecl::Field> layoutFields(const std::vector<StructDecl:
 
 class ExternDecl : public Decl {
 public:
+    ESKIU_NODE_KIND(ExternDecl)
     std::string returnType;
     std::vector<std::pair<std::string, std::string>> params;
     std::vector<bool> paramEscaping;   // per-param `escaping` flag
@@ -257,6 +328,7 @@ public:
 // is produced. Distinct from ExternDecl so the two intents never blur.
 class IntrinsicDecl : public Decl {
 public:
+    ESKIU_NODE_KIND(IntrinsicDecl)
     std::string returnType;
     std::vector<std::pair<std::string, std::string>> params;
     std::vector<bool> paramEscaping;   // per-param `escaping` flag
@@ -272,6 +344,7 @@ public:
 // Members are int constants. An enum type maps to i32.
 class EnumDecl : public Decl {
 public:
+    ESKIU_NODE_KIND(EnumDecl)
     std::vector<std::pair<std::string, long long>> members; // (name, value)
     // Per-variant payload field types, parallel to `members` (empty = no payload).
     // If any variant has a payload, this enum is an algebraic data type: a tagged
@@ -302,6 +375,7 @@ public:
 // type Alias = UnderlyingType;  — a name for an existing type.
 class TypeAliasDecl : public Decl {
 public:
+    ESKIU_NODE_KIND(TypeAliasDecl)
     std::string aliased; // the underlying type string
 
     TypeAliasDecl(const std::string& name, std::string aliased)
@@ -321,6 +395,7 @@ public:
 
 class BlockStmt : public Stmt {
 public:
+    ESKIU_NODE_KIND(BlockStmt)
     std::vector<BlockItem> items;  // Unified list of declarations and statements
 
     explicit BlockStmt(const std::vector<BlockItem>& blk_items = {})
@@ -331,6 +406,7 @@ public:
 
 class IfStmt : public Stmt {
 public:
+    ESKIU_NODE_KIND(IfStmt)
     ExprPtr condition;
     StmtPtr thenBranch;
     StmtPtr elseBranch;
@@ -343,6 +419,7 @@ public:
 
 class ForStmt : public Stmt {
 public:
+    ESKIU_NODE_KIND(ForStmt)
     StmtPtr init;
     ExprPtr condition;
     ExprPtr step;
@@ -358,6 +435,7 @@ public:
 // for (x in iterable) — iterates over a fixed-size array or a List<T>.
 class ForInStmt : public Stmt {
 public:
+    ESKIU_NODE_KIND(ForInStmt)
     std::string varName;
     ExprPtr iterable;
     StmtPtr body;
@@ -380,6 +458,7 @@ public:
 
 class WhileStmt : public Stmt {
 public:
+    ESKIU_NODE_KIND(WhileStmt)
     ExprPtr condition;
     StmtPtr body;
     std::string label;   // labeled-loop name ("" = unlabeled)
@@ -393,6 +472,7 @@ public:
 // do { body } while (cond); — the body runs at least once, then repeats while cond.
 class DoWhileStmt : public Stmt {
 public:
+    ESKIU_NODE_KIND(DoWhileStmt)
     StmtPtr body;
     ExprPtr condition;
     std::string label;   // labeled-loop name ("" = unlabeled)
@@ -405,6 +485,7 @@ public:
 
 class ReturnStmt : public Stmt {
 public:
+    ESKIU_NODE_KIND(ReturnStmt)
     ExprPtr value;
 
     explicit ReturnStmt(ExprPtr val = nullptr) : value(std::move(val)) {}
@@ -414,18 +495,21 @@ public:
 
 class BreakStmt : public Stmt {
 public:
+    ESKIU_NODE_KIND(BreakStmt)
     std::string label;   // target loop label ("" = innermost loop)
     void accept(class ASTVisitor* visitor) override;
 };
 
 class ContinueStmt : public Stmt {
 public:
+    ESKIU_NODE_KIND(ContinueStmt)
     std::string label;   // target loop label ("" = innermost loop)
     void accept(class ASTVisitor* visitor) override;
 };
 
 class SwitchStmt : public Stmt {
 public:
+    ESKIU_NODE_KIND(SwitchStmt)
     struct Case {
         ExprPtr value;               // nullptr = default
         // A declaration may appear directly after the label (C): its scope is the rest
@@ -446,6 +530,7 @@ public:
 // active variant's payload fields to names in that arm.
 class MatchStmt : public Stmt {
 public:
+    ESKIU_NODE_KIND(MatchStmt)
     struct Arm {
         std::string variant;                 // variant name, or "" for the `_` default
         std::vector<std::string> bindings;   // payload binding names (for this variant)
@@ -468,6 +553,7 @@ public:
 // throw expr;
 class ThrowStmt : public Stmt {
 public:
+    ESKIU_NODE_KIND(ThrowStmt)
     ExprPtr     value;
     std::string valueType; // filled in by TypeChecker
     // Synthesized by the async lowering only: `value` is an exception object a capturing
@@ -480,6 +566,7 @@ public:
 // try { body } catch (Type name) { handler } finally { cleanup }
 class TryStmt : public Stmt {
 public:
+    ESKIU_NODE_KIND(TryStmt)
     struct CatchClause {
         std::string type;
         std::string name;
@@ -510,6 +597,7 @@ public:
 // `isErr` (errdefer, Slice 2) restricts it to the error-exit paths.
 class DeferStmt : public Stmt {
 public:
+    ESKIU_NODE_KIND(DeferStmt)
     StmtPtr body;
     bool    isErr = false;
 
@@ -521,6 +609,7 @@ public:
 // thread_join(*void tid)
 class ThreadJoinStmt : public Stmt {
 public:
+    ESKIU_NODE_KIND(ThreadJoinStmt)
     ExprPtr tid;
     explicit ThreadJoinStmt(ExprPtr t) : tid(std::move(t)) {}
     void accept(class ASTVisitor* visitor) override;
@@ -529,6 +618,7 @@ public:
 // Inline assembly: asm("cli") or asm("op" : "=r"(y) : "r"(x) : "rax")
 class AsmStmt : public Stmt {
 public:
+    ESKIU_NODE_KIND(AsmStmt)
     std::string asmString;
     // Extended asm: each entry is (constraint, expression). An output's constraint
     // starts with `=` (written) or `+` (read and written); its expression is an lvalue.
@@ -550,6 +640,7 @@ public:
 
 class ExprStmt : public Stmt {
 public:
+    ESKIU_NODE_KIND(ExprStmt)
     ExprPtr expr;
 
     explicit ExprStmt(ExprPtr e) : expr(std::move(e)) {}
@@ -572,6 +663,7 @@ public:
 
 class BinaryExpr : public Expr {
 public:
+    ESKIU_NODE_KIND(BinaryExpr)
     ExprPtr left;
     std::string op;
     ExprPtr right;
@@ -590,6 +682,7 @@ public:
 
 class UnaryExpr : public Expr {
 public:
+    ESKIU_NODE_KIND(UnaryExpr)
     std::string op;
     ExprPtr operand;
     std::string opFunc;   // set by sema when this resolves to a user unary operator overload
@@ -604,6 +697,7 @@ public:
 // the expression value is the old value (postfix) or the new value (prefix).
 class IncDecExpr : public Expr {
 public:
+    ESKIU_NODE_KIND(IncDecExpr)
     ExprPtr operand;
     bool    decrement;   // false = ++, true = --
     bool    prefix;      // true = ++x/--x, false = x++/x--
@@ -619,6 +713,7 @@ public:
 // expression evaluates to the unwrapped success value (the Result's T).
 class QuestionExpr : public Expr {
 public:
+    ESKIU_NODE_KIND(QuestionExpr)
     ExprPtr operand;
 
     explicit QuestionExpr(ExprPtr operand) : operand(std::move(operand)) {}
@@ -630,6 +725,7 @@ public:
 // the arms must share a common type, which is the expression's type.
 class TernaryExpr : public Expr {
 public:
+    ESKIU_NODE_KIND(TernaryExpr)
     ExprPtr condition;
     ExprPtr thenExpr;
     ExprPtr elseExpr;
@@ -643,6 +739,7 @@ public:
 
 class CallExpr : public Expr {
 public:
+    ESKIU_NODE_KIND(CallExpr)
     ExprPtr callee;
     std::vector<ExprPtr> args;
     // `dbg(e)`: the source text of `e` (the builtin prints it with the value), and
@@ -658,6 +755,7 @@ public:
 
 class IndexExpr : public Expr {
 public:
+    ESKIU_NODE_KIND(IndexExpr)
     ExprPtr base;
     ExprPtr index;
     ExprPtr highIndex;   // set for a slice expression `base[index..highIndex]`; else null
@@ -673,6 +771,7 @@ public:
 
 class MemberExpr : public Expr {
 public:
+    ESKIU_NODE_KIND(MemberExpr)
     ExprPtr base;
     std::string member;
     int memberLine = 0, memberCol = 0;   // the member name's position (editor tooling)
@@ -685,6 +784,7 @@ public:
 
 class CastExpr : public Expr {
 public:
+    ESKIU_NODE_KIND(CastExpr)
     std::string targetType;
     ExprPtr expr;
 
@@ -696,6 +796,7 @@ public:
 
 class LiteralExpr : public Expr {
 public:
+    ESKIU_NODE_KIND(LiteralExpr)
     enum class Kind { INT, FLOAT, STRING, CHAR, BOOL, NULL_VAL };
 
     Kind kind;
@@ -709,6 +810,7 @@ public:
 
 class IdentExpr : public Expr {
 public:
+    ESKIU_NODE_KIND(IdentExpr)
     std::string name;
 
     explicit IdentExpr(const std::string& name) : name(name) {}
@@ -720,6 +822,7 @@ public:
 // allocator (a struct providing `*void alloc(...)`), returning *T.
 class AllocWithExpr : public Expr {
 public:
+    ESKIU_NODE_KIND(AllocWithExpr)
     ExprPtr allocator;     // the allocator (typically &someAllocator)
     std::string elemType;  // T
     ExprPtr count;         // N
@@ -732,6 +835,7 @@ public:
 
 class TemplateCallExpr : public Expr {
 public:
+    ESKIU_NODE_KIND(TemplateCallExpr)
     std::string templateName;
     std::vector<std::string> typeArgs;
     std::vector<ExprPtr> args;
@@ -744,6 +848,7 @@ public:
 
 class StructInitExpr : public Expr {
 public:
+    ESKIU_NODE_KIND(StructInitExpr)
     std::string structName;
     // pair: (field_name, value) — field_name is empty string for positional init
     std::vector<std::pair<std::string, ExprPtr>> fieldInits;
@@ -761,6 +866,7 @@ public:
 // element type and size. Fewer elements than the size zero-fill the rest.
 class ArrayLitExpr : public Expr {
 public:
+    ESKIU_NODE_KIND(ArrayLitExpr)
     std::vector<ExprPtr> elements;
     explicit ArrayLitExpr(std::vector<ExprPtr> elements)
         : elements(std::move(elements)) {}
@@ -770,6 +876,7 @@ public:
 // Lambda / anonymous function: fn(int x) -> int { return x * 2; }
 class LambdaExpr : public Expr {
 public:
+    ESKIU_NODE_KIND(LambdaExpr)
     std::vector<std::pair<std::string, std::string>> params; // (type, name)
     std::string returnType;
     StmtPtr body;
@@ -793,6 +900,7 @@ public:
 // sizeof(T) -> int64
 class SizeofExpr : public Expr {
 public:
+    ESKIU_NODE_KIND(SizeofExpr)
     std::string typeName;
     // `sizeof(expr)` (typeName empty): the size of the operand's type. The operand is
     // type-checked but never evaluated.
@@ -804,6 +912,7 @@ public:
 // thread_create(fn()->void) -> *void  (returns thread handle)
 class ThreadCreateExpr : public Expr {
 public:
+    ESKIU_NODE_KIND(ThreadCreateExpr)
     ExprPtr worker;
     explicit ThreadCreateExpr(ExprPtr w) : worker(std::move(w)) {}
     void accept(class ASTVisitor* visitor) override;
@@ -814,6 +923,7 @@ public:
 // only inside an `async fn`. Lowered by the async transform.
 class AwaitExpr : public Expr {
 public:
+    ESKIU_NODE_KIND(AwaitExpr)
     ExprPtr operand;
     std::string resolvedType;   // set by the type checker: the awaited value type T'
     // In a generic async function: per checked instance, its type-argument bindings and
@@ -829,6 +939,7 @@ public:
 // (slot 1 of the fat pointer). A no-op for non-capturing closures (null env).
 class FreeClosureExpr : public Expr {
 public:
+    ESKIU_NODE_KIND(FreeClosureExpr)
     ExprPtr closure;
     explicit FreeClosureExpr(ExprPtr c) : closure(std::move(c)) {}
     void accept(class ASTVisitor* visitor) override;
@@ -840,6 +951,7 @@ public:
 
 class Program : public ASTNode {
 public:
+    ESKIU_NODE_KIND(Program)
     std::vector<DeclPtr> declarations;
     std::vector<std::string> linkLibs;   // `#pragma link("name")`, deduped, in order
 

@@ -112,7 +112,7 @@ void CodeGen::emitScopedBody(const StmtPtr& body) {
     // an unbraced match arm) is still its own scope: a `defer` in it runs when that
     // body ends, not at the end of the enclosing function or block.
     if (!body) return;
-    if (dynamic_cast<BlockStmt*>(body.get())) { body->accept(this); return; }
+    if (nodeCast<BlockStmt>(body.get())) { body->accept(this); return; }
     pushScope();
     cleanupScopes.emplace_back();
     body->accept(this);
@@ -169,7 +169,7 @@ void CodeGen::visit(IfStmt* node) {
         IfStmt* next = nullptr;
         if (n->elseBranch) {
             builder->SetInsertPoint(elseBlock);
-            next = dynamic_cast<IfStmt*>(n->elseBranch.get());
+            next = nodeCast<IfStmt>(n->elseBranch.get());
             if (next) {
                 pushScope();
                 cleanupScopes.emplace_back();
@@ -250,14 +250,14 @@ void CodeGen::visit(ForStmt* node) {
     // in a BlockStmt; emit its items in the loop scope itself so the loop variable
     // stays visible to the condition, step, and body.
     pushScope();
-    if (auto* ib = dynamic_cast<BlockStmt*>(node->init.get())) {
+    if (auto* ib = nodeCast<BlockStmt>(node->init.get())) {
         // `for (i in A..B)` inside a generic instance: the shared AST carries the type the
         // checker stamped for SOME instance, so re-derive the bounds' common integer type
         // for this one (outside a generic the checker's stamp is exact).
         if (!typeParamOverride.empty() && ib->items.size() == 2 &&
             std::holds_alternative<DeclPtr>(ib->items[0]) && std::holds_alternative<DeclPtr>(ib->items[1])) {
-            auto* lo = dynamic_cast<VarDecl*>(std::get<DeclPtr>(ib->items[0]).get());
-            auto* hi = dynamic_cast<VarDecl*>(std::get<DeclPtr>(ib->items[1]).get());
+            auto* lo = nodeCast<VarDecl>(std::get<DeclPtr>(ib->items[0]).get());
+            auto* hi = nodeCast<VarDecl>(std::get<DeclPtr>(ib->items[1]).get());
             if (lo && hi && lo->rangeBound && hi->rangeBound && lo->initializer && hi->initializer) {
                 std::string ct = ty::rangeVarType(expandAlias(getExprEskiuType(lo->initializer)),
                                                   expandAlias(getExprEskiuType(hi->initializer)));
@@ -322,10 +322,10 @@ void CodeGen::visit(ForInStmt* node) {
     // it, anything else (an array, a slice, a pointer, a returned value) by value.
     if (!astwalk::isStablePlace(node->iterable.get())) {
         std::function<bool(Expr*)> addressable = [&](Expr* e) -> bool {
-            if (dynamic_cast<IdentExpr*>(e)) return true;
-            if (auto* u = dynamic_cast<UnaryExpr*>(e)) return u->op == "*" && u->opFunc.empty();
-            if (auto* ix = dynamic_cast<IndexExpr*>(e)) return ix->opFunc.empty() && !ix->highIndex;
-            if (auto* m = dynamic_cast<MemberExpr*>(e))
+            if (nodeCast<IdentExpr>(e)) return true;
+            if (auto* u = nodeCast<UnaryExpr>(e)) return u->op == "*" && u->opFunc.empty();
+            if (auto* ix = nodeCast<IndexExpr>(e)) return ix->opFunc.empty() && !ix->highIndex;
+            if (auto* m = nodeCast<MemberExpr>(e))
                 return ty::Type::parse(getExprEskiuType(m->base)).isPointer() || addressable(m->base.get());
             return false;
         };
@@ -494,7 +494,7 @@ void CodeGen::visit(MatchStmt* node) {
         // getExprEskiuType's deref only strips a leading '*'; for a trailing-star
         // pointer (`Option<int>*`) it returns "" — fall back to the operand's type.
         if (st.empty())
-            if (auto* u = dynamic_cast<UnaryExpr*>(node->subject.get()); u && u->op == "*")
+            if (auto* u = nodeCast<UnaryExpr>(node->subject.get()); u && u->op == "*")
                 st = getExprEskiuType(u->operand);
         if (!typeParamOverride.empty()) st = substType(st, typeParamOverride);  // T -> int
         while (!st.empty() && st.front() == '*') st = st.substr(1);

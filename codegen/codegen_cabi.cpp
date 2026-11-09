@@ -720,13 +720,13 @@ llvm::Value* CodeGen::evalCVaList(const ExprPtr& arg) {
                                       || (t.isAArch64() && !t.isOSDarwin()));
     llvm::Type* vaTy = getTypeFromString("va_list");
     if (byAddr) {
-        if (auto* id = dynamic_cast<IdentExpr*>(arg.get()))
+        if (auto* id = nodeCast<IdentExpr>(arg.get()))
             if (lookupSymbol(id->name)) return evaluateLValue(arg);
         llvm::AllocaInst* copy = entryAlloca(vaTy, nullptr, "va.arg");
         builder->CreateStore(evaluateExpr(arg), copy);
         return copy;
     }
-    if (auto* id = dynamic_cast<IdentExpr*>(arg.get()))
+    if (auto* id = nodeCast<IdentExpr>(arg.get()))
         if (lookupSymbol(id->name))
             return builder->CreateLoad(llvm::PointerType::get(*context, 0), evaluateLValue(arg));
     return builder->CreateExtractValue(evaluateExpr(arg), {0});
@@ -832,7 +832,7 @@ llvm::Value* CodeGen::emitVaArg(llvm::Value* ap, llvm::Type* ty) {
 // C address of the named top-level function (through its C-ABI thunk when needed), or
 // null. The type checker rejects anything else (a closure value has an environment).
 llvm::Value* CodeGen::evalCFnPointer(const ExprPtr& arg) {
-    if (auto* id = dynamic_cast<IdentExpr*>(arg.get()))
+    if (auto* id = nodeCast<IdentExpr>(arg.get()))
         if (!lookupSymbol(id->name))
             if (llvm::Function* fn = module->getFunction(id->name)) return cabiCallbackThunk(fn);
     llvm::Value* v = evaluateExpr(arg);

@@ -35,7 +35,7 @@ void TypeChecker::visit(BlockStmt* node) {
             stmt->accept(this);
             // Early-exit guard: after `if (p == null) return ...;` the rest of the block
             // only runs when the condition was false (resp. true, when only the else exits).
-            if (auto* ifs = dynamic_cast<IfStmt*>(stmt.get()); ifs && ifs->condition) {
+            if (auto* ifs = nodeCast<IfStmt>(stmt.get()); ifs && ifs->condition) {
                 bool thenExits = !stmtCanCompleteNormally(ifs->thenBranch.get());
                 bool elseExits = ifs->elseBranch && !stmtCanCompleteNormally(ifs->elseBranch.get());
                 std::vector<std::string> keys;
@@ -62,8 +62,8 @@ void TypeChecker::visit(BlockStmt* node) {
 
 // The place a lock call names: `m`, `a.b.m` (identifiers and fields only), "" otherwise.
 static std::string lockPlaceKey(Expr* e) {
-    if (auto* id = dynamic_cast<IdentExpr*>(e)) return id->name;
-    if (auto* m = dynamic_cast<MemberExpr*>(e)) {
+    if (auto* id = nodeCast<IdentExpr>(e)) return id->name;
+    if (auto* m = nodeCast<MemberExpr>(e)) {
         std::string base = lockPlaceKey(m->base.get());
         return base.empty() ? "" : base + "." + m->member;
     }
@@ -74,7 +74,7 @@ static std::string lockPlaceKey(Expr* e) {
 static void earliestAwait(Stmt* s, AwaitExpr*& best);
 static void earliestAwait(Expr* e, AwaitExpr*& best) {
     if (!e) return;
-    if (auto* a = dynamic_cast<AwaitExpr*>(e)) {
+    if (auto* a = nodeCast<AwaitExpr>(e)) {
         if (!best || a->line < best->line || (a->line == best->line && a->col < best->col)) best = a;
     }
     astwalk::forEachChildExpr(e, [&](ExprPtr& c) { earliestAwait(c.get(), best); });
@@ -82,53 +82,53 @@ static void earliestAwait(Expr* e, AwaitExpr*& best) {
 static void earliestAwait(const std::vector<BlockItem>& items, AwaitExpr*& best) {
     for (auto& it : items) {
         if (std::holds_alternative<StmtPtr>(it)) earliestAwait(std::get<StmtPtr>(it).get(), best);
-        else if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get())) earliestAwait(vd->initializer.get(), best);
+        else if (auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get())) earliestAwait(vd->initializer.get(), best);
     }
 }
 static void earliestAwait(Stmt* s, AwaitExpr*& best) {
     if (!s) return;
     auto E = [&](const ExprPtr& e) { earliestAwait(e.get(), best); };
     auto S = [&](const StmtPtr& st) { earliestAwait(st.get(), best); };
-    if (auto* b = dynamic_cast<BlockStmt*>(s)) earliestAwait(b->items, best);
-    else if (auto* i = dynamic_cast<IfStmt*>(s)) {
+    if (auto* b = nodeCast<BlockStmt>(s)) earliestAwait(b->items, best);
+    else if (auto* i = nodeCast<IfStmt>(s)) {
         for (IfStmt* n = i; n;) {
             E(n->condition); S(n->thenBranch);
-            auto* next = dynamic_cast<IfStmt*>(n->elseBranch.get());
+            auto* next = nodeCast<IfStmt>(n->elseBranch.get());
             if (!next) S(n->elseBranch);
             n = next;
         }
     }
-    else if (auto* f = dynamic_cast<ForStmt*>(s))       { S(f->init); E(f->condition); E(f->step); S(f->body); }
-    else if (auto* fi = dynamic_cast<ForInStmt*>(s))    { E(fi->iterable); S(fi->body); }
-    else if (auto* w = dynamic_cast<WhileStmt*>(s))     { E(w->condition); S(w->body); }
-    else if (auto* dw = dynamic_cast<DoWhileStmt*>(s))  { S(dw->body); E(dw->condition); }
-    else if (auto* r = dynamic_cast<ReturnStmt*>(s))    { E(r->value); }
-    else if (auto* sw = dynamic_cast<SwitchStmt*>(s)) {
+    else if (auto* f = nodeCast<ForStmt>(s))       { S(f->init); E(f->condition); E(f->step); S(f->body); }
+    else if (auto* fi = nodeCast<ForInStmt>(s))    { E(fi->iterable); S(fi->body); }
+    else if (auto* w = nodeCast<WhileStmt>(s))     { E(w->condition); S(w->body); }
+    else if (auto* dw = nodeCast<DoWhileStmt>(s))  { S(dw->body); E(dw->condition); }
+    else if (auto* r = nodeCast<ReturnStmt>(s))    { E(r->value); }
+    else if (auto* sw = nodeCast<SwitchStmt>(s)) {
         E(sw->subject);
         for (auto& c : sw->cases) { E(c.value); earliestAwait(c.stmts, best); }
     }
-    else if (auto* m = dynamic_cast<MatchStmt*>(s))     { E(m->subject); for (auto& a : m->arms) S(a.body); }
-    else if (auto* th = dynamic_cast<ThrowStmt*>(s))    { E(th->value); }
-    else if (auto* t = dynamic_cast<TryStmt*>(s))       { S(t->body); for (auto& c : t->catches) S(c.body); S(t->finally); }
-    else if (auto* d = dynamic_cast<DeferStmt*>(s))     { S(d->body); }
-    else if (auto* tj = dynamic_cast<ThreadJoinStmt*>(s)) { E(tj->tid); }
-    else if (auto* a = dynamic_cast<AsmStmt*>(s))       { for (auto& o : a->outputs) E(o.second); for (auto& in : a->inputs) E(in.second); }
-    else if (auto* es = dynamic_cast<ExprStmt*>(s))     { E(es->expr); }
+    else if (auto* m = nodeCast<MatchStmt>(s))     { E(m->subject); for (auto& a : m->arms) S(a.body); }
+    else if (auto* th = nodeCast<ThrowStmt>(s))    { E(th->value); }
+    else if (auto* t = nodeCast<TryStmt>(s))       { S(t->body); for (auto& c : t->catches) S(c.body); S(t->finally); }
+    else if (auto* d = nodeCast<DeferStmt>(s))     { S(d->body); }
+    else if (auto* tj = nodeCast<ThreadJoinStmt>(s)) { E(tj->tid); }
+    else if (auto* a = nodeCast<AsmStmt>(s))       { for (auto& o : a->outputs) E(o.second); for (auto& in : a->inputs) E(in.second); }
+    else if (auto* es = nodeCast<ExprStmt>(s))     { E(es->expr); }
 }
 
 // The mutex a statement locks (`lock` true) or unlocks: `Mutex_lock(&m)` /
 // `Mutex_lock(p)` by name, or `m.lock()` on a `Mutex` / `*Mutex`. Its place key, or "".
 std::string TypeChecker::mutexCallKey(Stmt* s, bool lock) {
-    auto* es = dynamic_cast<ExprStmt*>(s);
-    auto* c = es ? dynamic_cast<CallExpr*>(es->expr.get()) : nullptr;
+    auto* es = nodeCast<ExprStmt>(s);
+    auto* c = es ? nodeCast<CallExpr>(es->expr.get()) : nullptr;
     if (!c) return "";
-    if (auto* id = dynamic_cast<IdentExpr*>(c->callee.get())) {
+    if (auto* id = nodeCast<IdentExpr>(c->callee.get())) {
         if (id->name != (lock ? "Mutex_lock" : "Mutex_unlock") || c->args.size() != 1) return "";
         Expr* a = c->args[0].get();
-        if (auto* u = dynamic_cast<UnaryExpr*>(a); u && u->op == "&") a = u->operand.get();
+        if (auto* u = nodeCast<UnaryExpr>(a); u && u->op == "&") a = u->operand.get();
         return lockPlaceKey(a);
     }
-    if (auto* m = dynamic_cast<MemberExpr*>(c->callee.get())) {
+    if (auto* m = nodeCast<MemberExpr>(c->callee.get())) {
         if (m->member != (lock ? "lock" : "unlock") || !c->args.empty()) return "";
         if (ty::Type::parse(normalizeType(tyq::strip(getExpressionType(m->base.get())))).nominalName() != "Mutex") return "";
         return lockPlaceKey(m->base.get());
@@ -152,9 +152,9 @@ void TypeChecker::warnAwaitHoldingLock(BlockStmt* node) {
             if (std::holds_alternative<StmtPtr>(items[j])) {
                 Stmt* s = std::get<StmtPtr>(items[j]).get();
                 if (mutexCallKey(s, false) == key) break;
-                if (dynamic_cast<DeferStmt*>(s)) continue;
+                if (nodeCast<DeferStmt>(s)) continue;
                 earliestAwait(s, aw);
-            } else if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(items[j]).get())) {
+            } else if (auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(items[j]).get())) {
                 earliestAwait(vd->initializer.get(), aw);
             }
             if (aw) {
@@ -194,7 +194,7 @@ void TypeChecker::visit(IfStmt* node) {
             std::vector<std::string> keys;
             condNarrowings(n->condition.get(), false, keys);
             elseNarrowed.push_back(applyNarrowings(keys));
-            next = dynamic_cast<IfStmt*>(n->elseBranch.get());
+            next = nodeCast<IfStmt>(n->elseBranch.get());
             if (!next) n->elseBranch->accept(this);
         }
         n = next;
@@ -291,7 +291,7 @@ void TypeChecker::visit(ForStmt* node) {
     // pattern from the parser), process items directly in the ForStmt scope so
     // the declared variable is accessible in the condition/step/body.
     if (node->init) {
-        if (auto block = dynamic_cast<BlockStmt*>(node->init.get())) {
+        if (auto block = nodeCast<BlockStmt>(node->init.get())) {
             for (const auto& item : block->items) {
                 if (std::holds_alternative<DeclPtr>(item))
                     std::get<DeclPtr>(item)->accept(this);
@@ -303,11 +303,11 @@ void TypeChecker::visit(ForStmt* node) {
         }
     }
     // `for (i in A..B)`: the loop variable and the bound share the bounds' common type.
-    if (auto* rb = dynamic_cast<BlockStmt*>(node->init.get())) {
+    if (auto* rb = nodeCast<BlockStmt>(node->init.get())) {
         if (rb->items.size() == 2 && std::holds_alternative<DeclPtr>(rb->items[0]) &&
             std::holds_alternative<DeclPtr>(rb->items[1])) {
-            auto* lo = dynamic_cast<VarDecl*>(std::get<DeclPtr>(rb->items[0]).get());
-            auto* hi = dynamic_cast<VarDecl*>(std::get<DeclPtr>(rb->items[1]).get());
+            auto* lo = nodeCast<VarDecl>(std::get<DeclPtr>(rb->items[0]).get());
+            auto* hi = nodeCast<VarDecl>(std::get<DeclPtr>(rb->items[1]).get());
             if (lo && hi && lo->rangeBound && hi->rangeBound) {
                 std::string ct = ty::rangeVarType(lo->type, hi->type);
                 if (!ct.empty()) {
@@ -369,22 +369,22 @@ void TypeChecker::visit(ReturnStmt* node) {
         while (!leaves.empty()) {
             Expr* v = leaves.back();
             leaves.pop_back();
-            if (auto* c = dynamic_cast<CastExpr*>(v)) {
+            if (auto* c = nodeCast<CastExpr>(v)) {
                 std::string ct = normalizeType(c->targetType);
                 if (!ct.empty() && ct[0] == '?') ct = ct.substr(1);
                 if (isPointerType(ct)) { leaves.push_back(c->expr.get()); continue; }
             }
-            if (auto* t = dynamic_cast<TernaryExpr*>(v)) {
+            if (auto* t = nodeCast<TernaryExpr>(v)) {
                 leaves.push_back(t->elseExpr.get());
                 leaves.push_back(t->thenExpr.get());
                 continue;
             }
-            if (auto* u = dynamic_cast<UnaryExpr*>(v); u && u->op == "&") {
+            if (auto* u = nodeCast<UnaryExpr>(v); u && u->op == "&") {
                 std::string root = localStorageRoot(u->operand.get());
                 if (!root.empty())
                     errorAt(node, "returning the address of local '" + root + "' (dangling pointer)");
             }
-            if (auto* id = dynamic_cast<IdentExpr*>(v)) {
+            if (auto* id = nodeCast<IdentExpr>(v)) {
                 auto it = localAddrHolders.find(localAddrKey(id->name));
                 const Symbol* sym = findSymbol(id->name);
                 if (it != localAddrHolders.end() && !it->second.empty() && sym && !sym->addrTaken &&
@@ -393,9 +393,9 @@ void TypeChecker::visit(ReturnStmt* node) {
                                 "returning '" + id->name + "', which holds the address of local '" +
                                 it->second + "' (dangling pointer)");
             }
-            if (auto* sl = dynamic_cast<StructInitExpr*>(v)) {
+            if (auto* sl = nodeCast<StructInitExpr>(v)) {
                 for (const auto& fv : sl->fieldInits)
-                    if (auto* u = dynamic_cast<UnaryExpr*>(fv.second.get()); u && u->op == "&") {
+                    if (auto* u = nodeCast<UnaryExpr>(fv.second.get()); u && u->op == "&") {
                         std::string root = localStorageRoot(u->operand.get());
                         if (!root.empty())
                             noteWarning("dangling-pointer", node->line, node->col,
@@ -403,7 +403,7 @@ void TypeChecker::visit(ReturnStmt* node) {
                                         "' (dangling pointer)");
                     }
             }
-            if (auto* ix = dynamic_cast<IndexExpr*>(v);
+            if (auto* ix = nodeCast<IndexExpr>(v);
                 ix && ix->highIndex && ty::Type::parse(getExpressionType(ix->base.get())).kind == ty::Type::Kind::Array) {
                 std::string root = localStorageRoot(ix->base.get());
                 if (!root.empty())
@@ -437,7 +437,7 @@ std::string TypeChecker::localAddrKey(const std::string& name) {
 void TypeChecker::trackLocalAddr(const std::string& name, Expr* rhs) {
     if (scopeOf(name) < 1) return;
     std::string key = localAddrKey(name);
-    if (auto* u = dynamic_cast<UnaryExpr*>(rhs); u && u->op == "&") {
+    if (auto* u = nodeCast<UnaryExpr>(rhs); u && u->op == "&") {
         std::string root = localStorageRoot(u->operand.get());
         auto it = localAddrHolders.find(key);
         if (!root.empty() && (it == localAddrHolders.end() || !it->second.empty())) {
@@ -445,22 +445,22 @@ void TypeChecker::trackLocalAddr(const std::string& name, Expr* rhs) {
             return;
         }
     }
-    if (auto* b = dynamic_cast<BinaryExpr*>(rhs); b && (b->op == "+" || b->op == "-"))
-        if (auto* l = dynamic_cast<IdentExpr*>(b->left.get()); l && l->name == name) return;
+    if (auto* b = nodeCast<BinaryExpr>(rhs); b && (b->op == "+" || b->op == "-"))
+        if (auto* l = nodeCast<IdentExpr>(b->left.get()); l && l->name == name) return;
     localAddrHolders[key] = "";
 }
 
 std::string TypeChecker::localStorageRoot(Expr* e) {
     while (e) {
-        if (auto* id = dynamic_cast<IdentExpr*>(e)) {
+        if (auto* id = nodeCast<IdentExpr>(e)) {
             int si = scopeOf(id->name);
             if (si < 1 || scopes[si].find(id->name)->second.isStatic) return "";
             return id->name;
         }
-        if (auto* m = dynamic_cast<MemberExpr*>(e)) {
+        if (auto* m = nodeCast<MemberExpr>(e)) {
             if (tyq::isPtr(getExpressionType(m->base.get()))) return "";
             e = m->base.get();
-        } else if (auto* ix = dynamic_cast<IndexExpr*>(e); ix && !ix->highIndex) {
+        } else if (auto* ix = nodeCast<IndexExpr>(e); ix && !ix->highIndex) {
             if (ty::Type::parse(getExpressionType(ix->base.get())).kind != ty::Type::Kind::Array) return "";
             e = ix->base.get();
         } else {
@@ -502,12 +502,12 @@ void TypeChecker::visit(ExprStmt* node) {
 void TypeChecker::warnUnusedResult(ExprStmt* node) {
     Expr* e = node->expr.get();
     std::string fn;
-    if (auto* c = dynamic_cast<CallExpr*>(e)) {
+    if (auto* c = nodeCast<CallExpr>(e)) {
         if (c->dbgBuiltin) return;
-        if (auto* id = dynamic_cast<IdentExpr*>(c->callee.get())) fn = id->name;
-        else if (auto* m = dynamic_cast<MemberExpr*>(c->callee.get())) fn = m->member;
+        if (auto* id = nodeCast<IdentExpr>(c->callee.get())) fn = id->name;
+        else if (auto* m = nodeCast<MemberExpr>(c->callee.get())) fn = m->member;
         else return;
-    } else if (auto* tc = dynamic_cast<TemplateCallExpr*>(e)) {
+    } else if (auto* tc = nodeCast<TemplateCallExpr>(e)) {
         fn = tc->templateName;
     } else {
         return;
@@ -527,9 +527,9 @@ void TypeChecker::warnUnusedResult(ExprStmt* node) {
 // discard: a call (also through a method or an operator) or either arm of a `?:`. "" if none.
 std::string TypeChecker::discardedMustUse(Expr* e) {
     std::string fn;
-    if (auto* c = dynamic_cast<CallExpr*>(e)) {
-        if (auto* id = dynamic_cast<IdentExpr*>(c->callee.get())) fn = id->name;
-        else if (auto* m = dynamic_cast<MemberExpr*>(c->callee.get())) {
+    if (auto* c = nodeCast<CallExpr>(e)) {
+        if (auto* id = nodeCast<IdentExpr>(c->callee.get())) fn = id->name;
+        else if (auto* m = nodeCast<MemberExpr>(c->callee.get())) {
             // Method-call syntax `x.m()` resolves to `Type_m` (see visit(CallExpr)).
             std::string bt = ty::Type::parse(getExpressionType(m->base.get())).nominalName();
             if (mustUseFuncs.count(bt + "_" + m->member)) fn = bt + "_" + m->member;
@@ -538,16 +538,16 @@ std::string TypeChecker::discardedMustUse(Expr* e) {
                      ti != templateInstanceArgs.end())
                 fn = ti->second.first + "_" + m->member;   // a generic `S_m<T>` (checkGenericMethodCall)
         }
-    } else if (auto* tc = dynamic_cast<TemplateCallExpr*>(e)) {
+    } else if (auto* tc = nodeCast<TemplateCallExpr>(e)) {
         fn = tc->templateName;
-    } else if (auto* t = dynamic_cast<TernaryExpr*>(e)) {
+    } else if (auto* t = nodeCast<TernaryExpr>(e)) {
         fn = discardedMustUse(t->thenExpr.get());
         if (fn.empty()) fn = discardedMustUse(t->elseExpr.get());
-    } else if (auto* b = dynamic_cast<BinaryExpr*>(e)) {
+    } else if (auto* b = nodeCast<BinaryExpr>(e)) {
         fn = b->opFunc;
-    } else if (auto* u = dynamic_cast<UnaryExpr*>(e)) {
+    } else if (auto* u = nodeCast<UnaryExpr>(e)) {
         fn = u->opFunc;
-    } else if (auto* ix = dynamic_cast<IndexExpr*>(e)) {
+    } else if (auto* ix = nodeCast<IndexExpr>(e)) {
         fn = ix->opFunc;
     }
     return (!fn.empty() && mustUseFuncs.count(fn)) ? fn : "";
@@ -585,7 +585,7 @@ void TypeChecker::visit(AsmStmt* node) {
         if (assignsToConst(expr.get(), cname))
             errorAt(node, "asm output operand is read-only ('" + cname + "')");
         checkCapturedWrite(node, expr.get());
-        if (auto* m = dynamic_cast<MemberExpr*>(expr.get())) {
+        if (auto* m = nodeCast<MemberExpr>(expr.get())) {
             std::string bt = ty::Type::parse(normalizeType(tyq::strip(getExpressionType(m->base.get())))).nominalName();
             auto sit = structs.find(bt);
             if (sit != structs.end())
@@ -599,7 +599,7 @@ void TypeChecker::visit(AsmStmt* node) {
                       (isPointerType(n) && n.back() != ']');
         if (t != "unknown" && !scalar)
             errorAt(node, "asm output operand must have an integer, floating-point or pointer type, got '" + t + "'");
-        if (auto* id = dynamic_cast<IdentExpr*>(expr.get()))
+        if (auto* id = nodeCast<IdentExpr>(expr.get()))
             narrowedNonNull.erase(narrowKey(id->name));   // the asm may store null
     }
     for (auto& [constraint, expr] : node->inputs) {
@@ -669,63 +669,63 @@ void TypeChecker::visit(DeferStmt* node) {
     // switch *within* the body, would jump to a target that is no longer valid. A `?`
     // is an early return too (a lambda in the body is its own function).
     std::function<void(Expr*)> checkExpr = [&](Expr* e) {
-        if (!e || dynamic_cast<LambdaExpr*>(e)) return;
-        if (dynamic_cast<QuestionExpr*>(e))
+        if (!e || nodeCast<LambdaExpr>(e)) return;
+        if (nodeCast<QuestionExpr>(e))
             errorAt(e, "'?' is not allowed inside a defer body (it would return from the function)");
         astwalk::forEachChildExprFlat(e, [&](ExprPtr& c) { checkExpr(c.get()); });
     };
     std::function<void(Stmt*, int)> check = [&](Stmt* s, int loopDepth) {
         if (!s) return;
-        if (auto* es = dynamic_cast<ExprStmt*>(s)) checkExpr(es->expr.get());
-        else if (auto* ts = dynamic_cast<ThrowStmt*>(s)) checkExpr(ts->value.get());
-        if (dynamic_cast<ReturnStmt*>(s)) {
+        if (auto* es = nodeCast<ExprStmt>(s)) checkExpr(es->expr.get());
+        else if (auto* ts = nodeCast<ThrowStmt>(s)) checkExpr(ts->value.get());
+        if (nodeCast<ReturnStmt>(s)) {
             errorAt(s, "'return' is not allowed inside a defer body");
-        } else if (dynamic_cast<BreakStmt*>(s) || dynamic_cast<ContinueStmt*>(s)) {
+        } else if (nodeCast<BreakStmt>(s) || nodeCast<ContinueStmt>(s)) {
             // A bare break/continue is fine if a loop/switch *inside* the defer body encloses
             // it (loopDepth>0). A *labeled* one may target a loop outside the defer body, so it
             // is rejected regardless of depth.
             std::string lbl;
-            if (auto* bs = dynamic_cast<BreakStmt*>(s)) lbl = bs->label;
-            else if (auto* cs = dynamic_cast<ContinueStmt*>(s)) lbl = cs->label;
+            if (auto* bs = nodeCast<BreakStmt>(s)) lbl = bs->label;
+            else if (auto* cs = nodeCast<ContinueStmt>(s)) lbl = cs->label;
             if (loopDepth == 0 || !lbl.empty())
                 errorAt(s, "'break'/'continue' inside a defer body may not escape it");
-        } else if (auto* b = dynamic_cast<BlockStmt*>(s)) {
+        } else if (auto* b = nodeCast<BlockStmt>(s)) {
             for (auto& it : b->items) {
                 if (auto* st = std::get_if<StmtPtr>(&it)) check(st->get(), loopDepth);
-                else if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get())) checkExpr(vd->initializer.get());
+                else if (auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get())) checkExpr(vd->initializer.get());
             }
-        } else if (auto* i = dynamic_cast<IfStmt*>(s)) {
+        } else if (auto* i = nodeCast<IfStmt>(s)) {
             checkExpr(i->condition.get());
             check(i->thenBranch.get(), loopDepth);
             check(i->elseBranch.get(), loopDepth);
-        } else if (auto* w = dynamic_cast<WhileStmt*>(s)) {
+        } else if (auto* w = nodeCast<WhileStmt>(s)) {
             checkExpr(w->condition.get());
             check(w->body.get(), loopDepth + 1);
-        } else if (auto* dw = dynamic_cast<DoWhileStmt*>(s)) {
+        } else if (auto* dw = nodeCast<DoWhileStmt>(s)) {
             checkExpr(dw->condition.get());
             check(dw->body.get(), loopDepth + 1);
-        } else if (auto* f = dynamic_cast<ForStmt*>(s)) {
+        } else if (auto* f = nodeCast<ForStmt>(s)) {
             check(f->init.get(), loopDepth);
             checkExpr(f->condition.get()); checkExpr(f->step.get());
             check(f->body.get(), loopDepth + 1);
-        } else if (auto* fi = dynamic_cast<ForInStmt*>(s)) {
+        } else if (auto* fi = nodeCast<ForInStmt>(s)) {
             checkExpr(fi->iterable.get());
             check(fi->body.get(), loopDepth + 1);
-        } else if (auto* sw = dynamic_cast<SwitchStmt*>(s)) {
+        } else if (auto* sw = nodeCast<SwitchStmt>(s)) {
             checkExpr(sw->subject.get());
             for (auto& c : sw->cases)
                 for (auto& it : c.stmts) {
                     if (auto* st = std::get_if<StmtPtr>(&it)) check(st->get(), loopDepth + 1);
-                    else if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get())) checkExpr(vd->initializer.get());
+                    else if (auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get())) checkExpr(vd->initializer.get());
                 }
-        } else if (auto* m = dynamic_cast<MatchStmt*>(s)) {
+        } else if (auto* m = nodeCast<MatchStmt>(s)) {
             checkExpr(m->subject.get());
             for (auto& a : m->arms) check(a.body.get(), loopDepth);
-        } else if (auto* t = dynamic_cast<TryStmt*>(s)) {
+        } else if (auto* t = nodeCast<TryStmt>(s)) {
             check(t->body.get(), loopDepth);
             for (auto& c : t->catches) check(c.body.get(), loopDepth);
             check(t->finally.get(), loopDepth);
-        } else if (auto* d = dynamic_cast<DeferStmt*>(s)) {
+        } else if (auto* d = nodeCast<DeferStmt>(s)) {
             check(d->body.get(), loopDepth);
         }
     };
@@ -910,9 +910,9 @@ void TypeChecker::visit(SwitchStmt* node) {
 }
 
 bool TypeChecker::isLvalueExpr(Expr* e) {
-    if (auto* id = dynamic_cast<IdentExpr*>(e))
+    if (auto* id = nodeCast<IdentExpr>(e))
         return !lookupSymbol(id->name).empty() || !functionSignatures.count(id->name);
-    if (auto* u = dynamic_cast<UnaryExpr*>(e)) return u->op == "*";
+    if (auto* u = nodeCast<UnaryExpr>(e)) return u->op == "*";
     // A field or an array element is storage only when its struct or array is: through a
     // pointer (or a slice), or itself stored (`mk().x` and `arr()[0]` are temporaries).
     auto storedBase = [&](Expr* base) {
@@ -922,15 +922,15 @@ bool TypeChecker::isLvalueExpr(Expr* e) {
             return true;
         return isLvalueExpr(base);
     };
-    if (auto* m = dynamic_cast<MemberExpr*>(e)) return !isSliceLen(e) && storedBase(m->base.get());
-    if (auto* ix = dynamic_cast<IndexExpr*>(e))
+    if (auto* m = nodeCast<MemberExpr>(e)) return !isSliceLen(e) && storedBase(m->base.get());
+    if (auto* ix = nodeCast<IndexExpr>(e))
         return !ix->highIndex && ix->opFunc.empty() && storedBase(ix->base.get());
     return false;
 }
 
 // `s.len` of a slice: a read-only view of the fat pointer's length.
 bool TypeChecker::isSliceLen(Expr* e) {
-    auto* m = dynamic_cast<MemberExpr*>(e);
+    auto* m = nodeCast<MemberExpr>(e);
     if (!m || m->member != "len") return false;
     std::string bt = getExpressionType(m->base.get());
     if (!bt.empty() && bt[0] == '?') bt = bt.substr(1);
@@ -950,7 +950,7 @@ bool TypeChecker::foldConstInt(Expr* e, long long& out) {
 // The typed fold behind foldConstInt: the value keeps its C type (after promotion), so
 // the operators follow C's usual arithmetic conversions (ty::cintBinary).
 bool TypeChecker::foldConstIntT(Expr* e, ty::CInt& out) {
-    if (auto* l = dynamic_cast<LiteralExpr*>(e)) {
+    if (auto* l = nodeCast<LiteralExpr>(e)) {
         if (l->kind == LiteralExpr::Kind::INT) {
             // A negative literal (`-2147483648`) is one token, typed by its value as the
             // program sees it at run time: `int` when the value fits, else `int64`.
@@ -965,7 +965,7 @@ bool TypeChecker::foldConstIntT(Expr* e, ty::CInt& out) {
         if (l->kind == LiteralExpr::Kind::BOOL) { out = ty::cintMake(l->value == "true" ? 1 : 0, 32, false); return true; }
         return false;
     }
-    if (auto* id = dynamic_cast<IdentExpr*>(e)) {
+    if (auto* id = nodeCast<IdentExpr>(e)) {
         if (const Symbol* sym = findSymbol(id->name)) {
             // A `const` integer folds through its initializer (bounded, so a
             // self-referential const can't recurse forever), converted to its type.
@@ -986,15 +986,15 @@ bool TypeChecker::foldConstIntT(Expr* e, ty::CInt& out) {
                                                                  : ty::cintMake(it->second, 64, false);
         return true;
     }
-    if (auto* u = dynamic_cast<UnaryExpr*>(e)) {
+    if (auto* u = nodeCast<UnaryExpr>(e)) {
         ty::CInt v;
         if (!foldConstIntT(u->operand.get(), v)) return false;
         return ty::cintUnary(u->op, v, out);
     }
-    if (auto* b = dynamic_cast<BinaryExpr*>(e)) {
+    if (auto* b = nodeCast<BinaryExpr>(e)) {
         // A left-leaning chain (`A + B + C ...`) is folded along its spine with a loop.
         std::vector<BinaryExpr*> spine{b};
-        while (auto* l = dynamic_cast<BinaryExpr*>(spine.back()->left.get())) spine.push_back(l);
+        while (auto* l = nodeCast<BinaryExpr>(spine.back()->left.get())) spine.push_back(l);
         ty::CInt x;
         if (!foldConstIntT(spine.back()->left.get(), x)) return false;
         for (size_t i = spine.size(); i-- > 0;) {
@@ -1014,7 +1014,7 @@ bool TypeChecker::foldConstIntT(Expr* e, ty::CInt& out) {
         out = x;
         return true;
     }
-    if (auto* t = dynamic_cast<TernaryExpr*>(e)) {
+    if (auto* t = nodeCast<TernaryExpr>(e)) {
         ty::CInt c, a, other;
         if (!foldConstIntT(t->condition.get(), c)) return false;
         if (!foldConstIntT(c.v != 0 ? t->thenExpr.get() : t->elseExpr.get(), a)) return false;
@@ -1027,7 +1027,7 @@ bool TypeChecker::foldConstIntT(Expr* e, ty::CInt& out) {
         }
         return true;
     }
-    if (auto* c = dynamic_cast<CastExpr*>(e)) {
+    if (auto* c = nodeCast<CastExpr>(e)) {
         std::string to = tyq::strip(normalizeType(c->targetType));
         bool isInt = true; ty::CInt i; double d = 0;
         if (!foldConstNumT(c->expr.get(), isInt, i, d)) return false;
@@ -1042,7 +1042,7 @@ bool TypeChecker::foldConstIntT(Expr* e, ty::CInt& out) {
         if (!ty::cintCast(to, i, out)) out = i;
         return true;
     }
-    if (auto* z = dynamic_cast<SizeofExpr*>(e)) {
+    if (auto* z = nodeCast<SizeofExpr>(e)) {
         // A type whose target layout is known here (scalars, pointers, arrays, structs
         // and unions of those) folds; the rest is left to codegen. A size is unsigned
         // 64-bit (C's size_t).
@@ -1069,11 +1069,11 @@ bool TypeChecker::foldConstNum(Expr* e, bool& isInt, long long& i, double& d) {
 bool TypeChecker::foldConstNumT(Expr* e, bool& isInt, ty::CInt& i, double& d) {
     auto toFloat = [](const std::string& t, double v) { return t == "float" ? (double)(float)v : v; };
     auto asDouble = [](const ty::CInt& c) { return c.uns ? (double)(unsigned long long)c.v : (double)c.v; };
-    if (auto* l = dynamic_cast<LiteralExpr*>(e); l && l->kind == LiteralExpr::Kind::FLOAT) {
+    if (auto* l = nodeCast<LiteralExpr>(e); l && l->kind == LiteralExpr::Kind::FLOAT) {
         isInt = false; d = std::strtod(l->value.c_str(), nullptr);
         return true;
     }
-    if (auto* id = dynamic_cast<IdentExpr*>(e)) {
+    if (auto* id = nodeCast<IdentExpr>(e)) {
         const Symbol* sym = findSymbol(id->name);
         std::string t = sym ? tyq::strip(normalizeType(sym->type)) : "";
         if (sym && sym->isConst && sym->constInit && (t == "float" || t == "double")) {
@@ -1087,15 +1087,15 @@ bool TypeChecker::foldConstNumT(Expr* e, bool& isInt, ty::CInt& i, double& d) {
             return true;
         }
     }
-    if (auto* u = dynamic_cast<UnaryExpr*>(e); u && u->op == "-") {
+    if (auto* u = nodeCast<UnaryExpr>(e); u && u->op == "-") {
         if (!foldConstNumT(u->operand.get(), isInt, i, d)) return false;
         if (isInt) return ty::cintUnary("-", i, i);
         d = -d;
         return true;
     }
-    if (auto* b = dynamic_cast<BinaryExpr*>(e)) {
+    if (auto* b = nodeCast<BinaryExpr>(e)) {
         std::vector<BinaryExpr*> spine{b};
-        while (auto* l = dynamic_cast<BinaryExpr*>(spine.back()->left.get())) spine.push_back(l);
+        while (auto* l = nodeCast<BinaryExpr>(spine.back()->left.get())) spine.push_back(l);
         if (!foldConstNumT(spine.back()->left.get(), isInt, i, d)) return false;
         for (size_t k = spine.size(); k-- > 0;) {
             bool yInt = true; ty::CInt yi; double yd = 0;
@@ -1115,7 +1115,7 @@ bool TypeChecker::foldConstNumT(Expr* e, bool& isInt, ty::CInt& i, double& d) {
         }
         return true;
     }
-    if (auto* c = dynamic_cast<CastExpr*>(e)) {
+    if (auto* c = nodeCast<CastExpr>(e)) {
         std::string to = tyq::strip(normalizeType(c->targetType));
         if (to == "float" || to == "double") {
             if (!foldConstNumT(c->expr.get(), isInt, i, d)) return false;
@@ -1143,28 +1143,28 @@ long long TypeChecker::truncConstInt(const std::string& raw, long long v) {
 }
 
 bool TypeChecker::isConstIntExpr(Expr* e) {
-    if (auto* l = dynamic_cast<LiteralExpr*>(e))
+    if (auto* l = nodeCast<LiteralExpr>(e))
         return l->kind == LiteralExpr::Kind::INT || l->kind == LiteralExpr::Kind::CHAR ||
                l->kind == LiteralExpr::Kind::BOOL;
-    if (auto* id = dynamic_cast<IdentExpr*>(e)) {
+    if (auto* id = nodeCast<IdentExpr>(e)) {
         std::string t = lookupSymbol(id->name);
         if (t.empty()) return enumConstants.count(id->name) > 0;
         const Symbol* sym = findSymbol(id->name);   // `const int K = 7` folds (a const parameter does not)
         return sym && sym->isConst && sym->constInit && isIntType(normalizeType(t));
     }
-    if (auto* u = dynamic_cast<UnaryExpr*>(e))
+    if (auto* u = nodeCast<UnaryExpr>(e))
         return (u->op == "-" || u->op == "~" || u->op == "!") && isConstIntExpr(u->operand.get());
-    if (auto* b = dynamic_cast<BinaryExpr*>(e)) {
+    if (auto* b = nodeCast<BinaryExpr>(e)) {
         // Down the left spine with a loop (a long `A + B + C ...` is as deep as it is long).
         for (;;) {
             if (b->op == "=" || b->op == "&&" || b->op == "||") return false;
             if (!isConstIntExpr(b->right.get())) return false;
-            auto* l = dynamic_cast<BinaryExpr*>(b->left.get());
+            auto* l = nodeCast<BinaryExpr>(b->left.get());
             if (!l) return isConstIntExpr(b->left.get());
             b = l;
         }
     }
-    if (auto* c = dynamic_cast<CastExpr*>(e)) return isConstIntExpr(c->expr.get());
-    if (dynamic_cast<SizeofExpr*>(e)) return true;
+    if (auto* c = nodeCast<CastExpr>(e)) return isConstIntExpr(c->expr.get());
+    if (nodeCast<SizeofExpr>(e)) return true;
     return false;
 }

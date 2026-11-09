@@ -9,15 +9,15 @@
 // An expression with no side effects: evaluating it twice is the same as once.
 static bool isPureExpr(const ExprPtr& e) {
     if (!e) return true;
-    if (dynamic_cast<IdentExpr*>(e.get()) || dynamic_cast<LiteralExpr*>(e.get()) ||
-        dynamic_cast<SizeofExpr*>(e.get()))
+    if (nodeCast<IdentExpr>(e.get()) || nodeCast<LiteralExpr>(e.get()) ||
+        nodeCast<SizeofExpr>(e.get()))
         return true;
-    if (auto* m = dynamic_cast<MemberExpr*>(e.get())) return isPureExpr(m->base);
-    if (auto* ix = dynamic_cast<IndexExpr*>(e.get()))
+    if (auto* m = nodeCast<MemberExpr>(e.get())) return isPureExpr(m->base);
+    if (auto* ix = nodeCast<IndexExpr>(e.get()))
         return ix->opFunc.empty() && isPureExpr(ix->base) && isPureExpr(ix->index) && isPureExpr(ix->highIndex);
-    if (auto* u = dynamic_cast<UnaryExpr*>(e.get())) return u->opFunc.empty() && isPureExpr(u->operand);
-    if (auto* c = dynamic_cast<CastExpr*>(e.get())) return isPureExpr(c->expr);
-    if (auto* b = dynamic_cast<BinaryExpr*>(e.get()))
+    if (auto* u = nodeCast<UnaryExpr>(e.get())) return u->opFunc.empty() && isPureExpr(u->operand);
+    if (auto* c = nodeCast<CastExpr>(e.get())) return isPureExpr(c->expr);
+    if (auto* b = nodeCast<BinaryExpr>(e.get()))
         return b->op != "=" && b->opFunc.empty() && isPureExpr(b->left) && isPureExpr(b->right);
     return false;
 }
@@ -34,14 +34,14 @@ bool CodeGen::volatileRooted(const Expr* e) const {
     while (e) {
         if (e->volMemoSize == gen) { res = e->volMemo; break; }
         walked.push_back(e);
-        if (auto* id = dynamic_cast<const IdentExpr*>(e)) { res = volatileVars.count(id->name) > 0; break; }
-        if (auto* u = dynamic_cast<const UnaryExpr*>(e)) {
+        if (auto* id = nodeCast<const IdentExpr>(e)) { res = volatileVars.count(id->name) > 0; break; }
+        if (auto* u = nodeCast<const UnaryExpr>(e)) {
             if (u->op != "*" || !u->opFunc.empty()) break;
             e = u->operand.get();
-        } else if (auto* ix = dynamic_cast<const IndexExpr*>(e)) {
+        } else if (auto* ix = nodeCast<const IndexExpr>(e)) {
             if (!ix->opFunc.empty()) break;
             e = ix->base.get();
-        } else if (auto* m = dynamic_cast<const MemberExpr*>(e)) {
+        } else if (auto* m = nodeCast<const MemberExpr>(e)) {
             e = m->base.get();
         } else {
             break;
@@ -66,7 +66,7 @@ void CodeGen::emitCompoundAssign(BinaryExpr* node, BinaryExpr* rhsOp) {
     defineSymbol(tmp, slot);
     if (volatileRooted(node->left.get())) volatileVars.insert(tmp);
     ExprPtr target;
-    auto* mem = dynamic_cast<MemberExpr*>(node->left.get());
+    auto* mem = nodeCast<MemberExpr>(node->left.get());
     if (mem && structLayout.count(structBaseTypeOf(mem->base))) {
         // A field of a bitfield-packed struct has no address of its own: evaluate the
         // struct's address once instead, and read-modify-write `(*p).field`.
@@ -162,7 +162,7 @@ void CodeGen::visit(BinaryExpr* node) {
         ~MemoScope() { cg.chainTypeMemo = saved; }
     } memoScope{*this, chainTypeMemo};
     if (!typeParamOverride.empty()) {
-        for (Expr* b = node; auto* bin = dynamic_cast<BinaryExpr*>(b); b = bin->left.get()) {
+        for (Expr* b = node; auto* bin = nodeCast<BinaryExpr>(b); b = bin->left.get()) {
             if (bin->op == "=") break;
             memo[bin];
         }
@@ -183,7 +183,7 @@ void CodeGen::visit(BinaryExpr* node) {
         return;
     }
     std::vector<BinaryExpr*> spine{node};
-    while (auto* l = dynamic_cast<BinaryExpr*>(spine.back()->left.get())) {
+    while (auto* l = nodeCast<BinaryExpr>(spine.back()->left.get())) {
         if (l->op == "=" || !overloadOf(l).empty()) break;
         spine.push_back(l);
     }
@@ -194,7 +194,7 @@ void CodeGen::visit(BinaryExpr* node) {
 
 void CodeGen::emitAssignment(BinaryExpr* node) {
     // Compound assignment with a side-effecting lvalue: evaluate the lvalue once.
-    if (auto* rb = dynamic_cast<BinaryExpr*>(node->right.get())) {
+    if (auto* rb = nodeCast<BinaryExpr>(node->right.get())) {
         if (rb->left.get() == node->left.get() && !isPureExpr(node->left)) {
             emitCompoundAssign(node, rb);
             return;
@@ -203,7 +203,7 @@ void CodeGen::emitAssignment(BinaryExpr* node) {
     // Evaluation order: the target's address first, then the right-hand side, then the
     // store (a[f()] = g() calls f before g), as compound assignment does.
     // Bitfield assignment is a read-modify-write, not a plain store.
-    if (auto* mem = dynamic_cast<MemberExpr*>(node->left.get())) {
+    if (auto* mem = nodeCast<MemberExpr>(node->left.get())) {
         auto lit = structLayout.find(structBaseTypeOf(mem->base));
         if (lit != structLayout.end()) {
             auto sit = lit->second.find(mem->member);
@@ -795,7 +795,7 @@ llvm::Type* CodeGen::pointerStrideType(const std::string& eskTy) {
 void CodeGen::visit(IncDecExpr* node) {
     // A bitfield has no address: step it with a masked read-modify-write of its storage
     // word (evaluating the base once). Prefix yields the stored, width-wrapped value.
-    if (auto* mem = dynamic_cast<MemberExpr*>(node->operand.get())) {
+    if (auto* mem = nodeCast<MemberExpr>(node->operand.get())) {
         auto lit = structLayout.find(structBaseTypeOf(mem->base));
         if (lit != structLayout.end()) {
             auto sit = lit->second.find(mem->member);
@@ -1181,7 +1181,7 @@ void CodeGen::visit(CastExpr* node) {
     // handed to a C API as a callback (e.g. OpenSSL's ALPN select callback); one taking
     // or returning a struct by value is reached through its C-ABI thunk.
     if (targetType->isPointerTy()) {
-        if (auto* id = dynamic_cast<IdentExpr*>(node->expr.get())) {
+        if (auto* id = nodeCast<IdentExpr>(node->expr.get())) {
             if (!lookupSymbol(id->name)) {               // not shadowed by a variable
                 if (llvm::Function* fn = module->getFunction(id->name)) {
                     exprValueStack.push(cabiCallbackThunk(fn));
@@ -1381,21 +1381,21 @@ void CodeGen::visit(SizeofExpr* node) {
 }
 
 llvm::Value* CodeGen::evaluateLValue(const ExprPtr& expr) {
-    if (auto ident = dynamic_cast<IdentExpr*>(expr.get())) {
+    if (auto ident = nodeCast<IdentExpr>(expr.get())) {
         llvm::Value* val = lookupSymbol(ident->name);
         if (!val) throw std::runtime_error("Undefined variable: " + ident->name);
         return val;
     }
 
     // Dereference as lvalue: *ptr = val — load the pointer value, use as the store target
-    if (auto unary = dynamic_cast<UnaryExpr*>(expr.get())) {
+    if (auto unary = nodeCast<UnaryExpr>(expr.get())) {
         if (unary->op == "*") {
             // evaluateExpr gives us the pointer value; that IS the lvalue address
             return safeNonNull(evaluateExpr(unary->operand));
         }
     }
 
-    if (auto member = dynamic_cast<MemberExpr*>(expr.get())) {
+    if (auto member = nodeCast<MemberExpr>(expr.get())) {
         std::string baseType = getExprEskiuType(member->base);
         // A pointer-to-struct base must be dereferenced: the struct pointer is the
         // base's *value* (evaluateExpr loads a local pointer var or yields a param),
@@ -1432,7 +1432,7 @@ llvm::Value* CodeGen::evaluateLValue(const ExprPtr& expr) {
     }
 
     // An overloaded `w[i]` is a call: its result is an rvalue (materialized below).
-    if (auto index = dynamic_cast<IndexExpr*>(expr.get()); index && index->opFunc.empty()) {
+    if (auto index = nodeCast<IndexExpr>(expr.get()); index && index->opFunc.empty()) {
         // `a[i] = x` — element address for array / slice / pointer / string bases.
         llvm::Value* idx = indexAsI64(index->index);
         return indexElemAddr(index->base, idx);

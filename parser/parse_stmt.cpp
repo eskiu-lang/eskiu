@@ -25,10 +25,10 @@ StmtPtr Parser::parseStatement() {
             else if (check(TokenType::WHILE)) loop = parseWhileStatement();
             else                              loop = parseDoWhileStatement();
             // parseForStatement yields a ForStmt or a ForInStmt; stamp the label on whichever.
-            if (auto* f = dynamic_cast<ForStmt*>(loop.get()))          f->label = label;
-            else if (auto* fi = dynamic_cast<ForInStmt*>(loop.get()))  fi->label = label;
-            else if (auto* w = dynamic_cast<WhileStmt*>(loop.get()))   w->label = label;
-            else if (auto* d = dynamic_cast<DoWhileStmt*>(loop.get())) d->label = label;
+            if (auto* f = nodeCast<ForStmt>(loop.get()))          f->label = label;
+            else if (auto* fi = nodeCast<ForInStmt>(loop.get()))  fi->label = label;
+            else if (auto* w = nodeCast<WhileStmt>(loop.get()))   w->label = label;
+            else if (auto* d = nodeCast<DoWhileStmt>(loop.get())) d->label = label;
             return loop;
         }
     }
@@ -242,7 +242,7 @@ BlockItem Parser::parseBlockItem() {
         DeclPtr decl = speculateIf([&]() -> DeclPtr {
             DeclPtr d = parseDeclaration();
             if (d) {
-                if (auto* vd = dynamic_cast<VarDecl*>(d.get())) localVars.push_back(vd->name);
+                if (auto* vd = nodeCast<VarDecl>(d.get())) localVars.push_back(vd->name);
                 return d;
             }
             throw ParseError("not a declaration");
@@ -362,7 +362,7 @@ StmtPtr Parser::parseForStatement() {
         init = speculateIf([&]() -> StmtPtr {
             DeclPtr decl = parseDeclaration();
             if (decl) {
-                if (auto* vd = dynamic_cast<VarDecl*>(decl.get())) localVars.push_back(vd->name);
+                if (auto* vd = nodeCast<VarDecl>(decl.get())) localVars.push_back(vd->name);
                 return std::make_shared<BlockStmt>(std::vector<BlockItem>{decl});
             }
             throw ParseError("not a declaration");
@@ -468,12 +468,12 @@ StmtPtr Parser::parseExpressionStatement(bool trailing) {
         if (!trailing) rejectTrailingBlock();
         Token brace = peek();
         // f(a) { BODY } is f(a, void() { BODY }): the block follows the call's own ')'.
-        auto* call = dynamic_cast<CallExpr*>(expr.get());
-        auto* tcall = dynamic_cast<TemplateCallExpr*>(expr.get());
+        auto* call = nodeCast<CallExpr>(expr.get());
+        auto* tcall = nodeCast<TemplateCallExpr>(expr.get());
         bool closed = lastCallClose != static_cast<size_t>(-1) && lastCallClose + 1 == current;
         if (!call && !tcall) fail("a trailing block must follow a call", brace);
         if (!closed) fail("a trailing block must follow the call's own ')', not parentheses around it", brace);
-        if (call && dynamic_cast<CallExpr*>(call->callee.get()))
+        if (call && nodeCast<CallExpr>(call->callee.get()))
             fail("a trailing block cannot follow a call of what a call returns", brace);
         StmtPtr body;
         {

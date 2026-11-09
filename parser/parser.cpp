@@ -602,7 +602,7 @@ std::vector<DeclPtr> Parser::parseProgram() {
             if (decl) {
                 decl->sourceFile = filename;
                 declarations.push_back(decl);
-                if (auto* vd = dynamic_cast<VarDecl*>(decl.get())) scriptOrder.push_back({nullptr, vd});
+                if (auto* vd = nodeCast<VarDecl>(decl.get())) scriptOrder.push_back({nullptr, vd});
             }
         } catch (const std::exception& e) {
             recover(e);
@@ -718,7 +718,7 @@ void Parser::buildScriptMain(std::vector<DeclPtr>& decls) {
     for (const auto& e : scriptOrder) if (e.first) { first = e.first; break; }
     if (!first) return;
     for (const auto& d : decls)
-        if (auto* fd = dynamic_cast<FunctionDecl*>(d.get()); fd && fd->name == "main" && !fd->fromImport) {
+        if (auto* fd = nodeCast<FunctionDecl>(d.get()); fd && fd->name == "main" && !fd->fromImport) {
             errLine = first->line;
             errCol = first->col;
             throw ParseError("a file with top-level statements has no 'main': the statements are its main");
@@ -736,7 +736,7 @@ void Parser::buildScriptMain(std::vector<DeclPtr>& decls) {
             items.push_back(stmt);
             continue;
         }
-        if (!vd->initializer || vd->isConst || vd->isExtern || dynamic_cast<ArrayLitExpr*>(vd->initializer.get()))
+        if (!vd->initializer || vd->isConst || vd->isExtern || nodeCast<ArrayLitExpr>(vd->initializer.get()))
             continue;
         vd->scriptInit = true;
         auto lhs = std::make_shared<IdentExpr>(vd->name);
@@ -752,7 +752,7 @@ void Parser::buildScriptMain(std::vector<DeclPtr>& decls) {
         items.push_back(StmtPtr(es));
     }
     bool returns = !items.empty() && std::holds_alternative<StmtPtr>(items.back()) &&
-                   dynamic_cast<ReturnStmt*>(std::get<StmtPtr>(items.back()).get());
+                   nodeCast<ReturnStmt>(std::get<StmtPtr>(items.back()).get());
     if (!returns) items.push_back(StmtPtr(std::make_shared<ReturnStmt>(std::make_shared<LiteralExpr>(LiteralExpr::Kind::INT, "0"))));
     auto body = std::make_shared<BlockStmt>(items);
     body->line = first->line;

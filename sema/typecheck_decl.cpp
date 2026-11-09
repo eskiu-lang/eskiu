@@ -55,11 +55,11 @@ struct TemplateCapturePass {
     }
     void walkStmt(Stmt* s) {
         if (!s) return;
-        if (auto* b = dynamic_cast<BlockStmt*>(s)) {
+        if (auto* b = nodeCast<BlockStmt>(s)) {
             scopes.push_back({});
             for (auto& it : b->items) {
                 if (std::holds_alternative<DeclPtr>(it)) {
-                    if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get())) {
+                    if (auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get())) {
                         if (vd->initializer) walkExpr(vd->initializer.get());
                         define(vd->name, vd->type);
                     }
@@ -67,32 +67,32 @@ struct TemplateCapturePass {
             }
             scopes.pop_back(); return;
         }
-        if (auto* i = dynamic_cast<IfStmt*>(s)) {
+        if (auto* i = nodeCast<IfStmt>(s)) {
             walkExpr(i->condition.get()); walkStmt(i->thenBranch.get()); walkStmt(i->elseBranch.get()); return;
         }
-        if (auto* w = dynamic_cast<WhileStmt*>(s)) { walkExpr(w->condition.get()); walkStmt(w->body.get()); return; }
-        if (auto* dw = dynamic_cast<DoWhileStmt*>(s)) { walkStmt(dw->body.get()); walkExpr(dw->condition.get()); return; }
-        if (auto* f = dynamic_cast<ForStmt*>(s)) {
+        if (auto* w = nodeCast<WhileStmt>(s)) { walkExpr(w->condition.get()); walkStmt(w->body.get()); return; }
+        if (auto* dw = nodeCast<DoWhileStmt>(s)) { walkStmt(dw->body.get()); walkExpr(dw->condition.get()); return; }
+        if (auto* f = nodeCast<ForStmt>(s)) {
             scopes.push_back({});
             walkStmt(f->init.get()); walkExpr(f->condition.get()); walkExpr(f->step.get()); walkStmt(f->body.get());
             scopes.pop_back(); return;
         }
-        if (auto* fi = dynamic_cast<ForInStmt*>(s)) {
+        if (auto* fi = nodeCast<ForInStmt>(s)) {
             scopes.push_back({});
             walkExpr(fi->iterable.get()); define(fi->varName, "");
             walkStmt(fi->body.get());
             scopes.pop_back(); return;
         }
-        if (auto* r = dynamic_cast<ReturnStmt*>(s)) { walkExpr(r->value.get()); return; }
-        if (auto* es = dynamic_cast<ExprStmt*>(s)) { walkExpr(es->expr.get()); return; }
-        if (auto* sw = dynamic_cast<SwitchStmt*>(s)) {
+        if (auto* r = nodeCast<ReturnStmt>(s)) { walkExpr(r->value.get()); return; }
+        if (auto* es = nodeCast<ExprStmt>(s)) { walkExpr(es->expr.get()); return; }
+        if (auto* sw = nodeCast<SwitchStmt>(s)) {
             walkExpr(sw->subject.get());
             scopes.push_back({});                  // the switch body is one scope
             for (auto& c : sw->cases) {
                 walkExpr(c.value.get());
                 for (auto& it : c.stmts) {
                     if (std::holds_alternative<DeclPtr>(it)) {
-                        if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get())) {
+                        if (auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get())) {
                             if (vd->initializer) walkExpr(vd->initializer.get());
                             define(vd->name, vd->type);
                         }
@@ -102,14 +102,14 @@ struct TemplateCapturePass {
             scopes.pop_back();
             return;
         }
-        if (auto* th = dynamic_cast<ThrowStmt*>(s)) { walkExpr(th->value.get()); return; }
-        if (auto* tr = dynamic_cast<TryStmt*>(s)) {
+        if (auto* th = nodeCast<ThrowStmt>(s)) { walkExpr(th->value.get()); return; }
+        if (auto* tr = nodeCast<TryStmt>(s)) {
             walkStmt(tr->body.get());
             for (auto& cc : tr->catches) { scopes.push_back({}); if (!cc.type.empty()) define(cc.name, cc.type); walkStmt(cc.body.get()); scopes.pop_back(); }
             walkStmt(tr->finally.get()); return;
         }
-        if (auto* tj = dynamic_cast<ThreadJoinStmt*>(s)) { walkExpr(tj->tid.get()); return; }
-        if (auto* a = dynamic_cast<AsmStmt*>(s)) {
+        if (auto* tj = nodeCast<ThreadJoinStmt>(s)) { walkExpr(tj->tid.get()); return; }
+        if (auto* a = nodeCast<AsmStmt>(s)) {
             for (auto& out : a->outputs) walkExpr(out.second.get());
             for (auto& in : a->inputs) walkExpr(in.second.get());
             return;
@@ -118,14 +118,14 @@ struct TemplateCapturePass {
     }
     void walkExpr(Expr* e) {
         if (!e) return;
-        if (auto* id = dynamic_cast<IdentExpr*>(e)) {
+        if (auto* id = nodeCast<IdentExpr>(e)) {
             int di = defIndex(id->name);
             if (di >= 0)
                 for (auto& L : lambdas)
                     if (di < L.boundary) L.caps[id->name] = scopes[di][id->name];
             return;
         }
-        if (auto* lam = dynamic_cast<LambdaExpr*>(e)) {
+        if (auto* lam = nodeCast<LambdaExpr>(e)) {
             lambdas.push_back({(int)scopes.size(), {}});
             scopes.push_back({});
             std::set<std::string> params;
@@ -157,7 +157,7 @@ bool canCompleteNormally(Stmt* s);
 // `for(;;)` whose condition is null.)
 bool condAlwaysTrue(Expr* cond) {
     if (!cond) return true;  // for(;;)
-    auto* lit = dynamic_cast<LiteralExpr*>(cond);
+    auto* lit = nodeCast<LiteralExpr>(cond);
     if (!lit) return false;
     if (lit->kind == LiteralExpr::Kind::BOOL) return lit->value == "true";
     if (lit->kind == LiteralExpr::Kind::INT)  return lit->value != "0";
@@ -171,28 +171,28 @@ bool condAlwaysTrue(Expr* cond) {
 // reaches us from any depth.
 bool jumpsTo(Stmt* s, const std::string& label, bool wantContinue, bool inner) {
     if (!s) return false;
-    if (auto* b = dynamic_cast<BreakStmt*>(s)) {
+    if (auto* b = nodeCast<BreakStmt>(s)) {
         if (wantContinue) return false;
         return b->label.empty() ? !inner : (!label.empty() && b->label == label);
     }
-    if (auto* c = dynamic_cast<ContinueStmt*>(s)) {
+    if (auto* c = nodeCast<ContinueStmt>(s)) {
         if (!wantContinue) return false;
         return c->label.empty() ? !inner : (!label.empty() && c->label == label);
     }
-    if (auto* b = dynamic_cast<BlockStmt*>(s)) {
+    if (auto* b = nodeCast<BlockStmt>(s)) {
         for (auto& it : b->items)
             if (std::holds_alternative<StmtPtr>(it) &&
                 jumpsTo(std::get<StmtPtr>(it).get(), label, wantContinue, inner)) return true;
         return false;
     }
-    if (auto* i = dynamic_cast<IfStmt*>(s))
+    if (auto* i = nodeCast<IfStmt>(s))
         return jumpsTo(i->thenBranch.get(), label, wantContinue, inner) ||
                jumpsTo(i->elseBranch.get(), label, wantContinue, inner);
-    if (auto* w = dynamic_cast<WhileStmt*>(s))   return jumpsTo(w->body.get(), label, wantContinue, true);
-    if (auto* dw = dynamic_cast<DoWhileStmt*>(s)) return jumpsTo(dw->body.get(), label, wantContinue, true);
-    if (auto* f = dynamic_cast<ForStmt*>(s))     return jumpsTo(f->body.get(), label, wantContinue, true);
-    if (auto* fi = dynamic_cast<ForInStmt*>(s))  return jumpsTo(fi->body.get(), label, wantContinue, true);
-    if (auto* sw = dynamic_cast<SwitchStmt*>(s)) {
+    if (auto* w = nodeCast<WhileStmt>(s))   return jumpsTo(w->body.get(), label, wantContinue, true);
+    if (auto* dw = nodeCast<DoWhileStmt>(s)) return jumpsTo(dw->body.get(), label, wantContinue, true);
+    if (auto* f = nodeCast<ForStmt>(s))     return jumpsTo(f->body.get(), label, wantContinue, true);
+    if (auto* fi = nodeCast<ForInStmt>(s))  return jumpsTo(fi->body.get(), label, wantContinue, true);
+    if (auto* sw = nodeCast<SwitchStmt>(s)) {
         // A switch captures an unlabeled `break`, but not a `continue`.
         bool in = wantContinue ? inner : true;
         for (auto& c : sw->cases)
@@ -201,12 +201,12 @@ bool jumpsTo(Stmt* s, const std::string& label, bool wantContinue, bool inner) {
                     jumpsTo(std::get<StmtPtr>(it).get(), label, wantContinue, in)) return true;
         return false;
     }
-    if (auto* m = dynamic_cast<MatchStmt*>(s)) {   // match is not a jump target
+    if (auto* m = nodeCast<MatchStmt>(s)) {   // match is not a jump target
         for (auto& arm : m->arms)
             if (jumpsTo(arm.body.get(), label, wantContinue, inner)) return true;
         return false;
     }
-    if (auto* t = dynamic_cast<TryStmt*>(s)) {
+    if (auto* t = nodeCast<TryStmt>(s)) {
         if (jumpsTo(t->body.get(), label, wantContinue, inner)) return true;
         for (auto& c : t->catches)
             if (jumpsTo(c.body.get(), label, wantContinue, inner)) return true;
@@ -219,22 +219,22 @@ bool jumpsTo(Stmt* s, const std::string& label, bool wantContinue, bool inner) {
 // safe direction: when unsure it answers "yes", which at worst asks for a return.
 bool canCompleteNormally(Stmt* s) {
     if (!s) return true;
-    if (dynamic_cast<ReturnStmt*>(s) || dynamic_cast<ThrowStmt*>(s) ||
-        dynamic_cast<BreakStmt*>(s) || dynamic_cast<ContinueStmt*>(s)) return false;
-    if (auto* b = dynamic_cast<BlockStmt*>(s)) {
+    if (nodeCast<ReturnStmt>(s) || nodeCast<ThrowStmt>(s) ||
+        nodeCast<BreakStmt>(s) || nodeCast<ContinueStmt>(s)) return false;
+    if (auto* b = nodeCast<BlockStmt>(s)) {
         for (auto& it : b->items)
             if (std::holds_alternative<StmtPtr>(it) &&
                 !canCompleteNormally(std::get<StmtPtr>(it).get())) return false;
         return true;
     }
-    if (auto* i = dynamic_cast<IfStmt*>(s))
+    if (auto* i = nodeCast<IfStmt>(s))
         return !i->elseBranch || canCompleteNormally(i->thenBranch.get()) ||
                canCompleteNormally(i->elseBranch.get());
-    if (auto* w = dynamic_cast<WhileStmt*>(s))
+    if (auto* w = nodeCast<WhileStmt>(s))
         return !condAlwaysTrue(w->condition.get()) || jumpsTo(w->body.get(), w->label, false, false);
-    if (auto* f = dynamic_cast<ForStmt*>(s))
+    if (auto* f = nodeCast<ForStmt>(s))
         return !condAlwaysTrue(f->condition.get()) || jumpsTo(f->body.get(), f->label, false, false);
-    if (auto* dw = dynamic_cast<DoWhileStmt*>(s)) {
+    if (auto* dw = nodeCast<DoWhileStmt>(s)) {
         // The body runs at least once; the condition is reached when the body completes
         // or `continue`s, and the loop exits there unless the condition is always true.
         if (jumpsTo(dw->body.get(), dw->label, false, false)) return true;
@@ -243,8 +243,8 @@ bool canCompleteNormally(Stmt* s) {
         return reachesCond && !condAlwaysTrue(dw->condition.get());
     }
     // for-in iterates a possibly-empty collection.
-    if (dynamic_cast<ForInStmt*>(s)) return true;
-    if (auto* sw = dynamic_cast<SwitchStmt*>(s)) {
+    if (nodeCast<ForInStmt>(s)) return true;
+    if (auto* sw = nodeCast<SwitchStmt>(s)) {
         // Cases fall through in order, so without a `break` out of it the switch
         // completes only if there is no default or the last case group completes.
         bool hasDefault = false;
@@ -260,12 +260,12 @@ bool canCompleteNormally(Stmt* s) {
         return true;
     }
     // A `match` is verified exhaustive separately; it completes if any arm does.
-    if (auto* m = dynamic_cast<MatchStmt*>(s)) {
+    if (auto* m = nodeCast<MatchStmt>(s)) {
         if (m->arms.empty()) return true;
         for (auto& arm : m->arms) if (canCompleteNormally(arm.body.get())) return true;
         return false;
     }
-    if (auto* t = dynamic_cast<TryStmt*>(s)) {
+    if (auto* t = nodeCast<TryStmt>(s)) {
         if (t->finally && !canCompleteNormally(t->finally.get())) return false;
         if (canCompleteNormally(t->body.get())) return true;
         for (auto& c : t->catches) if (canCompleteNormally(c.body.get())) return true;
@@ -503,7 +503,7 @@ void TypeChecker::visit(FunctionDecl* node) {
     // -Wall, warn about the reads that are uninitialized on some path. An async body is
     // skipped: its locals become frame fields of the lowered state machine.
     if (node->body && !node->isAsync &&
-        !checkUninitPrefix(dynamic_cast<BlockStmt*>(node->body.get())) && warnAll && !inInstance)
+        !checkUninitPrefix(nodeCast<BlockStmt>(node->body.get())) && warnAll && !inInstance)
         warnMaybeUninit(node);
 
     // A non-void function must return on every path; falling off the end is an
@@ -596,17 +596,17 @@ bool TypeChecker::checkUninitPrefix(BlockStmt* body) {
     std::function<void(Expr*)> scan = [&](Expr* e) {
         if (!e) return;
         // &x initializes x (its address may be written through) — not a read.
-        if (auto* u = dynamic_cast<UnaryExpr*>(e); u && u->op == "&")
-            if (auto* id = dynamic_cast<IdentExpr*>(u->operand.get())) { uninit.erase(id->name); return; }
+        if (auto* u = nodeCast<UnaryExpr>(e); u && u->op == "&")
+            if (auto* id = nodeCast<IdentExpr>(u->operand.get())) { uninit.erase(id->name); return; }
         // An assignment (also nested: `x = y = 3`, `let y = (x = 5)`) writes its target
         // after evaluating the value; the target itself is not read.
-        if (auto* b = dynamic_cast<BinaryExpr*>(e); b && b->op == "=") {
+        if (auto* b = nodeCast<BinaryExpr>(e); b && b->op == "=") {
             scan(b->right.get());
-            if (auto* id = dynamic_cast<IdentExpr*>(b->left.get())) uninit.erase(id->name);
+            if (auto* id = nodeCast<IdentExpr>(b->left.get())) uninit.erase(id->name);
             else scan(b->left.get());   // e.g. `arr[x] = …` reads x
             return;
         }
-        if (auto* id = dynamic_cast<IdentExpr*>(e)) {
+        if (auto* id = nodeCast<IdentExpr>(e)) {
             if (uninit.count(id->name)) {
                 errorAt(id, "use of uninitialized variable '" + id->name + "'");
                 reported = true;
@@ -618,7 +618,7 @@ bool TypeChecker::checkUninitPrefix(BlockStmt* body) {
     };
     for (auto& item : body->items) {
         if (std::holds_alternative<DeclPtr>(item)) {
-            if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(item).get())) {
+            if (auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(item).get())) {
                 if (vd->initializer) { scan(vd->initializer.get()); uninit.erase(vd->name); }
                 // A `static` local without an initializer is zero (static storage, C).
                 else if (vd->isStatic) uninit.erase(vd->name);
@@ -627,8 +627,8 @@ bool TypeChecker::checkUninitPrefix(BlockStmt* body) {
             continue;
         }
         Stmt* s = std::get<StmtPtr>(item).get();
-        if (auto* es = dynamic_cast<ExprStmt*>(s)) { scan(es->expr.get()); continue; }
-        if (auto* rs = dynamic_cast<ReturnStmt*>(s)) { if (rs->value) scan(rs->value.get()); continue; }
+        if (auto* es = nodeCast<ExprStmt>(s)) { scan(es->expr.get()); continue; }
+        if (auto* rs = nodeCast<ReturnStmt>(s)) { if (rs->value) scan(rs->value.get()); continue; }
         break;   // control-flow or anything else: stop (stay conservative)
     }
     return reported;
@@ -750,15 +750,15 @@ private:
     // it assigns is assigned where the whole is true (`||` and `!` likewise). A chain of
     // one operator is walked by a loop down its left spine.
     void cond(Expr* e, St& onTrue, St& onFalse) {
-        if (auto* u = dynamic_cast<UnaryExpr*>(e); u && u->op == "!") {
+        if (auto* u = nodeCast<UnaryExpr>(e); u && u->op == "!") {
             cond(u->operand.get(), onFalse, onTrue);
             return;
         }
-        auto* b = dynamic_cast<BinaryExpr*>(e);
+        auto* b = nodeCast<BinaryExpr>(e);
         if (!b || !logical(b->op)) { expr(e); onTrue = s; onFalse = s; return; }
         bool isAnd = b->op == "&&";
         std::vector<BinaryExpr*> spine{b};
-        while (auto* l = dynamic_cast<BinaryExpr*>(spine.back()->left.get())) {
+        while (auto* l = nodeCast<BinaryExpr>(spine.back()->left.get())) {
             if (l->op != b->op) break;
             spine.push_back(l);
         }
@@ -779,14 +779,14 @@ private:
 
     void expr(Expr* e) {
         if (!e) return;
-        if (auto* id = dynamic_cast<IdentExpr*>(e)) { read(id); return; }
-        if (auto* u = dynamic_cast<UnaryExpr*>(e); u && u->op == "&")
-            if (auto* id = dynamic_cast<IdentExpr*>(u->operand.get())) { assign(id->name); return; }
-        if (dynamic_cast<SizeofExpr*>(e)) return;   // not evaluated
-        if (auto* b = dynamic_cast<BinaryExpr*>(e)) {
+        if (auto* id = nodeCast<IdentExpr>(e)) { read(id); return; }
+        if (auto* u = nodeCast<UnaryExpr>(e); u && u->op == "&")
+            if (auto* id = nodeCast<IdentExpr>(u->operand.get())) { assign(id->name); return; }
+        if (nodeCast<SizeofExpr>(e)) return;   // not evaluated
+        if (auto* b = nodeCast<BinaryExpr>(e)) {
             if (b->op == "=") {
                 expr(b->right.get());
-                if (auto* id = dynamic_cast<IdentExpr*>(b->left.get())) assign(id->name);
+                if (auto* id = nodeCast<IdentExpr>(b->left.get())) assign(id->name);
                 else expr(b->left.get());
                 return;
             }
@@ -801,7 +801,7 @@ private:
             // Operator chains are walked by a loop down the left spine.
             bool isLogical = false;
             std::vector<BinaryExpr*> spine{b};
-            while (auto* l = dynamic_cast<BinaryExpr*>(spine.back()->left.get())) {
+            while (auto* l = nodeCast<BinaryExpr>(spine.back()->left.get())) {
                 if (l->op == "=" || logical(l->op) != isLogical) break;
                 spine.push_back(l);
             }
@@ -811,7 +811,7 @@ private:
             if (isLogical) s = after;
             return;
         }
-        if (auto* t = dynamic_cast<TernaryExpr*>(e)) {
+        if (auto* t = nodeCast<TernaryExpr>(e)) {
             St before, elseSt;
             cond(t->condition.get(), before, elseSt);
             s = before;
@@ -822,12 +822,12 @@ private:
             join(s, a);
             return;
         }
-        if (auto* q = dynamic_cast<QuestionExpr*>(e)) {
+        if (auto* q = nodeCast<QuestionExpr>(e)) {
             expr(q->operand.get());
             runDefers(0);   // `?` may return from here
             return;
         }
-        if (auto* lam = dynamic_cast<LambdaExpr*>(e)) {
+        if (auto* lam = nodeCast<LambdaExpr>(e)) {
             for (const auto& c : lam->captures) {
                 IdentExpr at(c.first);
                 at.line = lam->line; at.col = lam->col;
@@ -857,7 +857,7 @@ private:
 
     void item(BlockItem& it) {
         if (std::holds_alternative<StmtPtr>(it)) { stmt(std::get<StmtPtr>(it).get()); return; }
-        auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get());
+        auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get());
         if (!vd) return;
         expr(vd->initializer.get());
         declare(vd->name, !vd->initializer && !vd->isStatic && !vd->isExtern && isTracked(vd));
@@ -866,7 +866,7 @@ private:
     // A statement in its own scope (a block, or an unbraced body).
     void block(Stmt* body) {
         pushScope();
-        if (auto* b = dynamic_cast<BlockStmt*>(body)) for (auto& it : b->items) item(it);
+        if (auto* b = nodeCast<BlockStmt>(body)) for (auto& it : b->items) item(it);
         else stmt(body);
         runScopeDefers();
         popScope();
@@ -889,7 +889,7 @@ private:
 
     static bool alwaysTrue(Expr* c) {
         if (!c) return true;
-        auto* lit = dynamic_cast<LiteralExpr*>(c);
+        auto* lit = nodeCast<LiteralExpr>(c);
         if (!lit) return false;
         if (lit->kind == LiteralExpr::Kind::BOOL) return lit->value == "true";
         if (lit->kind == LiteralExpr::Kind::INT)  return lit->value != "0";
@@ -898,16 +898,16 @@ private:
 
     void stmt(Stmt* st) {
         if (!st) return;
-        if (dynamic_cast<BlockStmt*>(st)) { block(st); return; }
-        if (auto* es = dynamic_cast<ExprStmt*>(st)) { expr(es->expr.get()); return; }
-        if (auto* r = dynamic_cast<ReturnStmt*>(st)) { expr(r->value.get()); runDefers(0); s.live = false; return; }
-        if (auto* th = dynamic_cast<ThrowStmt*>(st)) { expr(th->value.get()); s.live = false; return; }
-        if (auto* br = dynamic_cast<BreakStmt*>(st)) { jump(br->label, false); return; }
-        if (auto* co = dynamic_cast<ContinueStmt*>(st)) { jump(co->label, true); return; }
-        if (auto* d = dynamic_cast<DeferStmt*>(st)) { if (s.live) defers.back().push_back(d->body.get()); return; }
-        if (auto* a = dynamic_cast<AsmStmt*>(st)) { for (auto& in : a->inputs) expr(in.second.get()); return; }
-        if (auto* tj = dynamic_cast<ThreadJoinStmt*>(st)) { expr(tj->tid.get()); return; }
-        if (auto* i = dynamic_cast<IfStmt*>(st)) {
+        if (nodeCast<BlockStmt>(st)) { block(st); return; }
+        if (auto* es = nodeCast<ExprStmt>(st)) { expr(es->expr.get()); return; }
+        if (auto* r = nodeCast<ReturnStmt>(st)) { expr(r->value.get()); runDefers(0); s.live = false; return; }
+        if (auto* th = nodeCast<ThrowStmt>(st)) { expr(th->value.get()); s.live = false; return; }
+        if (auto* br = nodeCast<BreakStmt>(st)) { jump(br->label, false); return; }
+        if (auto* co = nodeCast<ContinueStmt>(st)) { jump(co->label, true); return; }
+        if (auto* d = nodeCast<DeferStmt>(st)) { if (s.live) defers.back().push_back(d->body.get()); return; }
+        if (auto* a = nodeCast<AsmStmt>(st)) { for (auto& in : a->inputs) expr(in.second.get()); return; }
+        if (auto* tj = nodeCast<ThreadJoinStmt>(st)) { expr(tj->tid.get()); return; }
+        if (auto* i = nodeCast<IfStmt>(st)) {
             // An `else if` chain is walked with a loop.
             St out = dead();
             for (IfStmt* n = i; n;) {
@@ -917,7 +917,7 @@ private:
                 block(n->thenBranch.get());
                 join(out, s);
                 s = std::move(elseSt);
-                auto* next = dynamic_cast<IfStmt*>(n->elseBranch.get());
+                auto* next = nodeCast<IfStmt>(n->elseBranch.get());
                 if (!next) {
                     if (n->elseBranch) block(n->elseBranch.get());
                     join(out, s);
@@ -927,7 +927,7 @@ private:
             s = std::move(out);
             return;
         }
-        if (auto* w = dynamic_cast<WhileStmt*>(st)) {
+        if (auto* w = nodeCast<WhileStmt>(st)) {
             St bodySt, exitSt;
             cond(w->condition.get(), bodySt, exitSt);
             s = std::move(bodySt);
@@ -939,7 +939,7 @@ private:
             join(s, f.brk);
             return;
         }
-        if (auto* dw = dynamic_cast<DoWhileStmt*>(st)) {
+        if (auto* dw = nodeCast<DoWhileStmt>(st)) {
             pushFrame(true, dw->label);
             block(dw->body.get());
             join(s, frames.back().cont);
@@ -949,10 +949,10 @@ private:
             join(s, f.brk);
             return;
         }
-        if (auto* f = dynamic_cast<ForStmt*>(st)) {
+        if (auto* f = nodeCast<ForStmt>(st)) {
             pushScope();
             // The init's declarations belong to the loop.
-            if (auto* ib = dynamic_cast<BlockStmt*>(f->init.get())) { for (auto& it : ib->items) item(it); }
+            if (auto* ib = nodeCast<BlockStmt>(f->init.get())) { for (auto& it : ib->items) item(it); }
             else stmt(f->init.get());
             St bodySt, exitSt;
             if (f->condition) cond(f->condition.get(), bodySt, exitSt);
@@ -969,7 +969,7 @@ private:
             popScope();
             return;
         }
-        if (auto* fi = dynamic_cast<ForInStmt*>(st)) {
+        if (auto* fi = nodeCast<ForInStmt>(st)) {
             expr(fi->iterable.get());
             St exit = s;
             pushScope();
@@ -982,7 +982,7 @@ private:
             join(s, fr.brk);
             return;
         }
-        if (auto* sw = dynamic_cast<SwitchStmt*>(st)) {
+        if (auto* sw = nodeCast<SwitchStmt>(st)) {
             expr(sw->subject.get());
             St entry = s, cur = dead();
             bool hasDefault = false;
@@ -1003,7 +1003,7 @@ private:
             popScope();
             return;
         }
-        if (auto* m = dynamic_cast<MatchStmt*>(st)) {
+        if (auto* m = nodeCast<MatchStmt>(st)) {
             // The arms are exhaustive (checked separately).
             expr(m->subject.get());
             if (m->arms.empty()) return;
@@ -1019,7 +1019,7 @@ private:
             s = std::move(out);
             return;
         }
-        if (auto* t = dynamic_cast<TryStmt*>(st)) {
+        if (auto* t = nodeCast<TryStmt>(st)) {
             St before = s;
             block(t->body.get());
             St out = s;
@@ -1063,10 +1063,10 @@ void TypeChecker::warnMaybeUninit(FunctionDecl* node) {
 // it would need code to run before `main`.
 bool TypeChecker::isConstInit(const ExprPtr& e) const {
     if (!e) return true;
-    if (dynamic_cast<LiteralExpr*>(e.get())) return true;
-    if (dynamic_cast<SizeofExpr*>(e.get())) return true;
-    if (auto* lam = dynamic_cast<LambdaExpr*>(e.get())) return lam->captures.empty();
-    if (auto* id = dynamic_cast<IdentExpr*>(e.get())) {
+    if (nodeCast<LiteralExpr>(e.get())) return true;
+    if (nodeCast<SizeofExpr>(e.get())) return true;
+    if (auto* lam = nodeCast<LambdaExpr>(e.get())) return lam->captures.empty();
+    if (auto* id = nodeCast<IdentExpr>(e.get())) {
         if (enumConstants.count(id->name)) return true;
         // Only a global `const` (scopes[0]) folds; a local const may be a runtime value.
         int si = scopeOf(id->name);
@@ -1074,34 +1074,34 @@ bool TypeChecker::isConstInit(const ExprPtr& e) const {
         if (si < 0) return functionSignatures.count(id->name) > 0;
         return si == 0 && scopes[0].find(id->name)->second.isConst;
     }
-    if (auto* u = dynamic_cast<UnaryExpr*>(e.get())) {
+    if (auto* u = nodeCast<UnaryExpr>(e.get())) {
         if (u->op == "&") {
             // The address of a global variable is a link-time constant.
-            auto* id = dynamic_cast<IdentExpr*>(u->operand.get());
+            auto* id = nodeCast<IdentExpr>(u->operand.get());
             if (!id || functionSignatures.count(id->name)) return false;
             return scopeOf(id->name) == 0;
         }
         return (u->op == "-" || u->op == "~" || u->op == "!" || u->op == "+") && isConstInit(u->operand);
     }
-    if (auto* b = dynamic_cast<BinaryExpr*>(e.get())) {
+    if (auto* b = nodeCast<BinaryExpr>(e.get())) {
         static const std::set<std::string> ops = {"+","-","*","/","%","&","|","^","<<",">>",
             "==","!=","<",">","<=",">=","&&","||"};
         // Down the left spine with a loop (a long `A + B + C ...` is as deep as it is long).
         for (;;) {
             if (!ops.count(b->op) || b->opFunc.size() || !isConstInit(b->right)) return false;
-            auto* l = dynamic_cast<BinaryExpr*>(b->left.get());
+            auto* l = nodeCast<BinaryExpr>(b->left.get());
             if (!l) return isConstInit(b->left);
             b = l;
         }
     }
-    if (auto* t = dynamic_cast<TernaryExpr*>(e.get()))
+    if (auto* t = nodeCast<TernaryExpr>(e.get()))
         return isConstInit(t->condition) && isConstInit(t->thenExpr) && isConstInit(t->elseExpr);
-    if (auto* c = dynamic_cast<CastExpr*>(e.get())) return isConstInit(c->expr);
-    if (auto* a = dynamic_cast<ArrayLitExpr*>(e.get())) {
+    if (auto* c = nodeCast<CastExpr>(e.get())) return isConstInit(c->expr);
+    if (auto* a = nodeCast<ArrayLitExpr>(e.get())) {
         for (auto& el : a->elements) if (!isConstInit(el)) return false;
         return true;
     }
-    if (auto* s = dynamic_cast<StructInitExpr*>(e.get())) {
+    if (auto* s = nodeCast<StructInitExpr>(e.get())) {
         for (auto& fi : s->fieldInits) if (!isConstInit(fi.second)) return false;
         return true;
     }
@@ -1150,7 +1150,7 @@ void TypeChecker::checkArrayLiteral(const std::string& arrT0, ArrayLitExpr* a, A
     bool elemIsArray = ty::Type::parse(dealiasArr(elemT)).kind == ty::Type::Kind::Array;
     for (auto& el : a->elements) {
         if (elemIsArray) {
-            if (auto* sub = dynamic_cast<ArrayLitExpr*>(el.get()))
+            if (auto* sub = nodeCast<ArrayLitExpr>(el.get()))
                 checkArrayLiteral(elemT, sub, at);
             else
                 errorAt(at, "nested array initializer expected '{...}' for element type '" + elemT + "'");
@@ -1201,7 +1201,7 @@ void TypeChecker::visit(VarDecl* node) {
         // whose return type disagrees with the closure's call ABI — correct at -O0
         // by luck, a silent miscompile (0.0) under -O2. Setting the lambda's return
         // type to R lets its `return` coerce to R through the normal path.
-        if (auto* lam = dynamic_cast<LambdaExpr*>(node->initializer.get())) {
+        if (auto* lam = nodeCast<LambdaExpr>(node->initializer.get())) {
             ty::Type dt = ty::Type::parse(node->type);
             if (dt.isFn() && dt.ret && dt.ret->str() != lam->returnType)
                 lam->returnType = dt.ret->str();
@@ -1210,7 +1210,7 @@ void TypeChecker::visit(VarDecl* node) {
         inferVariantTarget(node->initializer, node->type, true);
         node->initializer->accept(this);
         // A lambda bound to a local that is only ever called does not outlive the call.
-        if (auto* lam = dynamic_cast<LambdaExpr*>(node->initializer.get());
+        if (auto* lam = nodeCast<LambdaExpr>(node->initializer.get());
             lam && scopes.size() > 1 && !node->isStatic && !inInstance) {
             lambdaLocal[lam] = node->name;
             lambdaLocals.insert(node->name);
@@ -1221,7 +1221,7 @@ void TypeChecker::visit(VarDecl* node) {
         bool badRangeBound = false;
         if (node->rangeBound) {
             std::string bt = getExpressionType(node->initializer.get());
-            if (auto* lit = dynamic_cast<LiteralExpr*>(node->initializer.get()))
+            if (auto* lit = nodeCast<LiteralExpr>(node->initializer.get()))
                 if (lit->kind == LiteralExpr::Kind::INT) bt = rangeLiteralType(lit->value);
             if (bt != "unknown") {
                 std::string nt = tyq::strip(normalizeType(tyq::strip(bt)));
@@ -1240,7 +1240,7 @@ void TypeChecker::visit(VarDecl* node) {
             errorAt(node, "initializer of global '" + node->name + "' is not a compile-time constant");
         // Array literal `= {..}`: the target must be a fixed-size array; check the
         // element count (fewer than the size zero-fill, C-style) and element types.
-        if (auto* arr = dynamic_cast<ArrayLitExpr*>(node->initializer.get())) {
+        if (auto* arr = nodeCast<ArrayLitExpr>(node->initializer.get())) {
             // Recursively check a (possibly nested) array literal against a
             // (possibly multi-dimensional) array type: `int[2][3]` expects two rows,
             // each itself a `{...}` of up to three ints. A short list zero-fills.
@@ -1336,7 +1336,7 @@ void TypeChecker::visit(StructDecl* node) {
             errorAt(at, "default value of field '" + f.name + "' is not a compile-time constant");
             continue;
         }
-        if (auto* arr = dynamic_cast<ArrayLitExpr*>(e)) {
+        if (auto* arr = nodeCast<ArrayLitExpr>(e)) {
             checkArrayLiteral(f.type, arr, at);
             continue;
         }
@@ -1351,7 +1351,7 @@ void TypeChecker::visit(StructDecl* node) {
                 errorAt(node, "duplicate field '" + f.name + "' in struct '" + node->name + "'");
         std::set<std::string> methods;
         for (const auto& m : node->methods)
-            if (auto* mf = dynamic_cast<FunctionDecl*>(m.get())) {
+            if (auto* mf = nodeCast<FunctionDecl>(m.get())) {
                 if (names.count(mf->name))
                     errorAt(mf, "method '" + mf->name + "' of struct '" + node->name + "' has the same name as a field");
                 if (!methods.insert(mf->name).second)
@@ -1373,7 +1373,7 @@ void TypeChecker::visit(StructDecl* node) {
             checkBitfield(node, node->name, f);
         }
         for (const auto& method : node->methods)
-            if (auto func = dynamic_cast<FunctionDecl*>(method.get())) {
+            if (auto func = nodeCast<FunctionDecl>(method.get())) {
                 for (const auto& p : func->params) {
                     validateStructType(normalizeType(p.first), func);
                     if (std::string vm = voidTypeError(p.first); !vm.empty())
@@ -1390,7 +1390,7 @@ void TypeChecker::visit(StructDecl* node) {
         for (size_t i = 0; i < node->typeParams.size(); ++i) selfT += (i ? "," : "") + node->typeParams[i];
         selfT += ">";
         for (const auto& method : node->methods)
-            if (auto* func = dynamic_cast<FunctionDecl*>(method.get()); func && func->body) {
+            if (auto* func = nodeCast<FunctionDecl>(method.get()); func && func->body) {
                 TemplateCapturePass p;
                 p.run(func, selfT);
             }
@@ -1398,7 +1398,7 @@ void TypeChecker::visit(StructDecl* node) {
     }
     // Type-check method bodies
     for (const auto& method : node->methods) {
-        if (auto func = dynamic_cast<FunctionDecl*>(method.get())) {
+        if (auto func = nodeCast<FunctionDecl>(method.get())) {
             std::string savedReturn = currentFunctionReturnType, savedRaw = currentRawReturnType;
             currentFunctionReturnType = func->returnType;
             currentRawReturnType = func->returnType;

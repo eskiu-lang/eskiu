@@ -45,11 +45,11 @@ bool floatConstFitsInt(double v, const std::string& t) {
 std::string TypeChecker::capturedRoot(Expr* target) {
     if (captureBoundary.empty()) return "";
     while (target) {
-        if (auto* m = dynamic_cast<MemberExpr*>(target)) {
+        if (auto* m = nodeCast<MemberExpr>(target)) {
             if (tyq::isPtr(getExpressionType(m->base.get()))) return "";
             target = m->base.get(); continue;
         }
-        if (auto* ix = dynamic_cast<IndexExpr*>(target)) {
+        if (auto* ix = nodeCast<IndexExpr>(target)) {
             if (!ix->opFunc.empty() || ix->highIndex) return "";
             std::string bt = normalizeType(getExpressionType(ix->base.get()));
             if (ty::Type::parse(bt).kind != ty::Type::Kind::Array) return "";
@@ -57,7 +57,7 @@ std::string TypeChecker::capturedRoot(Expr* target) {
         }
         break;
     }
-    auto* id = dynamic_cast<IdentExpr*>(target);
+    auto* id = nodeCast<IdentExpr>(target);
     if (!id) return "";
     if (lookupSymbol(id->name).empty()) return "";
     int defIdx = scopeOf(id->name);
@@ -110,25 +110,25 @@ void TypeChecker::checkCapturedMethodCall(ASTNode* at, MemberExpr* member) {
     std::string lt = getExpressionType(node->left.get());
     // The target of `p = ...` keeps its declared type even while `p` is narrowed,
     // and the assignment ends the narrowing (unless it stores an address `&x`).
-    if (auto* id = dynamic_cast<IdentExpr*>(node->left.get())) {
+    if (auto* id = nodeCast<IdentExpr>(node->left.get())) {
         std::string declared = lookupSymbol(id->name);
         if (!declared.empty() && declared[0] == '?') {
             lt = declared;
             // `p = &x` stores an address, and `p = p + k` / `p += k` steps a non-null
             // pointer; any other value may be null.
-            auto* u = dynamic_cast<UnaryExpr*>(node->right.get());
-            auto* ar = dynamic_cast<BinaryExpr*>(node->right.get());
-            auto* self = ar ? dynamic_cast<IdentExpr*>(ar->left.get()) : nullptr;
+            auto* u = nodeCast<UnaryExpr>(node->right.get());
+            auto* ar = nodeCast<BinaryExpr>(node->right.get());
+            auto* self = ar ? nodeCast<IdentExpr>(ar->left.get()) : nullptr;
             bool keeps = (u && u->op == "&") ||
                          (ar && (ar->op == "+" || ar->op == "-") && self && self->name == id->name);
             if (!keeps) narrowedNonNull.erase(narrowKey(id->name));
         }
     }
-    if (auto* id = dynamic_cast<IdentExpr*>(node->left.get())) {
+    if (auto* id = nodeCast<IdentExpr>(node->left.get())) {
         trackLocalAddr(id->name, node->right.get());
         // -Wall: storing a local's address in a global leaves it dangling once the
         // function returns (main's locals outlive every use).
-        if (auto* u = dynamic_cast<UnaryExpr*>(node->right.get());
+        if (auto* u = nodeCast<UnaryExpr>(node->right.get());
             warnAll && u && u->op == "&" && scopeOf(id->name) == 0 && localAddrFn != "main") {
             std::string root = localStorageRoot(u->operand.get());
             if (!root.empty())
@@ -148,10 +148,10 @@ void TypeChecker::checkCapturedMethodCall(ASTNode* at, MemberExpr* member) {
         // A compound assignment `x op= lit` (desugared to `x = x op lit`, sharing the
         // target node) stores into x's type, so its literal operand must fit it, as
         // for `x = lit`.
-        if (auto* cb = dynamic_cast<BinaryExpr*>(node->right.get());
+        if (auto* cb = nodeCast<BinaryExpr>(node->right.get());
             cb && cb->left.get() == node->left.get() && cb->op != "<<" && cb->op != ">>" &&
             isIntType(normalizeType(lt)))
-            if (auto* lit = dynamic_cast<LiteralExpr*>(cb->right.get());
+            if (auto* lit = nodeCast<LiteralExpr>(cb->right.get());
                 lit && lit->kind == LiteralExpr::Kind::INT && !intLiteralFits(normalizeType(lt), lit))
                 errorAt(node, "compound assignment: integer literal " + lit->value +
                               " is out of range for '" + lt + "'");
@@ -164,12 +164,12 @@ void TypeChecker::checkCapturedMethodCall(ASTNode* at, MemberExpr* member) {
 // bottom-up (its right operand, then its own type). Only right operands recurse.
 void TypeChecker::visit(BinaryExpr* node) {
     std::vector<BinaryExpr*> spine;
-    for (BinaryExpr* b = node; b; b = dynamic_cast<BinaryExpr*>(b->left.get())) spine.push_back(b);
+    for (BinaryExpr* b = node; b; b = nodeCast<BinaryExpr>(b->left.get())) spine.push_back(b);
     // `f = <lambda>` rebinds a lambda local: the target is not a use of f's value (it would
     // otherwise make f escape and send every env to the heap, unfreed).
     std::string savedCallee = calleeContext;
-    if (spine.back()->op == "=" && dynamic_cast<LambdaExpr*>(spine.back()->right.get()))
-        if (auto* id = dynamic_cast<IdentExpr*>(spine.back()->left.get()); id && lambdaLocals.count(id->name))
+    if (spine.back()->op == "=" && nodeCast<LambdaExpr>(spine.back()->right.get()))
+        if (auto* id = nodeCast<IdentExpr>(spine.back()->left.get()); id && lambdaLocals.count(id->name))
             calleeContext = id->name;
     spine.back()->left->accept(this);
     calleeContext = savedCallee;
@@ -207,8 +207,8 @@ void TypeChecker::finishBinary(BinaryExpr* node) {
     if (node->op == "=") {
         if (!node->scriptInit) checkAssignment(node);   // a script global: checked at its declaration
         // A lambda assigned to a lambda local is bound to it like an initializer.
-        if (auto* lam = dynamic_cast<LambdaExpr*>(node->right.get()))
-            if (auto* id = dynamic_cast<IdentExpr*>(node->left.get());
+        if (auto* lam = nodeCast<LambdaExpr>(node->right.get()))
+            if (auto* id = nodeCast<IdentExpr>(node->left.get());
                 id && lambdaLocals.count(id->name) && !inInstance) {
                 lambdaLocal[lam] = id->name;
                 if (inAsyncFn) asyncLocalLambdas.insert(lam);
@@ -243,7 +243,7 @@ void TypeChecker::finishBinary(BinaryExpr* node) {
     // `s == "abc"` compares two addresses: equal text in two places compares unequal.
     if (node->op == "==" || node->op == "!=") {
         auto isStrLit = [](Expr* e) {
-            auto* l = dynamic_cast<LiteralExpr*>(e);
+            auto* l = nodeCast<LiteralExpr>(e);
             return l && l->kind == LiteralExpr::Kind::STRING;
         };
         // Only a pointer comparison: `S == "x"` on a struct S is an overloaded operator.
@@ -262,7 +262,7 @@ void TypeChecker::finishBinary(BinaryExpr* node) {
     // it at compile time (the value is statically known).
     bool litZero = false;
     if ((node->op == "/" || node->op == "%")) {
-        if (auto* l = dynamic_cast<LiteralExpr*>(node->right.get());
+        if (auto* l = nodeCast<LiteralExpr>(node->right.get());
             l && l->kind == LiteralExpr::Kind::INT) {
             bool zero = true;
             for (char c : l->value) if (c != '0' && c != '-' && c != '+') { zero = false; break; }
@@ -408,7 +408,7 @@ void TypeChecker::visit(QuestionExpr* node) {
 // An integer literal that does not fit `int` has a wider type (C: the first of int,
 // long, unsigned long that holds it), so `c ? x : 10000000000` is 64-bit, not an int.
 static std::string literalArmType(Expr* e, const std::string& t) {
-    auto* lit = dynamic_cast<LiteralExpr*>(e);
+    auto* lit = nodeCast<LiteralExpr>(e);
     if (!lit || lit->kind != LiteralExpr::Kind::INT) return t;
     try {
         long long v = std::stoll(lit->value, nullptr, 0);
@@ -431,12 +431,12 @@ static std::string literalArmType(Expr* e, const std::string& t) {
 // is `None<T>()`).
 void TypeChecker::inferVariantTarget(ExprPtr& e, const std::string& target, bool raw) {
     if (!e || (inInstance && !raw) || target.empty() || target == "unknown") return;
-    if (auto* t = dynamic_cast<TernaryExpr*>(e.get())) {
+    if (auto* t = nodeCast<TernaryExpr>(e.get())) {
         inferVariantTarget(t->thenExpr, target, raw);
         inferVariantTarget(t->elseExpr, target, raw);
         return;
     }
-    if (auto* al = dynamic_cast<ArrayLitExpr*>(e.get())) {
+    if (auto* al = nodeCast<ArrayLitExpr>(e.get())) {
         ty::Type at = ty::Type::parse(tyq::strip(target));
         if (at.kind != ty::Type::Kind::Array || !at.elem) return;
         std::string et = at.elem->str();
@@ -445,13 +445,13 @@ void TypeChecker::inferVariantTarget(ExprPtr& e, const std::string& target, bool
     }
     std::string name;
     std::vector<ExprPtr> args;
-    auto* call = dynamic_cast<CallExpr*>(e.get());
+    auto* call = nodeCast<CallExpr>(e.get());
     if (call) {
-        auto* cid = dynamic_cast<IdentExpr*>(call->callee.get());
+        auto* cid = nodeCast<IdentExpr>(call->callee.get());
         if (!cid) return;
         name = cid->name;
         args = call->args;
-    } else if (auto* id = dynamic_cast<IdentExpr*>(e.get())) {
+    } else if (auto* id = nodeCast<IdentExpr>(e.get())) {
         name = id->name;
     } else {
         return;
@@ -480,7 +480,7 @@ void TypeChecker::inferVariantTarget(ExprPtr& e, const std::string& target, bool
 }
 
 void TypeChecker::hintIfaceTarget(Expr* e, const std::string& target) {
-    auto* t = dynamic_cast<TernaryExpr*>(e);
+    auto* t = nodeCast<TernaryExpr>(e);
     if (!t || target.empty() || target == "unknown") return;
     std::string n = normalizeType(tyq::strip(target));
     if (n.rfind("interface:", 0) == 0 || interfaceDecls.count(n)) ifaceTargetHint[e] = target;
@@ -557,7 +557,7 @@ std::string TypeChecker::narrowKey(const std::string& name) const {
 void TypeChecker::condNarrowings(Expr* cond, bool whenTrue, std::vector<std::string>& keys) {
     Expr* whole = cond;
     auto nullableIdent = [&](Expr* e) -> std::string {
-        auto* id = dynamic_cast<IdentExpr*>(e);
+        auto* id = nodeCast<IdentExpr>(e);
         if (!id) return "";
         std::string t = lookupSymbol(id->name);
         if (t.empty() || t[0] != '?') return "";
@@ -573,12 +573,12 @@ void TypeChecker::condNarrowings(Expr* cond, bool whenTrue, std::vector<std::str
     // are scanned afterwards, bottom-up, so keys keep their left-to-right order.
     std::vector<std::pair<Expr*, bool>> rights;
     for (;;) {
-        if (auto* u = dynamic_cast<UnaryExpr*>(cond); u && u->op == "!") {
+        if (auto* u = nodeCast<UnaryExpr>(cond); u && u->op == "!") {
             cond = u->operand.get();
             whenTrue = !whenTrue;
             continue;
         }
-        auto* b = dynamic_cast<BinaryExpr*>(cond);
+        auto* b = nodeCast<BinaryExpr>(cond);
         if (b && ((b->op == "&&" && whenTrue) || (b->op == "||" && !whenTrue))) {
             rights.push_back({b->right.get(), whenTrue});
             cond = b->left.get();
@@ -589,10 +589,10 @@ void TypeChecker::condNarrowings(Expr* cond, bool whenTrue, std::vector<std::str
     // A call may assign any global: a global proven non-null by an earlier operand is
     // not proven after this one runs.
     if (exprHasCall(cond)) dropGlobalKeys(keys);
-    if (auto* b = dynamic_cast<BinaryExpr*>(cond)) {
+    if (auto* b = nodeCast<BinaryExpr>(cond)) {
         if (b->op == "!=" || b->op == "==") {
             auto isNull = [](Expr* e) {
-                auto* l = dynamic_cast<LiteralExpr*>(e);
+                auto* l = nodeCast<LiteralExpr>(e);
                 return l && l->kind == LiteralExpr::Kind::NULL_VAL;
             };
             std::string k;
@@ -621,13 +621,13 @@ void TypeChecker::condNarrowings(Expr* cond, bool whenTrue, std::vector<std::str
 // inside a lambda body, whose captures are copies).
 void TypeChecker::assignedNames(Expr* e, std::set<std::string>& out) {
     if (!e) return;
-    if (auto* b = dynamic_cast<BinaryExpr*>(e); b && b->op == "=")
-        if (auto* id = dynamic_cast<IdentExpr*>(b->left.get())) out.insert(id->name);
-    if (auto* u = dynamic_cast<UnaryExpr*>(e); u && u->op == "&")
-        if (auto* id = dynamic_cast<IdentExpr*>(u->operand.get())) out.insert(id->name);
-    if (auto* ic = dynamic_cast<IncDecExpr*>(e))
-        if (auto* id = dynamic_cast<IdentExpr*>(ic->operand.get())) out.insert(id->name);
-    if (dynamic_cast<LambdaExpr*>(e)) return;
+    if (auto* b = nodeCast<BinaryExpr>(e); b && b->op == "=")
+        if (auto* id = nodeCast<IdentExpr>(b->left.get())) out.insert(id->name);
+    if (auto* u = nodeCast<UnaryExpr>(e); u && u->op == "&")
+        if (auto* id = nodeCast<IdentExpr>(u->operand.get())) out.insert(id->name);
+    if (auto* ic = nodeCast<IncDecExpr>(e))
+        if (auto* id = nodeCast<IdentExpr>(ic->operand.get())) out.insert(id->name);
+    if (nodeCast<LambdaExpr>(e)) return;
     astwalk::forEachChildExprFlat(e, [&](ExprPtr& c) { assignedNames(c.get(), out); });
 }
 
@@ -676,9 +676,9 @@ void TypeChecker::dropGlobalKeys(std::vector<std::string>& keys) {
 
 // Whether evaluating `e` makes a call (a lambda body is not evaluated there).
 bool TypeChecker::exprHasCall(Expr* e) const {
-    if (!e || dynamic_cast<LambdaExpr*>(e)) return false;
-    if (dynamic_cast<CallExpr*>(e) || dynamic_cast<TemplateCallExpr*>(e) || dynamic_cast<AwaitExpr*>(e) ||
-        dynamic_cast<AllocWithExpr*>(e) || dynamic_cast<ThreadCreateExpr*>(e)) return true;
+    if (!e || nodeCast<LambdaExpr>(e)) return false;
+    if (nodeCast<CallExpr>(e) || nodeCast<TemplateCallExpr>(e) || nodeCast<AwaitExpr>(e) ||
+        nodeCast<AllocWithExpr>(e) || nodeCast<ThreadCreateExpr>(e)) return true;
     if (operatorCallNodes.count(e)) return true;
     bool found = false;
     astwalk::forEachChildExprFlat(e, [&](ExprPtr& c) { if (!found) found = exprHasCall(c.get()); });
@@ -695,47 +695,47 @@ void TypeChecker::dropAssignedIn(Expr* e) {
         for (auto it = narrowedNonNull.begin(); it != narrowedNonNull.end();)
             if (it->compare(0, n.size() + 1, n + "@") == 0) it = narrowedNonNull.erase(it); else ++it;
     };
-    if (auto* b = dynamic_cast<BinaryExpr*>(e); b && b->op == "=")
-        if (auto* id = dynamic_cast<IdentExpr*>(b->left.get())) dropName(id->name);
-    if (auto* u = dynamic_cast<UnaryExpr*>(e); u && u->op == "&")
-        if (auto* id = dynamic_cast<IdentExpr*>(u->operand.get())) dropName(id->name);
-    if (auto* lam = dynamic_cast<LambdaExpr*>(e)) { dropAssignedIn(lam->body.get()); return; }
+    if (auto* b = nodeCast<BinaryExpr>(e); b && b->op == "=")
+        if (auto* id = nodeCast<IdentExpr>(b->left.get())) dropName(id->name);
+    if (auto* u = nodeCast<UnaryExpr>(e); u && u->op == "&")
+        if (auto* id = nodeCast<IdentExpr>(u->operand.get())) dropName(id->name);
+    if (auto* lam = nodeCast<LambdaExpr>(e)) { dropAssignedIn(lam->body.get()); return; }
     astwalk::forEachChildExprFlat(e, [&](ExprPtr& c) { dropAssignedIn(c.get()); });
 }
 
 void TypeChecker::dropAssignedIn(Stmt* s) {
     if (!s || narrowedNonNull.empty()) return;
-    if (auto* b = dynamic_cast<BlockStmt*>(s)) {
+    if (auto* b = nodeCast<BlockStmt>(s)) {
         for (auto& it : b->items) {
             if (auto* st = std::get_if<StmtPtr>(&it)) dropAssignedIn(st->get());
-            else if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get())) dropAssignedIn(vd->initializer.get());
+            else if (auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get())) dropAssignedIn(vd->initializer.get());
         }
-    } else if (auto* es = dynamic_cast<ExprStmt*>(s)) dropAssignedIn(es->expr.get());
-    else if (auto* r = dynamic_cast<ReturnStmt*>(s)) dropAssignedIn(r->value.get());
-    else if (auto* i = dynamic_cast<IfStmt*>(s)) {
+    } else if (auto* es = nodeCast<ExprStmt>(s)) dropAssignedIn(es->expr.get());
+    else if (auto* r = nodeCast<ReturnStmt>(s)) dropAssignedIn(r->value.get());
+    else if (auto* i = nodeCast<IfStmt>(s)) {
         dropAssignedIn(i->condition.get()); dropAssignedIn(i->thenBranch.get()); dropAssignedIn(i->elseBranch.get());
-    } else if (auto* w = dynamic_cast<WhileStmt*>(s)) { dropAssignedIn(w->condition.get()); dropAssignedIn(w->body.get()); }
-    else if (auto* dw = dynamic_cast<DoWhileStmt*>(s)) { dropAssignedIn(dw->condition.get()); dropAssignedIn(dw->body.get()); }
-    else if (auto* f = dynamic_cast<ForStmt*>(s)) {
+    } else if (auto* w = nodeCast<WhileStmt>(s)) { dropAssignedIn(w->condition.get()); dropAssignedIn(w->body.get()); }
+    else if (auto* dw = nodeCast<DoWhileStmt>(s)) { dropAssignedIn(dw->condition.get()); dropAssignedIn(dw->body.get()); }
+    else if (auto* f = nodeCast<ForStmt>(s)) {
         dropAssignedIn(f->init.get()); dropAssignedIn(f->condition.get());
         dropAssignedIn(f->step.get()); dropAssignedIn(f->body.get());
-    } else if (auto* fi = dynamic_cast<ForInStmt*>(s)) { dropAssignedIn(fi->iterable.get()); dropAssignedIn(fi->body.get()); }
-    else if (auto* sw = dynamic_cast<SwitchStmt*>(s)) {
+    } else if (auto* fi = nodeCast<ForInStmt>(s)) { dropAssignedIn(fi->iterable.get()); dropAssignedIn(fi->body.get()); }
+    else if (auto* sw = nodeCast<SwitchStmt>(s)) {
         dropAssignedIn(sw->subject.get());
         for (auto& c : sw->cases)
             for (auto& it : c.stmts) {
                 if (auto* st = std::get_if<StmtPtr>(&it)) dropAssignedIn(st->get());
-                else if (auto* vd = dynamic_cast<VarDecl*>(std::get<DeclPtr>(it).get())) dropAssignedIn(vd->initializer.get());
+                else if (auto* vd = nodeCast<VarDecl>(std::get<DeclPtr>(it).get())) dropAssignedIn(vd->initializer.get());
             }
-    } else if (auto* m = dynamic_cast<MatchStmt*>(s)) {
+    } else if (auto* m = nodeCast<MatchStmt>(s)) {
         dropAssignedIn(m->subject.get());
         for (auto& arm : m->arms) dropAssignedIn(arm.body.get());
-    } else if (auto* t = dynamic_cast<TryStmt*>(s)) {
+    } else if (auto* t = nodeCast<TryStmt>(s)) {
         dropAssignedIn(t->body.get());
         for (auto& c : t->catches) dropAssignedIn(c.body.get());
         dropAssignedIn(t->finally.get());
-    } else if (auto* d = dynamic_cast<DeferStmt*>(s)) dropAssignedIn(d->body.get());
-    else if (auto* th = dynamic_cast<ThrowStmt*>(s)) dropAssignedIn(th->value.get());
+    } else if (auto* d = nodeCast<DeferStmt>(s)) dropAssignedIn(d->body.get());
+    else if (auto* th = nodeCast<ThrowStmt>(s)) dropAssignedIn(th->value.get());
 }
 
 void TypeChecker::checkNullableDeref(Expr* operand, const char* how) {
@@ -750,11 +750,11 @@ void TypeChecker::checkNullableDeref(Expr* operand, const char* how) {
 // CPUs fault on it, as clang -Waddress-of-packed-member warns).
 void TypeChecker::warnPackedAddress(UnaryExpr* node) {
     Expr* e = node->operand.get();
-    while (auto* ix = dynamic_cast<IndexExpr*>(e)) {
+    while (auto* ix = nodeCast<IndexExpr>(e)) {
         if (ix->highIndex || ty::Type::parse(getExpressionType(ix->base.get())).kind != ty::Type::Kind::Array) return;
         e = ix->base.get();
     }
-    auto* m = dynamic_cast<MemberExpr*>(e);
+    auto* m = nodeCast<MemberExpr>(e);
     if (!m) return;
     std::string bt = ty::Type::parse(normalizeType(tyq::strip(getExpressionType(m->base.get())))).nominalName();
     auto sit = structs.find(bt);
@@ -780,7 +780,7 @@ void TypeChecker::visit(UnaryExpr* node) {
         errorAt(node, "cannot take the address of this expression: it is not a variable, field, element, or dereference");
     if (node->op == "&") checkCapturedAddress(node, node->operand.get());
     if (node->op == "&")
-        if (auto* m = dynamic_cast<MemberExpr*>(node->operand.get())) {
+        if (auto* m = nodeCast<MemberExpr>(node->operand.get())) {
             std::string bt = ty::Type::parse(normalizeType(tyq::strip(getExpressionType(m->base.get())))).nominalName();
             auto sit = structs.find(bt);
             if (sit != structs.end())
@@ -791,7 +791,7 @@ void TypeChecker::visit(UnaryExpr* node) {
     // `&p` of a narrowed `?*T` is a `*?*T` (a write through it may store null), so the
     // narrowing ends here and the address carries the declared nullable type.
     if (node->op == "&")
-        if (auto* id = dynamic_cast<IdentExpr*>(node->operand.get())) {
+        if (auto* id = nodeCast<IdentExpr>(node->operand.get())) {
             std::string declared = lookupSymbol(id->name);
             int si = scopeOf(id->name);
             if (si >= 0) scopes[si][id->name].addrTaken = true;
@@ -854,9 +854,9 @@ void TypeChecker::visit(UnaryExpr* node) {
 void TypeChecker::visit(IncDecExpr* node) {
     node->operand->accept(this);
     Expr* op = node->operand.get();
-    bool isLval = dynamic_cast<IdentExpr*>(op) || dynamic_cast<MemberExpr*>(op) ||
-                  dynamic_cast<IndexExpr*>(op) ||
-                  (dynamic_cast<UnaryExpr*>(op) && static_cast<UnaryExpr*>(op)->op == "*");
+    bool isLval = nodeCast<IdentExpr>(op) || nodeCast<MemberExpr>(op) ||
+                  nodeCast<IndexExpr>(op) ||
+                  (nodeCast<UnaryExpr>(op) && static_cast<UnaryExpr*>(op)->op == "*");
     if (isSliceLen(op))
         errorAt(node, "cannot assign to the length of a slice: it is read-only (take a new slice instead)");
     else if (!isLval)
@@ -872,7 +872,7 @@ void TypeChecker::visit(IncDecExpr* node) {
     // `b.f++` of a bitfield yields the old value in the field's declared type, unpromoted
     // (as clang does); every other read of a narrow bitfield is an int.
     if (!node->prefix)
-        if (auto* m = dynamic_cast<MemberExpr*>(op)) {
+        if (auto* m = nodeCast<MemberExpr>(op)) {
             std::string bt = ty::Type::parse(normalizeType(tyq::strip(getExpressionType(m->base.get())))).nominalName();
             auto sit = structs.find(bt);
             if (sit != structs.end())
@@ -896,7 +896,7 @@ void TypeChecker::visit(CallExpr* node) {
     struct GlobalNarrowDrop { TypeChecker* t; ~GlobalNarrowDrop() { t->dropGlobalNarrowings(); } } dropAfter{this};
     fillDefaultArgs(node, "");
     // A `?:` argument to an interface parameter of a named function boxes arm by arm.
-    if (auto* cid = dynamic_cast<IdentExpr*>(node->callee.get()); cid && lookupSymbol(cid->name).empty()) {
+    if (auto* cid = nodeCast<IdentExpr>(node->callee.get()); cid && lookupSymbol(cid->name).empty()) {
         auto sig = functionSignatures.find(cid->name);
         if (sig != functionSignatures.end())
             for (size_t i = 0; i < node->args.size() && i < sig->second.second.size(); ++i) {
@@ -905,7 +905,7 @@ void TypeChecker::visit(CallExpr* node) {
             }
     }
     // Variadic access builtins: va_start(ap) / va_end(ap) — void.
-    if (auto* bid = dynamic_cast<IdentExpr*>(node->callee.get())) {
+    if (auto* bid = nodeCast<IdentExpr>(node->callee.get())) {
         if ((bid->name == "va_start" || bid->name == "va_end") && lookupSymbol(bid->name).empty()) {
             for (auto& a : node->args) a->accept(this);
             checkVaListArg(node, bid->name, node->args);
@@ -955,7 +955,7 @@ void TypeChecker::visit(CallExpr* node) {
     }
     // Algebraic variant construction: `Circle(2.0)`, `Some(x)`. The callee names a
     // variant; the call yields the enum value, checking the payload field types.
-    if (auto cid = dynamic_cast<IdentExpr*>(node->callee.get())) {
+    if (auto cid = nodeCast<IdentExpr>(node->callee.get())) {
         auto vit = adtVariants.find(cid->name);
         if (vit != adtVariants.end() && lookupSymbol(cid->name).empty()) {
             const std::string& enumName = vit->second.first;
@@ -1011,7 +1011,7 @@ void TypeChecker::visit(CallExpr* node) {
         }
     }
     // Method call: callee is MemberExpr (e.g. p.distance(q))
-    if (auto member = dynamic_cast<MemberExpr*>(node->callee.get())) {
+    if (auto member = nodeCast<MemberExpr>(node->callee.get())) {
         member->base->accept(this);
         if (member->member == kCompleteSentinel) {         // --complete-at on `recv.` of a call
             if (!completionDone) { completeMembers(getExpressionType(member->base.get())); completionDone = true; }
@@ -1182,7 +1182,7 @@ void TypeChecker::visit(CallExpr* node) {
 
     // Regular function call
     std::string funcName;
-    if (auto identExpr = dynamic_cast<IdentExpr*>(node->callee.get())) {
+    if (auto identExpr = nodeCast<IdentExpr>(node->callee.get())) {
         funcName = identExpr->name;
         if (funcName == kCompleteSentinel) {               // --complete-at on a callee
             identExpr->accept(this);
@@ -1346,7 +1346,7 @@ void TypeChecker::visit(CallExpr* node) {
         // param of an Eskiu function does not escape either: the callee may only
         // call it. (A C function's fn-typed param is a C function pointer, not this.)
         bool forwards = false;
-        if (auto* aid = dynamic_cast<IdentExpr*>(node->args[i].get())) {
+        if (auto* aid = nodeCast<IdentExpr>(node->args[i].get())) {
             bool paramEscapes = escVec && i < escVec->size() && (*escVec)[i];
             forwards = nonEscapingFnParams.count(aid->name) && !paramEscapes &&
                        !externFnNames.count(funcName) && i < fixedCount;
@@ -1362,7 +1362,7 @@ void TypeChecker::visit(CallExpr* node) {
         // Escape optimization: a lambda passed directly to a NON-escaping
         // parameter does not outlive the call (the callee may only call it —
         // enforced by the soundness check), so its env can stay on the stack.
-        if (auto* lam = dynamic_cast<LambdaExpr*>(node->args[i].get())) {
+        if (auto* lam = nodeCast<LambdaExpr>(node->args[i].get())) {
             bool paramEscapes = escVec && i < escVec->size() && (*escVec)[i];
             // Set both ways: the check after the async lowering sees an async fn's closure
             // params as escaping (the frame keeps them), overriding the first check.
@@ -1382,8 +1382,8 @@ void TypeChecker::visit(CallExpr* node) {
             // a named top-level function (or get null), never a closure's environment.
             if (externFnNames.count(funcName)
                     && ty::Type::parse(normalizeType(expectedParamTypes[i])).isFn()) {
-                auto* id = dynamic_cast<IdentExpr*>(node->args[i].get());
-                auto* lit = dynamic_cast<LiteralExpr*>(node->args[i].get());
+                auto* id = nodeCast<IdentExpr>(node->args[i].get());
+                auto* lit = nodeCast<LiteralExpr>(node->args[i].get());
                 if (lit && lit->kind == LiteralExpr::Kind::NULL_VAL) continue;
                 if (!(id && lookupSymbol(id->name).empty() && functionSignatures.count(id->name))) {
                     errorAt(node, "argument " + std::to_string(i + 1) + " of extern '" + funcName +
@@ -1483,7 +1483,7 @@ bool TypeChecker::checkGenericMethodCall(CallExpr* node, MemberExpr* member, con
 enum { FmtI32 = 1, FmtI64, FmtFloat, FmtStr, FmtPtr, FmtOther };
 
 int TypeChecker::formatArgClass(Expr* arg) {
-    if (auto* l = dynamic_cast<LiteralExpr*>(arg); l && l->kind == LiteralExpr::Kind::NULL_VAL) return FmtPtr;
+    if (auto* l = nodeCast<LiteralExpr>(arg); l && l->kind == LiteralExpr::Kind::NULL_VAL) return FmtPtr;
     std::string t = normalizeType(tyq::strip(getExpressionType(arg)));
     if (!t.empty() && t[0] == '?') t = t.substr(1);
     static const std::set<std::string> i32 = {"bool", "char", "int8", "uint8", "int16", "uint16",
@@ -1515,7 +1515,7 @@ void TypeChecker::checkFormatCall(Expr* call, const std::string& fn, const std::
     if (fi < 0) return;
     fi -= shift;
     if (fi < 0 || fi >= (int)args.size()) return;
-    auto* lit = dynamic_cast<LiteralExpr*>(args[fi].get());
+    auto* lit = nodeCast<LiteralExpr>(args[fi].get());
     if (!lit || lit->kind != LiteralExpr::Kind::STRING) return;
     bool win = targetTriple.empty()
 #ifdef _WIN32
@@ -1593,22 +1593,22 @@ bool isCallSiteName(const std::string& n) { return n == "src_file" || n == "src_
 }  // namespace
 
 bool TypeChecker::callSiteBuiltin(const Expr* e) const {
-    auto* c = dynamic_cast<const CallExpr*>(e);
-    auto* id = c ? dynamic_cast<const IdentExpr*>(c->callee.get()) : nullptr;
+    auto* c = nodeCast<const CallExpr>(e);
+    auto* id = c ? nodeCast<const IdentExpr>(c->callee.get()) : nullptr;
     if (!id || !c->args.empty() || !isCallSiteName(id->name)) return false;
     if (functionSignatures.count(id->name) || funcTemplateDecls.count(id->name)) return false;
     return scopes.empty() || !scopes[0].count(id->name);
 }
 
 ExprPtr TypeChecker::foldParamDefault(Expr* def) {
-    if (auto* l = dynamic_cast<LiteralExpr*>(def)) return std::make_shared<LiteralExpr>(l->kind, l->value);
+    if (auto* l = nodeCast<LiteralExpr>(def)) return std::make_shared<LiteralExpr>(l->kind, l->value);
     // `int line = src_line()`: kept as is, it becomes the call's line at each call.
     if (callSiteBuiltin(def))
         return std::make_shared<CallExpr>(std::make_shared<IdentExpr>(static_cast<IdentExpr*>(static_cast<CallExpr*>(def)->callee.get())->name));
-    auto* u = dynamic_cast<UnaryExpr*>(def);
-    auto* ul = u && u->op == "-" ? dynamic_cast<LiteralExpr*>(u->operand.get()) : nullptr;
+    auto* u = nodeCast<UnaryExpr>(def);
+    auto* ul = u && u->op == "-" ? nodeCast<LiteralExpr>(u->operand.get()) : nullptr;
     if (ul && ul->kind == LiteralExpr::Kind::FLOAT) return std::make_shared<LiteralExpr>(ul->kind, "-" + ul->value);
-    if (auto* si = dynamic_cast<StructInitExpr*>(def)) {
+    if (auto* si = nodeCast<StructInitExpr>(def)) {
         std::vector<std::pair<std::string, ExprPtr>> fields;
         for (auto& f : si->fieldInits) {
             ExprPtr v = f.second ? foldParamDefault(f.second.get()) : nullptr;
@@ -1642,13 +1642,13 @@ struct CallSite {
 // a `src_file()` / `src_line()` / `src_col()` in it becomes `site`.
 ExprPtr cloneParamDefault(const Expr* d, int line, int col, const CallSite& site) {
     ExprPtr out;
-    if (auto* l = dynamic_cast<const LiteralExpr*>(d)) {
+    if (auto* l = nodeCast<const LiteralExpr>(d)) {
         out = std::make_shared<LiteralExpr>(l->kind, l->value);
-    } else if (auto* c = dynamic_cast<const CallExpr*>(d)) {
+    } else if (auto* c = nodeCast<const CallExpr>(d)) {
         const std::string& n = static_cast<const IdentExpr*>(c->callee.get())->name;
         if (n == "src_file") out = std::make_shared<LiteralExpr>(LiteralExpr::Kind::STRING, site.file);
         else out = std::make_shared<LiteralExpr>(LiteralExpr::Kind::INT, std::to_string(n == "src_line" ? site.line : site.col));
-    } else if (auto* si = dynamic_cast<const StructInitExpr*>(d)) {
+    } else if (auto* si = nodeCast<const StructInitExpr>(d)) {
         std::vector<std::pair<std::string, ExprPtr>> fields;
         for (const auto& f : si->fieldInits) fields.emplace_back(f.first, cloneParamDefault(f.second.get(), line, col, site));
         out = std::make_shared<StructInitExpr>(si->structName, std::move(fields));
@@ -1708,7 +1708,7 @@ const std::vector<ExprPtr>& TypeChecker::paramDefaultsOf(const std::string& fn) 
         // The names a default reads are uses (definition, references, rename).
         if (fd->sourceFile.empty() || fd->sourceFile == sourceFile) {
             std::function<void(Expr*)> noteUses = [&](Expr* e) {
-                if (auto* id = dynamic_cast<IdentExpr*>(e)) {
+                if (auto* id = nodeCast<IdentExpr>(e)) {
                     if (id->line > 0) useLocations[{id->line, id->col}] = id->name;
                     return;
                 }
@@ -1748,7 +1748,7 @@ void TypeChecker::fillDefaultArgs(CallExpr* node, const std::string& method) {
     std::string fn = method;
     size_t given = node->args.size() + (method.empty() ? 0 : 1);
     if (method.empty()) {
-        auto* id = dynamic_cast<IdentExpr*>(node->callee.get());
+        auto* id = nodeCast<IdentExpr>(node->callee.get());
         if (!id || !lookupSymbol(id->name).empty()) return;
         fn = id->name;
     }
@@ -1764,8 +1764,8 @@ void TypeChecker::appendDefaultArgs(std::vector<ExprPtr>& args, size_t given, co
     for (size_t i = given; i < defs.size(); ++i)
         if (!defs[i]) return;
     CallSite site{diagFile(), at->line, at->col};
-    if (auto* c = dynamic_cast<const CallExpr*>(at); c && c->callee && c->callee->line > 0) {
-        auto* m = dynamic_cast<const MemberExpr*>(c->callee.get());
+    if (auto* c = nodeCast<const CallExpr>(at); c && c->callee && c->callee->line > 0) {
+        auto* m = nodeCast<const MemberExpr>(c->callee.get());
         site.line = m && m->memberLine > 0 ? m->memberLine : c->callee->line;
         site.col = m && m->memberLine > 0 ? m->memberCol : c->callee->col;
     }
@@ -1806,9 +1806,9 @@ std::string TypeChecker::checkFnValueCall(CallExpr* node, const std::string& wha
 void TypeChecker::checkVariantLiteral(ASTNode* node, const std::string& variant, size_t i,
                                       const std::string& payloadType) {
     Expr* arg = nullptr;
-    if (auto* c = dynamic_cast<CallExpr*>(node)) arg = c->args[i].get();
-    else if (auto* t = dynamic_cast<TemplateCallExpr*>(node)) arg = t->args[i].get();
-    auto* lit = dynamic_cast<LiteralExpr*>(arg);
+    if (auto* c = nodeCast<CallExpr>(node)) arg = c->args[i].get();
+    else if (auto* t = nodeCast<TemplateCallExpr>(node)) arg = t->args[i].get();
+    auto* lit = nodeCast<LiteralExpr>(arg);
     std::string pt = normalizeType(payloadType);
     if (lit && lit->kind == LiteralExpr::Kind::INT && isIntType(pt) && !intLiteralFits(pt, lit))
         errorAt(node, "variant '" + variant + "' argument " + std::to_string(i + 1) + ": integer literal " +
@@ -2018,7 +2018,7 @@ void TypeChecker::visit(CastExpr* node) {
         if (!from.empty() && from[0] == '?') from = from.substr(1);
         if (!to.empty() && to[0] == '?') to = to.substr(1);
         bool fnName = false;   // a top-level function cast to a pointer is its raw C address
-        if (auto* id = dynamic_cast<IdentExpr*>(node->expr.get()))
+        if (auto* id = nodeCast<IdentExpr>(node->expr.get()))
             fnName = lookupSymbol(id->name).empty() && functionSignatures.count(id->name);
         auto isPtr = [&](const std::string& t) { return isPointerType(t) || t == "null"; };
         bool ok = from == "unknown" || to == "unknown" || from == to || (fnName && isPtr(to)) ||
@@ -2031,8 +2031,8 @@ void TypeChecker::visit(CastExpr* node) {
         // undefined in C, and the backends would not agree on a value.
         const Expr* src = node->expr.get();
         bool neg = false;
-        if (auto* u = dynamic_cast<const UnaryExpr*>(src); u && u->op == "-") { neg = true; src = u->operand.get(); }
-        auto* lit = dynamic_cast<const LiteralExpr*>(src);
+        if (auto* u = nodeCast<const UnaryExpr>(src); u && u->op == "-") { neg = true; src = u->operand.get(); }
+        auto* lit = nodeCast<const LiteralExpr>(src);
         bool isInt = true; long long iv = 0; double v = 0;
         if (ok && isIntType(to) && to != "bool" && foldConstNum(node->expr.get(), isInt, iv, v) &&
             !isInt && !floatConstFitsInt(v, to)) {
@@ -2384,7 +2384,7 @@ void TypeChecker::visit(ThreadCreateExpr* node) {
 void TypeChecker::visitGenericCallArg(FunctionDecl* fd, size_t i, const ExprPtr& arg) {
     bool escapes = fd->isAsync || (i < fd->paramEscaping.size() && fd->paramEscaping[i]) ||
                    i >= fd->params.size() || fd->params[i].first == "...";
-    auto* id = dynamic_cast<IdentExpr*>(arg.get());
+    auto* id = nodeCast<IdentExpr>(arg.get());
     long own = -1;
     if (id && !escapes && inInstance && curTemplate && nonEscapingFnParams.count(id->name))
         for (size_t j = 0; j < curTemplate->params.size(); ++j)
@@ -2398,7 +2398,7 @@ void TypeChecker::visitGenericCallArg(FunctionDecl* fd, size_t i, const ExprPtr&
     } else {
         arg->accept(this);
     }
-    if (auto* lam = dynamic_cast<LambdaExpr*>(arg.get())) {
+    if (auto* lam = nodeCast<LambdaExpr>(arg.get())) {
         auto& d = deferredLambdas[lam];
         if (escapes) d.escapes = true;
         else d.via.insert({fd, i});

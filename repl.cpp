@@ -875,15 +875,15 @@ bool Repl::build(const Plan& plan, Attempt& a) {
             prog = parseWrapped(true);
         }
         if (!prog || prog->declarations.empty()) return false;
-        a.wrapper = dynamic_cast<FunctionDecl*>(prog->declarations.back().get());
-        auto* blk = a.wrapper ? dynamic_cast<BlockStmt*>(a.wrapper->body.get()) : nullptr;
+        a.wrapper = nodeCast<FunctionDecl>(prog->declarations.back().get());
+        auto* blk = a.wrapper ? nodeCast<BlockStmt>(a.wrapper->body.get()) : nullptr;
         if (!blk) return false;
 
         // Top-level variables become globals of the session, assigned here.
         std::vector<BlockItem> kept;
         for (auto& it : blk->items) {
             auto* dp = std::get_if<DeclPtr>(&it);
-            auto* vd = dp ? dynamic_cast<VarDecl*>(dp->get()) : nullptr;
+            auto* vd = dp ? nodeCast<VarDecl>(dp->get()) : nullptr;
             if (!vd || vd->isExtern) { kept.push_back(it); continue; }
             a.newGlobals.push_back({vd->name, vd->type, epoch + 1, vd->line, vd->col});
             // `x = init;`. A brace list is assigned element by element for an array (the
@@ -891,7 +891,7 @@ bool Repl::build(const Plan& plan, Attempt& a) {
             // literal otherwise.
             std::function<void(ExprPtr, const ExprPtr&, const std::string&)> assign =
                 [&](ExprPtr target, const ExprPtr& init, const std::string& ty) {
-                auto* al = dynamic_cast<ArrayLitExpr*>(init.get());
+                auto* al = nodeCast<ArrayLitExpr>(init.get());
                 size_t open = ty.find('['), close = ty.find(']', open == std::string::npos ? 0 : open);
                 if (al && !ty.empty() && ty.back() == ']' && open != std::string::npos &&
                     close != std::string::npos) {
@@ -941,7 +941,7 @@ bool Repl::build(const Plan& plan, Attempt& a) {
         }
         if (!plan.valueType.empty() && !blk->items.empty()) {
             auto* sp = std::get_if<StmtPtr>(&blk->items.back());
-            auto* es = sp ? dynamic_cast<ExprStmt*>(sp->get()) : nullptr;
+            auto* es = sp ? nodeCast<ExprStmt>(sp->get()) : nullptr;
             if (es) {
                 std::string vname = "__repl_val_" + std::to_string(cur);
                 auto id = std::make_shared<IdentExpr>(vname);
@@ -986,11 +986,11 @@ bool Repl::build(const Plan& plan, Attempt& a) {
     // a function may use any variable declared at the prompt.
     std::vector<DeclPtr> ordered;
     for (const auto& it : items)
-        if (!dynamic_cast<FunctionDecl*>(it.decl.get()) && live(it)) ordered.push_back(it.decl);
+        if (!nodeCast<FunctionDecl>(it.decl.get()) && live(it)) ordered.push_back(it.decl);
     for (const auto& it : globalItems)
         if (live(it)) ordered.push_back(it.decl);
     for (const auto& it : items)
-        if (dynamic_cast<FunctionDecl*>(it.decl.get()) && live(it)) ordered.push_back(it.decl);
+        if (nodeCast<FunctionDecl>(it.decl.get()) && live(it)) ordered.push_back(it.decl);
     a.program = std::make_shared<Program>(ordered);
     a.program->linkLibs = ctx.linkLibs;
     return true;
@@ -1002,10 +1002,10 @@ bool Repl::typeOfLast(const Attempt& a, const TypeChecker& tc, std::string& sema
                       bool& printable) const {
     printable = false;
     if (!a.wrapper) return false;
-    auto* blk = dynamic_cast<BlockStmt*>(a.wrapper->body.get());
+    auto* blk = nodeCast<BlockStmt>(a.wrapper->body.get());
     if (!blk || blk->items.empty()) return false;
     auto* sp = std::get_if<StmtPtr>(&blk->items.back());
-    auto* es = sp ? dynamic_cast<ExprStmt*>(sp->get()) : nullptr;
+    auto* es = sp ? nodeCast<ExprStmt>(sp->get()) : nullptr;
     if (!es || !es->expr) return false;
     const auto& types = tc.expressionTypeMap();
     auto it = types.find(es->expr.get());
@@ -1014,12 +1014,12 @@ bool Repl::typeOfLast(const Attempt& a, const TypeChecker& tc, std::string& sema
         return false;
     semaType = it->second;
     printable = true;
-    if (auto* be = dynamic_cast<BinaryExpr*>(es->expr.get()); be && be->op == "=") printable = false;
-    if (dynamic_cast<IncDecExpr*>(es->expr.get())) printable = false;
-    if (auto* ce = dynamic_cast<CallExpr*>(es->expr.get())) {
-        if (auto* id = dynamic_cast<IdentExpr*>(ce->callee.get()))
+    if (auto* be = nodeCast<BinaryExpr>(es->expr.get()); be && be->op == "=") printable = false;
+    if (nodeCast<IncDecExpr>(es->expr.get())) printable = false;
+    if (auto* ce = nodeCast<CallExpr>(es->expr.get())) {
+        if (auto* id = nodeCast<IdentExpr>(ce->callee.get()))
             for (const auto& d : a.program->declarations)
-                if (auto* ex = dynamic_cast<ExternDecl*>(d.get()); ex && ex->name == id->name)
+                if (auto* ex = nodeCast<ExternDecl>(d.get()); ex && ex->name == id->name)
                     for (const auto& p : ex->params)
                         if (p.first == "...") printable = false;
     }
@@ -1119,22 +1119,22 @@ bool Repl::compileAndRun(Attempt& a, const std::string& valueSemaType,
     // The names this input declares: their earlier symbols become stale.
     for (const auto& d : a.inputDecls) {
         if (d->fromImport) continue;
-        bool isType = dynamic_cast<StructDecl*>(d.get()) || dynamic_cast<EnumDecl*>(d.get()) ||
-                      dynamic_cast<UnionDecl*>(d.get()) || dynamic_cast<TypeAliasDecl*>(d.get()) ||
-                      dynamic_cast<InterfaceDecl*>(d.get());
+        bool isType = nodeCast<StructDecl>(d.get()) || nodeCast<EnumDecl>(d.get()) ||
+                      nodeCast<UnionDecl>(d.get()) || nodeCast<TypeAliasDecl>(d.get()) ||
+                      nodeCast<InterfaceDecl>(d.get());
         // A redefined type may change its layout: every function is compiled again, and
         // the variables whose type names it start over (zeroed) in the new layout.
         if (isType && declEpoch.count(d->name)) {
             prefixEpoch[""] = cur;
             std::regex word("\\b" + d->name + "\\b");
             for (const auto& g : program->declarations)
-                if (auto* vd = dynamic_cast<VarDecl*>(g.get()))
+                if (auto* vd = nodeCast<VarDecl>(g.get()))
                     if (!vd->fromImport && std::regex_search(vd->type, word)) declEpoch[vd->name] = cur;
         }
         declEpoch[d->name] = cur;
-        if (auto* fd = dynamic_cast<FunctionDecl*>(d.get()); fd && !fd->typeParams.empty())
+        if (auto* fd = nodeCast<FunctionDecl>(d.get()); fd && !fd->typeParams.empty())
             prefixEpoch[d->name + "_"] = cur;
-        if (dynamic_cast<StructDecl*>(d.get()) || dynamic_cast<EnumDecl*>(d.get()))
+        if (nodeCast<StructDecl>(d.get()) || nodeCast<EnumDecl>(d.get()))
             prefixEpoch[d->name + "_"] = cur;
     }
     // A variable declared again with the same type keeps its storage (the input assigns
@@ -1304,7 +1304,7 @@ bool Repl::handleInput(const std::string& text, const std::string& file, Mode* f
         }
         bool dHasVars = false;
         for (const auto& x : d.inputDecls)
-            if (dynamic_cast<VarDecl*>(x.get())) dHasVars = true;
+            if (nodeCast<VarDecl>(x.get())) dHasVars = true;
         {
             CerrCapture cap;
             Plan p = plan;

@@ -183,7 +183,7 @@ void CodeGen::emitArrayInitInto(llvm::Value* dest, ArrayLitExpr* lit, const std:
             // A nested initializer for a sub-array recurses into the row; a scalar
             // element is evaluated and coerced to the element type.
             if (elemIsArray) {
-                if (auto* sub = dynamic_cast<ArrayLitExpr*>(lit->elements[i].get()))
+                if (auto* sub = nodeCast<ArrayLitExpr>(lit->elements[i].get()))
                     emitArrayInitInto(slot, sub, elemStr, zeroed);
                 else
                     builder->CreateStore(evaluateExpr(lit->elements[i]), slot);
@@ -275,7 +275,7 @@ void CodeGen::emitStructInitInto(llvm::Value* dest, StructInitExpr* init0) {
 
     auto storeField = [&](size_t idx, ExprPtr expr) {
         // An array field's `{...}` fills the field in place, like an array variable's.
-        if (auto* arr = dynamic_cast<ArrayLitExpr*>(expr.get())) {
+        if (auto* arr = nodeCast<ArrayLitExpr>(expr.get())) {
             llvm::Value* at = dest;
             auto lit = structLayout.find(sname);
             if (lit != structLayout.end()) at = layoutFieldAddr(sname, dest, lit->second.at(fields[idx].name));
@@ -428,7 +428,7 @@ llvm::Value* CodeGen::evalForType(const ExprPtr& e, const std::string& targetTyp
     // empty {null, null}; a pointer to a struct is boxed with that struct's vtable.
     std::string st = getExprEskiuType(e);
     if (interfaceName(st) == iface) return evaluateExpr(e);
-    if (auto* lit = dynamic_cast<LiteralExpr*>(e.get()); lit && lit->kind == LiteralExpr::Kind::NULL_VAL)
+    if (auto* lit = nodeCast<LiteralExpr>(e.get()); lit && lit->kind == LiteralExpr::Kind::NULL_VAL)
         return llvm::ConstantAggregateZero::get(ifaceFatPtrTypes[iface]);
     bool isPtr = !st.empty() && (st.front() == '*' || st.back() == '*');
     if (!isPtr)

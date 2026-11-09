@@ -45,7 +45,7 @@ llvm::Constant* CodeGen::evaluateConstantExpr(const ExprPtr& expr) {
     // emit its function and fold to the constant fat pointer, so a global/static
     // initializer holds a real callable instead of a null closure. (A capturing
     // lambda needs a live frame, so it can't be a global constant.)
-    if (auto* lam = dynamic_cast<LambdaExpr*>(expr.get())) {
+    if (auto* lam = nodeCast<LambdaExpr>(expr.get())) {
         if (!lam->captures.empty()) return nullptr;
         std::string lambdaName = "__lambda" + std::to_string(lambdaSeq++);
         llvm::Function* func = emitLambdaFunction(lam, lambdaName, nullptr);
@@ -91,7 +91,7 @@ llvm::Constant* CodeGen::foldViaCodegen(const ExprPtr& expr, llvm::Type* targetT
 llvm::Constant* CodeGen::constInitializer(const ExprPtr& expr, llvm::Type* declType) {
     // Array literal `{...}` against a fixed-size array type: fold each element to the
     // array's element type and zero-fill any tail (C semantics: `int[3] = {1}` → {1,0,0}).
-    if (auto* arr = dynamic_cast<ArrayLitExpr*>(expr.get())) {
+    if (auto* arr = nodeCast<ArrayLitExpr>(expr.get())) {
         auto* arrTy = llvm::dyn_cast<llvm::ArrayType>(declType);
         if (!arrTy) return nullptr;
         llvm::Type* elemTy = arrTy->getElementType();
@@ -119,7 +119,7 @@ llvm::Constant* CodeGen::constInitializer(const ExprPtr& expr, llvm::Type* declT
     // Struct literal `S{ ... }` against a struct type: fold each named/positional field
     // to a constant and zero-fill the rest. A bitfield struct or a union is folded
     // through its byte image (constAggregateImage).
-    if (auto* si0 = dynamic_cast<StructInitExpr*>(expr.get())) {
+    if (auto* si0 = nodeCast<StructInitExpr>(expr.get())) {
         ExprPtr full = withDefaults(si0, expr);       // omitted fields take their defaults
         auto* si = static_cast<StructInitExpr*>(full.get());
         std::string sname = resolveStructInitName(si->structName);
@@ -156,7 +156,7 @@ llvm::Constant* CodeGen::constInitializer(const ExprPtr& expr, llvm::Type* declT
         if (split) return llvm::ConstantStruct::getAnon(*context, vals, st->isPacked());
         return llvm::ConstantStruct::get(st, vals);
     }
-    if (dynamic_cast<LambdaExpr*>(expr.get())) {
+    if (nodeCast<LambdaExpr>(expr.get())) {
         llvm::Constant* c = evaluateConstantExpr(expr);
         return (c && c->getType() == declType) ? c : nullptr;
     }

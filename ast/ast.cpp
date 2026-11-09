@@ -26,7 +26,7 @@ BinaryExpr::~BinaryExpr() {
     // spine is released one node at a time instead of by nested destructor calls.
     ExprPtr next = std::move(left);
     while (next && next.use_count() == 1) {
-        auto* b = dynamic_cast<BinaryExpr*>(next.get());
+        auto* b = nodeCast<BinaryExpr>(next.get());
         if (!b) break;
         ExprPtr after = std::move(b->left);
         next = std::move(after);

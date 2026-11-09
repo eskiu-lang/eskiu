@@ -111,7 +111,7 @@ FunctionDecl* CodeGen::genericMethod(const std::string& instName, const std::str
     auto td = templateDecls.find(ia->second.first);
     if (td == templateDecls.end()) return nullptr;
     for (const auto& m : td->second->methods) {
-        auto* mf = dynamic_cast<FunctionDecl*>(m.get());
+        auto* mf = nodeCast<FunctionDecl>(m.get());
         if (!mf || mf->name != method) continue;
         if (subsOut) {
             const auto& tp = td->second->typeParams;
@@ -316,7 +316,7 @@ void CodeGen::visit(CallExpr* node) {
     if (node->dbgBuiltin && node->args.size() == 1) { exprValueStack.push(emitDbg(node)); return; }
     // Variadic access: va_start(ap) / va_end(ap) — `ap` is a local va_list, whose
     // alloca is the pointer the intrinsics need.
-    if (auto* bid = dynamic_cast<IdentExpr*>(node->callee.get())) {
+    if (auto* bid = nodeCast<IdentExpr>(node->callee.get())) {
         if ((bid->name == "va_start" || bid->name == "va_end") && node->args.size() == 1) {
             llvm::Value* ap = evaluateLValue(node->args[0]);
             llvm::Function* fn = getOrDeclareFunc(
@@ -341,7 +341,7 @@ void CodeGen::visit(CallExpr* node) {
         }
     }
     // Algebraic variant construction: `Circle(2.0)`, `Some(x)`.
-    if (auto* vid = dynamic_cast<IdentExpr*>(node->callee.get())) {
+    if (auto* vid = nodeCast<IdentExpr>(node->callee.get())) {
         if (!lookupSymbol(vid->name) && adtVariants.count(vid->name)) {
             exprValueStack.push(buildVariant(vid->name, node->args));
             return;
@@ -376,7 +376,7 @@ void CodeGen::visit(CallExpr* node) {
     // instead of a call. Gated on intrinsicNames (only populated when the
     // declaring module is imported), so a user function of the same name that
     // was *not* imported as an intrinsic is unaffected.
-    if (auto* aid = dynamic_cast<IdentExpr*>(node->callee.get())) {
+    if (auto* aid = nodeCast<IdentExpr>(node->callee.get())) {
         const std::string& fn = aid->name;
         if (intrinsicNames.count(fn) && !lookupSymbol(fn)) {
             exprValueStack.push(lowerIntrinsicCall(fn, node));
@@ -388,7 +388,7 @@ void CodeGen::visit(CallExpr* node) {
     // parameter by structurally unifying every parameter type against the concrete
     // argument type. Covers bare params (T max<T>(T a, T b) → max(3,5)) and
     // composite ones (T List_get<T>(List<T>* self, int i) → List_get(&nums, i)).
-    if (auto* id = dynamic_cast<IdentExpr*>(node->callee.get())) {
+    if (auto* id = nodeCast<IdentExpr>(node->callee.get())) {
         auto tIt = funcTemplateDecls.find(id->name);
         if (tIt != funcTemplateDecls.end()) {
             FunctionDecl* fd = tIt->second;
@@ -429,7 +429,7 @@ void CodeGen::visit(CallExpr* node) {
     }
 
     // Unified method/interface call: callee is MemberExpr
-    if (auto member = dynamic_cast<MemberExpr*>(node->callee.get())) {
+    if (auto member = nodeCast<MemberExpr>(node->callee.get())) {
         std::string baseType = getExprEskiuType(member->base);
         // Pointer-vs-value base: a pointer-to-struct base supplies the receiver
         // by its *value* (the pointer — load it), a value struct by its *address*.
@@ -609,7 +609,7 @@ void CodeGen::visit(CallExpr* node) {
     // fn-pointer variable) is a direct call — use the function itself, not the
     // decayed closure fat pointer that evaluating it as a value would produce.
     llvm::Value* calleeVal = nullptr;
-    if (auto ident = dynamic_cast<IdentExpr*>(node->callee.get())) {
+    if (auto ident = nodeCast<IdentExpr>(node->callee.get())) {
         if (!lookupSymbol(ident->name))
             calleeVal = module->getFunction(ident->name);
     }

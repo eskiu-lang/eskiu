@@ -177,7 +177,7 @@ void ASTPrinter::visit(IfStmt* node) {
         if (n->elseBranch) {
             println("Else:");
             indentLevel++;
-            next = dynamic_cast<IfStmt*>(n->elseBranch.get());
+            next = nodeCast<IfStmt>(n->elseBranch.get());
             if (!next) n->elseBranch->accept(this);
         }
         n = next;
@@ -288,7 +288,7 @@ void ASTPrinter::visit(BinaryExpr* node) {
     // spine with a loop instead of one recursive call per operator.
     int base = indentLevel;
     std::vector<BinaryExpr*> spine;
-    for (BinaryExpr* b = node; b; b = dynamic_cast<BinaryExpr*>(b->left.get())) {
+    for (BinaryExpr* b = node; b; b = nodeCast<BinaryExpr>(b->left.get())) {
         println("BinaryExpr: " + b->op);
         indentLevel++;
         println("Left:");

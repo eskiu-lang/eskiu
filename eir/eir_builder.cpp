@@ -169,7 +169,7 @@ TypePtr EIRBuilder::getExprEirType(const Expr* expr) {
     // Inside a generic instance the shared AST carries no per-instance types: a local's
     // type is the one its declaration took for this instance.
     if (!typeParamOverride.empty()) {
-        if (auto id = dynamic_cast<const IdentExpr*>(expr)) {
+        if (auto id = nodeCast<const IdentExpr>(expr)) {
             TypePtr vt = lookupVarType(id->name);
             if (vt && !vt->isVoid()) return vt;
         }
@@ -191,16 +191,16 @@ TypePtr EIRBuilder::getExprEirType(const Expr* expr) {
             return toEirType(t);
         }
     }
-    if (auto id = dynamic_cast<const IdentExpr*>(expr)) {
+    if (auto id = nodeCast<const IdentExpr>(expr)) {
         TypePtr vt = lookupVarType(id->name);
         if (vt && !vt->isVoid()) return vt;
     }
-    if (auto c = dynamic_cast<const CastExpr*>(expr)) {
+    if (auto c = nodeCast<const CastExpr>(expr)) {
         std::string targetTy = c->targetType;
         if (!typeParamOverride.empty()) targetTy = substType(targetTy, typeParamOverride);
         return toEirType(targetTy);
     }
-    if (auto mem = dynamic_cast<const MemberExpr*>(expr)) {
+    if (auto mem = nodeCast<const MemberExpr>(expr)) {
         TypePtr bty = getExprEirType(mem->base);
         if (bty && (bty->isSlice() || (bty->isPointer() && bty->elemType && bty->elemType->isSlice()))) {
             if (mem->member == "len") return Type::getI64();
@@ -220,7 +220,7 @@ TypePtr EIRBuilder::getExprEirType(const Expr* expr) {
             }
         }
     }
-    if (auto idx = dynamic_cast<const IndexExpr*>(expr)) {
+    if (auto idx = nodeCast<const IndexExpr>(expr)) {
         TypePtr bty = getExprEirType(idx->base);
         if (idx->isSlice()) {
             TypePtr elemTy = nullptr;
@@ -244,7 +244,7 @@ TypePtr EIRBuilder::getExprEirType(const Expr* expr) {
             return bty->elemType;
         }
     }
-    if (auto u = dynamic_cast<const UnaryExpr*>(expr)) {
+    if (auto u = nodeCast<const UnaryExpr>(expr)) {
         if (u->op == "*") {
             TypePtr opty = getExprEirType(u->operand);
             if (opty && opty->isPointer() && opty->elemType) return opty->elemType;
@@ -253,7 +253,7 @@ TypePtr EIRBuilder::getExprEirType(const Expr* expr) {
             if (opty) return Type::getPtr(opty);
         }
     }
-    if (auto tc = dynamic_cast<const TemplateCallExpr*>(expr)) {
+    if (auto tc = nodeCast<const TemplateCallExpr>(expr)) {
         std::string fnName = tc->templateName;
         std::vector<std::string> substitutedArgs;
         for (const auto& a : tc->typeArgs) {
@@ -275,17 +275,17 @@ TypePtr EIRBuilder::getExprEirType(const Expr* expr) {
             return toEirType(subRet);
         }
     }
-    if (auto ce = dynamic_cast<const CallExpr*>(expr)) {
+    if (auto ce = nodeCast<const CallExpr>(expr)) {
         TypePtr cTy = getExprEirType(ce->callee.get());
         if (cTy && cTy->isClosure() && cTy->returnType) {
             return cTy->returnType;
         }
-        if (auto id = dynamic_cast<const IdentExpr*>(ce->callee.get())) {
+        if (auto id = nodeCast<const IdentExpr>(ce->callee.get())) {
             if (module) {
                 if (Function* fn = module->getFunction(id->name)) return fn->returnType;
             }
         }
-        if (auto mem = dynamic_cast<const MemberExpr*>(ce->callee.get())) {
+        if (auto mem = nodeCast<const MemberExpr>(ce->callee.get())) {
             TypePtr bty = getExprEirType(mem->base);
             std::string sname;
             if (bty && bty->isStruct()) sname = bty->nominalName();
@@ -295,7 +295,7 @@ TypePtr EIRBuilder::getExprEirType(const Expr* expr) {
             }
         }
     }
-    if (auto b = dynamic_cast<const BinaryExpr*>(expr)) {
+    if (auto b = nodeCast<const BinaryExpr>(expr)) {
         if (b->op == "==" || b->op == "!=" || b->op == "<" || b->op == "<=" || b->op == ">" || b->op == ">=" ||
             b->op == "&&" || b->op == "||") {
             return Type::getI1();
@@ -343,7 +343,7 @@ Operand EIRBuilder::evaluateLValue(const ExprPtr& expr) {
 // arithmetic conversions, wraparound), as sema and codegen fold. False when it is not one.
 bool EIRBuilder::foldCInt(const ExprPtr& expr, ty::CInt& out) {
     if (!expr) return false;
-    if (auto lit = dynamic_cast<LiteralExpr*>(expr.get())) {
+    if (auto lit = nodeCast<LiteralExpr>(expr.get())) {
         if (lit->kind == LiteralExpr::Kind::INT) {
             try {
                 if (!lit->value.empty() && lit->value[0] == '-') {
@@ -364,7 +364,7 @@ bool EIRBuilder::foldCInt(const ExprPtr& expr, ty::CInt& out) {
         }
         return false;
     }
-    if (auto id = dynamic_cast<IdentExpr*>(expr.get())) {
+    if (auto id = nodeCast<IdentExpr>(expr.get())) {
         auto it = enumConstants.find(id->name);
         if (it == enumConstants.end()) return false;
         auto ct = constTypes.find(id->name);
@@ -373,22 +373,22 @@ bool EIRBuilder::foldCInt(const ExprPtr& expr, ty::CInt& out) {
         else out = ty::cintMake(it->second, t->bitWidth > 32 ? 64 : 32, !t->isSigned);
         return true;
     }
-    if (auto u = dynamic_cast<UnaryExpr*>(expr.get())) {
+    if (auto u = nodeCast<UnaryExpr>(expr.get())) {
         ty::CInt x;
         return foldCInt(u->operand, x) && ty::cintUnary(u->op, x, out);
     }
-    if (auto b = dynamic_cast<BinaryExpr*>(expr.get())) {
+    if (auto b = nodeCast<BinaryExpr>(expr.get())) {
         ty::CInt l, r;
         return foldCInt(b->left, l) && foldCInt(b->right, r) && ty::cintBinary(b->op, l, r, out);
     }
-    if (auto c = dynamic_cast<CastExpr*>(expr.get())) {
+    if (auto c = nodeCast<CastExpr>(expr.get())) {
         ty::CInt x;
         std::string t = c->targetType;
         auto al = typeAliases.find(t);
         if (al != typeAliases.end()) t = al->second;
         return foldCInt(c->expr, x) && ty::cintCast(t, x, out);
     }
-    if (auto sz = dynamic_cast<SizeofExpr*>(expr.get())) {
+    if (auto sz = nodeCast<SizeofExpr>(expr.get())) {
         uint64_t n = 0;
         if (!sz->typeName.empty() && lookupVar(sz->typeName)) n = getTypeSize(lookupVarType(sz->typeName), module.get());
         else if (!sz->typeName.empty()) n = sizeOfType(sz->typeName);
@@ -397,7 +397,7 @@ bool EIRBuilder::foldCInt(const ExprPtr& expr, ty::CInt& out) {
         out = ty::cintMake(static_cast<long long>(n), 64, true);   // uint64 in constant folds, as sema's
         return true;
     }
-    if (auto t = dynamic_cast<TernaryExpr*>(expr.get())) {
+    if (auto t = nodeCast<TernaryExpr>(expr.get())) {
         ty::CInt c, a, b;
         if (!foldCInt(t->condition, c) || !foldCInt(t->thenExpr, a) || !foldCInt(t->elseExpr, b)) return false;
         out = c.v ? a : b;
@@ -432,7 +432,7 @@ void EIRBuilder::emitArrayInitInto(Operand dest, ArrayLitExpr* lit, TypePtr arrT
             dest, Operand::constInt(static_cast<int64_t>(i), Type::getI32())
         }});
         if (arrTy->elemType->isArray()) {
-            if (auto subLit = dynamic_cast<ArrayLitExpr*>(lit->elements[i].get())) {
+            if (auto subLit = nodeCast<ArrayLitExpr>(lit->elements[i].get())) {
                 emitArrayInitInto(Operand::var(elemPtr, Type::getPtr(arrTy->elemType)), subLit, arrTy->elemType);
             } else {
                 Operand subVal = evaluateExpr(lit->elements[i]);
@@ -448,16 +448,16 @@ void EIRBuilder::emitArrayInitInto(Operand dest, ArrayLitExpr* lit, TypePtr arrT
 bool EIRBuilder::volatileRooted(const Expr* e) const {
     if (volatileVars.empty()) return false;
     while (e) {
-        if (auto* id = dynamic_cast<const IdentExpr*>(e)) {
+        if (auto* id = nodeCast<const IdentExpr>(e)) {
             return volatileVars.count(id->name) > 0;
         }
-        if (auto* u = dynamic_cast<const UnaryExpr*>(e)) {
+        if (auto* u = nodeCast<const UnaryExpr>(e)) {
             if (u->op != "*" || !u->opFunc.empty()) break;
             e = u->operand.get();
-        } else if (auto* ix = dynamic_cast<const IndexExpr*>(e)) {
+        } else if (auto* ix = nodeCast<const IndexExpr>(e)) {
             if (!ix->opFunc.empty()) break;
             e = ix->base.get();
-        } else if (auto* m = dynamic_cast<const MemberExpr*>(e)) {
+        } else if (auto* m = nodeCast<const MemberExpr>(e)) {
             e = m->base.get();
         } else {
             break;
@@ -489,7 +489,7 @@ void EIRBuilder::runCleanupsToDepth(size_t depth, bool errorPath) {
 // defers run at the end of it, and only if it was reached.
 void EIRBuilder::visitBody(const StmtPtr& body) {
     if (!body) return;
-    if (dynamic_cast<BlockStmt*>(body.get())) {
+    if (nodeCast<BlockStmt>(body.get())) {
         body->accept(this);
         return;
     }
@@ -907,7 +907,7 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
 
     // Phase 0: Type Aliases
     for (auto& decl : program->declarations) {
-        if (auto ta = dynamic_cast<TypeAliasDecl*>(decl.get())) {
+        if (auto ta = nodeCast<TypeAliasDecl>(decl.get())) {
             typeAliases[ta->name] = ta->aliased;
             templateTypeAliases()[ta->name] = ta->aliased;
         }
@@ -917,7 +917,7 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
     plainStructs.clear();
     unionDecls.clear();
     for (auto& decl : program->declarations) {
-        if (auto iface = dynamic_cast<InterfaceDecl*>(decl.get())) {
+        if (auto iface = nodeCast<InterfaceDecl>(decl.get())) {
             InterfaceInfo info;
             info.name = iface->name;
             for (const auto& m : iface->methods) {
@@ -928,7 +928,7 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
                 info.methodParamTypes.push_back(pts);
             }
             interfaces[iface->name] = info;
-        } else if (auto e = dynamic_cast<EnumDecl*>(decl.get())) {
+        } else if (auto e = nodeCast<EnumDecl>(decl.get())) {
             if (!e->typeParams.empty()) {
                 genericEnums[e->name] = e;
                 for (size_t i = 0; i < e->members.size(); ++i)
@@ -949,19 +949,19 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
                     nextVal++;
                 }
             }
-        } else if (auto s = dynamic_cast<StructDecl*>(decl.get())) {
+        } else if (auto s = nodeCast<StructDecl>(decl.get())) {
             if (!s->typeParams.empty()) {
                 templateDecls[s->name] = s;
             } else {
                 plainStructs[s->name] = s;
             }
-        } else if (auto u = dynamic_cast<UnionDecl*>(decl.get())) {
+        } else if (auto u = nodeCast<UnionDecl>(decl.get())) {
             unionDecls[u->name] = u;
-        } else if (auto f = dynamic_cast<FunctionDecl*>(decl.get())) {
+        } else if (auto f = nodeCast<FunctionDecl>(decl.get())) {
             if (!f->typeParams.empty()) {
                 if (!funcTemplateDecls.count(f->name) || f->body) funcTemplateDecls[f->name] = f;   // the definition, not a prototype
             }
-        } else if (auto v = dynamic_cast<VarDecl*>(decl.get())) {
+        } else if (auto v = nodeCast<VarDecl>(decl.get())) {
             if (v->isExtern) {
                 continue;
             }
@@ -971,9 +971,9 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
             TypePtr type = toEirType(v->type);
             Operand initOp = Operand::constInt(0, type);
             if (v->initializer) {
-                if (auto u = dynamic_cast<UnaryExpr*>(v->initializer.get())) {
+                if (auto u = nodeCast<UnaryExpr>(v->initializer.get())) {
                     if (u->op == "&") {
-                        if (auto id = dynamic_cast<IdentExpr*>(u->operand.get())) {
+                        if (auto id = nodeCast<IdentExpr>(u->operand.get())) {
                             initOp = Operand::global(id->name, type);
                         }
                     }
@@ -992,7 +992,7 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
                         }
                     } else if (type && type->isFloat()) {
                         double fv = 0.0;
-                        if (auto lit = dynamic_cast<LiteralExpr*>(v->initializer.get())) {
+                        if (auto lit = nodeCast<LiteralExpr>(v->initializer.get())) {
                             fv = std::strtod(lit->value.c_str(), nullptr);
                         }
                         initOp = Operand::constFloat(fv, type);
@@ -1006,25 +1006,25 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
     }
 
     for (auto& decl : program->declarations) {
-        auto e = dynamic_cast<EnumDecl*>(decl.get());
+        auto e = nodeCast<EnumDecl>(decl.get());
         if (e && adtEnums.count(e->name) && !module->structLayouts.count(e->name))
             layoutAdt(e->name, adtEnums[e->name], {});
     }
     for (auto& decl : program->declarations) {
-        if (auto s = dynamic_cast<StructDecl*>(decl.get()); s && s->typeParams.empty())
+        if (auto s = nodeCast<StructDecl>(decl.get()); s && s->typeParams.empty())
             ensureStructLayout(s->name);
     }
     for (auto& decl : program->declarations) {
-        if (auto u = dynamic_cast<UnionDecl*>(decl.get())) ensureStructLayout(u->name);
+        if (auto u = nodeCast<UnionDecl>(decl.get())) ensureStructLayout(u->name);
     }
 
     // Phase 2: Function prototypes
     definedFunctions.clear();
     for (auto& decl : program->declarations)
-        if (auto f = dynamic_cast<FunctionDecl*>(decl.get()); f && f->typeParams.empty() && f->body)
+        if (auto f = nodeCast<FunctionDecl>(decl.get()); f && f->typeParams.empty() && f->body)
             definedFunctions.insert(f->name);
     for (auto& decl : program->declarations) {
-        if (auto f = dynamic_cast<FunctionDecl*>(decl.get())) {
+        if (auto f = nodeCast<FunctionDecl>(decl.get())) {
             if (!f->typeParams.empty()) continue;
             std::vector<std::pair<std::string, TypePtr>> params;
             bool hasVarargs = false;
@@ -1042,7 +1042,7 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
             auto fn = module->createFunction(f->name, toEirType(f->returnType), params);
             fn->isVariadic = hasVarargs;
             fn->isExport = f->isExport && f->body;
-        } else if (auto ext = dynamic_cast<ExternDecl*>(decl.get())) {
+        } else if (auto ext = nodeCast<ExternDecl>(decl.get())) {
             if (module->getFunction(ext->name)) continue;
             std::vector<std::pair<std::string, TypePtr>> params;
             bool hasVarargs = false;
@@ -1056,10 +1056,10 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
             auto fn = module->createFunction(ext->name, toEirType(ext->returnType), params);
             fn->isExtern = true;
             fn->isVariadic = hasVarargs;
-        } else if (auto s = dynamic_cast<StructDecl*>(decl.get())) {
+        } else if (auto s = nodeCast<StructDecl>(decl.get())) {
             if (!s->typeParams.empty()) continue;
             for (const auto& m : s->methods) {
-                if (auto mf = dynamic_cast<FunctionDecl*>(m.get())) {
+                if (auto mf = nodeCast<FunctionDecl>(m.get())) {
                     std::vector<std::pair<std::string, TypePtr>> params;
                     params.emplace_back("self", Type::getPtr(Type::getStruct(s->name, {})));
                     for (const auto& p : mf->params) {
@@ -1074,7 +1074,7 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
 
     bool hasGlobalInits = false;
     for (const auto& decl : program->declarations) {
-        if (auto v = dynamic_cast<VarDecl*>(decl.get())) {
+        if (auto v = nodeCast<VarDecl>(decl.get())) {
             if (!v->isExtern && (v->initializer || defaultExprFor(v->type))) {
                 hasGlobalInits = true;
                 break;
@@ -1108,12 +1108,12 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
         emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::constInt(1, Type::getI1()), Operand::global("__eir_inited", Type::getPtr(Type::getI1()))}});
 
         for (const auto& decl : program->declarations) {
-            if (auto v = dynamic_cast<VarDecl*>(decl.get())) {
+            if (auto v = nodeCast<VarDecl>(decl.get())) {
                 ExprPtr init = v->isExtern ? nullptr : (v->initializer ? v->initializer : defaultExprFor(v->type));
                 if (init) {
                     TypePtr type = toEirType(v->type);
                     Operand target = Operand::global(v->name, Type::getPtr(type));
-                    if (auto arrLit = dynamic_cast<ArrayLitExpr*>(init.get())) {
+                    if (auto arrLit = nodeCast<ArrayLitExpr>(init.get())) {
                         emitArrayInitInto(target, arrLit, type);
                     } else {
                         Operand val = evalForType(init, v->type);
@@ -1143,9 +1143,9 @@ std::unique_ptr<Module> EIRBuilder::build(Program* program) {
 
 void EIRBuilder::visit(Program* node) {
     for (auto& decl : node->declarations) {
-        if (auto iface = dynamic_cast<InterfaceDecl*>(decl.get())) {
+        if (auto iface = nodeCast<InterfaceDecl>(decl.get())) {
             iface->accept(this);
-        } else if (auto en = dynamic_cast<EnumDecl*>(decl.get())) {
+        } else if (auto en = nodeCast<EnumDecl>(decl.get())) {
             en->accept(this);
         }
     }
@@ -1280,7 +1280,7 @@ void EIRBuilder::visit(VarDecl* node) {
 
             setBlock(initBB);
             emit(Instruction{Opcode::Store, "", Type::getVoid(), {Operand::constInt(1, Type::getI1()), Operand::global(guardName, Type::getPtr(Type::getI1()))}});
-            if (auto arrLit = dynamic_cast<ArrayLitExpr*>(node->initializer.get())) {
+            if (auto arrLit = nodeCast<ArrayLitExpr>(node->initializer.get())) {
                 emitArrayInitInto(Operand::global(gname, Type::getPtr(type)), arrLit, type);
             } else {
                 Operand val = evalForType(node->initializer, node->type);
@@ -1311,7 +1311,7 @@ void EIRBuilder::visit(VarDecl* node) {
     bool generic = !typeParamOverride.empty() && substType(node->type, typeParamOverride) != node->type;
     ExprPtr init = node->initializer ? node->initializer : (generic ? nullptr : defaultExprFor(node->type));
     if (init) {
-        if (auto arrLit = dynamic_cast<ArrayLitExpr*>(init.get())) {
+        if (auto arrLit = nodeCast<ArrayLitExpr>(init.get())) {
             emitArrayInitInto(Operand::var(slotName, Type::getPtr(type)), arrLit, type);
         } else {
             Operand val = evalForType(init, type);
@@ -1564,14 +1564,14 @@ static std::string intSpelling(const TypePtr& t) {
 
 void EIRBuilder::visit(ForStmt* node) {
     pushScope();
-    if (auto* ib = dynamic_cast<BlockStmt*>(node->init.get())) {
+    if (auto* ib = nodeCast<BlockStmt>(node->init.get())) {
         // `for (i in A..B)` inside a generic instance: the shared AST carries the type the
         // checker stamped for some instance, so the bounds' common integer type is derived
         // again for this one (as codegen does).
         if (!typeParamOverride.empty() && ib->items.size() == 2 &&
             std::holds_alternative<DeclPtr>(ib->items[0]) && std::holds_alternative<DeclPtr>(ib->items[1])) {
-            auto* lo = dynamic_cast<VarDecl*>(std::get<DeclPtr>(ib->items[0]).get());
-            auto* hi = dynamic_cast<VarDecl*>(std::get<DeclPtr>(ib->items[1]).get());
+            auto* lo = nodeCast<VarDecl>(std::get<DeclPtr>(ib->items[0]).get());
+            auto* hi = nodeCast<VarDecl>(std::get<DeclPtr>(ib->items[1]).get());
             if (lo && hi && lo->rangeBound && hi->rangeBound && lo->initializer && hi->initializer) {
                 std::string ct = ty::rangeVarType(intSpelling(getExprEirType(lo->initializer)),
                                                   intSpelling(getExprEirType(hi->initializer)));
@@ -1680,12 +1680,12 @@ void EIRBuilder::visit(BinaryExpr* node) {
     if (node->op == "=") {
         // `lv op= v` is parsed as `lv = lv op v` sharing the lvalue node: evaluate the
         // lvalue once (a[f()] += 1 calls f once).
-        if (auto* rhsOp = dynamic_cast<BinaryExpr*>(node->right.get());
+        if (auto* rhsOp = nodeCast<BinaryExpr>(node->right.get());
             rhsOp && rhsOp->left.get() == node->left.get() && rhsOp->op != "=") {
             emitCompoundAssign(node, rhsOp);
             return;
         }
-        if (auto* mem = dynamic_cast<MemberExpr*>(node->left.get())) {
+        if (auto* mem = nodeCast<MemberExpr>(node->left.get())) {
             std::string baseType = getExprEirType(mem->base)->nominalName();
             auto it = module->structLayouts.find(baseType);
             if (it != module->structLayouts.end()) {
@@ -1718,7 +1718,7 @@ void EIRBuilder::visit(BinaryExpr* node) {
         node->op == "|=" || node->op == "^=" || node->op == "<<=" || node->op == ">>=") {
         std::string baseOp = node->op.substr(0, node->op.find('='));
 
-        if (auto* mem = dynamic_cast<MemberExpr*>(node->left.get())) {
+        if (auto* mem = nodeCast<MemberExpr>(node->left.get())) {
             std::string baseType = getExprEirType(mem->base)->nominalName();
             auto it = module->structLayouts.find(baseType);
             if (it != module->structLayouts.end()) {
@@ -2026,7 +2026,7 @@ Operand EIRBuilder::stepByOne(const Operand& cur, const TypePtr& ty, bool decrem
 }
 
 void EIRBuilder::visit(IncDecExpr* node) {
-    if (auto* mem = dynamic_cast<MemberExpr*>(node->operand.get())) {
+    if (auto* mem = nodeCast<MemberExpr>(node->operand.get())) {
         std::string baseType = getExprEirType(mem->base)->nominalName();
         auto it = module->structLayouts.find(baseType);
         if (it != module->structLayouts.end()) {
@@ -2169,7 +2169,7 @@ void EIRBuilder::visit(LiteralExpr* node) {
 }
 
 void EIRBuilder::visit(CallExpr* node) {
-    if (auto id = dynamic_cast<IdentExpr*>(node->callee.get())) {
+    if (auto id = nodeCast<IdentExpr>(node->callee.get())) {
         if (id->name == "exception_text" && node->args.empty() && !lookupVar(id->name) && !module->getFunction(id->name)) {
             // The text belongs to its catch block: formatted into the handler's own buffer.
             if (!catchTextSlots.empty()) {
@@ -2210,7 +2210,7 @@ void EIRBuilder::visit(CallExpr* node) {
     // 1. Check if callee is a closure variable or expression
     bool isClosureCall = false;
     Operand closureOp;
-    if (auto id = dynamic_cast<IdentExpr*>(node->callee.get())) {
+    if (auto id = nodeCast<IdentExpr>(node->callee.get())) {
         if (lookupVar(id->name)) {
             TypePtr varTy = lookupVarType(id->name);
             if (varTy && varTy->isClosure()) {
@@ -2269,7 +2269,7 @@ void EIRBuilder::visit(CallExpr* node) {
     }
 
     // 2. Check if callee is an ADT variant constructor (e.g. Lit(7), Add(1, 2))
-    if (auto id = dynamic_cast<IdentExpr*>(node->callee.get())) {
+    if (auto id = nodeCast<IdentExpr>(node->callee.get())) {
         auto it = adtVariants.find(id->name);
         if (it != adtVariants.end()) {
             auto& vinfo = it->second;
@@ -2302,7 +2302,7 @@ void EIRBuilder::visit(CallExpr* node) {
     }
 
     // 2.5 Inferred template function call (e.g. fill(&big, 5000000000, 3))
-    if (auto id = dynamic_cast<IdentExpr*>(node->callee.get())) {
+    if (auto id = nodeCast<IdentExpr>(node->callee.get())) {
         auto tIt = funcTemplateDecls.find(id->name);
         if (tIt != funcTemplateDecls.end()) {
             FunctionDecl* fd = tIt->second;
@@ -2351,7 +2351,7 @@ void EIRBuilder::visit(CallExpr* node) {
     std::string fnName;
     std::vector<Operand> args;
 
-    if (auto id = dynamic_cast<IdentExpr*>(node->callee.get())) {
+    if (auto id = nodeCast<IdentExpr>(node->callee.get())) {
         fnName = id->name;
         args.push_back(Operand::global(fnName, Type::getPtr()));
         Function* targetFn = module ? module->getFunction(fnName) : nullptr;
@@ -2363,7 +2363,7 @@ void EIRBuilder::visit(CallExpr* node) {
             }
             args.push_back(evalForType(node->args[i], paramType));
         }
-    } else if (auto mem = dynamic_cast<MemberExpr*>(node->callee.get())) {
+    } else if (auto mem = nodeCast<MemberExpr>(node->callee.get())) {
         std::string baseTypeName;
         TypePtr baseTy = getExprEirType(mem->base);
         if (baseTy && baseTy->isInterface()) {
@@ -2549,7 +2549,7 @@ void EIRBuilder::visit(CallExpr* node) {
 void EIRBuilder::visit(CastExpr* node) {
     TypePtr toTy = toEirType(node->targetType);
     // `(*void)f` of a top-level function is its C function pointer, not a closure.
-    if (auto* id = dynamic_cast<IdentExpr*>(node->expr.get());
+    if (auto* id = nodeCast<IdentExpr>(node->expr.get());
         id && toTy->isPointer() && !lookupVar(id->name) && module->getFunction(id->name)) {
         lastValue = Operand::global(id->name, toTy);
         return;
@@ -2621,7 +2621,7 @@ void EIRBuilder::visit(TernaryExpr* node) {
 void EIRBuilder::visit(MemberExpr* node) {
     TypePtr objTy = getExprEirType(node->base);
     if (!objTy) {
-        if (auto id = dynamic_cast<IdentExpr*>(node->base.get())) {
+        if (auto id = nodeCast<IdentExpr>(node->base.get())) {
             objTy = lookupVarType(id->name);
         }
     }
@@ -2661,7 +2661,7 @@ void EIRBuilder::visit(MemberExpr* node) {
         }
     }
     if (structName.empty()) {
-        if (auto id = dynamic_cast<IdentExpr*>(node->base.get())) {
+        if (auto id = nodeCast<IdentExpr>(node->base.get())) {
             TypePtr vt = lookupVarType(id->name);
             if (vt && vt->isPointer() && vt->elemType && vt->elemType->isStruct()) {
                 structName = vt->elemType->nominalName();
@@ -2685,7 +2685,7 @@ void EIRBuilder::visit(MemberExpr* node) {
 
     bool isPtr = (objTy && objTy->isPointer());
     if (!isPtr) {
-        if (auto id = dynamic_cast<IdentExpr*>(node->base.get())) {
+        if (auto id = nodeCast<IdentExpr>(node->base.get())) {
             TypePtr vt = lookupVarType(id->name);
             if (vt && vt->isPointer()) isPtr = true;
         }
@@ -2806,7 +2806,7 @@ void EIRBuilder::visit(StructDecl* node) {
         return;
     }
     for (const auto& m : node->methods) {
-        if (auto mf = dynamic_cast<FunctionDecl*>(m.get())) {
+        if (auto mf = nodeCast<FunctionDecl>(m.get())) {
             std::vector<std::pair<std::string, std::string>> params;
             params.push_back({"*" + node->name, "self"});
             for (const auto& p : mf->params) params.push_back(p);
@@ -2903,7 +2903,7 @@ Function* EIRBuilder::instantiateGenericMethod(const std::string& instName, cons
     StructDecl* td = tdIt->second;
     FunctionDecl* mf = nullptr;
     for (const auto& m : td->methods) {
-        auto* f = dynamic_cast<FunctionDecl*>(m.get());
+        auto* f = nodeCast<FunctionDecl>(m.get());
         if (f && f->name == method) {
             mf = f;
             break;
@@ -3039,7 +3039,7 @@ Operand EIRBuilder::evalForType(const ExprPtr& e, TypePtr targetType) {
         TypePtr srcTy = getExprEirType(e);
         if (srcTy && srcTy->isInterface()) return evaluateExpr(e);
 
-        if (auto* lit = dynamic_cast<LiteralExpr*>(e.get()); lit && lit->kind == LiteralExpr::Kind::NULL_VAL) {
+        if (auto* lit = nodeCast<LiteralExpr>(e.get()); lit && lit->kind == LiteralExpr::Kind::NULL_VAL) {
             std::string dst = newVar() + ".iface_null";
             emit(Instruction{Opcode::MakeInterface, dst, targetType, {Operand::constNull(), Operand::constNull()}});
             return Operand::var(dst, targetType);
@@ -3208,7 +3208,7 @@ TypePtr EIRBuilder::bitfieldReadType(const StructFieldInfo* fi) {
 // the overloaded operator's function.
 void EIRBuilder::emitCompoundAssign(BinaryExpr* node, BinaryExpr* rhsOp) {
     const std::string& op = rhsOp->op;
-    if (auto* mem = dynamic_cast<MemberExpr*>(node->left.get())) {
+    if (auto* mem = nodeCast<MemberExpr>(node->left.get())) {
         if (const StructFieldInfo* fi = bitfieldOf(mem)) {
             Operand base = bitfieldBase(mem);
             Operand cur = loadBitfieldAt(base, fi, volatileRooted(mem));
@@ -3527,10 +3527,10 @@ Operand EIRBuilder::closureTarget(const Operand& fn) {
 // An extern's fn-typed parameter is a C function pointer: a top-level function by name
 // or `null` (sema rejects anything else).
 Operand EIRBuilder::cFnPointer(const ExprPtr& e) {
-    if (auto* lit = dynamic_cast<LiteralExpr*>(e.get()); lit && lit->kind == LiteralExpr::Kind::NULL_VAL) {
+    if (auto* lit = nodeCast<LiteralExpr>(e.get()); lit && lit->kind == LiteralExpr::Kind::NULL_VAL) {
         return Operand::constNull();
     }
-    if (auto* id = dynamic_cast<IdentExpr*>(e.get()); id && module && module->getFunction(id->name) && !lookupVar(id->name)) {
+    if (auto* id = nodeCast<IdentExpr>(e.get()); id && module && module->getFunction(id->name) && !lookupVar(id->name)) {
         return Operand::global(id->name, Type::getPtr());
     }
     throw std::runtime_error("EIR: an extern's function parameter takes a top-level function or null");
@@ -3588,10 +3588,10 @@ void EIRBuilder::visit(ForInStmt* node) {
     ty::Type k = ty::Type::parse(itType);
     if (!astwalk::isStablePlace(node->iterable.get())) {
         std::function<bool(Expr*)> addressable = [&](Expr* e) -> bool {
-            if (dynamic_cast<IdentExpr*>(e)) return true;
-            if (auto* u = dynamic_cast<UnaryExpr*>(e)) return u->op == "*" && u->opFunc.empty();
-            if (auto* ix = dynamic_cast<IndexExpr*>(e)) return ix->opFunc.empty() && !ix->highIndex;
-            if (auto* m = dynamic_cast<MemberExpr*>(e)) {
+            if (nodeCast<IdentExpr>(e)) return true;
+            if (auto* u = nodeCast<UnaryExpr>(e)) return u->op == "*" && u->opFunc.empty();
+            if (auto* ix = nodeCast<IndexExpr>(e)) return ix->opFunc.empty() && !ix->highIndex;
+            if (auto* m = nodeCast<MemberExpr>(e)) {
                 TypePtr bt = getExprEirType(m->base);
                 return (bt && bt->isPointer()) || addressable(m->base.get());
             }
@@ -4009,7 +4009,7 @@ void EIRBuilder::visit(StructInitExpr* node0) {
             Operand::constString(fname)
         }});
 
-        if (auto* arrLit = dynamic_cast<ArrayLitExpr*>(fval.get()); arrLit && ftype && ftype->isArray()) {
+        if (auto* arrLit = nodeCast<ArrayLitExpr>(fval.get()); arrLit && ftype && ftype->isArray()) {
             emitArrayInitInto(Operand::var(fptr, Type::getPtr(ftype)), arrLit, ftype);
             continue;
         }
@@ -4469,7 +4469,7 @@ void EIRBuilder::visit(SizeofExpr* node) {
 void EIRBuilder::visit(ThreadCreateExpr* node) {
     Operand worker = evaluateExpr(node->worker);
     std::string handleVar = newVar() + ".thr_handle";
-    bool owned = dynamic_cast<LambdaExpr*>(node->worker.get()) != nullptr;
+    bool owned = nodeCast<LambdaExpr>(node->worker.get()) != nullptr;
     emit(Instruction{Opcode::Call, handleVar, Type::getPtr(), {
         Operand::global("__eir_thread_create", Type::getPtr()),
         worker,

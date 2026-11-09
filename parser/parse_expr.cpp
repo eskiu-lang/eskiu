@@ -351,7 +351,7 @@ ExprPtr Parser::parsePostfix() {
         // Template function call: ident<TypeArg, ...>(args)
         // `a < b, c > (d)` reads as a call only when the callee is a known generic
         // (function, enum variant or type) or every argument can only be a type.
-        if (auto* ident = dynamic_cast<IdentExpr*>(expr.get())) {
+        if (auto* ident = nodeCast<IdentExpr>(expr.get())) {
             if (check(TokenType::LT) && !templateCallRuledOut()) {
                 ExprPtr templExpr = speculate([&]() -> ExprPtr {
                     advance(); // consume <
@@ -404,7 +404,7 @@ ExprPtr Parser::parsePostfix() {
             consume(TokenType::RPAREN, "Expected ')'");
             lastCallClose = current - 1;
             auto call = withPos(std::make_shared<CallExpr>(expr, args), callTok);
-            if (auto* id = dynamic_cast<IdentExpr*>(expr.get()); id && id->name == "dbg" && args.size() == 1)
+            if (auto* id = nodeCast<IdentExpr>(expr.get()); id && id->name == "dbg" && args.size() == 1)
                 call->dbgText = sourceSpan(firstArg, closeTok);
             expr = call;
         } else if (match(TokenType::LBRACKET)) {
