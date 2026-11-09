@@ -159,17 +159,25 @@ replacement. The rules are in [docs/lang/stability.md](docs/lang/stability.md).
 
 ## Install
 
-On macOS or Linux:
+On macOS (Apple silicon or Intel) or Linux (x86-64 or arm64):
 
 ```bash
 curl -fsSL https://eskiu-lang.org/install.sh | sh
-eskiuc --version
+eskiuc doctor
 ```
 
-The script picks the prebuilt binary for your platform (macOS arm64, Linux x86-64 or arm64),
-verifies its checksum and installs it. The Windows x86-64 build and the tarballs are on the
-[releases page](https://github.com/eskiu-lang/eskiu/releases). `eskiuc` links programs
-with your system C toolchain (`cc`, `clang` or `gcc`), so have one installed.
+On Windows (x86-64):
+
+```powershell
+powershell -c "irm https://eskiu-lang.org/install.ps1 | iex"
+eskiuc doctor
+```
+
+The scripts pick the prebuilt binary for your platform and verify its checksum. `eskiuc`
+links programs with a C toolchain (`cc`, `clang` or `gcc`); on Windows the script installs
+llvm-mingw next to `eskiuc` when there is none. `eskiuc doctor` lists what the machine has
+for each kind of build and what to install for the rest. The archives are also on the
+[releases page](https://github.com/eskiu-lang/eskiu/releases).
 
 To build from source you need LLVM 21 or newer (22 recommended) built with RTTI, which the
 packaged ones are (apt.llvm.org, Homebrew, your distribution; not the llvm-project release
