@@ -203,10 +203,24 @@ string resolve_import(string spec, int is_std, string basedir) {
         }
         return path;
     }
-    if ((int)path[0] != 47) {
+    if (p_is_absolute(path) == 0) {
         return str_concat(basedir, str_concat("/", path));
     }
     return path;
+}
+
+// 1 for an absolute path: from the root (`/x`, `\\x`) or a Windows drive (`C:/x`, `C:\\x`)
+// (C++ isAbsolutePath).
+int p_is_absolute(string p) {
+    int c = (int)p[0];
+    if (c == 47 || c == 92) {
+        return 1;
+    }
+    int letter = (c >= 65 && c <= 90) || (c >= 97 && c <= 122) ? 1 : 0;
+    if (letter == 1 && (int)p[1] == 58 && ((int)p[2] == 47 || (int)p[2] == 92)) {
+        return 1;
+    }
+    return 0;
 }
 
 // $ESKIU_HOME, else ~/.eskiu: where packages are checked out (mirrors pkgHome).
@@ -864,13 +878,13 @@ int str_has_char(string s, int c) {
     return 0;
 }
 
-// Directory portion of a path (everything before the last '/'), or "." if none.
+// Directory portion of a path (everything before the last '/' or '\\'), or "." if none.
 string str_dir(string s) {
     int n = cstr_len(s);
     int last = 0 - 1;
     int i = 0;
-    while (i < n) {   // 47 = '/'
-        if ((int)s[i] == 47) {
+    while (i < n) {   // 47 = '/', 92 = '\\' (Windows paths)
+        if ((int)s[i] == 47 || (int)s[i] == 92) {
             last = i;
         }
         i = i + 1;
