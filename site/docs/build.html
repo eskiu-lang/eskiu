@@ -179,10 +179,10 @@ details.cl-full[open] { padding-bottom: 8px; }
 <body>
   <header class="top">
     <div class="bar top-in">
-      <a class="brand" href="../index.html"><img src="../../assets/logo.png" alt="" />eskiu<span class="v">v0.14.1</span></a>
+      <a class="brand" href="../index.html"><img src="../../assets/logo.png" alt="" />eskiu<span class="v">v0.15.0</span></a>
       <nav class="nav" aria-label="Main"><div class="nav-g cur"><button type="button" class="nav-t">Learn<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="../quickstart.html"><b>Get started</b><span>Install it and run a first program</span></a><a href="../index.html#playground"><b>Playground</b><span>Run code in the browser</span></a><a href="../the-book-of-eskiu.html"><b>The Book of Eskiu</b><span>The language, chapter by chapter</span></a><a href="../docs/index.html"><b>Docs</b><span>The specification, the standard library and the compiler</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Packages<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="../packages.html"><b>All packages</b><span>Each one is one eskiuc add away</span></a><a href="../vision.html"><b>vision</b><span>Computer vision, bit for bit with C++</span></a><a href="../gpu.html"><b>gpu</b><span>WebGPU compute, 3D models and Llama</span></a><a href="../packages.html#onnx"><b>onnx</b><span>ONNX Runtime inference</span></a><a href="../packages.html#jni"><b>jni</b><span>Java and Android with no C glue</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Platforms<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="../platforms.html"><b>Overview</b><span>One compiler, every target</span></a><a href="../platforms.html#wasm"><b>WebAssembly</b><span>The browser, through emscripten</span></a><a href="../platforms.html#ios"><b>iOS</b><span>Static libraries for Swift and Objective-C</span></a><a href="../platforms.html#android"><b>Android</b><span>Shared libraries for Kotlin and Java</span></a><a href="../platforms.html#bare-metal"><b>Bare metal</b><span>Kernels and boards with no operating system</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">UI<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="../ui.html"><b>Overview</b><span>Native apps for iOS, Android and the web</span></a><a href="../ui-components.html"><b>Components and APIs</b><span>Every element, hook and service</span></a><a href="../ui.html#dev"><b>Developer loop</b><span>Each change on screen in a third of a second</span></a><a href="../ui.html#navigation"><b>Navigation</b><span>Screens on the phone, pages on the web</span></a><a href="../ui.html#native"><b>Native code</b><span>Swift, Kotlin, Gradle and Swift packages</span></a><a href="../ui.html#ship"><b>To the stores</b><span>Xcode, Android Studio, the App Store and Google Play</span></a><a href="../ui.html#start"><b>Get started</b><span>The ui tool and a first app</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Showcase<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="../showcase.html"><b>Built with Eskiu</b><span>What runs on it today</span></a><a href="../case-study-reactvision.html"><b>ReactVision</b><span>Eskiu across an AR stack, in production</span></a><a href="../case-study-identity.html"><b>Digital identity</b><span>An ISO/IEC 39794-5 core for the web and the phone</span></a><a href="../index.html#labs"><b>Labs</b><span>A UI framework, a Nintendo 3DS and a kernel</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
       <div class="top-right">
-        <a class="btn-install" href="../index.html#install">Install 0.14.1</a>
+        <a class="btn-install" href="../index.html#install">Install 0.15.0</a>
         <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="drawer">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg>
         </button>
@@ -227,7 +227,7 @@ details.cl-full[open] { padding-bottom: 8px; }
 </tr>
 </tbody>
 </table></div>
-<p>LLVM is the only non-trivial dependency. The compiler links the <code>support</code>, <code>core</code>, <code>irreader</code> and native code generation components, plus the AArch64, X86, ARM and WebAssembly backends used for cross-compilation.</p>
+<p>LLVM is the only non-trivial dependency. It must be built with RTTI (<code>LLVM_ENABLE_RTTI=ON</code>), as the packaged LLVMs below are (apt.llvm.org, Homebrew, Alpine, MSYS2). The release tarballs on the llvm-project GitHub page are built without RTTI and cannot be used: configuring against one stops with an error (see <a href="#llvm-built-without-rtti">Troubleshooting</a>). The compiler links the <code>support</code>, <code>core</code>, <code>irreader</code> and native code generation components, plus the AArch64, X86, ARM and WebAssembly backends used for cross-compilation.</p>
 <p>To use a prebuilt compiler instead, see the install instructions in the <a href="https://github.com/eskiu-lang/eskiu/blob/main/README.md#install">README</a>. A built <code>eskiuc</code> calls the system C compiler (<code>cc</code>, <code>clang</code> or <code>gcc</code>) to link executables, so one must be installed.</p>
 <hr>
 <h2 id="macos">macOS</h2>
@@ -311,9 +311,17 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 # Debug: unoptimized, assertions enabled, better stack traces
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 </code></pre>
+<p>Without <code>-DCMAKE_BUILD_TYPE</code> the build is Release: a compiler built with no optimization
+compiles programs about three times slower.</p>
 <h3 id="incremental-builds">Incremental builds</h3>
 <p>After changing source files, just re-run the build step; CMake tracks dependencies:</p>
 <pre><code class="language-bash">cmake --build build -- -j$(nproc)
+</code></pre>
+<h3 id="warnings-as-errors">Warnings as errors</h3>
+<p>The compiler's own sources build without warnings under <code>-Wall -Wextra -Wpedantic</code> (LLVM's
+headers are included as system headers, so their warnings are not reported). CI keeps it
+that way with <code>-DESKIU_WERROR=ON</code>, which adds <code>-Werror</code> (<code>/WX</code> with MSVC):</p>
+<pre><code class="language-bash">cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DESKIU_WERROR=ON
 </code></pre>
 <h3 id="clean-rebuild">Clean rebuild</h3>
 <p>Delete the build directory and start over:</p>
@@ -327,7 +335,7 @@ cmake --build build -- -j$(nproc)
 <pre><code class="language-bash">./build/eskiuc --version
 </code></pre>
 <p>Expected output:</p>
-<pre><code>Eskiu 0.14.1 (LLVM 22.x.x)
+<pre><code>Eskiu 0.15.0 (LLVM 22.x.x)
 </code></pre>
 <p>The LLVM version will reflect whichever version is installed on the host.</p>
 <h3 id="smoke-test">Smoke test</h3>
@@ -408,6 +416,16 @@ entry:
 <li>On Ubuntu, ensure you installed <code>llvm-22-dev</code> (not just <code>llvm-22</code>); the <code>-dev</code> package contains the static libraries.</li>
 <li>On Alpine, <code>llvm22-dev</code> is the correct package name; <code>llvm22</code> alone does not ship the <code>.a</code> archives.</li>
 </ol>
+<h3 id="llvm-built-without-rtti">LLVM built without RTTI</h3>
+<pre><code>CMake Error: LLVM at ... was built without RTTI (LLVM_ENABLE_RTTI=OFF), which eskiuc needs.
+</code></pre>
+<p>The compiler uses <code>dynamic_cast</code> and derives from LLVM classes (<code>llvm::cl::opt</code>), so it
+needs the type information an RTTI build of LLVM exports. The release tarballs on the
+llvm-project GitHub page (<code>clang+llvm-22.x-*.tar.xz</code>) are built without it; linking against
+one would fail with <code>undefined symbol: typeinfo for llvm::cl::GenericOptionValue</code>, so the
+configure step stops first. Use a packaged LLVM instead (apt.llvm.org <code>llvm-22-dev</code>,
+Homebrew <code>llvm@22</code>, Alpine <code>llvm22-dev</code>, MSYS2 <code>mingw-w64-x86_64-llvm</code>) and point
+<code>LLVM_DIR</code> at it.</p>
 <hr>
 <h2 id="package-commands">Package Commands</h2>
 <p><code>eskiuc</code> also manages packages: a directory with an <code>eskiu.toml</code> manifest, its
@@ -465,7 +483,8 @@ util    path   /home/me/util
 <a href="getting-started.html#native-libraries">getting started</a>) are downloaded with <code>curl</code> into
 <code>~/.eskiu/native/SHA256</code> by the first build that links one (or the host ones by
 <code>eskiuc fetch</code>) and checked against their SHA-256; a build in the package links them
-with no <code>-L</code>. The lock does not list them: the manifest's SHA-256 names each one.</p>
+with no <code>-L</code>, with either compiler (<code>eskiuc</code> or the self-hosted <code>eskiuc-esk</code>). The lock
+does not list them: the manifest's SHA-256 names each one.</p>
 <h2 id="running-tests">Running Tests</h2>
 <p>The automated suite is driven by <code>tests/run.sh</code>, which compiles, links, and runs every
 <code>tests/*.esk</code> case (matching stdout against <code>*.expected</code>, smoke-running the rest, and

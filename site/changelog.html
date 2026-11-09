@@ -179,10 +179,10 @@ details.cl-full[open] { padding-bottom: 8px; }
 <body>
   <header class="top">
     <div class="bar top-in">
-      <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.14.1</span></a>
+      <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.15.0</span></a>
       <nav class="nav" aria-label="Main"><div class="nav-g"><button type="button" class="nav-t">Learn<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="quickstart.html"><b>Get started</b><span>Install it and run a first program</span></a><a href="index.html#playground"><b>Playground</b><span>Run code in the browser</span></a><a href="the-book-of-eskiu.html"><b>The Book of Eskiu</b><span>The language, chapter by chapter</span></a><a href="docs/index.html"><b>Docs</b><span>The specification, the standard library and the compiler</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Packages<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="packages.html"><b>All packages</b><span>Each one is one eskiuc add away</span></a><a href="vision.html"><b>vision</b><span>Computer vision, bit for bit with C++</span></a><a href="gpu.html"><b>gpu</b><span>WebGPU compute, 3D models and Llama</span></a><a href="packages.html#onnx"><b>onnx</b><span>ONNX Runtime inference</span></a><a href="packages.html#jni"><b>jni</b><span>Java and Android with no C glue</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Platforms<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="platforms.html"><b>Overview</b><span>One compiler, every target</span></a><a href="platforms.html#wasm"><b>WebAssembly</b><span>The browser, through emscripten</span></a><a href="platforms.html#ios"><b>iOS</b><span>Static libraries for Swift and Objective-C</span></a><a href="platforms.html#android"><b>Android</b><span>Shared libraries for Kotlin and Java</span></a><a href="platforms.html#bare-metal"><b>Bare metal</b><span>Kernels and boards with no operating system</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">UI<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="ui.html"><b>Overview</b><span>Native apps for iOS, Android and the web</span></a><a href="ui-components.html"><b>Components and APIs</b><span>Every element, hook and service</span></a><a href="ui.html#dev"><b>Developer loop</b><span>Each change on screen in a third of a second</span></a><a href="ui.html#navigation"><b>Navigation</b><span>Screens on the phone, pages on the web</span></a><a href="ui.html#native"><b>Native code</b><span>Swift, Kotlin, Gradle and Swift packages</span></a><a href="ui.html#ship"><b>To the stores</b><span>Xcode, Android Studio, the App Store and Google Play</span></a><a href="ui.html#start"><b>Get started</b><span>The ui tool and a first app</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Showcase<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="showcase.html"><b>Built with Eskiu</b><span>What runs on it today</span></a><a href="case-study-reactvision.html"><b>ReactVision</b><span>Eskiu across an AR stack, in production</span></a><a href="case-study-identity.html"><b>Digital identity</b><span>An ISO/IEC 39794-5 core for the web and the phone</span></a><a href="index.html#labs"><b>Labs</b><span>A UI framework, a Nintendo 3DS and a kernel</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
       <div class="top-right">
-        <a class="btn-install" href="index.html#install">Install 0.14.1</a>
+        <a class="btn-install" href="index.html#install">Install 0.15.0</a>
         <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="drawer">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg>
         </button>
@@ -199,10 +199,142 @@ details.cl-full[open] { padding-bottom: 8px; }
 <p>The format is based on <a href="https://keepachangelog.com/en/1.1.0/">Keep a Changelog</a>, and the
 project follows the compatibility rules in <a href="docs/stability.html">docs/lang/stability.md</a>.</p>
 <hr>
-<h2 id="0141-2026-10-29">[0.14.1] - 2026-10-29</h2>
+<h2 id="0150-2026-11-09">[0.15.0] - 2026-11-09</h2>
 <details class="cl-full">
 <summary>Details</summary>
 <h3 id="added">Added</h3>
+<ul>
+<li><code>--diagnostics=json</code> prints errors and warnings on stderr as JSON lines, one object per
+  diagnostic: severity, a stable <code>id</code> per kind (<code>undefined-variable</code>), message, file,
+  line, column, the range of the token there, the warning's flag and "did you mean"
+  hints as their own fields, and the notes that go with it. It carries the same
+  diagnostics as the text form, which stays the default. Both compilers print the same
+  JSON; the format and the id list are in docs/dev/diagnostics.md.</li>
+<li><code>src_file()</code>, <code>src_line()</code> and <code>src_col()</code> as a parameter's default value give the
+  position of each call that leaves the argument out, so a library can record where it
+  is called from (<code>void Text(string s, int line = src_line())</code>). Each is a constant at
+  the call, with no cost in code that does not use them.</li>
+<li><code>HttpLimits.max_body</code> sets the largest request body the HTTP/1.1 and HTTP/2 servers
+  accept (default <code>HTTP_SERVE_MAX_BODY</code>, 1 MiB; a body past it is answered 413), so a
+  server taking uploads no longer needs its own copy of the stdlib.</li>
+<li>A shared library (<code>.so</code>, <code>.dylib</code>, <code>.dll</code>) with <code>export</code> functions now offers only those:
+  the rest of the program and the standard library it uses are hidden, with no linker
+  version script or <code>.def</code> file.</li>
+<li><code>log_set_rotation(max_bytes, keep)</code> in <code>&lt;log&gt;</code> rotates the log file by size, keeping
+  <code>keep</code> old files (<code>app.log.1</code> the newest).</li>
+<li><code>export</code> before a function definition makes it a C entry point: C, Rust or any language
+  that calls C calls it by its name with the target's C calling convention, structs and
+  unions by value included, while Eskiu code calls it as before. <code>--emit-header FILE</code>
+  writes the C declarations of a program's exported functions and of the types they reach
+  (records with their bitfields and packing), so <code>eskiuc lib.esk -o liblib.a
+  --emit-header lib.h</code> gives C a library and its header. Both compilers, every back end
+  (LLVM, and the EIR C and ARM64 ones).</li>
+<li>Prebuilt binaries for Intel Macs (<code>eskiuc-macos-x86_64.tar.gz</code>), which <code>install.sh</code>
+  picks on an x86_64 Mac.</li>
+<li>On Windows, <code>install.ps1</code> also installs llvm-mingw (checked against a pinned SHA-256)
+  into the install's <code>toolchain</code> folder when no C driver is on PATH, so programs link with
+  no separate toolchain install (<code>ESKIU_TOOLCHAIN=1</code> forces it, <code>0</code> skips it). <code>eskiuc</code>
+  finds a toolchain there when none is on PATH, and with llvm-mingw it links exceptions
+  against libc++ instead of libstdc++.</li>
+<li><code>eskiuc doctor</code> lists what the machine has for each kind of build (the C driver, git,
+  curl, tar, OpenSSL, SDL3, Emscripten, the Android NDK, the iOS SDK, devkitARM) and what
+  to install for what is missing.</li>
+<li><code>-ffp-contract=fast</code> lets the compiler fuse a multiply and an add into one fused
+  multiply-add (rounded once); without it each floating-point operation rounds, so results
+  stay the same on every target. Both compilers.</li>
+<li><code>-fstrict-aliasing</code> gives the optimizer C's aliasing rule (scalar type-based alias
+  information): a store of one scalar type is assumed not to change a value of another.
+  Unions, bytes and a variable read through a pointer cast keep aliasing everything. Off by
+  default; both compilers.</li>
+<li><code>eskiuc fmt --width N</code> also breaks code lines longer than N after the commas of their
+  outermost bracketed list; without it the formatter's output does not change.</li>
+<li><code>&lt;json&gt;</code>: <code>json_parse_doc(src)</code> parses into a <code>JsonDoc</code> whose nodes and strings live in
+  one arena, about three times faster than <code>json_parse</code> plus <code>JsonValue_free</code>; the document
+  is read-only and <code>JsonDoc_free</code> frees it.</li>
+<li>The self-hosted compiler links a package's <code>[native.NAME]</code> libraries, fetching and
+  checking them as the C++ compiler does.</li>
+<li>The self-hosted compiler has the EIR backends: <code>eskiuc-esk --emit-c</code> and <code>--emit-asm</code>
+  write the same C and ARM64 assembly as <code>eskiuc</code>, and <code>eskiuc-esk --backend=eir</code> builds
+  programs through them (assembly on arm64 outside Windows, C with any <code>$CC</code> elsewhere),
+  without clang or LLVM.</li>
+<li><code>--backend=eir</code> at <code>-O0</code> on arm64 assembles its output itself: an integrated ARM64
+  assembler writes the Mach-O or ELF object, with no external assembler (LangArena's 50
+  benchmarks build in 2.0 s instead of 4.6 s). <code>ESKIU_EIR_EXTERNAL_AS=1</code> uses the system
+  C driver instead.</li>
+<li><code>--emit-asm</code> rejects the options its assembly cannot honor (<code>-O1</code> and up, <code>--safe</code>,
+  <code>--mcpu</code>, ...), as <code>--backend=eir</code> does on that path; they were ignored.</li>
+<li><code>tests/index.sh</code> prints the test catalog from each test's first comment, and <code>run.sh</code>
+  fails on a test without one.</li>
+</ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li>The compiler is faster: the <code>ui</code> kit gallery's <code>-O0</code> object (about 47,000 lines of IR,
+  nearly all of it the <code>ui</code> library and the stdlib) builds in 0.29 s instead of 0.47 s, and
+  type-checks in 0.06 s instead of 0.19 s. The parser no longer throws an exception to
+  back out of a statement it first tried as a declaration or of a comparison it first tried
+  as a generic call, a program without <code>async</code> is type-checked once instead of twice, and
+  AST node kinds are compared instead of <code>dynamic_cast</code>. A compiler built with the plain
+  <code>cmake -S . -B build</code> is now a Release build (it was unoptimized, and three times slower).
+  <code>ESKIU_TIME_PHASES=1</code> prints the time of each phase; docs/dev/compile-speed.md has the
+  breakdown and how to profile.</li>
+<li><code>&lt;regex&gt;</code> searches with a lazily built DFA for where the match ends and one over the
+  reversed pattern for where it starts, and finds the groups over the match only, with a
+  bounded backtracker (the Pike VM when the match is long): two to three times faster on
+  log-like text and about 12% faster on short, dense matches with groups (a <code>{{(.*?)}}</code>
+  template), with the same results (checked against the Pike VM alone by a test and the
+  regex fuzz target). A pattern with an assertion that can repeat in a loop without
+  consuming (<code>(?:^|a)*</code>) runs on the Pike VM alone.</li>
+<li>TLS (<code>&lt;tls&gt;</code> servers and <code>&lt;fetch&gt;</code>'s HTTPS client) asks for TLS 1.2 or newer and turns
+  off compression and renegotiation, whatever the OpenSSL defaults; a server whose key
+  does not match its certificate is refused when the context is made. The client loads
+  OpenSSL and makes its shared contexts once, also from several threads at once.</li>
+<li>The kernel demo's heap is a first-fit allocator, so <code>free</code> gives memory back.</li>
+<li><code>--backend=eir</code> takes <code>-O</code> on every target: at <code>-O1</code> and up it writes C and compiles it at
+  that level (always with <code>-fno-strict-aliasing</code>), arm64 included, and only an <code>-O0</code> build
+  on arm64 goes through the ARM64 assembly, which has no levels.
+  Every run test on the C list behaves the same at <code>-O2</code> (<code>EIR_OPT=2 tests/eir/check.sh</code>,
+  in CI on Linux).</li>
+<li>Building against an LLVM without RTTI (the llvm-project release tarballs) stops at
+  configure time with an explanation instead of failing to link. LLVM's headers are
+  included as system headers, and the compiler's own sources build without warnings (CI
+  builds with <code>-DESKIU_WERROR=ON</code>).</li>
+<li><code>fetch_basic</code> and <code>fetch_async</code> use numeric addresses only; the host name cases moved to
+  <code>fetch_dns</code>, which <code>ESKIU_RESOLVER_TESTS=0</code> skips with <code>dns_connect</code>.</li>
+<li>CI runs the Windows build on pull requests and on <code>main</code>, the EIR C backend on Linux,
+  and fails when the editor modes exceed their time budget; a release fails when its
+  Windows build does.</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li>The playground's rate limit trusts <code>X-Forwarded-For</code> only from the proxies in
+  <code>TRUSTED_PROXIES</code> and takes the first untrusted hop from the right, so a client cannot
+  reset its limit with a forged header (pull request #1, from MarioACo).</li>
+<li>Windows paths: an import of <code>C:/...</code> or <code>C:\...</code> is absolute (it was joined to the
+  importing file's directory), and a file path written with backslashes keeps its directory
+  for its relative imports. Both compilers.</li>
+<li>A <code>?:</code> with a <code>null</code> arm inside a generic function (<code>key == null ? null : copy(key)</code>) no
+  longer fails with an invalid phi: the literal is a pointer even where the checker records no
+  type for it.</li>
+<li>The EIR builders (C++ and self-hosted) treated a prototype as an <code>extern</code> until its
+  definition was built: a call written before the definition passed a closure argument as a
+  C function pointer (the C++ compiler rejected the program, the self-hosted one built a
+  binary that crashed), which broke building the self-hosted compiler through EIR. A
+  prototype of a function the program defines is now an ordinary function.</li>
+<li>The self-hosted EIR builder printed its errors and went on, exiting 0; it now stops with
+  status 1 as the C++ one does.</li>
+<li>A thread started under the EIR backends kept 8 bytes until it was joined (a thread that
+  detaches itself leaked them): the handle is now the <code>pthread_t</code> itself, as with LLVM.</li>
+<li><code>&lt;fetch&gt;</code>'s host lookup thread detaches itself instead of detaching through the handle
+  <code>thread_create</code> returns, which is opaque (a crash with the EIR backends on Linux).</li>
+<li>The kernel demo's allocator masks IRQs around its free list: a preempted task could
+  corrupt it.</li>
+</ul>
+<hr>
+</details>
+<h2 id="0141">[0.14.1]</h2>
+<details class="cl-full">
+<summary>Details</summary>
+<h3 id="added_1">Added</h3>
 <ul>
 <li>Native EIR backends that skip LLVM's code generator: <code>--emit-asm</code> (ARM64), <code>--emit-c</code>
   (C99), <code>--emit-obj</code>, and <code>--backend=eir</code>, which builds through the normal driver
@@ -227,7 +359,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
   <code>start</code>, and <code>Regex_iter</code> / <code>RegexIter_next</code> go through every match as Go's <code>FindAll</code>
   does (after an empty match the search moves on one code point).</li>
 </ul>
-<h3 id="fixed">Fixed</h3>
+<h3 id="fixed_1">Fixed</h3>
 <ul>
 <li>A field of a packed struct (<code>packed</code>, <code>#pragma pack(N)</code>, or a struct inside one) was read
   and written with its type's alignment although its address may not have it, which LLVM
@@ -295,7 +427,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <h2 id="0140">[0.14.0]</h2>
 <details class="cl-full">
 <summary>Details</summary>
-<h3 id="added_1">Added</h3>
+<h3 id="added_2">Added</h3>
 <ul>
 <li><code>catch (_)</code> catches any exception without binding a variable; it is the last catch of a
   <code>try</code>. <code>exception_text()</code>, inside any catch, describes what was caught as the
@@ -307,7 +439,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
   <code>--target</code> build: the archive for the target's platform is fetched and linked as for the
   host.</li>
 </ul>
-<h3 id="fixed_1">Fixed</h3>
+<h3 id="fixed_2">Fixed</h3>
 <ul>
 <li><code>--target x86_64-w64-mingw32</code> passed structs to C functions with the System V convention
   instead of the Windows x64 one, so a call into a DLL could crash. Every <code>--target</code> is now
@@ -443,7 +575,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 </ul>
 </details>
     </main>
-    <nav class="toc" aria-label="On this page"><span class="grp">On this page</span><a href="#0141-2026-10-29">[0.14.1] - 2026-10-29</a><a href="#0140">[0.14.0]</a><a href="#0130">[0.13.0]</a></nav>
+    <nav class="toc" aria-label="On this page"><span class="grp">On this page</span><a href="#0150-2026-11-09">[0.15.0] - 2026-11-09</a><a href="#0141">[0.14.1]</a><a href="#0140">[0.14.0]</a><a href="#0130">[0.13.0]</a></nav>
   </div>
   <footer class="foot">
     <div class="bar foot-in">

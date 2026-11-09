@@ -179,10 +179,10 @@ details.cl-full[open] { padding-bottom: 8px; }
 <body>
   <header class="top">
     <div class="bar top-in">
-      <a class="brand" href="../index.html"><img src="../../assets/logo.png" alt="" />eskiu<span class="v">v0.14.1</span></a>
+      <a class="brand" href="../index.html"><img src="../../assets/logo.png" alt="" />eskiu<span class="v">v0.15.0</span></a>
       <nav class="nav" aria-label="Main"><div class="nav-g cur"><button type="button" class="nav-t">Learn<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="../quickstart.html"><b>Get started</b><span>Install it and run a first program</span></a><a href="../index.html#playground"><b>Playground</b><span>Run code in the browser</span></a><a href="../the-book-of-eskiu.html"><b>The Book of Eskiu</b><span>The language, chapter by chapter</span></a><a href="../docs/index.html"><b>Docs</b><span>The specification, the standard library and the compiler</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Packages<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="../packages.html"><b>All packages</b><span>Each one is one eskiuc add away</span></a><a href="../vision.html"><b>vision</b><span>Computer vision, bit for bit with C++</span></a><a href="../gpu.html"><b>gpu</b><span>WebGPU compute, 3D models and Llama</span></a><a href="../packages.html#onnx"><b>onnx</b><span>ONNX Runtime inference</span></a><a href="../packages.html#jni"><b>jni</b><span>Java and Android with no C glue</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Platforms<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="../platforms.html"><b>Overview</b><span>One compiler, every target</span></a><a href="../platforms.html#wasm"><b>WebAssembly</b><span>The browser, through emscripten</span></a><a href="../platforms.html#ios"><b>iOS</b><span>Static libraries for Swift and Objective-C</span></a><a href="../platforms.html#android"><b>Android</b><span>Shared libraries for Kotlin and Java</span></a><a href="../platforms.html#bare-metal"><b>Bare metal</b><span>Kernels and boards with no operating system</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">UI<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="../ui.html"><b>Overview</b><span>Native apps for iOS, Android and the web</span></a><a href="../ui-components.html"><b>Components and APIs</b><span>Every element, hook and service</span></a><a href="../ui.html#dev"><b>Developer loop</b><span>Each change on screen in a third of a second</span></a><a href="../ui.html#navigation"><b>Navigation</b><span>Screens on the phone, pages on the web</span></a><a href="../ui.html#native"><b>Native code</b><span>Swift, Kotlin, Gradle and Swift packages</span></a><a href="../ui.html#ship"><b>To the stores</b><span>Xcode, Android Studio, the App Store and Google Play</span></a><a href="../ui.html#start"><b>Get started</b><span>The ui tool and a first app</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Showcase<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="../showcase.html"><b>Built with Eskiu</b><span>What runs on it today</span></a><a href="../case-study-reactvision.html"><b>ReactVision</b><span>Eskiu across an AR stack, in production</span></a><a href="../case-study-identity.html"><b>Digital identity</b><span>An ISO/IEC 39794-5 core for the web and the phone</span></a><a href="../index.html#labs"><b>Labs</b><span>A UI framework, a Nintendo 3DS and a kernel</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
       <div class="top-right">
-        <a class="btn-install" href="../index.html#install">Install 0.14.1</a>
+        <a class="btn-install" href="../index.html#install">Install 0.15.0</a>
         <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="drawer">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg>
         </button>
@@ -515,6 +515,41 @@ offset 0 on Darwin AArch64, Windows x64 and 32-bit ARM (<code>evalCVaList</code>
 Variadic arguments follow C default promotions:
 integers narrower than 32 bits widen to <code>i32</code> (sign- or zero-extended), <code>bool</code>
 zero-extends, and <code>float</code> widens to <code>double</code>.</p>
+<h3 id="exported-functions">Exported functions</h3>
+<p>An <code>export</code> function (<code>export Pair scale(Pair p, double k)</code>) is called from C under its own
+name with the C convention. When that convention is the Eskiu one (scalars and pointers
+only), the function is emitted once. Otherwise its Eskiu body is emitted as the internal
+<code>NAME.esk</code>, and <code>NAME</code> is a thunk with the lowered C signature that rebuilds the Eskiu
+values, calls the body and returns the result the C way. It is the same thunk a function
+handed to C as a callback gets (<code>__cabi_NAME</code>: C++ <code>emitExportEntries</code> over
+<code>cabiCallbackThunk</code>, self-host <code>cg_emit_exports</code> over <code>cg_emit_cabi_thunk_as</code>). Eskiu
+callers keep calling the body. <code>tests/selfhost/cabi_parity.sh</code> compares the entries' lowered
+signatures between the two compilers on every target.</p>
+<p>In a shared library output (<code>.so</code>, <code>.dylib</code>, <code>.dll</code>) that has exported functions, every
+other definition with external linkage is hidden: hidden visibility on ELF and Mach-O, and
+on Windows the exports are <code>dllexport</code>, which stops the linker exporting every symbol (C++
+<code>CodeGen::hideNonExports</code>, run after <code>emitExportEntries</code> when the driver sets
+<code>sharedLibrary</code>; self-host <code>cg_hide_non_exports</code> over the IR text when <code>esk_main</code> sets
+<code>g.shared</code>). <code>run.sh</code> (<code>export/shared-library</code>) and <code>tests/windows/run.sh</code> (<code>export_dll</code>)
+check the library's symbol table and run a C program against it.</p>
+<p><code>--emit-header FILE</code> writes the C declarations of the exported functions (C++
+<code>TypeChecker::cHeader</code> in <code>sema/c_header.cpp</code>, self-host <code>sema_c_header</code> in
+<code>selfhost/sema_header.esk</code>, byte for byte). The header uses <code>&lt;stdint.h&gt;</code> integer types,
+<code>bool</code>, <code>char*</code> for <code>string</code>, and <code>int32_t</code> typedefs plus an anonymous <code>enum</code> of the members
+for classic enums. Every struct and union it reaches gets a <code>typedef</code> and a definition with
+its declared field types, bitfields, unnamed bitfields and <code>#pragma pack(push, N)</code> for
+<code>packed</code> and <code>pack(N)</code>, so a C compiler lays it out as Eskiu does. A closure field is
+<code>struct { void* fn; void* env; }</code>, a slice <code>struct { void* ptr; int64_t len; }</code> and an
+interface value <code>struct { void* data; void* vtable; }</code>. A sum type, a generic instance or a
+<code>sizeof</code> in an array dimension has no C spelling, and the header is refused with the reason.
+The include guard is <code>ESKIU_</code> plus the file name in capitals. <code>run.sh</code> builds
+<code>tests/run_cmd/export_lib.esk</code> as a static library, compiles a C program against its header
+(which also compiles as C++) and checks each record's <code>sizeof</code> against Eskiu's.</p>
+<p>The EIR back ends do the same with their own C-ABI thunks: an export entry (an <code>export</code>
+function whose signature has a record or a <code>va_list</code>) has its body as <code>__eskc_body_NAME</code>
+in C or <code>NAME.esk</code> in ARM64 assembly, and <code>NAME</code> is the thunk (<code>exportEntry</code> in
+<code>eir_c.cpp</code> and <code>eir_asm_arm64.cpp</code>, <code>ec_export_entry</code> in the self-host). The EIR text
+prints such a function as <code>export fn @NAME</code>.</p>
 <hr>
 <h2 id="function-pointers-closures-and-interfaces">Function pointers, closures and interfaces</h2>
 <p>These use <strong>fat pointers</strong>: a two-<code>ptr</code> struct <code>{ ptr, ptr }</code>.</p>
