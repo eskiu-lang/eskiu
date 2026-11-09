@@ -2284,7 +2284,10 @@ void TypeChecker::visit(SizeofExpr* node) {
     if (node->operand) {
         // `sizeof(expr)`: the size of the operand's type; the operand is checked, never
         // evaluated. Outside a generic body the node becomes `sizeof(<that type>)`, so
-        // the later phases (and the async lowering) see a plain type operand.
+        // the later phases (and the async lowering) see a plain type operand. Then
+        // the names the operand read are not captured by an enclosing lambda: the
+        // rewritten node reads none (as a second check of the program would find).
+        auto capturesBefore = captureStack;
         node->operand->accept(this);
         std::string t = getExpressionType(node->operand.get());
         if (t == "void" || isVoidValueType(t))
@@ -2292,6 +2295,7 @@ void TypeChecker::visit(SizeofExpr* node) {
         if (!inInstance && t != "unknown" && !t.empty()) {
             node->typeName = tyq::strip(t);
             node->operand = nullptr;
+            captureStack = std::move(capturesBefore);
         }
         expressionTypes[node] = "int64";
         return;
