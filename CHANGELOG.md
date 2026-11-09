@@ -110,6 +110,9 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   Windows build does.
 
 ### Fixed
+- Windows paths: an import of `C:/...` or `C:\...` is absolute (it was joined to the
+  importing file's directory), and a file path written with backslashes keeps its directory
+  for its relative imports. Both compilers.
 - A `?:` with a `null` arm inside a generic function (`key == null ? null : copy(key)`) no
   longer fails with an invalid phi: the literal is a pointer even where the checker records no
   type for it.
