@@ -7,7 +7,7 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
-## [Unreleased]
+## [0.15.0] - 2026-11-09
 
 ### Added
 - `--diagnostics=json` prints errors and warnings on stderr as JSON lines, one object per
@@ -110,6 +110,9 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   Windows build does.
 
 ### Fixed
+- The playground's rate limit trusts `X-Forwarded-For` only from the proxies in
+  `TRUSTED_PROXIES` and takes the first untrusted hop from the right, so a client cannot
+  reset its limit with a forged header (pull request #1, from MarioACo).
 - Windows paths: an import of `C:/...` or `C:\...` is absolute (it was joined to the
   importing file's directory), and a file path written with backslashes keeps its directory
   for its relative imports. Both compilers.
@@ -132,7 +135,7 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
-## [0.14.1] - 2026-10-29
+## [0.14.1]
 
 ### Added
 - Native EIR backends that skip LLVM's code generator: `--emit-asm` (ARM64), `--emit-c`
