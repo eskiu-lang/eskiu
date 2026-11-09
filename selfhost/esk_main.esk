@@ -23,6 +23,7 @@ import "eir.esk";
 import "eir_c.esk";
 import "eir_asm.esk";
 import "fmt.esk";
+import "diag_json.esk";
 import "pkg_native.esk";
 import "bigstack.esk";
 
@@ -71,6 +72,7 @@ int spawn_wait(List<string>* args) {
         return 127;
     }
     if (pid == 0) {
+        diag_json_restore_stderr();
         execvp(av[0], av);
         eprint("error: cannot run '");
         eprint(av[0]);
@@ -214,6 +216,9 @@ int is_value_opt(string o) {
         return 1;
     }
     if (cg_streq(o, "--complete-at") == 1 || cg_streq(o, "-complete-at") == 1) {
+        return 1;
+    }
+    if (cg_streq(o, "--diagnostics") == 1 || cg_streq(o, "-diagnostics") == 1) {
         return 1;
     }
     return 0;
@@ -807,7 +812,7 @@ int load_inputs(List<string>* infiles, string primary_src, *Program prog) {
         }
         if (raw == null) {
             uint8[512] eb;
-            sprintf((string)&eb[0], "error: cannot read %s\n", f);
+            sprintf((string)&eb[0], "error: could not open file '%s'\n", f);
             eprint((string)&eb[0]);
             return 0;
         }
@@ -1597,6 +1602,14 @@ int esk_main(int argc, string* argv) {
         else if (cg_streq(a, "-fno-strict-aliasing") == 1 || cg_streq(a, "--fno-strict-aliasing") == 1) {
             strict_alias = 0;
         }
+        else if (cg_streq(opt, "--diagnostics") == 1 || cg_streq(opt, "-diagnostics") == 1) {
+            if (cg_streq(val, "text") == 0 && cg_streq(val, "json") == 0) {   // json: diag_json_fork in main
+                eprint("error: invalid --diagnostics value '");
+                eprint(val);
+                eprint("' (use text or json)\n");
+                return 1;
+            }
+        }
         else if (cg_streq(opt, "--safe") == 1 || cg_streq(opt, "-safe") == 1) {
             safe = safe_checks(val);
             if (safe < 0) {
@@ -1802,7 +1815,7 @@ int esk_main(int argc, string* argv) {
         *uint8 lraw = fs_read_all(infile, &ln);
         if (lraw == null) {
             uint8[512] eb;
-            sprintf((string)&eb[0], "error: cannot read %s\n", infile);
+            sprintf((string)&eb[0], "error: could not open file '%s'\n", infile);
             eprint((string)&eb[0]);
             return 1;
         }
@@ -1874,7 +1887,12 @@ int esk_main(int argc, string* argv) {
         }
         if (ok == 0 && (cg_streq(mode, "--test-codegen") == 1 || cg_streq(mode, "--test-eir") == 1
                         || cg_streq(mode, "--emit-c") == 1 || emit_asm == 1)) {
-            eprint("Type checking failed!\n");
+            if (g_diag_json == 0) {
+                eprint("Type checking failed!\n");
+            }
+            return 1;
+        }
+        if (ok == 0 && g_diag_json == 1) {
             return 1;
         }
         if (ok == 0) {
@@ -2352,6 +2370,12 @@ void main_body() {
 }
 
 int main(int argc, string* argv) {
+    if (diag_json_wanted(argc, argv) == 1) {
+        int drc = diag_json_fork();      // the parent converts the child's stderr
+        if (drc >= 0) {
+            return drc;
+        }
+    }
     big_argc = argc;
     big_argv = argv;
     run_on_big_stack(main_body);
