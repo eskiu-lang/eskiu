@@ -226,8 +226,8 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
   that calls C calls it by its name with the target's C calling convention, structs and
   unions by value included, while Eskiu code calls it as before. <code>--emit-header FILE</code>
   writes the C declarations of a program's exported functions and of the types they reach
-  (records with their bitfields and packing), so <code>eskiuc lib.esk -o liblib.a
-  --emit-header lib.h</code> gives C a library and its header. Both compilers, every back end
+  (records with their bitfields and packing), so <code>eskiuc lib.esk -o liblib.a</code> and <code>eskiuc
+  lib.esk --emit-header lib.h</code> give C a library and its header. Both compilers, every back end
   (LLVM, and the EIR C and ARM64 ones).</li>
 <li>Prebuilt binaries for Intel Macs (<code>eskiuc-macos-x86_64.tar.gz</code>), which <code>install.sh</code>
   picks on an x86_64 Mac.</li>

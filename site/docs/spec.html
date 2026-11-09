@@ -1282,8 +1282,9 @@ unions by value included. Eskiu code calls it as any other function.</p>
 export Pair scale(Pair p, double k) { return Pair{x: p.x * k, y: p.y * k}; }
 export int add(int a, int b) { return a + b; }
 </code></pre>
-<p><code>eskiuc lib.esk -o liblib.a --emit-header lib.h</code> builds a static library and writes the C
-declarations of its exported functions and of the types they reach, so a C program can
+<p><code>eskiuc lib.esk -o liblib.a</code> builds a static library and <code>eskiuc lib.esk --emit-header lib.h</code>
+writes the C declarations of its exported functions and of the types they reach (with
+<code>--emit-header</code> the compiler writes the header and builds nothing else), so a C program can
 <code>#include "lib.h"</code> and link <code>liblib.a</code> (see <a href="abi.html#exported-functions">abi.md</a>).
 A shared library (<code>-o liblib.so</code>, <code>.dylib</code> or <code>.dll</code>) with exported functions offers only
 those: every other symbol of the program and of the standard library it uses stays inside
