@@ -73,6 +73,15 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   fails on a test without one.
 
 ### Changed
+- The compiler is faster: the `ui` kit gallery's `-O0` object (about 47,000 lines of IR,
+  nearly all of it the `ui` library and the stdlib) builds in 0.29 s instead of 0.47 s, and
+  type-checks in 0.06 s instead of 0.19 s. The parser no longer throws an exception to
+  back out of a statement it first tried as a declaration or of a comparison it first tried
+  as a generic call, a program without `async` is type-checked once instead of twice, and
+  AST node kinds are compared instead of `dynamic_cast`. A compiler built with the plain
+  `cmake -S . -B build` is now a Release build (it was unoptimized, and three times slower).
+  `ESKIU_TIME_PHASES=1` prints the time of each phase; docs/dev/compile-speed.md has the
+  breakdown and how to profile.
 - `<regex>` searches with a lazily built DFA for where the match ends and one over the
   reversed pattern for where it starts, and finds the groups over the match only, with a
   bounded backtracker (the Pike VM when the match is long): two to three times faster on

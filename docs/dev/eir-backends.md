@@ -119,6 +119,10 @@ On the compiler's own 25.7 MB of assembly, `cc -c` takes 9.0 s and the integrate
 improve for every back end, and EIR stays experimental
 ([`eir-spec.md` §8](eir-spec.md#8-status-and-direction)).
 
+These measurements are from a compiler built without optimization (what `cmake -S . -B
+build` gave then) and before the front-end work in [`compile-speed.md`](compile-speed.md):
+a Release `eskiuc` now type-checks `examples/hello.esk` in about 10 ms.
+
 ## Testing
 
 `tests/eir/check.sh [asm|c]` compiles every run test with the backend, runs it, and

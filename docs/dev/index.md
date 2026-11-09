@@ -38,6 +38,7 @@ Each test mode exits 0 on success and prints a human-readable dump to stdout. A 
 | [`diagnostics.md`](diagnostics.md) | `--diagnostics=json`: the JSON lines, the diagnostic ids and how both compilers produce them |
 | [`abi.md`](abi.md)            | Type lowering, calling convention (sret, varargs), fat pointers, name mangling: the C-ABI contract |
 | [`roadmap.md`](roadmap.md)         | Where the project stands, release history, and the road to 1.0 |
+| [`compile-speed.md`](compile-speed.md) | Where a compile spends its time, how to measure it (`ESKIU_TIME_PHASES`, Time Profiler), what was sped up |
 | [`self-hosting.md`](self-hosting.md) | How the compiler is written in Eskiu (`selfhost/`) and how parity/bootstrap keep it honest |
 | [`cross-compile.md`](cross-compile.md) | Cross-compiling with `--target`/`--mcpu`/`--mattr`/`--reloc`; hard-float ARM + 3DS `.3dsx`, and Windows x86-64 COFF/PE |
 | [`contributing.md`](contributing.md)   | Branch workflow, code style, commit conventions, testing checklist                             |

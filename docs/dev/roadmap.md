@@ -93,11 +93,11 @@ first-class in the language without giving up general systems use.
   Cranelift or Zig with its own back ends, uses one for release builds), and building one
   that covers every target and option is many months of work. EIR stays an experimental
   back end ([`eir-spec.md` §8](eir-spec.md#8-status-and-direction)).
-- **A faster front end.** It takes more than 100 ms to type-check a program of a few lines,
-  because the type checker runs twice (before and after the `async` lowering) and the
-  standard library a program imports is parsed and checked again on every build
-  ([`eir-backends.md`](eir-backends.md#compile-time) has the measurements). Every back end
-  pays this, LLVM included, so it is where compile time can improve most.
+- **A faster front end.** The parser's thrown exceptions, the second type-checker run of a
+  program without `async` and the `dynamic_cast`s on AST nodes are gone, which took the
+  `ui` kit gallery's `-O0` rebuild from 0.47 s to 0.29 s ([`compile-speed.md`](compile-speed.md)).
+  Left: a program with `async` is still checked twice, and the standard library and the
+  packages a program imports are parsed and checked again on every build.
 
 ## Later, not scheduled
 

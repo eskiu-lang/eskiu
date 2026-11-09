@@ -80,7 +80,7 @@ The visitor declares a pure-virtual `visit()` overload for every concrete node t
 
 ### How to add a new node (5-step checklist)
 
-1. Declare the class in `ast/ast.h`, inheriting from `Expr`, `Stmt`, or `Decl`. Add the `accept` override declaration and `int line = 0; int col = 0;` (inherited from `ASTNode`).
+1. Declare the class in `ast/ast.h`, inheriting from `Expr`, `Stmt`, or `Decl`. Add the `accept` override declaration and `int line = 0; int col = 0;` (inherited from `ASTNode`). Add its name to `enum class NodeKind` and write `ESKIU_NODE_KIND(MyNewNode)` after its `public:`: passes test a node's class with `nodeCast<MyNewNode>(p)`, which compares that kind (a `dynamic_cast` walks the RTTI and was the type checker's largest cost).
 2. Implement `accept` in `ast/ast.cpp`: `visitor->visit(this);`.
 3. Add `virtual void visit(MyNewNode* node) = 0;` to `ASTVisitor` in `ast/ast.h`.
 4. Add an implementation to every `ASTVisitor` subclass: `ASTPrinter`, `TypeChecker`, `CodeGen`.
