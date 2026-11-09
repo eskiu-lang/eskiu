@@ -1,5 +1,6 @@
 #pragma once
 
+#include <initializer_list>
 #include <memory>
 #include <stdexcept>
 #include <set>
@@ -207,7 +208,9 @@ private:
     Token advance();
     bool check(TokenType type) const;
     bool match(TokenType type);
-    bool match(const std::vector<TokenType>& types);
+    bool match(std::initializer_list<TokenType> types);
+    // advance() without the copy of the token it returns.
+    void step();
     Token consume(TokenType type, const std::string& message);
     // Report a syntax error at the current token (or at `at`): records its position
     // for the diagnostic, then throws. Speculative parses catch and discard it.

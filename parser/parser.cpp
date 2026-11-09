@@ -126,23 +126,33 @@ Token Parser::advance() {
     throw std::runtime_error("No tokens available");
 }
 
+// check and match run for every token several times over: they read the token in place
+// rather than through peek()'s copy.
 bool Parser::check(TokenType type) const {
     if (is_at_end()) return false;
-    return peek().type == type;
+    if (splitActive && current == splitPos) return type == TokenType::GT;
+    return tokens[current].type == type;
+}
+
+void Parser::step() {
+    if (current < tokens.size()) {
+        if (splitActive && current == splitPos) splitActive = false;
+        current++;
+    }
 }
 
 bool Parser::match(TokenType type) {
     if (check(type)) {
-        advance();
+        step();
         return true;
     }
     return false;
 }
 
-bool Parser::match(const std::vector<TokenType>& types) {
+bool Parser::match(std::initializer_list<TokenType> types) {
     for (TokenType type : types) {
         if (check(type)) {
-            advance();
+            step();
             return true;
         }
     }
