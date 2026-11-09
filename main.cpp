@@ -34,6 +34,7 @@
 #include "eir/eir_obj.h"
 #include "eir/eir_runtime.h"
 #include "main_support.h"
+#include "diag_json.h"
 #include "repl.h"
 #include "pkg.h"
 
@@ -169,6 +170,10 @@ static llvm::cl::opt<bool> NoStrictAliasing("fno-strict-aliasing",
 static llvm::cl::opt<bool> Freestanding("freestanding",
     llvm::cl::desc("Compile without libc — alloc/free use esk_alloc/esk_free"),
     llvm::cl::cat(EskiuCat));
+
+static llvm::cl::opt<std::string> Diagnostics("diagnostics",
+    llvm::cl::desc("How to print errors and warnings: text (default) or json (one JSON object per line)"),
+    llvm::cl::value_desc("text|json"), llvm::cl::init("text"), llvm::cl::cat(EskiuCat));
 
 static llvm::cl::opt<std::string> Safe("safe",
     llvm::cl::desc("Insert run-time checks that trap on violation: all, or --safe=LIST of bounds,overflow,null"),
@@ -355,7 +360,7 @@ static int testLexer(const std::string& filename) {
 static int testTypeChecker(const std::string& filename) {
     auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding);
     if (!program) {
-        std::cerr << "Parse failed!" << std::endl;
+        if (!g_jsonDiagnostics) std::cerr << "Parse failed!" << std::endl;
         return 1;
     }
 
@@ -390,7 +395,7 @@ static int testTypeChecker(const std::string& filename) {
 static int testCodegen(const std::string& filename) {
     auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding);
     if (!program) {
-        std::cerr << "Parse failed!" << std::endl;
+        if (!g_jsonDiagnostics) std::cerr << "Parse failed!" << std::endl;
         return 1;
     }
 
@@ -403,7 +408,7 @@ static int testCodegen(const std::string& filename) {
         TypeChecker tc; tc.targetTriple = std::string(TargetTriple); tc.warnDeprecated = !WnoDeprecated;
         tc.sourceFile = filename; applyWarningFlags(tc);
         if (!tc.check(program.get())) {
-            std::cerr << "Type checking failed!" << std::endl;
+            if (!g_jsonDiagnostics) std::cerr << "Type checking failed!" << std::endl;
             return 1;
         }
         AsyncTransform(&tc.expressionTypeMap(), &tc.instanceArgsMap(), &tc.instanceExprTypeMap()).run(program.get());
@@ -465,7 +470,7 @@ static std::unique_ptr<eir::Module> lowerToEir(Program* program, TypeChecker& po
 static std::unique_ptr<eir::Module> buildEir(const std::string& filename) {
     auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding);
     if (!program) {
-        std::cerr << "error: parse failed" << std::endl;
+        if (!g_jsonDiagnostics) std::cerr << "error: parse failed" << std::endl;
         return nullptr;
     }
     TypeChecker tc; tc.targetTriple = std::string(TargetTriple); tc.warnDeprecated = !WnoDeprecated;
@@ -570,7 +575,7 @@ static int writeCHeader(TypeChecker& tc, Program* program) {
 static int testParser(const std::string& filename) {
     auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding);
     if (!program) {
-        std::cerr << "Parse failed!" << std::endl;
+        if (!g_jsonDiagnostics) std::cerr << "Parse failed!" << std::endl;
         return 1;
     }
 
@@ -652,6 +657,7 @@ static int compilerMain(int argc, char** argv) {
             "-o", "-target", "--target", "-mcpu", "--mcpu", "-mattr", "--mattr",
             "-reloc", "--reloc", "-link-arg", "--link-arg", "-hover-at", "--hover-at",
             "-definition-at", "--definition-at", "-references-at", "--references-at", "-complete-at", "--complete-at", "-l", "-L",
+            "-diagnostics", "--diagnostics",
         };
         std::vector<char*> clArgv = { argv[0] };
         bool gotScript = false;
@@ -677,6 +683,11 @@ static int compilerMain(int argc, char** argv) {
     } else {
         llvm::cl::HideUnrelatedOptions(EskiuCat);
         llvm::cl::ParseCommandLineOptions(argc, argv, OVERVIEW);
+    }
+    if (Diagnostics == "json") installJsonDiagnostics();
+    else if (Diagnostics != "text") {
+        std::cerr << "error: invalid --diagnostics value '" << std::string(Diagnostics) << "' (use text or json)" << std::endl;
+        return 1;
     }
     // One spelling per target from here on: `x86_64-w64-mingw32` is `x86_64-w64-windows-gnu`,
     // which every check below (the C ABI, the predefined macros, the linker) recognizes.
@@ -983,7 +994,7 @@ static int compilerMain(int argc, char** argv) {
         auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding,
                                    &macros, &lexFailed);
         if (!program) {
-            if (!lexFailed) std::cerr << "error: parse failed" << std::endl;
+            if (!lexFailed && !g_jsonDiagnostics) std::cerr << "error: parse failed" << std::endl;
             return 1;
         }
         const std::vector<std::string>& pragmaLibs = program->linkLibs;
@@ -1220,6 +1231,7 @@ int main(int argc, char** argv) {
     llvm::thread worker(std::optional<unsigned>(kPipelineStackBytes),
                         [&] { rc = compilerMain(argc, argv); });
     worker.join();
+    flushJsonDiagnostics();
     return rc;
 #else
     MainArgs args{argc, argv, 1};
@@ -1239,10 +1251,13 @@ int main(int argc, char** argv) {
         pthread_attr_destroy(&attr);
         if (started) {
             pthread_join(tid, nullptr);
+            flushJsonDiagnostics();
             return args.rc;
         }
     }
     std::cerr << "warning: could not allocate dedicated stack thread; falling back to caller stack\n";
-    return compilerMain(argc, argv);
+    int rc = compilerMain(argc, argv);
+    flushJsonDiagnostics();
+    return rc;
 #endif
 }
