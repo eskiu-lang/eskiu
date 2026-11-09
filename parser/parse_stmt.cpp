@@ -179,8 +179,8 @@ StmtPtr Parser::parseStatement() {
 // it, then a name or `operator`) over the tokens alone, so the common statements
 // (`f(x);`, `a.b = c;`, `a[i] = v;`, `*p = v;`) skip the speculative declaration parse,
 // whose failure is a thrown ParseError (the parser's largest cost). It answers false
-// (try the declaration) whenever the tokens leave a doubt: a `<`, a contextual keyword,
-// a type long enough to reach the nesting limit.
+// (try the declaration) whenever the tokens leave a doubt: a contextual keyword, a type
+// long enough to reach the nesting limit.
 bool Parser::declarationRuledOut() const {
     size_t i = current;
     auto at = [&](size_t k) -> TokenType {
@@ -200,7 +200,12 @@ bool Parser::declarationRuledOut() const {
         return false;
     }
     ++i;
-    if (at(i) == TokenType::LT) return false;
+    if (at(i) == TokenType::LT) {
+        bool split = false;
+        AngleScan r = scanTypeArgs(i, &i, &split);
+        if (r == AngleScan::Unknown) return false;
+        if (r == AngleScan::NotTypes || split) return true;
+    }
     while (at(i) == TokenType::STAR) {
         ++i; ++levels;
         if (at(i) == TokenType::CONST) ++i;

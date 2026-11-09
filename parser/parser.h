@@ -245,6 +245,13 @@ private:
     bool startsScriptStatement() const;
     bool exportAhead() const;
     bool declarationRuledOut() const;
+    // How a template argument list `<...>` opening at tokens[open] ends, read from the
+    // tokens alone: Closed (it can parse as types, its `>` before tokens[*after]; *split
+    // when a `>>` closed one level too many), NotTypes (a token no type holds comes
+    // first, so parsing it as types fails), or Unknown (too deep or long to tell).
+    enum class AngleScan { Closed, NotTypes, Unknown };
+    AngleScan scanTypeArgs(size_t open, size_t* after, bool* split) const;
+    bool templateCallRuledOut() const;
     std::vector<std::pair<StmtPtr, VarDecl*>> scriptOrder;
     void buildScriptMain(std::vector<DeclPtr>& decls);
     StmtPtr parseBlockStatement();

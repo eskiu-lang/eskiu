@@ -331,6 +331,19 @@ ExprPtr Parser::parseUnary() {
     return parsePostfix();
 }
 
+// Can `name <` at the cursor not be an explicit generic call or a generic struct literal?
+// Those need `<` types `>` then `(` or `{`; a comparison (`i < n`, `i < List_len(l)`)
+// fails that from the tokens alone, which spares the speculative parse its throw.
+bool Parser::templateCallRuledOut() const {
+    size_t after = 0;
+    bool split = false;
+    AngleScan r = scanTypeArgs(current, &after, &split);
+    if (r == AngleScan::Unknown) return false;
+    if (r == AngleScan::NotTypes || split) return true;
+    TokenType nt = after < tokens.size() ? tokens[after].type : TokenType::EOF_TOKEN;
+    return nt != TokenType::LPAREN && nt != TokenType::LBRACE;
+}
+
 ExprPtr Parser::parsePostfix() {
     ExprPtr expr = parsePrimary();
 
@@ -339,7 +352,7 @@ ExprPtr Parser::parsePostfix() {
         // `a < b, c > (d)` reads as a call only when the callee is a known generic
         // (function, enum variant or type) or every argument can only be a type.
         if (auto* ident = dynamic_cast<IdentExpr*>(expr.get())) {
-            if (check(TokenType::LT)) {
+            if (check(TokenType::LT) && !templateCallRuledOut()) {
                 ExprPtr templExpr = speculate([&]() -> ExprPtr {
                     advance(); // consume <
                     std::vector<std::string> typeArgs;

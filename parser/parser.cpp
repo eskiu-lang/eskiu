@@ -235,6 +235,49 @@ void Parser::rewindTo(size_t pos) {
     current = pos;
 }
 
+Parser::AngleScan Parser::scanTypeArgs(size_t open, size_t* after, bool* split) const {
+    auto at = [&](size_t k) -> TokenType {
+        return k < tokens.size() ? tokens[k].type : TokenType::EOF_TOKEN;
+    };
+    // The limits keep a scan short and leave a list deep enough for the type nesting
+    // limit to the parse, which reports it.
+    int depth = 0, levels = 0;
+    for (size_t i = open; i < open + 4096; ++i) {
+        TokenType t = at(i);
+        switch (t) {
+            case TokenType::LT:
+                ++depth;
+                if (++levels > 500) return AngleScan::Unknown;
+                break;
+            case TokenType::GT:
+                if (--depth == 0) { *after = i + 1; *split = false; return AngleScan::Closed; }
+                break;
+            case TokenType::RSHIFT:
+                depth -= 2;
+                if (depth <= 0) { *after = i + 1; *split = depth < 0; return AngleScan::Closed; }
+                break;
+            case TokenType::LBRACKET:
+                if (++levels > 500) return AngleScan::Unknown;
+                while (at(i) != TokenType::RBRACKET && at(i) != TokenType::EOF_TOKEN) ++i;
+                if (at(i) != TokenType::RBRACKET) return AngleScan::Unknown;
+                break;
+            case TokenType::STAR: case TokenType::FN:
+                if (++levels > 500) return AngleScan::Unknown;
+                break;
+            case TokenType::IDENT: case TokenType::COMMA: case TokenType::QUESTION:
+            case TokenType::CONST: case TokenType::LPAREN: case TokenType::RPAREN:
+            case TokenType::ARROW:
+                break;
+            case TokenType::EOF_TOKEN:
+                return AngleScan::Unknown;
+            default:
+                if (isPrimitiveTypeToken(t)) break;
+                return AngleScan::NotTypes;
+        }
+    }
+    return AngleScan::Unknown;
+}
+
 std::string Parser::parseType() {
     std::string type;
     parseTypeInto(type);
