@@ -1330,10 +1330,11 @@ int sema_pdefs(Sema* s, string key, *DeclNode sd, string mname) {
                 continue;
             }
             if (List_len<TypeParam>(&fd.type_params) == 0) {   // its type is checked where it is declared
-                if (lit.kind == EK_STRUCTINIT) {
-                    sema_expr(s, lit);             // its fields, as C++ lit->accept(this)
+                *ExprNode probe = sema_clone_pdef(lit, 0, 0, s.filename, def.line, def.col);
+                if (probe.kind == EK_STRUCTINIT) {
+                    sema_expr(s, probe);           // its fields, as C++ probe->accept(this)
                 }
-                string derr = sema_assign_err(s, pm.ty, lit);
+                string derr = sema_assign_err(s, pm.ty, probe);
                 if (derr[0] != 0) {
                     s.had_error = 1;
                     dprintf(2, "error: %s:%d:%d: default value of parameter '%s': %s\n",
@@ -1347,11 +1348,40 @@ int sema_pdefs(Sema* s, string key, *DeclNode sd, string mname) {
     return idx;
 }
 
+// `src_file()`, `src_line()`, `src_col()` not hidden by a program's own function or
+// global of that name (C++ TypeChecker::callSiteBuiltin): the position of a call, as a
+// parameter's default value.
+int sema_call_site_builtin(Sema* s, *ExprNode e) {
+    if (e == null || e.kind != EK_CALL || e.a == null || e.a.kind != EK_IDENT || List_len<*ExprNode>(&e.kids) != 0) {
+        return 0;
+    }
+    string n = e.a.sval;
+    if (sema_streq(n, "src_file") == 0 && sema_streq(n, "src_line") == 0 && sema_streq(n, "src_col") == 0) {
+        return 0;
+    }
+    if (sema_find_fndecl(s, n) != null) {
+        return 0;
+    }
+    int was = s.global_only;
+    s.global_only = 1;
+    int bound = sema_lookup(s, n);
+    s.global_only = was;
+    return bound == 1 ? 0 : 1;
+}
+
 // A parameter default folded to a constant (C++ TypeChecker::foldParamDefault): a
 // literal, a negative float literal, an integer constant expression folded in the global
 // scope, or a struct literal whose values are all of these. Null when it is none of them.
 *ExprNode sema_fold_pdef(Sema* s, *ExprNode def) {
     *ExprNode lit = null;
+    if (sema_call_site_builtin(s, def) == 1) {   // `int line = src_line()`: the call's line at each call
+        lit = ast_new_expr();
+        lit.kind = EK_CALL;
+        lit.a = ast_new_expr();
+        lit.a.kind = EK_IDENT;
+        lit.a.sval = def.a.sval;
+        return lit;
+    }
     if (def.kind == EK_LITERAL) {
         lit = ast_new_expr();
         lit.kind = EK_LITERAL;
@@ -1407,13 +1437,31 @@ int sema_pdefs(Sema* s, string key, *DeclNode sd, string mname) {
     return lit;
 }
 
-// A fresh copy of a folded default (a literal, or a struct literal of them) at a call.
-*ExprNode sema_clone_pdef(*ExprNode d, int line, int col) {
+// A fresh copy of a folded default (a literal, or a struct literal of them) at a call;
+// a `src_file()` / `src_line()` / `src_col()` in it becomes the call site `file`,
+// `sline`:`scol` (C++ cloneParamDefault).
+*ExprNode sema_clone_pdef(*ExprNode d, int line, int col, string file, int sline, int scol) {
     *ExprNode out = ast_new_expr();
     out.kind = d.kind;
     out.line = line;
     out.col = col;
+    if (line <= 0) {                   // each node keeps its own position
+        out.line = d.line;
+        out.col = d.col;
+    }
     out.sval = d.sval;
+    if (d.kind == EK_CALL) {
+        out.kind = EK_LITERAL;
+        if (sema_streq(d.a.sval, "src_file") == 1) {
+            out.lit_kind = LIT_STRING;
+            out.sval = file;
+            out.slen = (int)strlen(file);
+        } else {
+            out.lit_kind = LIT_INT;
+            out.sval = sema_i64_text((int64)(sema_streq(d.a.sval, "src_line") == 1 ? sline : scol));
+        }
+        return out;
+    }
     if (d.kind == EK_LITERAL) {
         out.lit_kind = d.lit_kind;
         out.slen = d.slen;
@@ -1423,7 +1471,7 @@ int sema_pdefs(Sema* s, string key, *DeclNode sd, string mname) {
     List_init<string>(&out.names, 4);
     int i = 0;
     while (i < List_len<*ExprNode>(&d.kids)) {
-        List_push<*ExprNode>(&out.kids, sema_clone_pdef(List_get<*ExprNode>(&d.kids, i), line, col));
+        List_push<*ExprNode>(&out.kids, sema_clone_pdef(List_get<*ExprNode>(&d.kids, i), line, col, file, sline, scol));
         List_push<string>(&out.names, List_get<string>(&d.names, i));
         i = i + 1;
     }
@@ -1512,9 +1560,19 @@ void sema_fill_defaults(Sema* s, *ExprNode e) {
         }
         i = i + 1;
     }
+    int sline = e.line;              // the called name's position (C++ CallSite)
+    int scol = e.col;
+    if (e.kind == EK_CALL && e.a != null && e.a.line > 0) {
+        sline = e.a.line;
+        scol = e.a.col;
+        if (e.a.kind == EK_MEMBER && e.a.mline > 0) {
+            sline = e.a.mline;
+            scol = e.a.mcol;
+        }
+    }
     i = given;
     while (i < n) {
-        List_push<*ExprNode>(&e.kids, sema_clone_pdef(List_get<*ExprNode>(&defs, i), e.line, e.col));
+        List_push<*ExprNode>(&e.kids, sema_clone_pdef(List_get<*ExprNode>(&defs, i), e.line, e.col, s.filename, sline, scol));
         i = i + 1;
     }
 }
@@ -2429,6 +2487,12 @@ void sema_expr_k(Sema* s, *ExprNode e) {
             dprintf(2, "error: %s:%d:%d: dbg needs a value: its argument is a void call\n", s.filename, e.a.line, e.a.col);
         }
         e.dbg_builtin = 1;
+        return;
+    }
+    if (sema_call_site_builtin(s, e) == 1 && sema_lookup(s, e.a.sval) == 0) {
+        s.had_error = 1;                   // the position of a call: only a parameter default
+        dprintf(2, "error: %s:%d:%d: the call-site value '%s()' is only allowed as a parameter's default value, where it gives the position of each call\n",
+                s.filename, e.a.line, e.a.col, e.a.sval);
         return;
     }
     if (k == EK_CALL && e.a != null && e.a.kind == EK_IDENT
