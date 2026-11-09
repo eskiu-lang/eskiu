@@ -1,0 +1,8 @@
+// EXPECT-ERROR: default value of parameter 'line': cannot convert 'string' to 'int'
+void log_at(string msg, int line = src_file()) {
+}
+
+int main() {
+    log_at("x");
+    return 0;
+}

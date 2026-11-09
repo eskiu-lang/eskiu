@@ -1,0 +1,12 @@
+// A program's own `src_line` hides the builtin: an ordinary call, usable anywhere.
+import <io>;
+
+int src_line() {
+    return 42;
+}
+
+int main() {
+    int here = src_line();
+    printf("%d\n", here);
+    return here - 42;
+}

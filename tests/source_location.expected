@@ -1,0 +1,13 @@
+first at source_location.esk:52:5
+second at source_location.esk:53:5
+indented at source_location.esk:54:9
+explicit at here.esk:7:8
+Text from line 56 col 5 (source_location.esk)
+Button from line 57 col 5 (source_location.esk)
+get at 59:22
+3
+get at 60:19
+multi-line at source_location.esk:61:5
+pick at 63:20
+5
+wrapped at forwarded:64:0

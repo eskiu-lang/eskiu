@@ -1,0 +1,5 @@
+// EXPECT-ERROR: the call-site value 'src_line()' is only allowed as a parameter's default value
+int main() {
+    int here = src_line();
+    return here;
+}

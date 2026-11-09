@@ -1,0 +1,66 @@
+// src_file() / src_line() / src_col() as parameter defaults: each call gets its own
+// position (the caller's), in direct calls, dot-calls, explicit generic calls and struct
+// literal defaults; an explicit argument wins.
+import <io>;
+
+// The file name without its directories (run.sh passes an absolute path).
+string base(string path) {
+    int i = 0;
+    int start = 0;
+    while (path[i] != 0) {
+        if (path[i] == '/') {
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    return path + start;
+}
+
+struct SourceLoc {
+    string file;
+    int line;
+    int col;
+}
+
+void where(string what, string file = src_file(), int line = src_line(), int col = src_col()) {
+    printf("%s at %s:%d:%d\n", what, base(file), line, col);
+}
+
+void element(string name, SourceLoc at = SourceLoc{src_file(), src_line(), src_col()}) {
+    printf("%s from line %d col %d (%s)\n", name, at.line, at.col, base(at.file));
+}
+
+struct Box {
+    int v;
+}
+
+int Box_get(Box* self, int line = src_line(), int col = src_col()) {
+    printf("get at %d:%d\n", line, col);
+    return self.v;
+}
+
+T pick<T>(T x, int line = src_line(), int col = src_col()) {
+    printf("pick at %d:%d\n", line, col);
+    return x;
+}
+
+void wrapper(string what, int line = src_line()) {
+    where(what, "forwarded", line, 0);
+}
+
+int main() {
+    where("first");
+    where("second");
+        where("indented");
+    where("explicit", "here.esk", 7, 8);
+    element("Text");
+    element("Button");
+    Box b = Box{3};
+    printf("%d\n", b.get());
+    int g = 1 + b.get();
+    where(
+        "multi-line");
+    printf("%d\n", pick<int>(5));
+    wrapper("wrapped");
+    return g - 4;
+}
