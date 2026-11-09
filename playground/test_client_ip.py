@@ -31,11 +31,19 @@ class ClientIpTests(unittest.TestCase):
             "203.0.113.9",
         )
 
-    def test_malformed_chain_fails_closed(self):
+    def test_client_garbage_left_of_its_address_is_ignored(self):
+        # A client cannot use a malformed header to fall into the proxy's shared bucket.
         self.assertEqual(
             client_ip("127.0.0.1", "not-an-ip, 203.0.113.9", self.trusted),
+            "203.0.113.9",
+        )
+
+    def test_malformed_entry_appended_by_a_proxy_fails_closed(self):
+        self.assertEqual(
+            client_ip("127.0.0.1", "203.0.113.9, not-an-ip", self.trusted),
             "127.0.0.1",
         )
+        self.assertEqual(client_ip("127.0.0.1", "203.0.113.9, ", self.trusted), "127.0.0.1")
 
     def test_invalid_proxy_configuration_is_rejected(self):
         with self.assertRaises(ValueError):

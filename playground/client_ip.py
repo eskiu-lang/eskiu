@@ -22,16 +22,15 @@ def client_ip(peer: str, forwarded_for: str | None, trusted_proxies) -> str:
     if not any(peer_ip in network for network in trusted_proxies) or not forwarded_for:
         return peer_ip.compressed
 
-    chain = [part.strip() for part in forwarded_for.split(",")]
-    if any(not part for part in chain):
-        return peer_ip.compressed
-
-    try:
-        hops = [ip_address(part) for part in chain]
-    except ValueError:
-        return peer_ip.compressed
-
-    for hop in reversed(hops):
+    # Right to left: the entries our proxies appended come first, so the first untrusted hop
+    # is the client as our proxies saw it. Whatever the client wrote further left (garbage
+    # included) is never read, so it cannot move the request into another bucket. A malformed
+    # entry before any untrusted hop falls back to the peer.
+    for part in reversed(forwarded_for.split(",")):
+        try:
+            hop = ip_address(part.strip())
+        except ValueError:
+            return peer_ip.compressed
         if not any(hop in network for network in trusted_proxies):
             return hop.compressed
     return peer_ip.compressed
