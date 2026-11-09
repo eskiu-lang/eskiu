@@ -57,7 +57,7 @@
             <span class="cmd">curl -fsSL https://eskiu-lang.org/install.sh | sh</span>
             <button class="btn btn-purple" type="button" data-copy="curl -fsSL https://eskiu-lang.org/install.sh | sh">Copy</button>
           </div>
-          <p class="downloads">Homebrew: <code>brew install eskiu-lang/eskiu/eskiu</code> · <a href="https://github.com/eskiu-lang/eskiu/releases/latest">Windows and release archives</a> · <a href="quickstart.html#editor">VS Code extension</a></p>
+          <p class="downloads">Homebrew: <code>brew install eskiu-lang/eskiu/eskiu</code> · <a href="https://github.com/eskiu-lang/eskiu/releases/latest">Release archives</a> for Apple silicon and Intel Macs, Linux and Windows · <a href="quickstart.html#editor">VS Code extension</a></p>
         </div>
         <div class="hero-fig hero-code-fig">
           <figure class="hero-code">
@@ -181,7 +181,7 @@ llvm/llvm-project has 41179 stars
           </a>
           <a class="use" href="case-study-reactvision.html">
             <h3>Inside a C or C++ codebase</h3>
-            <p>A module with a C header drops into an existing engine, one file at a time. That is how it entered ViroReact.</p>
+            <p><code>export</code> makes a function callable from C, C++ or Rust, and <code>--emit-header</code> writes its C header. A module drops into an existing engine one file at a time, which is how Eskiu entered ViroReact.</p>
           </a>
         </div>
       </section>
@@ -238,7 +238,7 @@ println(JsonValue_as_cstr(json_get(
           <h2>Close to C, with what C is missing.</h2>
           <p>Eskiu keeps C's model of memory and calls, and adds the parts people reach for other languages to get. It is younger than all of these, and says so.</p>
         </div>
-        <div class="compare-scroll"><table class="compare"><thead><tr><th scope="col"></th><th scope="col">Eskiu</th><th scope="col">C</th><th scope="col">Zig</th><th scope="col">Rust</th><th scope="col">Go</th></tr></thead><tbody><tr><th scope="row">Memory</th><td>Manual, with <code>defer</code></td><td>Manual</td><td>Manual, with <code>defer</code></td><td>Ownership, checked</td><td>Garbage collected</td></tr><tr><th scope="row">Calling C</th><td><code>extern</code>, structs by value in each target's ABI</td><td>Native</td><td><code>@cImport</code></td><td><code>extern "C"</code>, bindgen</td><td>cgo</td></tr><tr><th scope="row">Generics</th><td>Monomorphized, interface bounds</td><td>Macros</td><td><code>comptime</code></td><td>Traits</td><td>Type parameters</td></tr><tr><th scope="row">Sum types, exhaustive <code>match</code></th><td>Yes</td><td>No</td><td>Tagged unions</td><td>Yes</td><td>No</td></tr><tr><th scope="row">Null safety</th><td>Opt-in <code>?*T</code></td><td>No</td><td>Optionals</td><td><code>Option</code></td><td>No</td></tr><tr><th scope="row">Run a file as a script</th><td><code>eskiuc run</code>, shebang</td><td>No</td><td><code>zig run</code></td><td>Through Cargo</td><td><code>go run</code></td></tr><tr><th scope="row">async / await</th><td>Yes</td><td>No</td><td>Through <code>std.Io</code>, no keywords</td><td>Yes</td><td>Goroutines</td></tr><tr><th scope="row">Age</th><td>0.14, young</td><td>Decades</td><td>Pre-1.0</td><td>Stable since 2015</td><td>Stable since 2012</td></tr></tbody></table></div>
+        <div class="compare-scroll"><table class="compare"><thead><tr><th scope="col"></th><th scope="col">Eskiu</th><th scope="col">C</th><th scope="col">Zig</th><th scope="col">Rust</th><th scope="col">Go</th></tr></thead><tbody><tr><th scope="row">Memory</th><td>Manual, with <code>defer</code></td><td>Manual</td><td>Manual, with <code>defer</code></td><td>Ownership, checked</td><td>Garbage collected</td></tr><tr><th scope="row">Calling C</th><td><code>extern</code>, structs by value in each target's ABI</td><td>Native</td><td><code>@cImport</code></td><td><code>extern "C"</code>, bindgen</td><td>cgo</td></tr><tr><th scope="row">Generics</th><td>Monomorphized, interface bounds</td><td>Macros</td><td><code>comptime</code></td><td>Traits</td><td>Type parameters</td></tr><tr><th scope="row">Sum types, exhaustive <code>match</code></th><td>Yes</td><td>No</td><td>Tagged unions</td><td>Yes</td><td>No</td></tr><tr><th scope="row">Null safety</th><td>Opt-in <code>?*T</code></td><td>No</td><td>Optionals</td><td><code>Option</code></td><td>No</td></tr><tr><th scope="row">Run a file as a script</th><td><code>eskiuc run</code>, shebang</td><td>No</td><td><code>zig run</code></td><td>Through Cargo</td><td><code>go run</code></td></tr><tr><th scope="row">async / await</th><td>Yes</td><td>No</td><td>Through <code>std.Io</code>, no keywords</td><td>Yes</td><td>Goroutines</td></tr><tr><th scope="row">Age</th><td>0.15, young</td><td>Decades</td><td>Pre-1.0</td><td>Stable since 2015</td><td>Stable since 2012</td></tr></tbody></table></div>
       </section>
 
       <section class="pkgs" id="packages">
@@ -300,7 +300,7 @@ fetching onnxruntime for onnx from https://github.com/microsoft/...
             <span class="num">1</span>
             <h3>Install</h3>
 <pre>curl -fsSL https://eskiu-lang.org/install.sh | sh</pre>
-            <p>Or <code>brew install eskiu-lang/eskiu/eskiu</code>, or a <a href="https://github.com/eskiu-lang/eskiu/releases/latest">release archive</a> for Windows.</p>
+            <p>Or <code>brew install eskiu-lang/eskiu/eskiu</code>. On Windows, <code>powershell -c &quot;irm https://eskiu-lang.org/install.ps1 | iex&quot;</code> also installs a C toolchain when none is on PATH. <code>eskiuc doctor</code> shows what each kind of build still needs.</p>
           </li>
           <li>
             <span class="num">2</span>
@@ -321,7 +321,7 @@ Hello, Eskiu!</pre>
         <div class="start-next">
           <a class="btn btn-dark" href="the-book-of-eskiu.html">Read the Book of Eskiu</a>
           <a class="btn btn-line" href="quickstart.html">Quickstart</a>
-          <p>Free and online, from <code>Hello, Eskiu</code> to async and bare metal. Code that compiles with 0.14.0 keeps compiling in every 0.14.x (<a href="docs/stability.html">stability policy</a>).</p>
+          <p>Free and online, from <code>Hello, Eskiu</code> to async and bare metal. Code that compiles with 0.15.0 keeps compiling in every 0.15.x (<a href="docs/stability.html">stability policy</a>).</p>
         </div>
       </section>
 

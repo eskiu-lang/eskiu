@@ -271,7 +271,7 @@ compiling in every 0.15.x, and later changes are announced by warnings first
 </tr>
 <tr>
 <td><strong>Functions</strong></td>
-<td>C-style, <code>extern</code> C ABI (functions and global variables), variadic, template <code>fn&lt;T&gt;(T x)</code></td>
+<td>C-style, <code>extern</code> C ABI (functions and global variables), variadic, template <code>fn&lt;T&gt;(T x)</code>, default parameter values (<code>src_file()</code>/<code>src_line()</code>/<code>src_col()</code> record the call site), <code>export</code> C entry points (<code>--emit-header</code> writes their C header)</td>
 </tr>
 <tr>
 <td><strong>Lambdas / Closures</strong></td>
@@ -493,6 +493,10 @@ postfix     f() a[i] a.b ++ -- ?
 <tr>
 <td><code>--freestanding</code></td>
 <td>Use <code>esk_alloc</code>/<code>esk_free</code> instead of libc</td>
+</tr>
+<tr>
+<td><code>--emit-header FILE</code></td>
+<td>Write the C header of the program's <code>export</code> functions</td>
 </tr>
 <tr>
 <td><code>-ffp-contract=fast</code></td>

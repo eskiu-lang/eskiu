@@ -200,8 +200,10 @@ and inspecting real compiled programs in about 30 minutes.</p>
 <p>All code blocks in this document compile and run with <strong>Eskiu v0.15.0</strong>.</p>
 <hr>
 <h2 id="installation">Installation</h2>
-<p>Prebuilt releases for macOS and Linux install with one command; see the
-<a href="https://github.com/eskiu-lang/eskiu/blob/main/README.md#install">README</a>. To build from source, follow the steps below
+<p>Prebuilt releases for macOS (Apple silicon and Intel), Linux and Windows install with
+one command; see the <a href="https://github.com/eskiu-lang/eskiu/blob/main/README.md#install">README</a>. On Windows, <code>install.ps1</code> also
+installs a C toolchain (llvm-mingw) when none is on PATH, so programs link with nothing
+else to set up. To build from source, follow the steps below
 (more detail, Windows and troubleshooting are in <a href="build.html">build.md</a>).</p>
 <h3 id="prerequisites">Prerequisites</h3>
 <div class="tablewrap"><table>
@@ -257,6 +259,9 @@ cmake --build build -j$(nproc)
 # Eskiu 0.15.0 (LLVM 22.1.6)   (exact LLVM version depends on your install)
 </code></pre>
 <p>Add <code>./build</code> to your <code>PATH</code> so you can type <code>eskiuc</code> from any directory.</p>
+<p><code>eskiuc doctor</code> lists what the machine has for each kind of build (the C driver that
+links programs, git and curl for packages, OpenSSL, Emscripten, the Android NDK, the iOS
+SDK) and what to install for what is missing.</p>
 <hr>
 <h2 id="your-first-program">Your First Program</h2>
 <p>Create <code>hello.esk</code>:</p>
@@ -710,6 +715,38 @@ void quiet_getopt() {
     opterr = 0;
 }
 </code></pre>
+<h3 id="default-values-and-call-sites">Default values and call sites</h3>
+<p>A parameter can have a constant default; a call that leaves out trailing arguments gets
+it. <code>src_file()</code>, <code>src_line()</code> and <code>src_col()</code> as a default give the position of each
+call that leaves the argument out, which lets a helper report where it was called from:</p>
+<pre><code class="language-eskiu">import &lt;io&gt;;
+
+void trace(string msg, string file = src_file(), int line = src_line()) {
+    printf(&quot;%s:%d: %s\n&quot;, file, line, msg);
+}
+
+int main() {
+    trace(&quot;starting&quot;);      // main.esk:8: starting
+    return 0;
+}
+</code></pre>
+<h3 id="calling-eskiu-from-c">Calling Eskiu from C</h3>
+<p><code>export</code> before a function definition makes it a C entry point under its own name, with
+the target's C calling convention (structs by value included). <code>--emit-header</code> writes
+the C declarations, and an <code>.a</code> output builds a static library:</p>
+<pre><code class="language-eskiu">// geom.esk
+export int sum_ints(*int xs, int n) {
+    int s = 0;
+    for (i in 0..n) { s += xs[i]; }
+    return s;
+}
+</code></pre>
+<pre><code class="language-bash">eskiuc geom.esk --emit-header geom.h    # int32_t sum_ints(int32_t* xs, int32_t n);
+eskiuc geom.esk -o libgeom.a
+cc main.c -L. -lgeom -o prog
+</code></pre>
+<p>A <code>.so</code>, <code>.dylib</code> or <code>.dll</code> output with <code>export</code> functions offers only those; the rest of
+the program stays hidden. See spec §6.1.4.</p>
 <h3 id="declaration-order">Declaration order</h3>
 <p>Definition order doesn't matter: a function can call another that's defined later in the file, and mutual recursion works out of the box. You can also write a body-less forward declaration if you prefer to state a signature up front:</p>
 <pre><code class="language-eskiu">int is_odd(int n);                  // forward declaration (optional)
@@ -1163,7 +1200,7 @@ import &lt;math&gt;;
 </tr>
 <tr>
 <td><code>&lt;tls&gt;</code></td>
-<td>h2 over TLS via OpenSSL with ALPN <code>"h2"</code>: <code>http2_tls_serve_conn</code> (blocking) / <code>http2_tls_serve_async</code></td>
+<td>h2 over TLS via OpenSSL with ALPN <code>"h2"</code>: <code>http2_tls_serve_conn</code> (blocking) / <code>http2_tls_serve_async</code>; TLS 1.2 or newer, compression and renegotiation off</td>
 </tr>
 <tr>
 <td><code>&lt;sysheap&gt;</code></td>
@@ -1183,7 +1220,7 @@ import &lt;math&gt;;
 </tr>
 <tr>
 <td><code>&lt;http&gt;</code></td>
-<td>HTTP/1.1: <code>HttpRequest</code>/<code>HttpResponse</code>, threaded <code>http_serve(port, workers, handler)</code></td>
+<td>HTTP/1.1: <code>HttpRequest</code>/<code>HttpResponse</code>, threaded <code>http_serve(port, workers, handler)</code>; <code>HttpLimits</code> (via <code>http_serve_with</code>) sets timeouts and <code>max_body</code></td>
 </tr>
 <tr>
 <td><code>&lt;fetch&gt;</code></td>
@@ -1191,7 +1228,7 @@ import &lt;math&gt;;
 </tr>
 <tr>
 <td><code>&lt;json&gt;</code></td>
-<td><code>Json</code> builder + <code>json_parse</code> → <code>JsonValue</code> tree; build and edit with <code>JsonValue_object</code>/<code>_array</code>/<code>_set</code>/<code>_push</code>/<code>_remove</code>, print with <code>JsonValue_stringify</code>/<code>_pretty</code>, paths with <code>json_get</code></td>
+<td><code>Json</code> builder + <code>json_parse</code> → <code>JsonValue</code> tree; build and edit with <code>JsonValue_object</code>/<code>_array</code>/<code>_set</code>/<code>_push</code>/<code>_remove</code>, print with <code>JsonValue_stringify</code>/<code>_pretty</code>, paths with <code>json_get</code>; <code>json_parse_doc</code> → read-only <code>JsonDoc</code> in one arena, about 3x faster</td>
 </tr>
 <tr>
 <td><code>&lt;csv&gt;</code></td>
@@ -1692,6 +1729,12 @@ eskiuc file.esk --definition-at 10:5
 <p>Both flags accept <code>LINE:COL</code> with 1-based line and column numbers and print a
 single line of output. They can also be used directly on the command line for
 scripting.</p>
+<p>For tools that read compiler errors, <code>--diagnostics=json</code> prints each error and
+warning on stderr as one JSON object per line, with a stable <code>id</code> per kind of
+diagnostic, the position and range, and any "did you mean" hint:</p>
+<pre><code class="language-bash">eskiuc bad.esk --diagnostics=json
+# {&quot;severity&quot;:&quot;error&quot;,&quot;id&quot;:&quot;undefined-variable&quot;,&quot;message&quot;:&quot;undefined variable 'cout'&quot;,&quot;file&quot;:&quot;bad.esk&quot;,&quot;line&quot;:3,&quot;col&quot;:12,&quot;end_line&quot;:3,&quot;end_col&quot;:16,&quot;hints&quot;:[&quot;did you mean 'count'?&quot;],&quot;notes&quot;:[]}
+</code></pre>
 <hr>
 <h2 id="using-the-test-modes">Using the Test Modes</h2>
 <p>The compiler exposes diagnostic flags that stop compilation after a specific
