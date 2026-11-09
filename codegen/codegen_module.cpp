@@ -15,6 +15,7 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Passes/PassBuilder.h"
+#include "phase_timer.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Transforms/Instrumentation/AddressSanitizer.h"
 #include "llvm/Transforms/Instrumentation/BoundsChecking.h"
@@ -440,6 +441,7 @@ llvm::Module* CodeGen::generateCode(std::shared_ptr<Program> program) {
         for (const auto& kv : *semaInstanceArgs) templateInstanceArgs.emplace(kv.first, kv.second);
 
     program->accept(this);
+    phaseMark("irgen");
     emitExportEntries();
     emitUncaughtReporter();
     if (sharedLibrary && !exportedFns.empty()) hideNonExports(triple);
@@ -447,12 +449,15 @@ llvm::Module* CodeGen::generateCode(std::shared_ptr<Program> program) {
     if (strictAliasing) addTypeBasedAliasInfo(*module);
     if (triple.isWasm()) passLargeAggregatesByPointer(*module);
 
+    phaseMark("ir-postpasses");
+
     std::string errorStr;
     llvm::raw_string_ostream errorStream(errorStr);
     if (llvm::verifyModule(*module, &errorStream)) {
         std::cerr << "LLVM verification failed:\n" << errorStr << std::endl;
         return nullptr;
     }
+    phaseMark("verify");
 
     return module.get();
 }

@@ -27,6 +27,7 @@
 #include "sema/type_checker.h"
 #include "sema/async_transform.h"
 #include "codegen/codegen.h"
+#include "phase_timer.h"
 #include "eir/eir_builder.h"
 #include "eir/eir_vm.h"
 #include "eir/eir_asm.h"
@@ -991,8 +992,10 @@ static int compilerMain(int argc, char** argv) {
     try {
         std::map<std::string, Macro> macros;
         bool lexFailed = false;
+        phaseMark("start");
         auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding,
                                    &macros, &lexFailed);
+        phaseMark("load+parse");
         if (!program) {
             if (!lexFailed && !g_jsonDiagnostics) std::cerr << "error: parse failed" << std::endl;
             return 1;
@@ -1008,9 +1011,11 @@ static int compilerMain(int argc, char** argv) {
         if (!typeChecker.check(program.get())) {
             return 1;
         }
+        phaseMark("typecheck");
         if (!EmitHeader.empty()) return writeCHeader(typeChecker, program.get());
 
         AsyncTransform(&typeChecker.expressionTypeMap(), &typeChecker.instanceArgsMap(), &typeChecker.instanceExprTypeMap()).run(program.get());
+        phaseMark("async-lower");
         // Single resolver: re-resolve the post-transform AST; codegen consumes it.
         TypeChecker postTc; postTc.targetTriple = std::string(TargetTriple); postTc.warnDeprecated = false; postTc.warnDefaults = false; postTc.sourceFile = std::string(InputFilename);
         postTc.recordInstanceTypes = useEir;
@@ -1018,6 +1023,7 @@ static int compilerMain(int argc, char** argv) {
             std::cerr << "error: internal: the async lowering produced a program that does not type-check" << std::endl;
             return 1;
         }
+        phaseMark("re-check");
         CodeGen codegen;
         std::unique_ptr<eir::Module> eirModule;
         if (useEir) {
@@ -1046,10 +1052,13 @@ static int compilerMain(int argc, char** argv) {
                 return 1;
             }
             if (OptLevel) codegen.optimizeModule();
+            phaseMark("optimize");
         }
         auto emitObject = [&](const std::string& path) {
-            if (eirModule) return eir::emitEirObject(eirModule.get(), path, std::string(TargetTriple), OptLevel);
-            return codegen.emitObjectFile(path);
+            bool ok = eirModule ? eir::emitEirObject(eirModule.get(), path, std::string(TargetTriple), OptLevel)
+                                : codegen.emitObjectFile(path);
+            phaseMark("emit-object");
+            return ok;
         };
 
         // `eskiuc run`: link into a temporary executable, then run it.
