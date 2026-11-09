@@ -102,9 +102,10 @@ std::string readFile(const std::string& filename) {
     return buffer.str();
 }
 
-// Directory portion of a path, or "." if there is no slash.
+// Directory portion of a path (up to its last '/' or, for Windows paths, '\\'), or "." if
+// there is none.
 std::string dirOf(const std::string& path) {
-    size_t slash = path.rfind('/');
+    size_t slash = path.find_last_of("/\\");
     return slash == std::string::npos ? "." : path.substr(0, slash);
 }
 

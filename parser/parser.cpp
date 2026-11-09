@@ -1,5 +1,6 @@
 #include "parser.h"
 #include "../lexer/lexer.h"
+#include <cctype>
 #include <stdexcept>
 #include <iostream>
 #include <fstream>
@@ -18,6 +19,14 @@ std::string Parser::canonicalPath(const std::string& path) {
 }
 
 PackageRoots packageRoots;
+
+// An absolute path: from the root (`/x`, `\\x`) or a Windows drive (`C:/x`, `C:\\x`). A relative
+// import is resolved against the importing file's directory.
+static bool isAbsolutePath(const std::string& p) {
+    if (p.empty()) return false;
+    if (p[0] == '/' || p[0] == '\\') return true;
+    return p.size() >= 3 && std::isalpha((unsigned char)p[0]) && p[1] == ':' && (p[2] == '/' || p[2] == '\\');
+}
 
 static bool isFile(const std::string& p) {
     std::error_code ec;
@@ -59,7 +68,7 @@ std::string Parser::resolveImport(const std::string& spec, bool isStdlib,
         }
         return path;
     }
-    if (!basedir.empty() && (path.empty() || path[0] != '/')) return basedir + "/" + path;
+    if (!basedir.empty() && !isAbsolutePath(path)) return basedir + "/" + path;
     return path;
 }
 
@@ -76,7 +85,7 @@ PPImportHook ImportCache::hookFor(const std::string& basedir) {
         seen.insert(canon);
         std::ostringstream ss;
         ss << file.rdbuf();
-        size_t slash = full.rfind('/');
+        size_t slash = full.find_last_of("/\\");
         PPImportHook sub = hookFor(slash != std::string::npos ? full.substr(0, slash) : ".");
         Entry e;
         preprocess(ss.str(), *macros, e.text, full, e.ppErr, &sub);
@@ -543,7 +552,7 @@ std::vector<DeclPtr> Parser::parseProgram() {
                         ss << file.rdbuf();
                         src = ss.str();
                     }
-                    size_t slash = fullPath.rfind('/');
+                    size_t slash = fullPath.find_last_of("/\\");
                     std::string subdir = (slash != std::string::npos) ? fullPath.substr(0, slash) : ".";
                     PPImportHook hook;
                     if (importCache) hook = importCache->hookFor(subdir);
