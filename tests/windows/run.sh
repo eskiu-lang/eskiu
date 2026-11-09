@@ -62,7 +62,7 @@ if [[ -n "$cc_w" ]] &&
    "$ESKIUC" "$root/tests/run_cmd/export_lib.esk" -o "$work/export_lib.dll" >> "$work/dll.build" 2>&1 &&
    "$cc_w" -I"$work" "$root/tests/run_cmd/export_lib_main.c" "$work/export_lib.dll" \
        -o "$work/export_lib_main.exe" >> "$work/dll.build" 2>&1; then
-    syms=$(objdump -p "$work/export_lib.dll" | awk '/\[Ordinal\/Name Pointer\] Table/ {t=1; next} t && NF == 0 {t=0} t {print $NF}' | sort | tr '\n' ' ')
+    syms=$(objdump -p "$work/export_lib.dll" | awk '/\[Ordinal\/Name Pointer\] Table/ {t=1; next} t && NF == 0 {t=0} t && /\[ *[0-9]+\]/ {print $NF}' | sort | tr '\n' ' ')
     out=$(cd "$work" && ./export_lib_main.exe 2>&1 | tr -d '\r')
     want=$'7 5 1 9 1 6\n17.0 9 0.25 42 5 1\nsame same same same same'
     if [[ "$syms" == "body_len body_make cell_of next_mode node_sum size_of wire_stamp " && "$out" == "$want" ]]; then
