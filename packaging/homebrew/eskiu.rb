@@ -1,29 +1,32 @@
 # Homebrew formula for Eskiu. This is the source of truth; copy it to the tap repo
-# (homebrew-eskiu/Formula/eskiu.rb) and refresh the sha256 values (macOS arm64, Linux
-# x86_64, Linux arm64) from the release's SHA256SUMS on each version bump. From the first
-# release with eskiuc-macos-x86_64.tar.gz, add it as an on_intel block under on_macos.
+# (homebrew-eskiu/Formula/eskiu.rb) and refresh the sha256 values (macOS arm64 and x86_64, Linux
+# x86_64, Linux arm64) from the release's SHA256SUMS on each version bump.
 # See packaging/homebrew/README.md.
 class Eskiu < Formula
   desc "Self-hosting systems language with a C-style surface and an LLVM backend"
   homepage "https://eskiu-lang.org"
-  version "0.14.1"
+  version "0.15.0"
   license "MIT"
 
   on_macos do
     on_arm do
-      url "https://github.com/eskiu-lang/eskiu/releases/download/v0.14.1/eskiuc-macos-arm64.tar.gz"
-      sha256 "70c3630d8a5ea4cc34c3dfffc3fc93e1b0e780a6a1faea138d832f8c1d894f92"
+      url "https://github.com/eskiu-lang/eskiu/releases/download/v0.15.0/eskiuc-macos-arm64.tar.gz"
+      sha256 "e7c49b920221d4ccf1a3763245447c9f7de2fbd37bcd0aad654fb6635fb13b84"
+    end
+    on_intel do
+      url "https://github.com/eskiu-lang/eskiu/releases/download/v0.15.0/eskiuc-macos-x86_64.tar.gz"
+      sha256 "ecbf88f11fb059c697be72ffb6be42e43336aee80bdf422a9f132d43cad2a56e"
     end
   end
 
   on_linux do
     on_intel do
-      url "https://github.com/eskiu-lang/eskiu/releases/download/v0.14.1/eskiuc-linux-x86_64.tar.gz"
-      sha256 "b3ccb5fedd92bc6cb0dee1580464d183696aeba97155299ee4ecb9ee920e568d"
+      url "https://github.com/eskiu-lang/eskiu/releases/download/v0.15.0/eskiuc-linux-x86_64.tar.gz"
+      sha256 "2a0cd660dbca783d8ea6848a705256682248f2395cf26a1333ec8a1885f8ad1f"
     end
     on_arm do
-      url "https://github.com/eskiu-lang/eskiu/releases/download/v0.14.1/eskiuc-linux-arm64.tar.gz"
-      sha256 "055e13099ad6797c0a47a5a7a392d80be40fad7781e81879f4c6880dac37d667"
+      url "https://github.com/eskiu-lang/eskiu/releases/download/v0.15.0/eskiuc-linux-arm64.tar.gz"
+      sha256 "6ba72ee21dc223dbb2d61ec39efde4ce089548400b1547360261555a31d5e034"
     end
   end
 
