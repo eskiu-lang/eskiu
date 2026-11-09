@@ -1,0 +1,34 @@
+// A `?:` with a `null` arm inside a generic body: the checker records no type for the
+// literal there, and codegen used to type the arm as '' (an i32) and build an invalid phi.
+import <io>;
+import <mem>;
+import <string>;
+
+string dup(string s) { let t: String; t.init(8); t.append(s); return t.data; }
+
+struct Node { int v; }
+
+struct Box<T> { T v; string key; *Node at; }
+
+Box<T> make<T>(T v, string key, *Node n) {
+    Box<T> b;
+    b.v = v;
+    b.key = key == null ? null : dup(key);
+    b.at = n != null ? n : null;
+    return b;
+}
+
+T pick<T>(bool c, T a) {
+    *T p = c ? &a : null;
+    return p == null ? (T)0 : *p;
+}
+
+int main() {
+    Node n = Node{7};
+    Box<int> a = make<int>(5, "k1", &n);
+    Box<double> b = make<double>(1.5, null, null);
+    printf("%d %s %d\n", a.v, a.key == null ? "(null)" : a.key, a.at == null ? -1 : a.at.v);
+    printf("%.1f %s %d\n", b.v, b.key == null ? "(null)" : b.key, b.at == null ? -1 : b.at.v);
+    printf("%d %d\n", pick<int>(true, 4), pick<int>(false, 4));
+    return 0;
+}

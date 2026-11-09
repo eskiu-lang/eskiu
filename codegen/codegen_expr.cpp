@@ -638,10 +638,17 @@ void CodeGen::visit(TernaryExpr* node) {
 
     std::string thenTy = getExprEskiuType(node->thenExpr);
     std::string elseTy = getExprEskiuType(node->elseExpr);
-    // A `null` arm is a pointer (`c ? null : &x`), whatever the other arm points to.
+    // A `null` arm is a pointer (`c ? null : &x`), whatever the other arm points to. In a
+    // generic body the checker's table has no entry for the literal, so it is recognized
+    // by its node as well as by the resolved spelling.
+    auto isNullArm = [](const ExprPtr& e, const std::string& t) {
+        if (t == "null") return true;
+        auto lit = nodeCast<LiteralExpr>(e.get());
+        return lit && lit->kind == LiteralExpr::Kind::NULL_VAL;
+    };
     llvm::Type* ptrTy = llvm::PointerType::get(*context, 0);
-    llvm::Type* tLL = thenTy == "null" ? ptrTy : getTypeFromString(thenTy);
-    llvm::Type* eLL = elseTy == "null" ? ptrTy : getTypeFromString(elseTy);
+    llvm::Type* tLL = isNullArm(node->thenExpr, thenTy) ? ptrTy : getTypeFromString(thenTy);
+    llvm::Type* eLL = isNullArm(node->elseExpr, elseTy) ? ptrTy : getTypeFromString(elseTy);
     llvm::Type* resTy;
     if (tLL == eLL)
         resTy = tLL;
