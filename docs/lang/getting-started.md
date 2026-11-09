@@ -9,8 +9,10 @@ All code blocks in this document compile and run with **Eskiu v0.15.0**.
 
 ## Installation
 
-Prebuilt releases for macOS and Linux install with one command; see the
-[README](../../README.md#install). To build from source, follow the steps below
+Prebuilt releases for macOS (Apple silicon and Intel), Linux and Windows install with
+one command; see the [README](../../README.md#install). On Windows, `install.ps1` also
+installs a C toolchain (llvm-mingw) when none is on PATH, so programs link with nothing
+else to set up. To build from source, follow the steps below
 (more detail, Windows and troubleshooting are in [build.md](build.md)).
 
 ### Prerequisites
@@ -56,6 +58,10 @@ cmake --build build -j$(nproc)
 ```
 
 Add `./build` to your `PATH` so you can type `eskiuc` from any directory.
+
+`eskiuc doctor` lists what the machine has for each kind of build (the C driver that
+links programs, git and curl for packages, OpenSSL, Emscripten, the Android NDK, the iOS
+SDK) and what to install for what is missing.
 
 ---
 
@@ -560,6 +566,49 @@ void quiet_getopt() {
     opterr = 0;
 }
 ```
+
+### Default values and call sites
+
+A parameter can have a constant default; a call that leaves out trailing arguments gets
+it. `src_file()`, `src_line()` and `src_col()` as a default give the position of each
+call that leaves the argument out, which lets a helper report where it was called from:
+
+```eskiu
+import <io>;
+
+void trace(string msg, string file = src_file(), int line = src_line()) {
+    printf("%s:%d: %s\n", file, line, msg);
+}
+
+int main() {
+    trace("starting");      // main.esk:8: starting
+    return 0;
+}
+```
+
+### Calling Eskiu from C
+
+`export` before a function definition makes it a C entry point under its own name, with
+the target's C calling convention (structs by value included). `--emit-header` writes
+the C declarations, and an `.a` output builds a static library:
+
+```eskiu
+// geom.esk
+export int sum_ints(*int xs, int n) {
+    int s = 0;
+    for (i in 0..n) { s += xs[i]; }
+    return s;
+}
+```
+
+```bash
+eskiuc geom.esk --emit-header geom.h    # int32_t sum_ints(int32_t* xs, int32_t n);
+eskiuc geom.esk -o libgeom.a
+cc main.c -L. -lgeom -o prog
+```
+
+A `.so`, `.dylib` or `.dll` output with `export` functions offers only those; the rest of
+the program stays hidden. See spec §6.1.4.
 
 ### Declaration order
 
@@ -1073,14 +1122,14 @@ Available modules:
 | `<http2>`    | HTTP/2 (RFC 7540) wire layer: frame-header codec + constants, connection lifecycle (`H2Conn`), per-stream state machine + flow control (`H2Stream`), and async frame I/O |
 | `<hpack>`    | HPACK (RFC 7541) header compression: static + dynamic tables, prefix-integer / string coding, Huffman |
 | `<http2_server>`| HTTP/2 (h2c, cleartext) server over the event loop: `http2_serve_async`, multiplexed streams, same handler interface as `<http>` |
-| `<tls>`      | h2 over TLS via OpenSSL with ALPN `"h2"`: `http2_tls_serve_conn` (blocking) / `http2_tls_serve_async` |
+| `<tls>`      | h2 over TLS via OpenSSL with ALPN `"h2"`: `http2_tls_serve_conn` (blocking) / `http2_tls_serve_async`; TLS 1.2 or newer, compression and renegotiation off |
 | `<sysheap>`  | `Heap`: a general heap that `mmap`s OS pages and runs `FirstFit` on them (no libc `malloc`) |
 | `<fs>`       | `fs_open`, `fs_close`, `fs_flush`, `fs_read`, `fs_readline`, `fs_write`, `fs_puts`, `fs_seek`, `fs_tell`, `fs_size`, `fs_read_all`, `fs_write_all`, `fs_eof`, `fs_error`; `fs_read_text`, `fs_write_text`, `fs_append_text`, `fs_read_lines`, `fs_stat`, `fs_exists`, `fs_is_dir`, `fs_is_file`, `fs_mkdir`, `fs_mkdir_p`, `fs_remove`, `fs_remove_all`, `fs_rename`, `fs_copy`, `fs_list_dir`, `fs_walk`, `fs_glob`, `fs_cwd`, `fs_chdir`, `fs_temp_file`, `fs_temp_dir`, `fs_last_error` |
 | `<net>`      | TCP sockets: `net_tcp_listen`, `net_accept`, `net_tcp_connect` (IPv4 address or host name), `net_send`, `net_recv`, `net_close` |
 | `<dns>`      | `dns_resolve` (IPv4 and IPv6 addresses of a host), `dns_free_list`, `dns_last_error` |
-| `<http>`     | HTTP/1.1: `HttpRequest`/`HttpResponse`, threaded `http_serve(port, workers, handler)` |
+| `<http>`     | HTTP/1.1: `HttpRequest`/`HttpResponse`, threaded `http_serve(port, workers, handler)`; `HttpLimits` (via `http_serve_with`) sets timeouts and `max_body` |
 | `<fetch>`    | HTTP client for `http://` and `https://`: `fetch`, `fetch_with` + `FetchOptions` (method, headers, body, JSON body, timeout, redirects, body cap), `fetch_async`; `Response` with `Response_header`, `Response_text`, `Response_bytes`, `Response_json`, `Response_ok`; `fetch_last_error` |
-| `<json>`     | `Json` builder + `json_parse` → `JsonValue` tree; build and edit with `JsonValue_object`/`_array`/`_set`/`_push`/`_remove`, print with `JsonValue_stringify`/`_pretty`, paths with `json_get` |
+| `<json>`     | `Json` builder + `json_parse` → `JsonValue` tree; build and edit with `JsonValue_object`/`_array`/`_set`/`_push`/`_remove`, print with `JsonValue_stringify`/`_pretty`, paths with `json_get`; `json_parse_doc` → read-only `JsonDoc` in one arena, about 3x faster |
 | `<csv>`      | RFC 4180 CSV: `csv_parse` into a `CsvTable` (`CsvTable_get(t, row, "column")`), `CsvReader` row by row, `csv_write_row` |
 | `<dotenv>`   | `.env` files: `dotenv_load`, `dotenv_load_override`, `dotenv_parse` |
 | `<hash>`     | SHA-256, SHA-1, MD5, HMAC-SHA256 (streaming and one-shot), `hash_hex_encode`/`hash_hex_decode`, `hash_equal` |
@@ -1601,6 +1650,15 @@ eskiuc file.esk --definition-at 10:5
 Both flags accept `LINE:COL` with 1-based line and column numbers and print a
 single line of output. They can also be used directly on the command line for
 scripting.
+
+For tools that read compiler errors, `--diagnostics=json` prints each error and
+warning on stderr as one JSON object per line, with a stable `id` per kind of
+diagnostic, the position and range, and any "did you mean" hint:
+
+```bash
+eskiuc bad.esk --diagnostics=json
+# {"severity":"error","id":"undefined-variable","message":"undefined variable 'cout'","file":"bad.esk","line":3,"col":12,"end_line":3,"end_col":16,"hints":["did you mean 'count'?"],"notes":[]}
+```
 
 ---
 

@@ -30,7 +30,7 @@ compiling in every 0.15.x, and later changes are announced by warnings first
 | **Literals** | Decimal, hex `0xFF`, octal `0755`, float (`1.5`, `2.5e-3`), string (with adjacent concat), char, bool, null; no suffixes (`3.5f`, `1_000` are errors) |
 | **Operators** | Arithmetic `+ - * / %`, bitwise `& \| ^ ~ << >>`, comparison, logical, compound `+= -=` etc., `++`/`--`, ternary `c ? a : b`, typed pointer arith `ptr+n` (advances by `sizeof(*ptr)`), `sizeof(T)`, user-defined `operator` overloads |
 | **Control flow** | `if`/`else`, `for` (with decl init), `for (x in ...)`, `while`, `do`/`while`, `switch`/`case`, `match`, `break`/`continue` (optionally labeled), `return`, `defer`/`errdefer` |
-| **Functions** | C-style, `extern` C ABI (functions and global variables), variadic, template `fn<T>(T x)` |
+| **Functions** | C-style, `extern` C ABI (functions and global variables), variadic, template `fn<T>(T x)`, default parameter values (`src_file()`/`src_line()`/`src_col()` record the call site), `export` C entry points (`--emit-header` writes their C header) |
 | **Lambdas / Closures** | `int(int x) { return x * 2; }`: anonymous functions; `fn(T,...)->R` fat-pointer types; closure capture by value; higher-order functions |
 | **Threads** | `thread_create(fn()->void)` / `thread_join(*void)`: OS thread keywords; closure fat pointer maps directly to pthread ABI |
 | **Exceptions** | `try`/`catch`/`finally`/`throw`: LLVM `invoke`/`landingpad`, Itanium ABI; multiple `catch` clauses; the driver links the C++ runtime |
@@ -103,6 +103,7 @@ postfix     f() a[i] a.b ++ -- ?
 | `--target TRIPLE`           | Cross-compile for the given target triple        |
 | `--mcpu` / `--mattr` / `--reloc` | Target CPU, feature string, relocation model |
 | `--freestanding`            | Use `esk_alloc`/`esk_free` instead of libc      |
+| `--emit-header FILE`        | Write the C header of the program's `export` functions |
 | `-ffp-contract=fast`        | Allow fused multiply-add (default `off`: each float operation rounds) |
 | `-fstrict-aliasing`         | C's aliasing rule for the optimizer (default off: pointer casts may pun) |
 | `--test-lexer`              | Print token stream                              |
