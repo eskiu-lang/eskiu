@@ -244,6 +244,7 @@ private:
     // buildScriptMain). The statements and the top-level variables, in order.
     bool startsScriptStatement() const;
     bool exportAhead() const;
+    bool declarationRuledOut() const;
     std::vector<std::pair<StmtPtr, VarDecl*>> scriptOrder;
     void buildScriptMain(std::vector<DeclPtr>& decls);
     StmtPtr parseBlockStatement();

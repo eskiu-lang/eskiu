@@ -174,6 +174,50 @@ StmtPtr Parser::parseStatement() {
     return parseExpressionStatement(true);
 }
 
+// Can the block item at the cursor, starting with an identifier or a `*`, not be a
+// declaration? It mirrors what parseDeclaration accepts there (a type as parseType reads
+// it, then a name or `operator`) over the tokens alone, so the common statements
+// (`f(x);`, `a.b = c;`, `a[i] = v;`, `*p = v;`) skip the speculative declaration parse,
+// whose failure is a thrown ParseError (the parser's largest cost). It answers false
+// (try the declaration) whenever the tokens leave a doubt: a `<`, a contextual keyword,
+// a type long enough to reach the nesting limit.
+bool Parser::declarationRuledOut() const {
+    size_t i = current;
+    auto at = [&](size_t k) -> TokenType {
+        return k < tokens.size() ? tokens[k].type : TokenType::EOF_TOKEN;
+    };
+    int levels = 0;
+    if (at(i) == TokenType::IDENT) {
+        const std::string& v = tokens[i].value;
+        if (v == "deprecated" || v == "export" || v == "type") return false;
+    } else if (at(i) == TokenType::STAR) {
+        while (at(i) == TokenType::STAR) {
+            ++i; ++levels;
+            if (at(i) == TokenType::QUESTION && at(i + 1) == TokenType::STAR) ++i;
+        }
+        if (at(i) != TokenType::IDENT && !isPrimitiveTypeToken(at(i))) return false;
+    } else {
+        return false;
+    }
+    ++i;
+    if (at(i) == TokenType::LT) return false;
+    while (at(i) == TokenType::STAR) {
+        ++i; ++levels;
+        if (at(i) == TokenType::CONST) ++i;
+    }
+    while (at(i) == TokenType::LBRACKET) {
+        ++levels;
+        while (at(i) != TokenType::RBRACKET && at(i) != TokenType::EOF_TOKEN) ++i;
+        if (at(i) != TokenType::RBRACKET) return false;
+        ++i;
+    }
+    if (levels >= 64) return false;
+    TokenType nt = at(i);
+    if (nt == TokenType::IDENT || nt == TokenType::OPERATOR) return false;
+    if (nt >= TokenType::LET && nt <= TokenType::UINT64) return false;
+    return true;
+}
+
 // A block item: a local declaration, or else a statement.
 BlockItem Parser::parseBlockItem() {
     // `a * b;` with `a` a variable in scope is an expression (C: a variable name is not
@@ -188,7 +232,7 @@ BlockItem Parser::parseBlockItem() {
         check(TokenType::FN) ||         // `fn(int)->int f = ...` (fn only names a type)
         check(TokenType::LET) ||
         check(TokenType::STAR) || check(TokenType::IDENT) ||
-        isPrimitiveTypeToken(peek().type))) {
+        isPrimitiveTypeToken(peek().type)) && !declarationRuledOut()) {
 
         DeclPtr decl = speculateIf([&]() -> DeclPtr {
             DeclPtr d = parseDeclaration();
