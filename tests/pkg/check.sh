@@ -383,4 +383,15 @@ else
     bad "lock/relative-path" "$(cd "$work/moved2/app" && "$ESKIUC" run 2>&1 | head -3)"
 fi
 
+# ---- eskiu.toml edited after the lock: a direct compile resolves it again ------
+cp -R "$work/moved2/util" "$work/moved2/util3"
+printf 'int util_twice(int x) { return x * 3; }\n' > "$work/moved2/util3/math.esk"
+sed -i.bak 's|"../util"|"../util3"|' "$work/moved2/app/eskiu.toml"
+if (cd "$work/moved2/app" && "$ESKIUC" src/main.esk -o "$work/relock" > /dev/null 2>&1) &&
+        [[ "$("$work/relock")" == "63" ]] && grep -q "^util	path	../util3$" "$work/moved2/app/eskiu.lock"; then
+    ok "lock/manifest-edited"
+else
+    bad "lock/manifest-edited" "$(cat "$work/moved2/app/eskiu.lock" 2>&1)"
+fi
+
 exit $fail

@@ -849,6 +849,27 @@ std::vector<LockEntry> resolveAndLock(const Manifest& root, bool update) {
     return entries;
 }
 
+// Whether every direct dependency of m has its lock entry: the same kind, URL and rev for a
+// git one, the same directory for a path one. A dependency edited in eskiu.toml (git to a
+// local checkout, another rev) does not, and the lock is resolved again.
+bool lockMatchesManifest(const Manifest& m, const std::map<std::string, LockEntry>& lock) {
+    for (const auto& d : m.deps) {
+        if (d.name == m.name) continue;
+        auto l = lock.find(d.name);
+        if (l == lock.end()) return false;
+        const LockEntry& e = l->second;
+        if (d.isGit) {
+            if (e.kind != "git" || e.url != d.git || e.rev != (d.rev.empty() ? "HEAD" : d.rev)) return false;
+        } else {
+            fs::path p(d.path);
+            if (p.is_relative()) p = fs::path(m.dir) / p;
+            std::error_code ec;
+            if (e.kind != "path" || fs::weakly_canonical(p, ec).generic_string() != e.path) return false;
+        }
+    }
+    return true;
+}
+
 Manifest manifestFromCwd() {
     std::string root = findPackageRoot(".");
     if (root.empty())
@@ -1112,6 +1133,19 @@ void pkgLoadRoots(const std::string& input, const std::string& triple) {
     std::map<std::string, LockEntry> lock;
     try {
         lock = readLock(root);
+        // eskiu.toml edited since the lock was written: resolve it again, as eskiuc build
+        // does (a git dependency whose URL and rev did not change needs no git call).
+        Manifest m;
+        bool manifestOk = true;
+        try {
+            m = readManifest(root);
+        } catch (const PkgError&) {
+            manifestOk = false;
+        }
+        if (manifestOk && !lockMatchesManifest(m, lock)) {
+            resolveAndLock(m, false);
+            lock = readLock(root);
+        }
         for (const auto& kv : lock) packageRoots.roots[kv.first] = kv.second.root(root);
     } catch (const std::exception& e) {
         std::cerr << "error: " << e.what() << std::endl;
