@@ -1103,11 +1103,12 @@ std::string androidNdk() {
     return "";
 }
 
-// The C driver a --target build for WebAssembly, Android or iOS uses when $CC is not
-// set, with the arguments that select the target: emcc for emscripten, clang with
-// --target for the other wasm32 triples (the LLVM toolchain's own, which has the
-// WebAssembly backend and wasm-ld), the NDK's clang for Android (from
-// $ANDROID_NDK_HOME or $ANDROID_NDK_ROOT) and `xcrun -sdk iphoneos clang` for iOS.
+// The C driver a --target build for WebAssembly, Android, iOS or the other macOS
+// architecture uses when $CC is not set, with the arguments that select the target: emcc
+// for emscripten, clang with --target for the other wasm32 triples (the LLVM toolchain's
+// own, which has the WebAssembly backend and wasm-ld), the NDK's clang for Android (from
+// $ANDROID_NDK_HOME or $ANDROID_NDK_ROOT), `xcrun -sdk iphoneos clang` for iOS, and on a
+// Mac `cc -target` for macOS.
 static bool crossDriver(const std::string& triple, std::string& driver, std::vector<std::string>& args) {
     auto has = [&](const char* s) { return triple.find(s) != std::string::npos; };
     if (triple.rfind("wasm32", 0) == 0 && has("emscripten")) {
@@ -1145,6 +1146,17 @@ static bool crossDriver(const std::string& triple, std::string& driver, std::vec
         args = {"-sdk", has("simulator") ? "iphonesimulator" : "iphoneos", "clang", "-target", triple};
         return true;
     }
+#ifdef __APPLE__
+    // The other macOS architecture from a Mac (x86_64 from Apple silicon, or arm64 from an
+    // Intel Mac): the system cc links it when told the target.
+    if (has("apple") && (has("-macos") || has("-darwin"))) {
+        auto p = llvm::sys::findProgramByName("cc");
+        if (!p) return false;
+        driver = *p;
+        args = {"-target", triple};
+        return true;
+    }
+#endif
     return false;
 }
 

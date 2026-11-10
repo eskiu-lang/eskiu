@@ -639,6 +639,11 @@ if [[ "$(uname -s)" == Darwin ]]; then
     mac_out=$("$ESKIUC" "$work/obj.esk" -o "$work/objexe" 2>&1)
     if [[ "$mac_out" != *"built for newer"* ]]; then ok "cli/macos-version"
     else bad "cli/macos-version" "$mac_out"; fi
+    # The other macOS architecture links in one step (cc -target).
+    case "$(uname -m)" in arm64) other=x86_64 ;; *) other=arm64 ;; esac
+    if "$ESKIUC" "$work/obj.esk" --target "$other-apple-macosx11.0" -o "$work/objother" >/dev/null 2>&1 \
+        && file "$work/objother" | grep -q "$other"; then ok "cli/macos-other-arch"
+    else bad "cli/macos-other-arch" "no $other executable"; fi
 fi
 
 # `--help` documents the subcommands and lists only Eskiu's options (the LLVM
