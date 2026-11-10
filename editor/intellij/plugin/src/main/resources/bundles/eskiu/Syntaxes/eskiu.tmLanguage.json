@@ -270,6 +270,11 @@
           "match": "\\b(const|volatile|static|escaping|must_use|async)\\b"
         },
         {
+          "comment": "export before a function or type declaration (a contextual word, not a keyword)",
+          "name": "storage.modifier.eskiu",
+          "match": "^\\s*export(?=\\s+[*A-Za-z_])"
+        },
+        {
           "comment": "deprecated(\"use X\") before a declaration (a contextual word, not a keyword)",
           "name": "storage.modifier.eskiu",
           "match": "^\\s*deprecated(?=\\s*\\(\\s*\")"
