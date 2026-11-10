@@ -4,7 +4,7 @@
 
 Install with `curl -fsSL https://eskiu-lang.org/install.sh | sh -s -- --with-ui` (the compiler and the ui tool), then run `eskiuc doctor` to see what each kind of build needs. Syntax is close to C: structs with methods called with dot syntax (`String_append(&s, x)` is `s.append(x)`), `let` with type annotations, generics, sum types with exhaustive `match`, `defer`, `?` to propagate errors, and `import <module>;` for the standard library. Memory is manual (`alloc<T>(n)` returns zeroed memory, `free(p)`). `fn`, `in` and `match` are keywords.
 
-MCP server: `https://eskiu-mcp-9450.orvex.cloud/mcp` (remote, no key). It searches the compiler, the standard library and the docs, and runs code: `eskiu_run` compiles and runs a file, `eskiu_ui_render` builds a ui app for the web, applies `ui agent` operations and returns a screenshot, `eskiu_ui_test` runs a `.uitest` file.
+MCP server: `https://eskiu-mcp-9450.orvex.cloud/mcp` (remote, no key). It searches the compiler, the standard library and the docs, and runs code: `eskiu_run` compiles and runs a program, `eskiu_ui_render` builds a ui app for the web, applies `ui agent` operations and returns a screenshot, `eskiu_ui_test` runs a `.uitest` file. Each takes `main.esk` as `code` and the files it imports as `files`.
 
 ## Start here
 
