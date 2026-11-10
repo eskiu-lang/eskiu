@@ -113,6 +113,19 @@ ui test web --json</code></pre>
       starts with one, and with an <code>AGENTS.md</code> that tells an agent how to work on it.
     </p>
 
+    <h2>Without a computer of its own</h2>
+    <p>
+      An agent that only talks (Claude, ChatGPT and other MCP clients) reaches Eskiu through its
+      MCP server, a remote URL with no key:
+    </p>
+    <pre><code>https://eskiu-mcp-9450.orvex.cloud/mcp</code></pre>
+    <p>
+      It searches the compiler, the standard library and the docs, and runs code on a worker:
+      <code>eskiu_run</code> compiles and runs a file, <code>eskiu_ui_render</code> builds a ui
+      app for the web, applies <code>ui agent</code> operations and returns a screenshot, and
+      <code>eskiu_ui_test</code> runs a <code>.uitest</code> file against it.
+    </p>
+
     <h2>Reference</h2>
     <ul>
       <li><a href="llms.txt">llms.txt</a>: the pages an agent should read first.</li>

@@ -114,6 +114,19 @@ ui test web --json</code></pre>
       cómo trabajar en ella.
     </p>
 
+    <h2>Sin computadora propia</h2>
+    <p>
+      Un agente que solo conversa (Claude, ChatGPT y otros clientes MCP) llega a Eskiu por su
+      servidor MCP, una URL remota sin clave:
+    </p>
+    <pre><code>https://eskiu-mcp-9450.orvex.cloud/mcp</code></pre>
+    <p>
+      Busca en el compilador, la biblioteca estándar y la documentación, y corre código en un
+      worker: <code>eskiu_run</code> compila y corre un archivo, <code>eskiu_ui_render</code>
+      construye una app de ui para la web, aplica operaciones de <code>ui agent</code> y regresa
+      una captura, y <code>eskiu_ui_test</code> corre un archivo <code>.uitest</code> contra ella.
+    </p>
+
     <h2>Referencia</h2>
     <ul>
       <li><a href="../llms.txt">llms.txt</a>: las páginas que un agente debe leer primero.</li>
