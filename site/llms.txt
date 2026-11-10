@@ -1,0 +1,42 @@
+# Eskiu
+
+> Eskiu is a self-hosting systems language on LLVM, with explicit memory and direct C interop. One compiler (`eskiuc`) builds for macOS, Linux, Windows, WebAssembly, iOS, Android, 32-bit ARM and bare metal; files run as scripts with `eskiuc run`. The `ui` framework builds native apps for phones, the web and the desktop from Eskiu code, and `ui agent` lets a coding agent drive and test them.
+
+Install with `curl -fsSL https://eskiu-lang.org/install.sh | sh -s -- --with-ui` (the compiler and the ui tool), then run `eskiuc doctor` to see what each kind of build needs. Syntax is close to C: structs with methods called with dot syntax (`String_append(&s, x)` is `s.append(x)`), `let` with type annotations, generics, sum types with exhaustive `match`, `defer`, `?` to propagate errors, and `import <module>;` for the standard library. Memory is manual (`alloc<T>(n)` returns zeroed memory, `free(p)`). `fn`, `in` and `match` are keywords.
+
+## Start here
+
+- [Eskiu for agents](https://eskiu-lang.org/agents.html): install, build, run, drive an app with `ui agent` and test it with `ui test`, with JSON answers
+- [Quickstart](https://eskiu-lang.org/quickstart.html): install and a first program
+- [The Book of Eskiu](https://eskiu-lang.org/the-book-of-eskiu.html): the whole language, chapter by chapter
+- [Getting started guide](https://eskiu-lang.org/docs/getting-started.html): the language and the standard library by example
+
+## Reference
+
+- [Language specification](https://eskiu-lang.org/docs/spec.html): every construct and its rules
+- [Grammar](https://eskiu-lang.org/docs/grammar.html)
+- [Build and tooling](https://eskiu-lang.org/docs/build.html): `eskiuc` flags, packages (`eskiu.toml`, `eskiuc add`, `eskiuc test`), cross-compilation
+- [C interop and ABIs](https://eskiu-lang.org/docs/abi.html): `extern`, structs by value, `export` and `--emit-header`
+- [Stability policy](https://eskiu-lang.org/docs/stability.html)
+- [Diagnostic ids](https://github.com/eskiu-lang/eskiu/blob/main/docs/dev/diagnostic-ids.txt): the stable ids of `--diagnostics=json`
+- [Changelog](https://eskiu-lang.org/changelog.html)
+
+## Apps with ui
+
+- [ui overview](https://eskiu-lang.org/ui.html)
+- [Components and APIs](https://eskiu-lang.org/ui-components.html)
+- [Getting started with ui](https://github.com/eskiu-lang/ui/blob/main/docs/getting-started.md)
+- [ui agent](https://github.com/eskiu-lang/ui/blob/main/docs/agents.md): every operation (tree, layout, screenshot, tap, type, scroll, back, clock, state, logs, perf) and its JSON answer
+- [ui test](https://github.com/eskiu-lang/ui/blob/main/docs/testing.md): `.uitest` steps and expectations
+
+## Packages
+
+- [Package catalog](https://eskiu-lang.org/packages.html): gpu, scene, ar, video, camera, onnx, tflite, audio, font, yaml, jni and more, each with its API reference
+- [gpu](https://github.com/eskiu-lang/gpu): WebGPU compute and rendering, glTF models, image-based lighting, YUV frames
+- [scene](https://github.com/eskiu-lang/scene): a scene graph and material renderer on gpu
+
+## Optional
+
+- [Platforms](https://eskiu-lang.org/platforms.html): WebAssembly, iOS, Android and bare metal
+- [Showcase](https://eskiu-lang.org/showcase.html): what runs on Eskiu today
+- [Source](https://github.com/eskiu-lang/eskiu): the compiler (C++ and Eskiu), the standard library and the examples

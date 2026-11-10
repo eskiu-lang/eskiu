@@ -1197,6 +1197,8 @@ NAV = [
          "Empieza", "Instálalo y corre un primer programa"),
         ("index.html#playground", "Playground", "Run code in the browser",
          "Playground", "Corre código en el navegador"),
+        ("agents.html", "For agents", "Install, drive and test Eskiu from an agent",
+         "Para agentes", "Instala, maneja y prueba Eskiu desde un agente"),
         ("@the-book-of-eskiu.html", "The Book of Eskiu", "The language, chapter by chapter",
          "El libro de Eskiu", "El lenguaje, capítulo por capítulo"),
         ("@docs/index.html", "Docs", "The specification, the standard library and the compiler",
@@ -1255,7 +1257,7 @@ NAV = [
          "Nintendo 3DS", "AR en el ARM de 32 bits de una 3DS, hecho por diversión"),
     ]),
 ]
-NAV_CURRENT = {"quickstart.html": "learn", "docs/": "learn", "packages.html": "packages",
+NAV_CURRENT = {"quickstart.html": "learn", "agents.html": "learn", "docs/": "learn", "packages.html": "packages",
                "vision.html": "packages", "gpu.html": "packages", "platforms.html": "platforms", "showcase.html": "showcase",
                "case-study-reactvision.html": "showcase", "case-study-3ds.html": "showcase",
                "case-study-identity.html": "showcase",

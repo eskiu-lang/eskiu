@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script>try{if(localStorage.getItem("eskiu-lang")==="es")location.replace("es/agents.html"+location.hash);}catch(e){}</script>
+  <title>Eskiu for agents</title>
+  <meta name="description" content="How a coding agent with its own computer installs Eskiu, builds programs and apps, drives them with ui agent and tests them with ui test, with answers in JSON." />
+  <link rel="canonical" href="https://eskiu-lang.org/agents.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Eskiu" />
+  <meta property="og:title" content="Eskiu for agents" />
+  <meta property="og:description" content="How a coding agent with its own computer installs Eskiu, builds programs and apps, drives them with ui agent and tests them with ui test, with answers in JSON." />
+  <meta property="og:url" content="https://eskiu-lang.org/agents.html" />
+  <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="icon" type="image/png" href="../assets/logo.png" />
+    <link rel="alternate" hreflang="en" href="https://eskiu-lang.org/agents.html" />
+    <link rel="alternate" hreflang="es" href="https://eskiu-lang.org/es/agents.html" />
+  <meta name="theme-color" content="#fbf8f3" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="page.css?v=02bd79b37f" />
+</head>
+<body>
+  <header class="top">
+    <div class="bar top-in">
+      <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.15.0</span></a>
+      <nav class="nav" aria-label="Main"><div class="nav-g cur"><button type="button" class="nav-t">Learn<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="quickstart.html"><b>Get started</b><span>Install it and run a first program</span></a><a href="index.html#playground"><b>Playground</b><span>Run code in the browser</span></a><a href="agents.html" aria-current="page"><b>For agents</b><span>Install, drive and test Eskiu from an agent</span></a><a href="the-book-of-eskiu.html"><b>The Book of Eskiu</b><span>The language, chapter by chapter</span></a><a href="docs/index.html"><b>Docs</b><span>The specification, the standard library and the compiler</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Packages<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="packages.html"><b>All packages</b><span>Each one is one eskiuc add away</span></a><a href="vision.html"><b>vision</b><span>Computer vision, bit for bit with C++</span></a><a href="gpu.html"><b>gpu</b><span>WebGPU compute, 3D models and Llama</span></a><a href="packages.html#onnx"><b>onnx</b><span>ONNX Runtime inference</span></a><a href="packages.html#jni"><b>jni</b><span>Java and Android with no C glue</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Platforms<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="platforms.html"><b>Overview</b><span>One compiler, every target</span></a><a href="platforms.html#wasm"><b>WebAssembly</b><span>The browser, through emscripten</span></a><a href="platforms.html#ios"><b>iOS</b><span>Static libraries for Swift and Objective-C</span></a><a href="platforms.html#android"><b>Android</b><span>Shared libraries for Kotlin and Java</span></a><a href="platforms.html#bare-metal"><b>Bare metal</b><span>Kernels and boards with no operating system</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">UI<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="ui.html"><b>Overview</b><span>Native apps for phones, the web and the desktop</span></a><a href="ui-components.html"><b>Components and APIs</b><span>Every element, hook and service</span></a><a href="ui.html#dev"><b>Developer loop</b><span>Each change on screen in a third of a second</span></a><a href="ui.html#agents"><b>Agents and tests</b><span>Drive and test the app on every platform</span></a><a href="ui.html#navigation"><b>Navigation</b><span>Screens on the phone, pages on the web</span></a><a href="ui.html#native"><b>Native code</b><span>Swift, Kotlin, Gradle and Swift packages</span></a><a href="ui.html#ship"><b>To the stores</b><span>Xcode, Android Studio, the App Store and Google Play</span></a><a href="ui.html#start"><b>Get started</b><span>The ui tool and a first app</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Showcase<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="showcase.html"><b>Built with Eskiu</b><span>What runs on it today</span></a><a href="case-study-reactvision.html"><b>ReactVision</b><span>Eskiu across an AR stack, in production</span></a><a href="case-study-identity.html"><b>Digital identity</b><span>An ISO/IEC 39794-5 core for the web and the phone</span></a><a href="case-study-3ds.html"><b>Nintendo 3DS</b><span>AR on a 3DS&#x27;s 32-bit ARM, built for fun</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+      <div class="top-right">
+        <span class="lang"><span aria-current="page">EN</span> / <a href="es/agents.html" onclick="try{localStorage.setItem('eskiu-lang','es')}catch(e){}">ES</a></span>
+        <a class="btn-install" href="index.html#install">Install 0.15.0</a>
+        <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="drawer"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg></button>
+      </div>
+    </div>
+    <nav class="drawer" id="drawer" aria-label="Main"><div class="dr-g"><span class="dr-h">Learn</span><a href="quickstart.html">Get started</a><a href="index.html#playground">Playground</a><a href="agents.html" aria-current="page">For agents</a><a href="the-book-of-eskiu.html">The Book of Eskiu</a><a href="docs/index.html">Docs</a></div><div class="dr-g"><span class="dr-h">Packages</span><a href="packages.html">All packages</a><a href="vision.html">vision</a><a href="gpu.html">gpu</a><a href="packages.html#onnx">onnx</a><a href="packages.html#jni">jni</a></div><div class="dr-g"><span class="dr-h">Platforms</span><a href="platforms.html">Overview</a><a href="platforms.html#wasm">WebAssembly</a><a href="platforms.html#ios">iOS</a><a href="platforms.html#android">Android</a><a href="platforms.html#bare-metal">Bare metal</a></div><div class="dr-g"><span class="dr-h">UI</span><a href="ui.html">Overview</a><a href="ui-components.html">Components and APIs</a><a href="ui.html#dev">Developer loop</a><a href="ui.html#agents">Agents and tests</a><a href="ui.html#navigation">Navigation</a><a href="ui.html#native">Native code</a><a href="ui.html#ship">To the stores</a><a href="ui.html#start">Get started</a></div><div class="dr-g"><span class="dr-h">Showcase</span><a href="showcase.html">Built with Eskiu</a><a href="case-study-reactvision.html">ReactVision</a><a href="case-study-identity.html">Digital identity</a><a href="case-study-3ds.html">Nintendo 3DS</a></div><a class="dr-gh" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+  </header>
+  <main class="bar article">
+    <div class="eyebrow">For coding agents</div>
+    <h1>Eskiu for agents</h1>
+    <p class="lede">
+      An agent with a computer of its own (a Linux machine, a container) can install Eskiu,
+      write programs and apps, run them, look at them and test them with the commands on this
+      page. Every answer has a form meant for a program to read.
+    </p>
+
+    <h2>Install</h2>
+    <p>The compiler and the <code>ui</code> tool, under <code>~/.eskiu</code> when <code>/usr/local</code> is not writable:</p>
+    <pre><code>curl -fsSL https://eskiu-lang.org/install.sh | sh -s -- --with-ui
+export PATH="$HOME/.eskiu/bin:$PATH"
+eskiuc doctor</code></pre>
+    <p>
+      On Windows, <code>$env:ESKIU_WITH_UI = 1; irm https://eskiu-lang.org/install.ps1 | iex</code>.
+      Or start from the container image, which already holds <code>eskiuc</code>, <code>ui</code>,
+      emscripten and Chrome:
+    </p>
+    <pre><code>docker run --rm -it ghcr.io/eskiu-lang/agent</code></pre>
+    <p>
+      <code>eskiuc doctor</code> lists what the machine has for each kind of build and what is
+      missing. A native build needs a C compiler (clang or gcc); a web app needs emscripten
+      (<code>emcc</code>) and, to drive it, Chrome or Chromium.
+    </p>
+
+    <h2>Write and run code</h2>
+    <pre><code>eskiuc run hello.esk                       <span class="c"># compile and run a file</span>
+eskiuc new tool &amp;&amp; cd tool &amp;&amp; eskiuc run     <span class="c"># a package</span>
+eskiuc test                                <span class="c"># each tests/*.esk, pass = exit 0</span>
+eskiuc main.esk -o app --diagnostics=json  <span class="c"># errors as JSON lines on stderr</span></code></pre>
+    <p>
+      With <code>--diagnostics=json</code> each error or warning is one JSON object: its severity,
+      a stable id, the message, the file and range, hints and notes. The ids are listed in
+      <a href="https://github.com/eskiu-lang/eskiu/blob/main/docs/dev/diagnostic-ids.txt">diagnostic-ids.txt</a>.
+    </p>
+
+    <h2>Build an app and look at it</h2>
+    <p>
+      <code>ui agent</code> drives the running app: it builds it, starts it in a headless Chrome
+      (on the web) or in a window, and answers each operation. <code>--json</code> gives one
+      object per operation.
+    </p>
+    <pre><code>ui new myapp &amp;&amp; cd myapp
+ui agent web --json tree
+ui agent web --json "tap add" "type title Milk" "clock settle" state
+ui agent web "screenshot shot.png"
+ui agent web --stop</code></pre>
+    <p>
+      The operations are <code>tree</code>, <code>layout</code>, <code>screenshot FILE</code>,
+      <code>tap ID</code>, <code>type ID TEXT</code>, <code>scroll ID DY</code>, <code>back</code>,
+      <code>clock +MS</code>, <code>clock settle</code>, <code>state</code>, <code>logs</code> and
+      <code>perf</code>. Elements are named by <code>Style.test_id</code>. Time moves only with
+      <code>clock</code>, so nothing changes between two operations. On a Linux machine that runs
+      as root, Chrome needs <code>UI_CHROME_ARGS=--no-sandbox</code>.
+    </p>
+    <p>
+      The same operations drive the app on macOS, Linux and Windows windows, the iOS simulator
+      and Android, when the machine has them: <code>ui agent ios ...</code>,
+      <code>ui agent android ...</code>.
+    </p>
+
+    <h2>Test it</h2>
+    <pre><code><span class="c"># tests/ui/counter.uitest</span>
+expect count text "Count: 0"
+tap Increment
+expect count text "Count: 1"
+expect screenshot counted 0.5%
+
+ui test web --json</code></pre>
+    <p>
+      A <code>.uitest</code> file runs unchanged on every platform. Every <code>ui new</code> app
+      starts with one, and with an <code>AGENTS.md</code> that tells an agent how to work on it.
+    </p>
+
+    <h2>Reference</h2>
+    <ul>
+      <li><a href="llms.txt">llms.txt</a>: the pages an agent should read first.</li>
+      <li><a href="https://github.com/eskiu-lang/ui/blob/main/docs/agents.md">ui agent</a> and <a href="https://github.com/eskiu-lang/ui/blob/main/docs/testing.md">ui test</a>: every operation and step.</li>
+      <li><a href="the-book-of-eskiu.html">The Book of Eskiu</a> and the <a href="docs/spec.html">specification</a>.</li>
+      <li><a href="packages.html">Packages</a>: each one with its API reference.</li>
+    </ul>
+  </main>
+  <footer class="foot">
+    <div class="bar foot-in">
+      <span class="brand">eskiu</span>
+      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family · MIT</span>
+      <nav class="foot-links" aria-label="Footer"><a href="docs/index.html">Docs</a><a href="the-book-of-eskiu.html">Book</a><a href="docs/internals.html">Internals</a><a href="changelog.html">Changelog</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a><a href="https://reactvision.xyz">ReactVision</a></nav>
+    </div>
+  </footer>
+  <script>(function(){var t=document.querySelector(".top"),b=document.querySelector(".menu-btn");if(!t||!b)return;b.addEventListener("click",function(){var o=t.classList.toggle("open");b.setAttribute("aria-expanded",o?"true":"false");});})();</script>
+</body>
+</html>
