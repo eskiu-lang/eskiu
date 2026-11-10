@@ -22,8 +22,8 @@
   <meta name="theme-color" content="#fbf8f3" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&amp;family=DM+Sans:wght@400;500;700&amp;family=DM+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="../page.css?v=406c48f622" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../page.css?v=02bd79b37f" />
   <style>
     .ui-hero { padding-block: 64px 24px; text-align: center; }
     .ui-hero .eyebrow { margin-bottom: 18px; }
@@ -32,10 +32,10 @@
     .ui-hero .lede { margin: 0 auto 32px; max-width: 720px; }
     .ui-cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
     .ui-cta a { display: inline-flex; align-items: center; height: 54px; padding: 0 26px; border-radius: 14px;
-                font-weight: 700; font-size: 16px; border: 1.5px solid var(--ink); }
+                font-weight: 700; font-size: 16px; border: 1px solid var(--rule); }
     .ui-cta .dark { background: var(--ink); color: var(--paper); }
-    .ui-cta .dark:hover { background: var(--purple); border-color: var(--purple); color: #fff; }
-    .ui-cta .line { color: var(--ink); background: #fff; }
+    .ui-cta .dark:hover { background: var(--purple); border-color: var(--purple); color: var(--on-accent); }
+    .ui-cta .line { color: var(--ink); background: var(--surface); }
     .ui-cta .line:hover { background: var(--ink); color: var(--paper); }
     .ui-shot { max-width: 1100px; margin: 40px auto 0; }
     .ui-shot img { display: block; width: 100%; height: auto; border: 0; border-radius: 0; box-shadow: none; }
@@ -49,7 +49,7 @@
     .ui-row ul { margin: 0 0 16px; padding-left: 1.2em; }
     .ui-row li { margin-bottom: 6px; }
     .ui-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-    .ui-stat { background: #fff; border: 1.5px solid var(--ink); border-radius: 16px; padding: 18px; }
+    .ui-stat { background: var(--surface); border: 1px solid var(--rule); border-radius: 16px; padding: 18px; }
     .ui-stat b { display: block; font-family: var(--serif); font-weight: 800; font-size: 34px; color: var(--ink);
                  letter-spacing: -0.02em; line-height: 1.1; }
     .ui-stat span { font-size: 15px; color: var(--muted); }
@@ -65,7 +65,7 @@
     .ui-wide figure { margin: 32px 0 0; }
     .ui-wide img { display: block; width: 100%; height: auto; border: 0; border-radius: 0; box-shadow: none; }
     .ui-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-top: 28px; }
-    .ui-grid div { background: #fff; border: 1.5px solid var(--rule); border-radius: 16px; padding: 18px; font-size: 15px;
+    .ui-grid div { background: var(--surface); border: 1px solid var(--rule); border-radius: 16px; padding: 18px; font-size: 15px;
                    line-height: 1.5; color: var(--ink2); }
     .ui-grid b { display: block; margin-bottom: 4px; color: var(--ink); font-size: 16px; }
     .ui-grid code { font-size: 13px; }
@@ -75,6 +75,7 @@
       .ui-row.flip > :first-child { order: 2; }
       .ui-row p, .ui-row li { font-size: 18px; }
     }
+      .ui-cta a { border-radius: 9999px; } .ui-cta .dark:hover { background: var(--ink); border-color: var(--ink); opacity: 0.85; color: var(--paper); }
   </style>
 </head>
 <body>

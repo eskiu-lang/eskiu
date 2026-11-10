@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Eskiu: un lenguaje de sistemas auto-hospedado</title>
     <meta name="description" content="Eskiu es un lenguaje de sistemas que se compila a sí mismo, con backend LLVM, memoria explícita e interoperabilidad directa con C. Un solo compilador genera programas para macOS, Linux, Windows, WebAssembly, Android e iOS, y hay paquetes para cómputo en GPU, machine learning y más." />
-    <meta name="theme-color" content="#fbf8f3" />
+    <meta name="theme-color" content="#fafafa" />
     <link rel="icon" type="image/png" href="../../assets/logo.png" />
     <link rel="canonical" href="https://eskiu-lang.org/es/index.html" />
   <meta property="og:type" content="website" />
@@ -22,8 +22,8 @@
     <link rel="alternate" hreflang="x-default" href="https://eskiu-lang.org/index.html" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,800;1,9..144,400&amp;family=DM+Sans:wght@400;500;700&amp;family=DM+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="../home.css?v=5fb53a3827" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../home.css?v=f3966b4c48" />
   </head>
   <body>
     <header class="top">
@@ -44,7 +44,7 @@
     <main>
       <section class="wrap hero">
         <div class="hero-txt">
-          <div class="hero-meta"><span class="eyebrow">v0.15.0 · código abierto · MIT</span><a class="gh-star" href="https://github.com/eskiu-lang/eskiu"><span aria-hidden="true">★</span> Estrella en GitHub</a></div>
+          <div class="hero-meta"><a class="new-badge" href="../changelog.html"><b>NUEVO</b>Eskiu 0.15: llama a Eskiu desde C, C++ y Rust</a><a class="gh-star" href="https://github.com/eskiu-lang/eskiu"><span aria-hidden="true">★</span> Estrella en GitHub</a></div>
           <h1>Escríbelo como un script. <em>Compílalo como&nbsp;C.</em></h1>
           <p class="lede">Un lenguaje de sistemas sobre LLVM que se compila a sí mismo, con memoria explícita e interoperabilidad directa con C. Un solo compilador para escritorio, la web y celulares.</p>
           <div class="cta">
@@ -83,40 +83,47 @@ llvm/llvm-project has 41179 stars
         </div>
       </section>
 
-      <section class="wrap showcase" aria-labelledby="show-h">
-        <div class="show-head"><span class="eyebrow" id="show-h">Lo que construye</span><a href="showcase.html">Todo lo hecho con Eskiu <span aria-hidden="true">→</span></a></div>
-        <div class="bento">
-          <a class="tile t-apps" href="ui.html"><img src="../../assets/ui-lab.png" alt="La app Tasks hecha con ui, en iPhone y Android" width="1200" height="1200" /><span class="cap"><span class="eyebrow">ui</span><b>Apps nativas para el celular, la web y el escritorio</b></span></a>
-          <a class="tile t-gpu" href="gpu.html"><img src="../../assets/gpu-helmet.jpg" alt="Un casco de ciencia ficción renderizado con el paquete gpu" width="1200" height="1200" /><span class="cap"><span class="eyebrow">gpu</span><b>Render físico (PBR) sobre WebGPU</b></span></a>
-          <a class="tile stat t-llama" href="gpu.html"><span class="eyebrow">gpu · Metal</span><b class="num">45</b><span class="unit">tokens por segundo</span><span class="txt">Llama 2 7B en un M4 Pro, en WGSL</span></a>
-          <a class="tile stat alt t-vision" href="../docs/self-hosting.html"><span class="eyebrow">Autohospedado</span><b class="num">574</b><span class="unit">programas, iguales en los dos compiladores</span><span class="txt">El compilador también está escrito en Eskiu y se compila a sí mismo</span></a>
-          <a class="tile t-3ds" href="case-study-3ds.html"><img src="../../assets/case-study-3ds.jpg" alt="Un programa de Eskiu corriendo en un Nintendo 3DS" width="1400" height="1050" loading="lazy" /><span class="cap"><span class="eyebrow">ARM de 32 bits</span><b>Homebrew para Nintendo 3DS</b></span></a>
-          <a class="tile t-kernel" href="https://github.com/eskiu-lang/eskiu/tree/main/kernel"><img src="../../assets/kernel.png" alt="El shell del kernel de Eskiu corriendo en QEMU" width="888" height="948" loading="lazy" /><span class="cap"><span class="eyebrow">Bare metal</span><b>Un kernel ARM64 en QEMU</b></span></a>
-          <a class="tile t-pkgs" href="packages.html"><span class="eyebrow">Paquetes</span><b>A un eskiuc add de distancia</b><span class="chips"><span>ui</span><span>gpu</span><span>onnx</span><span>tflite</span><span>compress</span><span>audio</span><span>font</span><span>jni</span><span>nds</span><span>location</span><span>camera</span><span>notifications</span></span></a>
-        </div>
-        <p class="targets"><span class="eyebrow">Plataformas</span>macOS · Linux · Windows · iOS · Android · WebAssembly · ARM de 32 bits · bare metal</p>
+      <div class="rv-stats"><div class="wrap"><div class="rv-stat"><b>574</b><span>programas, iguales con los dos compiladores</span></div><div class="rv-stat"><b>8</b><span>plataformas, del celular y la web al bare metal</span></div><div class="rv-stat"><b>217,582</b><span>casos de visión comparados bit a bit con C++</span></div><div class="rv-stat"><b>MIT</b><span>código abierto</span></div></div></div>
+      <section class="wrap rv-sec" id="stack">
+        <span class="eyebrow">El stack</span>
+        <h2>Un lenguaje, de scripts al silicio</h2>
+        <p class="rv-sub">El compilador, su biblioteca estándar, paquetes de GPU, machine learning y AR, y un framework de UI para apps nativas. Una sola herramienta, escrita en Eskiu, con herramientas que un agente puede manejar.</p>
+        <div class="rv-stack"><div class="rv-layers"><a class="rv-layer" href="../docs/index.html"><span class="rv-ico">01</span><div><small>Capa 01</small><h3>eskiuc</h3><p>El compilador, sobre LLVM: código nativo, WebAssembly y headers de C.</p></div><div class="rv-for"><small>Para</small><p>Código de sistemas, scripts y bibliotecas</p></div><span class="rv-arr" aria-hidden="true">→</span></a><a class="rv-layer" href="../the-book-of-eskiu.html"><span class="rv-ico">02</span><div><small>Capa 02</small><h3>Biblioteca estándar</h3><p>HTTP, JSON, archivos, procesos, async y regex, incluidos.</p></div><div class="rv-for"><small>Para</small><p>Herramientas de línea de comandos y servicios de red</p></div><span class="rv-arr" aria-hidden="true">→</span></a><a class="rv-layer" href="packages.html"><span class="rv-ico">03</span><div><small>Capa 03</small><h3>Paquetes</h3><p>gpu, scene, onnx, tflite, ar, video, audio y más, a un eskiuc add.</p></div><div class="rv-for"><small>Para</small><p>3D, machine learning y AR</p></div><span class="rv-arr" aria-hidden="true">→</span></a><a class="rv-layer" href="ui.html"><span class="rv-ico">04</span><div><small>Capa 04</small><h3>ui</h3><p>Apps nativas para iOS, Android, la web, macOS, Linux y Windows.</p></div><div class="rv-for"><small>Para</small><p>Apps desde un solo código</p></div><span class="rv-arr" aria-hidden="true">→</span></a></div><div class="rv-side"><small>En todo el stack</small><h3>Agentes</h3><p><code>ui agent</code> maneja y prueba la app en ejecución en cada plataforma, y el compilador reporta sus diagnósticos en JSON.</p><small>Para</small><p>Tu agente de código, construyendo, viendo y probando sin que nadie intervenga</p><a class="more" href="ui.html#agents">Agentes y pruebas →</a></div></div>
       </section>
+      <div class="wrap">
+        <div class="rv-row">
+          <div><span class="eyebrow">ui · apps nativas</span><h2>Un solo código, nativo en cada pantalla</h2><p class="rv-sub">Escribe la interfaz una vez, como funciones de Eskiu. Dibuja UIKit en iOS, android.view en Android, el DOM en la web, y AppKit, GTK 4 y Win32 en el escritorio.</p><ul class="rv-checks"><li>Los controles de cada plataforma, con su accesibilidad</li><li>Cada cambio en pantalla en un tercio de segundo con <code>ui serve</code></li><li>A la App Store y Google Play con <code>ui release</code></li></ul><a class="btn btn-line" href="ui.html">Conoce ui →</a></div>
+          <div class="rv-media"><img src="../../assets/ui-platforms.png" alt="La misma app de viajes en Eskiu en iOS, Android y la web" loading="lazy" /></div>
+        </div>
+        <div class="rv-row flip">
+          <div><span class="eyebrow">gpu · scene · onnx · ar</span><h2>3D, machine learning y AR, a un paquete de distancia</h2><p class="rv-sub">Cómputo y render con WebGPU, modelos glTF con skinning, morphs y animación, ONNX Runtime y TensorFlow Lite, y ARKit y ARCore con la cámara en la GPU.</p><ul class="rv-checks"><li>Render físico (PBR), iluminación basada en imagen y sombras</li><li>Llama 2 7B a 45 tokens por segundo en WGSL en una M4 Pro</li><li>Cuadros de cámara, video y AR subidos como YUV y convertidos en la GPU</li></ul><a class="btn btn-line" href="packages.html">Conoce los paquetes →</a></div>
+          <div class="rv-media"><img src="../../assets/gpu-helmet.jpg" alt="Un casco de ciencia ficción renderizado con el paquete gpu" loading="lazy" /></div>
+        </div>
+        <div class="rv-row">
+          <div><span class="eyebrow">ui agent · ui test</span><h2>Tu agente de código construye, ve y prueba la app</h2><p class="rv-sub">Un mismo conjunto pequeño de operaciones maneja la app en la web, iOS, Android, macOS, Linux y Windows. La prueba controla el reloj, así que nada se mueve entre pasos.</p><ul class="rv-checks"><li>Lee el árbol y el layout, toma capturas, toca, escribe y hace scroll</li><li>Los mismos archivos <code>.uitest</code> en cada plataforma</li><li>Se quita al compilar para release</li></ul><a class="btn btn-line" href="ui.html#agents">Agentes y pruebas →</a></div>
+          <div class="rv-media"><pre><span class="cm">$</span> ui agent web tree <span class="st">"tap add"</span> <span class="st">"type title Milk"</span> <span class="st">"screenshot out.png"</span>
 
-      <section class="why" aria-labelledby="why-h">
-        <div class="wrap why-in">
-          <h2 id="why-h" class="sr-only">Por qué Eskiu</h2>
-          <div class="pillar">
-            <span class="eyebrow">Rápido</span>
-            <p>Código nativo con LLVM, con memoria que tú manejas y sin recolector de basura. Las estructuras y funciones de una biblioteca de C se llaman tal como son, en cualquier plataforma.</p>
-            <a href="../docs/abi.html">Interoperabilidad con C y ABIs <span aria-hidden="true">→</span></a>
-          </div>
-          <div class="pillar">
-            <span class="eyebrow">Confiable</span>
-            <p>Sum types revisados hasta el último caso, apuntadores nullable revisados antes de usarse, <code>defer</code> para liberar recursos, y revisión de límites, overflow y nulos con <code class="nw">--safe</code>.</p>
-            <a href="../the-book-of-eskiu.html#chapter-19">Propiedad y recursos <span aria-hidden="true">→</span></a>
-          </div>
-          <div class="pillar">
-            <span class="eyebrow">Productivo</span>
-            <p>Corre un archivo como script, con HTTP, JSON, archivos y procesos en la biblioteca estándar, paquetes con un comando y un editor que entiende tu código.</p>
-            <a href="quickstart.html">Inicio rápido <span aria-hidden="true">→</span></a>
-          </div>
+<span class="cm"># tests/ui/counter.uitest</span>
+expect count text <span class="st">"Count: 0"</span>
+tap Increment
+repeat 2 tap Increment
+expect count text <span class="st">"Count: 3"</span>
+expect screenshot counted 0.5%
+
+<span class="cm">$</span> ui test web ios android macos</pre></div>
         </div>
-      </section>
+        <div class="rv-row flip">
+          <div><span class="eyebrow">export · --emit-header</span><h2>Dentro de un código existente en C o C++</h2><p class="rv-sub"><code>export</code> hace que una función se pueda llamar desde C, C++ o Rust, y <code>--emit-header</code> escribe su header. Un módulo entra a un motor archivo por archivo, y así llegó Eskiu a ViroReact.</p><ul class="rv-checks"><li>Structs por valor en el ABI de C de cada plataforma</li><li>Bibliotecas estáticas y dinámicas para iOS y Android</li><li>Sum types, <code>defer</code> y punteros nullable revisados sin costo en ejecución</li></ul><a class="btn btn-line" href="../docs/abi.html">Interop con C y ABIs →</a></div>
+          <div class="rv-media"><pre><span class="kw">export</span> <span class="kw">int</span> checksum(*uint8 data, <span class="kw">int</span> n) {
+    <span class="kw">int</span> sum = 0;
+    <span class="kw">for</span> (i <span class="kw">in</span> 0..n) sum = sum * 31 + data[i];
+    <span class="kw">return</span> sum;
+}
+
+<span class="cm">$</span> eskiuc lib.esk --emit-header lib.h
+<span class="cm">$</span> eskiuc lib.esk -o liblib.a</pre></div>
+        </div>
+      </div>
 
       <section class="wrap sec" id="built">
         <div class="sec-head">
@@ -146,79 +153,6 @@ llvm/llvm-project has 41179 stars
           <a href="https://themorrow.digital" class="user user-morrow"><img src="../../assets/morrow.png" alt="The Morrow Digital" width="622" height="88" /></a>
           <a href="case-study-identity.html" class="user">Identidad digital</a>
         </div>
-      </section>
-
-      <section class="wrap sec" id="build">
-        <div class="sec-head">
-          <span class="eyebrow">Qué puedes construir</span>
-          <h2>Un lenguaje, de scripts al silicio.</h2>
-        </div>
-        <div class="uses">
-          <a class="use use-lead" href="platforms.html#wasm">
-            <span class="tag">WebAssembly</span>
-            <h3>Compila para el navegador</h3>
-            <p>Una opción genera una página, un módulo o una biblioteca para un proyecto de emscripten que ya tengas. Las excepciones, el código async y la interoperabilidad con C funcionan ahí igual que en nativo, y el tracking de AR de ViroReact llega así a la web.</p>
-<pre><span class="cm">$</span> eskiuc app.esk --target wasm32-unknown-emscripten -o app.js</pre>
-          </a>
-          <a class="use" href="../the-book-of-eskiu.html#chapter-25">
-            <h3>Scripts y herramientas de línea de comandos</h3>
-            <p><code>eskiuc run</code> o un shebang, con argumentos, HTTP, JSON y procesos incluidos.</p>
-          </a>
-          <a class="use" href="../the-book-of-eskiu.html#chapter-23">
-            <h3>Servicios de red</h3>
-            <p>Servidores async de HTTP/1.1 y HTTP/2 sobre un solo event loop en Linux, macOS y Windows.</p>
-          </a>
-          <a class="use" href="case-study-reactvision.html">
-            <h3>Dentro de un código en C o C++</h3>
-            <p>Con <code>export</code> una función se puede llamar desde C, C++ o Rust, y <code>--emit-header</code> escribe su header de C. Un módulo entra en un motor existente un archivo a la vez, y así fue como Eskiu entró a ViroReact.</p>
-          </a>
-        </div>
-      </section>
-
-      <section class="wrap sec" id="language">
-        <div class="sec-head">
-          <span class="eyebrow">El lenguaje</span>
-          <h2>Familiar en la superficie.</h2>
-          <p>El modelo de memoria y de datos de C, con las revisiones y comodidades de un lenguaje moderno, sin costo en tiempo de ejecución.</p>
-        </div>
-        <div class="lang-grid">
-          <div class="lcard">
-            <h3>Sum types, revisados hasta el último caso</h3>
-            <p>Un enum lleva datos en cada variante. Si un <code>match</code> deja fuera un caso, no compila.</p>
-<pre><span class="kw">match</span> parse_port(<span class="st">"8080"</span>) {
-    Port(p)         -&gt; serve(p);
-    InvalidRange(n) -&gt; warn(n);
-    NotANumber      -&gt; fail();
-}</pre>
-          </div>
-          <div class="lcard">
-            <h3>Matemáticas que se leen como matemáticas</h3>
-            <p>Los genéricos con restricciones se monomorfizan; la sobrecarga de operadores se resuelve por el tipo de los operandos y compila a llamadas directas.</p>
-<pre><span class="ty">V3</span> <span class="kw">operator</span> +(<span class="ty">V3</span> a, <span class="ty">V3</span> b) { ... }
-<span class="ty">V3</span> <span class="kw">operator</span> *(<span class="ty">V3</span> v, <span class="ty">float</span> s) { ... }
-
-<span class="kw">let</span> mid: <span class="ty">V3</span> = (a + b) * 0.5;</pre>
-          </div>
-          <div class="lcard">
-            <h3>async, await y canales tipados</h3>
-            <p>Un solo reactor sobre kqueue, epoll o WSAPoll: el mismo código de red corre en Linux, macOS y Windows.</p>
-<pre><span class="kw">async</span> <span class="ty">int</span> sum_squares(<span class="ty">Chan</span>&lt;<span class="ty">int</span>&gt;* ch) {
-    <span class="kw">let</span> a: <span class="ty">int</span> = <span class="kw">await</span> Chan_recv(ch);
-    <span class="kw">let</span> b: <span class="ty">int</span> = <span class="kw">await</span> Chan_recv(ch);
-    <span class="kw">return</span> a + b;
-}</pre>
-          </div>
-          <div class="lcard">
-            <h3>Una biblioteca estándar para scripts</h3>
-            <p>Pide una URL por HTTPS, recorre un directorio, ejecuta un comando, lee JSON y CSV, con módulos que vienen con el compilador.</p>
-<pre><span class="kw">let</span> r: <span class="ty">Response</span>;
-fetch(<span class="st">"https://api.github.com/repos/x/y"</span>, &amp;r);
-<span class="kw">defer</span> Response_free(&amp;r);
-println(JsonValue_as_cstr(json_get(
-    Response_json(&amp;r), <span class="st">"owner.login"</span>)));</pre>
-          </div>
-        </div>
-        <p class="aside">El compilador también está escrito en Eskiu: todo el pipeline se recompila a sí mismo hasta la misma salida en un bootstrap de tres etapas. <a href="../docs/self-hosting.html">Cómo hace bootstrap →</a></p>
       </section>
 
       <section class="wrap sec" id="compare">
