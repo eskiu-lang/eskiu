@@ -7,6 +7,16 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- Compiling a file of a package directly (`eskiuc src/main.esk`, what `ui` runs) used
+  `eskiu.lock` as it was after a dependency was edited in `eskiu.toml` (switched from git to
+  a local `path`, or to another rev), so the old source was built until `eskiuc fetch`. It
+  now resolves the dependencies again when the lock does not match the manifest, as
+  `eskiuc build` does.
+
 ## [0.15.0] - 2026-11-09
 
 ### Added

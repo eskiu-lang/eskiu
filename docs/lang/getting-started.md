@@ -1421,8 +1421,10 @@ eskiuc fetch                    # re-resolve the dependencies, rewrite eskiu.loc
 
 `eskiuc run file.esk` still compiles and runs that one file, inside a package or not, and
 compiling any file of a package (`eskiuc src/tool.esk -o tool`) resolves package imports
-from the lock. The self-hosted `eskiuc-esk` reads the lock the same way; the package
-commands themselves are in the C++ `eskiuc` only.
+from the lock. When `eskiu.toml` names a dependency the lock does not have as written (you
+switched it to a local `path`, or to another rev), that compile resolves the dependencies
+again and rewrites the lock first, as `eskiuc build` does. The self-hosted `eskiuc-esk`
+reads the lock as it is; the package commands themselves are in the C++ `eskiuc` only.
 
 ---
 
