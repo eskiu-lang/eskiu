@@ -144,6 +144,8 @@ a:hover .more { color: var(--ink); }
 .pcard-lead .more { color: #fff; }
 .pstat { display: flex; flex-wrap: wrap; gap: 8px 28px; margin-top: 6px; padding-top: 16px; border-top: 1px solid rgba(251, 248, 243, 0.18); font-size: 15px; color: #d8d2e6; }
 .pstat strong { display: block; font-family: var(--serif); font-weight: 800; font-size: 34px; letter-spacing: -0.02em; color: #fff; line-height: 1.1; }
+.pcard:not(.pcard-lead) .pstat { border-top-color: rgba(28, 24, 48, 0.12); color: var(--muted); }
+.pcard:not(.pcard-lead) .pstat strong { color: var(--ink); }
 @media (min-width: 900px) {
   .sec { padding-block: 104px 8px; gap: 48px; }
   .prod-grid { grid-template-columns: 1.3fr 1fr; gap: 24px; }
