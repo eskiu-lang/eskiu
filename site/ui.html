@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script>try{if(localStorage.getItem("eskiu-lang")==="es")location.replace("es/ui.html"+location.hash);}catch(e){}</script>
   <title>UI · Eskiu</title>
-  <meta name="description" content="ui is a reactive UI framework in Eskiu: one codebase that draws UIKit views on iOS, android.view views on Android, the DOM on the web and a webview on macOS, Linux and Windows, with navigation, native modules and a component kit." />
+  <meta name="description" content="ui is a reactive UI framework in Eskiu: one codebase that draws UIKit views on iOS, android.view views on Android, the DOM on the web, AppKit on macOS, GTK 4 on Linux and Win32 on Windows, with navigation, native modules, a component kit and tools for agents and tests." />
   <link rel="canonical" href="https://eskiu-lang.org/ui.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
   <meta property="og:title" content="UI · Eskiu" />
-  <meta property="og:description" content="ui is a reactive UI framework in Eskiu: one codebase that draws UIKit views on iOS, android.view views on Android, the DOM on the web and a webview on macOS, Linux and Windows, with navigation, native modules and a component kit." />
+  <meta property="og:description" content="ui is a reactive UI framework in Eskiu: one codebase that draws UIKit views on iOS, android.view views on Android, the DOM on the web, AppKit on macOS, GTK 4 on Linux and Win32 on Windows, with navigation, native modules, a component kit and tools for agents and tests." />
   <meta property="og:url" content="https://eskiu-lang.org/ui.html" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
   <meta property="og:image:width" content="1200" />
@@ -93,12 +93,12 @@
   </header>
   <main>
     <section class="bar ui-hero">
-      <div class="eyebrow">eskiu-lang/ui · v0.3.0 · preview</div>
+      <div class="eyebrow">eskiu-lang/ui · v0.4.0 · preview</div>
       <h1>Native apps, written in Eskiu</h1>
       <p class="lede">
         Write the interface once as Eskiu functions. It draws UIKit views on iOS,
-        <code>android.view</code> views on Android and the DOM on the web, and runs in a webview
-        on macOS, Linux and Windows, from the same code.
+        <code>android.view</code> views on Android, the DOM on the web, AppKit on macOS, GTK 4 on
+        Linux and Win32 on Windows, from the same code.
       </p>
       <div class="ui-cta">
         <a class="dark" href="https://github.com/eskiu-lang/ui/blob/main/docs/getting-started.md">Get started</a>
@@ -153,9 +153,9 @@ void Counter() {
             <div><b>iOS</b>UIKit, from Objective-C++</div>
             <div><b>Android</b>android.view, from Java and JNI</div>
             <div><b>Web</b>The DOM, from WebAssembly</div>
-            <div><b>macOS</b>The web host in a WKWebView window</div>
-            <div><b>Linux</b>The web host in WebKitGTK</div>
-            <div><b>Windows</b>The web host in WebView2</div>
+            <div><b>macOS</b>AppKit, from Objective-C++</div>
+            <div><b>Linux</b>GTK 4, from C++</div>
+            <div><b>Windows</b>Win32 common controls, from C++</div>
           </div>
         </div>
         <img src="../assets/ui-lab.png" alt="An Eskiu task app on iOS and Android: a progress card, filters and a list of tasks with colored tags" width="1200" height="1200" loading="lazy" />
@@ -198,8 +198,8 @@ void Counter() {
             code in the same process, so nothing is installed or launched again.
           </p>
           <p>
-            A build that fails shows the compiler's errors over the app until the next one
-            works.
+            A reload keeps the screen you were on and the values of your signals. A build that
+            fails shows the compiler's errors over the app until the next one works.
           </p>
           <div class="ui-stats">
             <div class="ui-stat"><b>0.3 s</b><span>from saving to the change on the iOS simulator</span></div>
@@ -216,6 +216,43 @@ Restarted the app on the new build
 ui: built in 0.3 s
 
 <span class="c"># measured with the kit gallery on an Apple-silicon Mac</span></code></pre>
+      </section>
+
+      <section class="ui-row" id="agents">
+        <div>
+          <h2>Built for agents and tests</h2>
+          <p>
+            <code>ui agent</code> drives the running app on the web, iOS, Android, macOS, Linux
+            and Windows with one small set of operations: read the element tree and the layout,
+            take a screenshot, tap, type, scroll, go back, and read the state, the logs and the
+            frame times. A coding agent can build a screen, look at it and try it without a
+            person in the loop.
+          </p>
+          <p>
+            The test owns the clock. Animations and timers move only when a step says
+            <code>clock +300</code> or <code>clock settle</code>, so nothing changes between two
+            steps and a test never sleeps. <code>ui test</code> runs the same
+            <code>.uitest</code> files on every host, and checks text, state, frames and
+            screenshots. With Eskiu 0.15 the tree and runtime errors name each element's source
+            line.
+          </p>
+          <p>
+            None of this is in a release build: the driver is compiled out. Every
+            <code>ui new</code> app starts with a test and an <code>AGENTS.md</code>, and the
+            ui repository's CI runs the same checks on every host with speed budgets.
+          </p>
+        </div>
+        <pre><code>$ ui agent web tree "tap add" "type title Milk" "screenshot out.png"
+$ ui agent ios --json tap add clock settle layout
+
+<span class="c"># tests/ui/counter.uitest</span>
+expect count text "Count: 0"
+tap Increment
+repeat 2 tap Increment
+expect count text "Count: 3"
+expect screenshot counted 0.5%
+
+$ ui test web ios android macos</code></pre>
       </section>
 
       <section class="ui-wide" id="kit">
@@ -369,6 +406,11 @@ permissions = ["android.permission.CAMERA"]</code></pre>
             <code>.exe</code>, each with an archive to distribute, and a zip of the web build to
             deploy.
           </p>
+          <p>
+            <code>ui publish</code> makes a signed update of images, sounds and other assets that
+            installed apps pick up without a store release. On the web the first screen is
+            rendered into the page at build time, so it shows before the WebAssembly loads.
+          </p>
         </div>
         <pre><code><span class="c"># ui.toml</span>
 [app]
@@ -392,7 +434,8 @@ android: build/ui/android/release/Explore.aab</code></pre>
           <p>
             The <code>ui</code> tool makes a project and builds or runs it on each platform. It
             needs emscripten for the web, Xcode for iOS and the Android SDK for Android, and on
-            the desktop a C compiler with WebKitGTK on Linux or MinGW-w64 or MSVC on Windows.
+            the desktop Xcode's command line tools on macOS, a C++ compiler with GTK 4 on Linux,
+            or MinGW-w64 on Windows.
           </p>
           <p>
             Every element, hook and service is listed in
@@ -414,7 +457,7 @@ ui serve          <span class="c"># or ui serve ios, android, macos</span></code
 
       <p class="note ui-note">
         ui is in preview. Views are written with trailing blocks: <code>Column(Style{padding: 16}) { ... }</code>
-        passes the block as the call's last argument. It needs Eskiu 0.14 or newer.
+        passes the block as the call's last argument. It needs Eskiu 0.14.1 or newer, and 0.15 for source lines in the tree and in runtime errors.
       </p>
     </div>
   </main>
