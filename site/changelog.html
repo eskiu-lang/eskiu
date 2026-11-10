@@ -239,6 +239,15 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <h2 id="unreleased">[Unreleased]</h2>
 <details class="cl-full">
 <summary>Details</summary>
+<h3 id="added">Added</h3>
+<ul>
+<li><code>install.sh --with-ui</code> (<code>ESKIU_WITH_UI=1</code> for <code>install.ps1</code>) also installs the <code>ui</code> tool
+  from eskiu-lang/ui's release, checked against its SHA256SUMS; <code>install.ps1</code> keeps
+  <code>ui.exe</code> across an update of <code>eskiuc</code>.</li>
+<li>The site has a page for coding agents (<code>agents.html</code>: install, <code>--diagnostics=json</code>,
+  <code>ui agent web --json</code>, <code>ui test</code>, the <code>ghcr.io/eskiu-lang/agent</code> image and the MCP
+  server) and an <code>llms.txt</code>.</li>
+</ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
 <li>Compiling a file of a package directly (<code>eskiuc src/main.esk</code>, what <code>ui</code> runs) used
@@ -246,12 +255,15 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
   a local <code>path</code>, or to another rev), so the old source was built until <code>eskiuc fetch</code>. It
   now resolves the dependencies again when the lock does not match the manifest, as
   <code>eskiuc build</code> does.</li>
+<li><code>--target</code> for the other macOS architecture on a Mac (<code>x86_64-apple-macosx11.0</code> from
+  Apple silicon, or arm64 from an Intel Mac) linked the object as the host's architecture and
+  failed; the driver now links it with <code>cc -target</code>.</li>
 </ul>
 </details>
 <h2 id="0150-2026-11-09">[0.15.0] - 2026-11-09</h2>
 <details class="cl-full">
 <summary>Details</summary>
-<h3 id="added">Added</h3>
+<h3 id="added_1">Added</h3>
 <ul>
 <li><code>--diagnostics=json</code> prints errors and warnings on stderr as JSON lines, one object per
   diagnostic: severity, a stable <code>id</code> per kind (<code>undefined-variable</code>), message, file,
@@ -383,7 +395,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <h2 id="0141">[0.14.1]</h2>
 <details class="cl-full">
 <summary>Details</summary>
-<h3 id="added_1">Added</h3>
+<h3 id="added_2">Added</h3>
 <ul>
 <li>Native EIR backends that skip LLVM's code generator: <code>--emit-asm</code> (ARM64), <code>--emit-c</code>
   (C99), <code>--emit-obj</code>, and <code>--backend=eir</code>, which builds through the normal driver
@@ -476,7 +488,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <h2 id="0140">[0.14.0]</h2>
 <details class="cl-full">
 <summary>Details</summary>
-<h3 id="added_2">Added</h3>
+<h3 id="added_3">Added</h3>
 <ul>
 <li><code>catch (_)</code> catches any exception without binding a variable; it is the last catch of a
   <code>try</code>. <code>exception_text()</code>, inside any catch, describes what was caught as the

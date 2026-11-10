@@ -9,6 +9,15 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ## [Unreleased]
 
+### Added
+
+- `install.sh --with-ui` (`ESKIU_WITH_UI=1` for `install.ps1`) also installs the `ui` tool
+  from eskiu-lang/ui's release, checked against its SHA256SUMS; `install.ps1` keeps
+  `ui.exe` across an update of `eskiuc`.
+- The site has a page for coding agents (`agents.html`: install, `--diagnostics=json`,
+  `ui agent web --json`, `ui test`, the `ghcr.io/eskiu-lang/agent` image and the MCP
+  server) and an `llms.txt`.
+
 ### Fixed
 
 - Compiling a file of a package directly (`eskiuc src/main.esk`, what `ui` runs) used

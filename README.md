@@ -166,6 +166,10 @@ curl -fsSL https://eskiu-lang.org/install.sh | sh
 eskiuc doctor
 ```
 
+`sh -s -- --with-ui` also installs the `ui` tool for native apps (on Windows, set
+`ESKIU_WITH_UI=1` first). Coding agents: [Eskiu for agents](https://eskiu-lang.org/agents.html)
+and [llms.txt](https://eskiu-lang.org/llms.txt).
+
 On Windows (x86-64):
 
 ```powershell
