@@ -16,6 +16,9 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   a local `path`, or to another rev), so the old source was built until `eskiuc fetch`. It
   now resolves the dependencies again when the lock does not match the manifest, as
   `eskiuc build` does.
+- `--target` for the other macOS architecture on a Mac (`x86_64-apple-macosx11.0` from
+  Apple silicon, or arm64 from an Intel Mac) linked the object as the host's architecture and
+  failed; the driver now links it with `cc -target`.
 
 ## [0.15.0] - 2026-11-09
 
