@@ -12,6 +12,8 @@
 #   ESKIU_VERSION       the release tag to install (default: the latest), e.g. v0.14.0
 #   ESKIU_PREFIX        where to unpack it (default: %USERPROFILE%\.eskiu)
 #   ESKIU_TOOLCHAIN     1: install llvm-mingw even with a C driver on PATH; 0: never
+#   ESKIU_WITH_UI       1: also install the ui tool (eskiu-lang/ui) as bin\ui.exe
+#   UI_VERSION          the ui release tag to install (default: the latest)
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -53,11 +55,16 @@ try {
 
     # Replace an earlier install's files, not anything else in the prefix.
     New-Item -ItemType Directory -Force -Path $prefix | Out-Null
+    # The ui tool, when installed, is kept across an update of eskiuc.
+    $uiExe = Join-Path $prefix 'bin\ui.exe'
+    $uiKeep = Join-Path $tmp 'ui.exe'
+    if (Test-Path $uiExe) { Copy-Item $uiExe $uiKeep }
     foreach ($dir in 'bin', 'lib') {
         $old = Join-Path $prefix $dir
         if (Test-Path $old) { Remove-Item -Recurse -Force $old }
     }
     Expand-Archive -Path $zip -DestinationPath $prefix -Force
+    if (Test-Path $uiKeep) { Copy-Item $uiKeep $uiExe }
 } finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
@@ -76,6 +83,37 @@ $env:Path = "$bin;$env:Path"
 
 $installed = & $exe --version
 Write-Host "Installed $installed to $exe"
+
+# The ui tool (eskiu-lang/ui): one binary, bin\ui.exe, next to eskiuc.
+if ($env:ESKIU_WITH_UI -eq '1') {
+    $uiVersion = if ($env:UI_VERSION) { $env:UI_VERSION } else { 'latest' }
+    $uiBase = if ($uiVersion -eq 'latest') { 'https://github.com/eskiu-lang/ui/releases/latest/download' }
+              else { "https://github.com/eskiu-lang/ui/releases/download/$uiVersion" }
+    $uiAsset = 'ui-windows-x86_64.zip'
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ('eskiu-ui-' + [Guid]::NewGuid())
+    New-Item -ItemType Directory -Path $tmp | Out-Null
+    try {
+        $zip = Join-Path $tmp $uiAsset
+        Write-Host "Downloading $uiAsset ($uiVersion) ..."
+        Invoke-WebRequest -Uri "$uiBase/$uiAsset" -OutFile $zip -UseBasicParsing
+        $sums = $null
+        try { $sums = Invoke-RestMethod -Uri "$uiBase/SHA256SUMS" -UseBasicParsing } catch { }
+        if ($sums) {
+            if ($sums -is [byte[]]) { $sums = [Text.Encoding]::UTF8.GetString($sums) }
+            $line = ($sums -split "`n") | Where-Object { $_ -match " \*?$([regex]::Escape($uiAsset))\s*$" } | Select-Object -First 1
+            if ($line) {
+                $expected = ($line -split '\s+')[0].ToLower()
+                $actual = (Get-FileHash -Algorithm SHA256 -Path $zip).Hash.ToLower()
+                if ($expected -ne $actual) { Write-Error "Checksum mismatch for $uiAsset (expected $expected, got $actual)." }
+                Write-Host 'Checksum verified.'
+            }
+        }
+        Expand-Archive -Path $zip -DestinationPath $prefix -Force
+    } finally {
+        Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+    }
+    Write-Host "Installed ui to $(Join-Path $bin 'ui.exe')"
+}
 
 # A C driver for linking: one on PATH, else llvm-mingw beside eskiuc.
 $tcVersion = '20261020'
