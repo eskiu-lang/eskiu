@@ -5,10 +5,6 @@
 @0 = private unnamed_addr constant [4 x i8] c"%d\0A\00", align 1
 @1 = private unnamed_addr constant [4 x i8] c"%d\0A\00", align 1
 
-declare ptr @malloc(i64)
-
-declare void @free(ptr)
-
 declare ptr @memcpy(ptr, ptr, i64)
 
 declare ptr @memset(ptr, i32, i64)
@@ -17,13 +13,27 @@ declare ptr @memmove(ptr, ptr, i64)
 
 declare i32 @memcmp(ptr, ptr, i64)
 
+declare ptr @memchr(ptr, i32, i64)
+
 declare i64 @strlen(ptr)
 
-declare ptr @memchr(ptr, i32, i64)
+declare i32 @strcmp(ptr, ptr)
+
+declare i32 @strncmp(ptr, ptr, i64)
+
+declare ptr @strchr(ptr, i32)
+
+declare ptr @strstr(ptr, ptr)
+
+declare ptr @strerror(i32)
+
+declare ptr @calloc(i64, i64)
+
+declare void @free(ptr)
 
 declare i32 @printf(ptr, ...)
 
-define i32 @call_it({ ptr, ptr } %op) {
+define noundef i32 @call_it({ ptr, ptr } %op) {
 entry:
   %op1 = alloca { ptr, ptr }, align 8
   store { ptr, ptr } %op, ptr %op1, align 8
@@ -34,7 +44,7 @@ entry:
   ret i32 %fn.call
 }
 
-define i32 @main() {
+define noundef i32 @main() {
 entry:
   %0 = call i32 @box_int(i32 10, i32 1)
   %1 = call i32 (ptr, ...) @printf(ptr @0, i32 %0)
@@ -43,7 +53,7 @@ entry:
   ret i32 0
 }
 
-define i32 @box_int(i32 %v, i32 %bump) {
+define noundef i32 @box_int(i32 noundef %v, i32 noundef %bump) {
 entry:
   %h = alloca i32, align 4
   %r2 = alloca i32, align 4
@@ -97,17 +107,19 @@ entry:
   ret i32 %19
 }
 
-define ptr @alloc_int(i64 %n) {
+define noundef ptr @alloc_int(i64 noundef %n) {
 entry:
   %n1 = alloca i64, align 8
   store i64 %n, ptr %n1, align 8
   %0 = load i64, ptr %n1, align 8
-  %1 = mul i64 %0, 4
-  %2 = call ptr @malloc(i64 %1)
-  ret ptr %2
+  %1 = call ptr @calloc(i64 %0, i64 4)
+  ret ptr %1
 }
 
-define internal i32 @__lambda0(ptr %env) {
+declare ptr @malloc(i64)
+
+; Function Attrs: nounwind
+define internal i32 @__lambda0(ptr %env) #0 {
 entry:
   %v = alloca i32, align 4
   %hits = alloca ptr, align 8
@@ -134,7 +146,7 @@ entry:
   ret i32 %8
 }
 
-define i32 @box_int64(i64 %v, i32 %bump) {
+define noundef i32 @box_int64(i64 noundef %v, i32 noundef %bump) {
 entry:
   %h = alloca i32, align 4
   %r2 = alloca i32, align 4
@@ -188,7 +200,8 @@ entry:
   ret i32 %19
 }
 
-define internal i32 @__lambda1(ptr %env) {
+; Function Attrs: nounwind
+define internal i32 @__lambda1(ptr %env) #0 {
 entry:
   %v = alloca i64, align 8
   %hits = alloca ptr, align 8
@@ -215,3 +228,5 @@ entry:
   %9 = add i32 %6, %8
   ret i32 %9
 }
+
+attributes #0 = { nounwind }

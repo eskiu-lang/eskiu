@@ -8,7 +8,8 @@
 
 declare i32 @printf(ptr, ...)
 
-define void @Counter_inc(ptr %self) {
+; Function Attrs: nounwind
+define void @Counter_inc(ptr noundef %self) #0 {
 entry:
   %self1 = alloca ptr, align 8
   store ptr %self, ptr %self1, align 8
@@ -22,7 +23,8 @@ entry:
   ret void
 }
 
-define i32 @Counter_get(ptr %self) {
+; Function Attrs: nounwind
+define noundef i32 @Counter_get(ptr noundef %self) #0 {
 entry:
   %self1 = alloca ptr, align 8
   store ptr %self, ptr %self1, align 8
@@ -32,7 +34,8 @@ entry:
   ret i32 %count2
 }
 
-define i32 @Point_sumCoords(ptr %self) {
+; Function Attrs: nounwind
+define noundef i32 @Point_sumCoords(ptr noundef %self) #0 {
 entry:
   %self1 = alloca ptr, align 8
   store ptr %self, ptr %self1, align 8
@@ -46,10 +49,11 @@ entry:
   ret i32 %2
 }
 
-define i32 @main() {
+define noundef i32 @main() {
 entry:
   %p = alloca %Point, align 8
   %c = alloca %Counter, align 8
+  store %Counter zeroinitializer, ptr %c, align 4
   %0 = getelementptr inbounds nuw %Counter, ptr %c, i32 0, i32 0
   store i32 0, ptr %0, align 4
   call void @Counter_inc(ptr %c)
@@ -57,6 +61,7 @@ entry:
   call void @Counter_inc(ptr %c)
   %1 = call i32 @Counter_get(ptr %c)
   %2 = call i32 (ptr, ...) @printf(ptr @0, i32 %1)
+  store %Point zeroinitializer, ptr %p, align 4
   %3 = getelementptr inbounds nuw %Point, ptr %p, i32 0, i32 0
   store i32 3, ptr %3, align 4
   %4 = getelementptr inbounds nuw %Point, ptr %p, i32 0, i32 1
@@ -70,3 +75,5 @@ entry:
   %7 = call i32 (ptr, ...) @printf(ptr @2, i32 %6)
   ret i32 0
 }
+
+attributes #0 = { nounwind }

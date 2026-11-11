@@ -3,7 +3,8 @@
 
 declare i32 @printf(ptr, ...)
 
-define i32 @cmp(i32 %a, i32 %b) {
+; Function Attrs: nounwind
+define noundef i32 @cmp(i32 noundef %a, i32 noundef %b) #0 {
 entry:
   %b2 = alloca i32, align 4
   %a1 = alloca i32, align 4
@@ -21,14 +22,15 @@ merge:                                            ; preds = %entry
   ret i32 1
 }
 
-define i32 @main() {
+define noundef i32 @main() {
 entry:
   %0 = call i32 @pick_int(i32 3, i32 7)
   %1 = call i32 (ptr, ...) @printf(ptr @0, i32 %0)
   ret i32 0
 }
 
-define i32 @pick_int(i32 %a, i32 %b) {
+; Function Attrs: nounwind
+define noundef i32 @pick_int(i32 noundef %a, i32 noundef %b) #0 {
 entry:
   %b2 = alloca i32, align 4
   %a1 = alloca i32, align 4
@@ -48,3 +50,5 @@ merge:                                            ; preds = %entry
   %5 = load i32, ptr %b2, align 4
   ret i32 %5
 }
+
+attributes #0 = { nounwind }

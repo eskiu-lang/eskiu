@@ -7,7 +7,7 @@
 
 declare i32 @printf(ptr, ...)
 
-define i32 @main() {
+define noundef i32 @main() {
 entry:
   %0 = call i32 @max_int(i32 3, i32 5)
   %1 = call i32 (ptr, ...) @printf(ptr @0, i32 %0)
@@ -23,7 +23,8 @@ entry:
   ret i32 0
 }
 
-define i32 @max_int(i32 %a, i32 %b) {
+; Function Attrs: nounwind
+define noundef i32 @max_int(i32 noundef %a, i32 noundef %b) #0 {
 entry:
   %b2 = alloca i32, align 4
   %a1 = alloca i32, align 4
@@ -43,7 +44,8 @@ merge:                                            ; preds = %entry
   ret i32 %4
 }
 
-define double @max_double(double %a, double %b) {
+; Function Attrs: nounwind
+define noundef double @max_double(double noundef %a, double noundef %b) #0 {
 entry:
   %b2 = alloca double, align 8
   %a1 = alloca double, align 8
@@ -63,7 +65,8 @@ merge:                                            ; preds = %entry
   ret double %4
 }
 
-define i32 @identity_int(i32 %x) {
+; Function Attrs: nounwind
+define noundef i32 @identity_int(i32 noundef %x) #0 {
 entry:
   %x1 = alloca i32, align 4
   store i32 %x, ptr %x1, align 4
@@ -71,7 +74,8 @@ entry:
   ret i32 %0
 }
 
-define float @max_float(float %a, float %b) {
+; Function Attrs: nounwind
+define noundef float @max_float(float noundef %a, float noundef %b) #0 {
 entry:
   %b2 = alloca float, align 4
   %a1 = alloca float, align 4
@@ -90,3 +94,5 @@ merge:                                            ; preds = %entry
   %4 = load float, ptr %b2, align 4
   ret float %4
 }
+
+attributes #0 = { nounwind }

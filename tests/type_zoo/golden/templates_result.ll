@@ -7,7 +7,8 @@
 
 declare i32 @printf(ptr, ...)
 
-define %Result_int_string @divide(i32 %a, i32 %b) {
+; Function Attrs: nounwind
+define %Result_int_string @divide(i32 noundef %a, i32 noundef %b) #0 {
 entry:
   %b2 = alloca i32, align 4
   %a1 = alloca i32, align 4
@@ -24,12 +25,24 @@ then:                                             ; preds = %entry
 merge:                                            ; preds = %entry
   %3 = load i32, ptr %a1, align 4
   %4 = load i32, ptr %b2, align 4
-  %5 = sdiv i32 %3, %4
-  %6 = call %Result_int_string @Ok_int_string(i32 %5)
-  ret %Result_int_string %6
+  %5 = icmp eq i32 %4, 0
+  br i1 %5, label %div.zero, label %div.ok
+
+div.zero:                                         ; preds = %merge
+  call void @llvm.trap()
+  unreachable
+
+div.ok:                                           ; preds = %merge
+  %6 = icmp eq i32 %4, -1
+  %7 = select i1 %6, i32 1, i32 %4
+  %8 = sub i32 0, %3
+  %9 = sdiv i32 %3, %7
+  %10 = select i1 %6, i32 %8, i32 %9
+  %11 = call %Result_int_string @Ok_int_string(i32 %10)
+  ret %Result_int_string %11
 }
 
-define i32 @main() {
+define noundef i32 @main() {
 entry:
   %bad = alloca %Result_int_string, align 8
   %ok = alloca %Result_int_string, align 8
@@ -64,11 +77,13 @@ merge7:                                           ; preds = %then6, %merge
   ret i32 0
 }
 
-define %Result_int_string @Err_int_string(ptr %msg) {
+; Function Attrs: nounwind
+define %Result_int_string @Err_int_string(ptr noundef %msg) #0 {
 entry:
   %r = alloca %Result_int_string, align 8
   %msg1 = alloca ptr, align 8
   store ptr %msg, ptr %msg1, align 8
+  store %Result_int_string zeroinitializer, ptr %r, align 8
   %0 = getelementptr inbounds nuw %Result_int_string, ptr %r, i32 0, i32 0
   store i32 0, ptr %0, align 4
   %1 = getelementptr inbounds nuw %Result_int_string, ptr %r, i32 0, i32 2
@@ -78,11 +93,13 @@ entry:
   ret %Result_int_string %3
 }
 
-define %Result_int_string @Ok_int_string(i32 %value) {
+; Function Attrs: nounwind
+define %Result_int_string @Ok_int_string(i32 noundef %value) #0 {
 entry:
   %r = alloca %Result_int_string, align 8
   %value1 = alloca i32, align 4
   store i32 %value, ptr %value1, align 4
+  store %Result_int_string zeroinitializer, ptr %r, align 8
   %0 = getelementptr inbounds nuw %Result_int_string, ptr %r, i32 0, i32 0
   store i32 1, ptr %0, align 4
   %1 = getelementptr inbounds nuw %Result_int_string, ptr %r, i32 0, i32 1
@@ -91,3 +108,9 @@ entry:
   %3 = load %Result_int_string, ptr %r, align 8
   ret %Result_int_string %3
 }
+
+; Function Attrs: cold noreturn nounwind memory(inaccessiblemem: write)
+declare void @llvm.trap() #1
+
+attributes #0 = { nounwind }
+attributes #1 = { cold noreturn nounwind memory(inaccessiblemem: write) }

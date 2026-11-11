@@ -7,10 +7,6 @@
 
 declare i32 @printf(ptr, ...)
 
-declare ptr @malloc(i64)
-
-declare void @free(ptr)
-
 declare ptr @memcpy(ptr, ptr, i64)
 
 declare ptr @memset(ptr, i32, i64)
@@ -19,51 +15,60 @@ declare ptr @memmove(ptr, ptr, i64)
 
 declare i32 @memcmp(ptr, ptr, i64)
 
-declare i64 @strlen(ptr)
-
 declare ptr @memchr(ptr, i32, i64)
 
-define i32 @main() {
+declare i64 @strlen(ptr)
+
+declare i32 @strcmp(ptr, ptr)
+
+declare i32 @strncmp(ptr, ptr, i64)
+
+declare ptr @strchr(ptr, i32)
+
+declare ptr @strstr(ptr, ptr)
+
+declare ptr @strerror(i32)
+
+declare ptr @calloc(i64, i64)
+
+declare void @free(ptr)
+
+define noundef i32 @main() {
 entry:
   %i = alloca i32, align 4
   %nums = alloca %List_int, align 8
-  %0 = load %List_int, ptr %nums, align 8
+  store %List_int zeroinitializer, ptr %nums, align 8
   call void @List_init_int(ptr %nums, i32 4)
   store i32 0, ptr %i, align 4
   br label %while
 
 while:                                            ; preds = %while_body, %entry
-  %1 = load i32, ptr %i, align 4
-  %2 = icmp slt i32 %1, 5
-  br i1 %2, label %while_body, label %while_exit
+  %0 = load i32, ptr %i, align 4
+  %1 = icmp slt i32 %0, 5
+  br i1 %1, label %while_body, label %while_exit
 
 while_body:                                       ; preds = %while
-  %3 = load %List_int, ptr %nums, align 8
-  %4 = load i32, ptr %i, align 4
+  %2 = load i32, ptr %i, align 4
+  %3 = load i32, ptr %i, align 4
+  %4 = mul i32 %2, %3
+  call void @List_push_int(ptr %nums, i32 %4)
   %5 = load i32, ptr %i, align 4
-  %6 = mul i32 %4, %5
-  call void @List_push_int(ptr %nums, i32 %6)
-  %7 = load i32, ptr %i, align 4
-  %8 = add i32 %7, 1
-  store i32 %8, ptr %i, align 4
+  %6 = add i32 %5, 1
+  store i32 %6, ptr %i, align 4
   br label %while
 
 while_exit:                                       ; preds = %while
-  %9 = load %List_int, ptr %nums, align 8
-  %10 = call i32 @List_len_int(ptr %nums)
-  %11 = call i32 (ptr, ...) @printf(ptr @0, i32 %10)
-  %12 = load %List_int, ptr %nums, align 8
-  %13 = call i32 @List_get_int(ptr %nums, i32 0)
-  %14 = call i32 (ptr, ...) @printf(ptr @1, i32 %13)
-  %15 = load %List_int, ptr %nums, align 8
-  %16 = call i32 @List_get_int(ptr %nums, i32 4)
-  %17 = call i32 (ptr, ...) @printf(ptr @2, i32 %16)
-  %18 = load %List_int, ptr %nums, align 8
+  %7 = call i32 @List_len_int(ptr %nums)
+  %8 = call i32 (ptr, ...) @printf(ptr @0, i32 %7)
+  %9 = call i32 @List_get_int(ptr %nums, i32 0)
+  %10 = call i32 (ptr, ...) @printf(ptr @1, i32 %9)
+  %11 = call i32 @List_get_int(ptr %nums, i32 4)
+  %12 = call i32 (ptr, ...) @printf(ptr @2, i32 %11)
   call void @List_free_int(ptr %nums)
   ret i32 0
 }
 
-define void @List_init_int(ptr %self, i32 %initial_cap) {
+define void @List_init_int(ptr noundef %self, i32 noundef %initial_cap) {
 entry:
   %cap = alloca i32, align 4
   %initial_cap2 = alloca i32, align 4
@@ -71,44 +76,47 @@ entry:
   store ptr %self, ptr %self1, align 8
   store i32 %initial_cap, ptr %initial_cap2, align 4
   %0 = load i32, ptr %initial_cap2, align 4
-  store i32 %0, ptr %cap, align 4
-  %1 = load i32, ptr %cap, align 4
-  %2 = icmp slt i32 %1, 4
-  br i1 %2, label %then, label %merge
+  %1 = icmp slt i32 %0, 4
+  br i1 %1, label %tern.then, label %tern.else
 
-then:                                             ; preds = %entry
-  store i32 4, ptr %cap, align 4
-  br label %merge
+tern.then:                                        ; preds = %entry
+  br label %tern.cont
 
-merge:                                            ; preds = %then, %entry
-  %3 = load ptr, ptr %self1, align 8
-  %4 = getelementptr inbounds nuw %List_int, ptr %3, i32 0, i32 0
-  %5 = load i32, ptr %cap, align 4
-  %6 = sext i32 %5 to i64
-  %7 = call ptr @alloc_int(i64 %6)
-  store ptr %7, ptr %4, align 8
-  %8 = load ptr, ptr %self1, align 8
-  %9 = getelementptr inbounds nuw %List_int, ptr %8, i32 0, i32 1
-  store i32 0, ptr %9, align 4
-  %10 = load ptr, ptr %self1, align 8
-  %11 = getelementptr inbounds nuw %List_int, ptr %10, i32 0, i32 2
-  %12 = load i32, ptr %cap, align 4
-  store i32 %12, ptr %11, align 4
+tern.else:                                        ; preds = %entry
+  %2 = load i32, ptr %initial_cap2, align 4
+  br label %tern.cont
+
+tern.cont:                                        ; preds = %tern.else, %tern.then
+  %3 = phi i32 [ 4, %tern.then ], [ %2, %tern.else ]
+  store i32 %3, ptr %cap, align 4
+  %4 = load ptr, ptr %self1, align 8
+  %5 = getelementptr inbounds nuw %List_int, ptr %4, i32 0, i32 0
+  %6 = load i32, ptr %cap, align 4
+  %7 = sext i32 %6 to i64
+  %8 = call ptr @alloc_int(i64 %7)
+  store ptr %8, ptr %5, align 8
+  %9 = load ptr, ptr %self1, align 8
+  %10 = getelementptr inbounds nuw %List_int, ptr %9, i32 0, i32 1
+  store i32 0, ptr %10, align 4
+  %11 = load ptr, ptr %self1, align 8
+  %12 = getelementptr inbounds nuw %List_int, ptr %11, i32 0, i32 2
+  %13 = load i32, ptr %cap, align 4
+  store i32 %13, ptr %12, align 4
   ret void
 }
 
-define ptr @alloc_int(i64 %n) {
+define noundef ptr @alloc_int(i64 noundef %n) {
 entry:
   %n1 = alloca i64, align 8
   store i64 %n, ptr %n1, align 8
   %0 = load i64, ptr %n1, align 8
-  %1 = mul i64 %0, 4
-  %2 = call ptr @malloc(i64 %1)
-  ret ptr %2
+  %1 = call ptr @calloc(i64 %0, i64 4)
+  ret ptr %1
 }
 
-define void @List_push_int(ptr %self, i32 %item) {
+define void @List_push_int(ptr noundef %self, i32 noundef %item) {
 entry:
+  %__end_i = alloca i32, align 4
   %i = alloca i32, align 4
   %new_data = alloca ptr, align 8
   %new_cap = alloca i32, align 4
@@ -130,83 +138,96 @@ then:                                             ; preds = %entry
   %cap5 = getelementptr inbounds nuw %List_int, ptr %3, i32 0, i32 2
   %cap6 = load i32, ptr %cap5, align 4
   %4 = mul i32 %cap6, 2
-  store i32 %4, ptr %new_cap, align 4
-  %5 = load i32, ptr %new_cap, align 4
-  %6 = icmp slt i32 %5, 4
-  br i1 %6, label %then7, label %merge8
+  %5 = icmp slt i32 %4, 4
+  br i1 %5, label %tern.then, label %tern.else
 
-merge:                                            ; preds = %while_exit, %entry
-  %7 = load ptr, ptr %self1, align 8
-  %size14 = getelementptr inbounds nuw %List_int, ptr %7, i32 0, i32 1
+merge:                                            ; preds = %for_exit, %entry
+  %6 = load ptr, ptr %self1, align 8
+  %size14 = getelementptr inbounds nuw %List_int, ptr %6, i32 0, i32 1
   %size15 = load i32, ptr %size14, align 4
+  %7 = sext i32 %size15 to i64
   %8 = load ptr, ptr %self1, align 8
   %data16 = getelementptr inbounds nuw %List_int, ptr %8, i32 0, i32 0
   %data17 = load ptr, ptr %data16, align 8
-  %9 = getelementptr i32, ptr %data17, i32 %size15
+  %9 = getelementptr i32, ptr %data17, i64 %7
   %10 = load i32, ptr %item2, align 4
   store i32 %10, ptr %9, align 4
   %11 = load ptr, ptr %self1, align 8
   %12 = getelementptr inbounds nuw %List_int, ptr %11, i32 0, i32 1
-  %13 = load ptr, ptr %self1, align 8
-  %size18 = getelementptr inbounds nuw %List_int, ptr %13, i32 0, i32 1
-  %size19 = load i32, ptr %size18, align 4
-  %14 = add i32 %size19, 1
+  %13 = load i32, ptr %12, align 4
+  %14 = add i32 %13, 1
   store i32 %14, ptr %12, align 4
   ret void
 
-then7:                                            ; preds = %then
-  store i32 4, ptr %new_cap, align 4
-  br label %merge8
+tern.then:                                        ; preds = %then
+  br label %tern.cont
 
-merge8:                                           ; preds = %then7, %then
-  %15 = load i32, ptr %new_cap, align 4
-  %16 = sext i32 %15 to i64
-  %17 = call ptr @alloc_int(i64 %16)
-  store ptr %17, ptr %new_data, align 8
+tern.else:                                        ; preds = %then
+  %15 = load ptr, ptr %self1, align 8
+  %cap7 = getelementptr inbounds nuw %List_int, ptr %15, i32 0, i32 2
+  %cap8 = load i32, ptr %cap7, align 4
+  %16 = mul i32 %cap8, 2
+  br label %tern.cont
+
+tern.cont:                                        ; preds = %tern.else, %tern.then
+  %17 = phi i32 [ 4, %tern.then ], [ %16, %tern.else ]
+  store i32 %17, ptr %new_cap, align 4
+  %18 = load i32, ptr %new_cap, align 4
+  %19 = sext i32 %18 to i64
+  %20 = call ptr @alloc_int(i64 %19)
+  store ptr %20, ptr %new_data, align 8
   store i32 0, ptr %i, align 4
-  br label %while
-
-while:                                            ; preds = %while_body, %merge8
-  %18 = load i32, ptr %i, align 4
-  %19 = load ptr, ptr %self1, align 8
-  %size9 = getelementptr inbounds nuw %List_int, ptr %19, i32 0, i32 1
+  %21 = load ptr, ptr %self1, align 8
+  %size9 = getelementptr inbounds nuw %List_int, ptr %21, i32 0, i32 1
   %size10 = load i32, ptr %size9, align 4
-  %20 = icmp slt i32 %18, %size10
-  br i1 %20, label %while_body, label %while_exit
+  store i32 %size10, ptr %__end_i, align 4
+  br label %for
 
-while_body:                                       ; preds = %while
-  %21 = load i32, ptr %i, align 4
-  %22 = load ptr, ptr %new_data, align 8
-  %23 = getelementptr i32, ptr %22, i32 %21
-  %24 = load i32, ptr %i, align 4
-  %25 = load ptr, ptr %self1, align 8
-  %data = getelementptr inbounds nuw %List_int, ptr %25, i32 0, i32 0
+for:                                              ; preds = %for_step, %tern.cont
+  %22 = load i32, ptr %i, align 4
+  %23 = load i32, ptr %__end_i, align 4
+  %24 = icmp slt i32 %22, %23
+  br i1 %24, label %for_body, label %for_exit
+
+for_body:                                         ; preds = %for
+  %25 = load i32, ptr %i, align 4
+  %26 = sext i32 %25 to i64
+  %27 = load ptr, ptr %new_data, align 8
+  %28 = getelementptr i32, ptr %27, i64 %26
+  %29 = load i32, ptr %i, align 4
+  %30 = sext i32 %29 to i64
+  %31 = load ptr, ptr %self1, align 8
+  %data = getelementptr inbounds nuw %List_int, ptr %31, i32 0, i32 0
   %data11 = load ptr, ptr %data, align 8
-  %26 = getelementptr i32, ptr %data11, i32 %24
-  %27 = load i32, ptr %26, align 4
-  store i32 %27, ptr %23, align 4
-  %28 = load i32, ptr %i, align 4
-  %29 = add i32 %28, 1
-  store i32 %29, ptr %i, align 4
-  br label %while
+  %32 = getelementptr i32, ptr %data11, i64 %30
+  %33 = load i32, ptr %32, align 4
+  store i32 %33, ptr %28, align 4
+  br label %for_step
 
-while_exit:                                       ; preds = %while
-  %30 = load ptr, ptr %self1, align 8
-  %data12 = getelementptr inbounds nuw %List_int, ptr %30, i32 0, i32 0
+for_step:                                         ; preds = %for_body
+  %34 = load i32, ptr %i, align 4
+  %35 = add i32 %34, 1
+  store i32 %35, ptr %i, align 4
+  br label %for
+
+for_exit:                                         ; preds = %for
+  %36 = load ptr, ptr %self1, align 8
+  %data12 = getelementptr inbounds nuw %List_int, ptr %36, i32 0, i32 0
   %data13 = load ptr, ptr %data12, align 8
   call void @free(ptr %data13)
-  %31 = load ptr, ptr %self1, align 8
-  %32 = getelementptr inbounds nuw %List_int, ptr %31, i32 0, i32 0
-  %33 = load ptr, ptr %new_data, align 8
-  store ptr %33, ptr %32, align 8
-  %34 = load ptr, ptr %self1, align 8
-  %35 = getelementptr inbounds nuw %List_int, ptr %34, i32 0, i32 2
-  %36 = load i32, ptr %new_cap, align 4
-  store i32 %36, ptr %35, align 4
+  %37 = load ptr, ptr %self1, align 8
+  %38 = getelementptr inbounds nuw %List_int, ptr %37, i32 0, i32 0
+  %39 = load ptr, ptr %new_data, align 8
+  store ptr %39, ptr %38, align 8
+  %40 = load ptr, ptr %self1, align 8
+  %41 = getelementptr inbounds nuw %List_int, ptr %40, i32 0, i32 2
+  %42 = load i32, ptr %new_cap, align 4
+  store i32 %42, ptr %41, align 4
   br label %merge
 }
 
-define i32 @List_len_int(ptr %self) {
+; Function Attrs: nounwind
+define noundef i32 @List_len_int(ptr noundef %self) #0 {
 entry:
   %self1 = alloca ptr, align 8
   store ptr %self, ptr %self1, align 8
@@ -216,22 +237,24 @@ entry:
   ret i32 %size2
 }
 
-define i32 @List_get_int(ptr %self, i32 %i) {
+; Function Attrs: nounwind
+define noundef i32 @List_get_int(ptr noundef %self, i32 noundef %i) #0 {
 entry:
   %i2 = alloca i32, align 4
   %self1 = alloca ptr, align 8
   store ptr %self, ptr %self1, align 8
   store i32 %i, ptr %i2, align 4
   %0 = load i32, ptr %i2, align 4
-  %1 = load ptr, ptr %self1, align 8
-  %data = getelementptr inbounds nuw %List_int, ptr %1, i32 0, i32 0
+  %1 = sext i32 %0 to i64
+  %2 = load ptr, ptr %self1, align 8
+  %data = getelementptr inbounds nuw %List_int, ptr %2, i32 0, i32 0
   %data3 = load ptr, ptr %data, align 8
-  %2 = getelementptr i32, ptr %data3, i32 %0
-  %3 = load i32, ptr %2, align 4
-  ret i32 %3
+  %3 = getelementptr i32, ptr %data3, i64 %1
+  %4 = load i32, ptr %3, align 4
+  ret i32 %4
 }
 
-define void @List_free_int(ptr %self) {
+define void @List_free_int(ptr noundef %self) {
 entry:
   %self1 = alloca ptr, align 8
   store ptr %self, ptr %self1, align 8
@@ -240,10 +263,15 @@ entry:
   %data2 = load ptr, ptr %data, align 8
   call void @free(ptr %data2)
   %1 = load ptr, ptr %self1, align 8
-  %2 = getelementptr inbounds nuw %List_int, ptr %1, i32 0, i32 1
-  store i32 0, ptr %2, align 4
+  %2 = getelementptr inbounds nuw %List_int, ptr %1, i32 0, i32 0
+  store ptr null, ptr %2, align 8
   %3 = load ptr, ptr %self1, align 8
-  %4 = getelementptr inbounds nuw %List_int, ptr %3, i32 0, i32 2
+  %4 = getelementptr inbounds nuw %List_int, ptr %3, i32 0, i32 1
   store i32 0, ptr %4, align 4
+  %5 = load ptr, ptr %self1, align 8
+  %6 = getelementptr inbounds nuw %List_int, ptr %5, i32 0, i32 2
+  store i32 0, ptr %6, align 4
   ret void
 }
+
+attributes #0 = { nounwind }

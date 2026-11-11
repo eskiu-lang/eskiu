@@ -1,5 +1,6 @@
 
-define i32 @pick(i32 %a, i32 %b) {
+; Function Attrs: nounwind
+define noundef i32 @pick(i32 noundef %a, i32 noundef %b) #0 {
 entry:
   %b2 = alloca i32, align 4
   %a1 = alloca i32, align 4
@@ -23,7 +24,8 @@ tern.cont:                                        ; preds = %tern.else, %tern.th
   ret i32 %5
 }
 
-define double @promote(i32 %flag, i32 %a, double %b) {
+; Function Attrs: nounwind
+define noundef double @promote(i32 noundef %flag, i32 noundef %a, double noundef %b) #0 {
 entry:
   %b3 = alloca double, align 8
   %a2 = alloca i32, align 4
@@ -49,9 +51,12 @@ tern.cont:                                        ; preds = %tern.else, %tern.th
   ret double %5
 }
 
-define i32 @main() {
+; Function Attrs: nounwind
+define noundef i32 @main() #0 {
 entry:
   %0 = call i32 @pick(i32 3, i32 7)
   %1 = sub i32 %0, 7
   ret i32 %1
 }
+
+attributes #0 = { nounwind }

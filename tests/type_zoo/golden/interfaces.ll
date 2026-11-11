@@ -14,7 +14,8 @@
 
 declare i32 @printf(ptr, ...)
 
-define i32 @Dog_sound(ptr %self) {
+; Function Attrs: nounwind
+define noundef i32 @Dog_sound(ptr noundef %self) #0 {
 entry:
   %self1 = alloca ptr, align 8
   store ptr %self, ptr %self1, align 8
@@ -25,7 +26,8 @@ entry:
   ret i32 %1
 }
 
-define i32 @Cat_sound(ptr %self) {
+; Function Attrs: nounwind
+define noundef i32 @Cat_sound(ptr noundef %self) #0 {
 entry:
   %self1 = alloca ptr, align 8
   store ptr %self, ptr %self1, align 8
@@ -36,60 +38,46 @@ entry:
   ret i32 %1
 }
 
-define i32 @speak(ptr %s) {
+define noundef i32 @speak(%Speaker_fat %s) {
 entry:
-  %s1 = alloca ptr, align 8
-  store ptr %s, ptr %s1, align 8
-  %0 = load ptr, ptr %s1, align 8
-  %1 = getelementptr inbounds nuw %Speaker_fat, ptr %0, i32 0, i32 0
+  %s1 = alloca %Speaker_fat, align 8
+  store %Speaker_fat %s, ptr %s1, align 8
+  %0 = load %Speaker_fat, ptr %s1, align 8
+  %iface.data = extractvalue %Speaker_fat %0, 0
+  %iface.vt = extractvalue %Speaker_fat %0, 1
+  %1 = getelementptr inbounds nuw %Speaker_vtable, ptr %iface.vt, i32 0, i32 0
   %2 = load ptr, ptr %1, align 8
-  %3 = getelementptr inbounds nuw %Speaker_fat, ptr %0, i32 0, i32 1
-  %4 = load ptr, ptr %3, align 8
-  %5 = getelementptr inbounds nuw %Speaker_vtable, ptr %4, i32 0, i32 0
-  %6 = load ptr, ptr %5, align 8
-  %7 = call i32 %6(ptr %2)
-  ret i32 %7
+  %3 = call i32 %2(ptr %iface.data)
+  ret i32 %3
 }
 
-define i32 @main() {
+define noundef i32 @main() {
 entry:
-  %Speaker.box3 = alloca %Speaker_fat, align 8
-  %Speaker.box2 = alloca %Speaker_fat, align 8
-  %Speaker.box1 = alloca %Speaker_fat, align 8
-  %Speaker.box = alloca %Speaker_fat, align 8
   %c = alloca %Cat, align 8
   %d = alloca %Dog, align 8
+  store %Dog zeroinitializer, ptr %d, align 4
   %0 = getelementptr inbounds nuw %Dog, ptr %d, i32 0, i32 0
   store i32 10, ptr %0, align 4
+  store %Cat zeroinitializer, ptr %c, align 4
   %1 = getelementptr inbounds nuw %Cat, ptr %c, i32 0, i32 0
   store i32 10, ptr %1, align 4
-  %2 = load %Dog, ptr %d, align 4
-  %3 = getelementptr inbounds nuw %Speaker_fat, ptr %Speaker.box, i32 0, i32 0
-  store ptr %d, ptr %3, align 8
-  %4 = getelementptr inbounds nuw %Speaker_fat, ptr %Speaker.box, i32 0, i32 1
-  store ptr @Speaker_vtable_Dog, ptr %4, align 8
-  %5 = call i32 @speak(ptr %Speaker.box)
-  %6 = call i32 (ptr, ...) @printf(ptr @0, i32 %5)
-  %7 = load %Cat, ptr %c, align 4
-  %8 = getelementptr inbounds nuw %Speaker_fat, ptr %Speaker.box1, i32 0, i32 0
-  store ptr %c, ptr %8, align 8
-  %9 = getelementptr inbounds nuw %Speaker_fat, ptr %Speaker.box1, i32 0, i32 1
-  store ptr @Speaker_vtable_Cat, ptr %9, align 8
-  %10 = call i32 @speak(ptr %Speaker.box1)
-  %11 = call i32 (ptr, ...) @printf(ptr @1, i32 %10)
-  %12 = load %Dog, ptr %d, align 4
-  %13 = getelementptr inbounds nuw %Speaker_fat, ptr %Speaker.box2, i32 0, i32 0
-  store ptr %d, ptr %13, align 8
-  %14 = getelementptr inbounds nuw %Speaker_fat, ptr %Speaker.box2, i32 0, i32 1
-  store ptr @Speaker_vtable_Dog.1, ptr %14, align 8
-  %15 = call i32 @speak(ptr %Speaker.box2)
-  %16 = load %Cat, ptr %c, align 4
-  %17 = getelementptr inbounds nuw %Speaker_fat, ptr %Speaker.box3, i32 0, i32 0
-  store ptr %c, ptr %17, align 8
-  %18 = getelementptr inbounds nuw %Speaker_fat, ptr %Speaker.box3, i32 0, i32 1
-  store ptr @Speaker_vtable_Cat.2, ptr %18, align 8
-  %19 = call i32 @speak(ptr %Speaker.box3)
-  %20 = add i32 %15, %19
-  %21 = call i32 (ptr, ...) @printf(ptr @2, i32 %20)
+  %2 = insertvalue %Speaker_fat undef, ptr %d, 0
+  %3 = insertvalue %Speaker_fat %2, ptr @Speaker_vtable_Dog, 1
+  %4 = call i32 @speak(%Speaker_fat %3)
+  %5 = call i32 (ptr, ...) @printf(ptr @0, i32 %4)
+  %6 = insertvalue %Speaker_fat undef, ptr %c, 0
+  %7 = insertvalue %Speaker_fat %6, ptr @Speaker_vtable_Cat, 1
+  %8 = call i32 @speak(%Speaker_fat %7)
+  %9 = call i32 (ptr, ...) @printf(ptr @1, i32 %8)
+  %10 = insertvalue %Speaker_fat undef, ptr %d, 0
+  %11 = insertvalue %Speaker_fat %10, ptr @Speaker_vtable_Dog.1, 1
+  %12 = call i32 @speak(%Speaker_fat %11)
+  %13 = insertvalue %Speaker_fat undef, ptr %c, 0
+  %14 = insertvalue %Speaker_fat %13, ptr @Speaker_vtable_Cat.2, 1
+  %15 = call i32 @speak(%Speaker_fat %14)
+  %16 = add i32 %12, %15
+  %17 = call i32 (ptr, ...) @printf(ptr @2, i32 %16)
   ret i32 0
 }
+
+attributes #0 = { nounwind }

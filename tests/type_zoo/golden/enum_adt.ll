@@ -7,7 +7,8 @@
 
 declare i32 @printf(ptr, ...)
 
-define i32 @eval(%Expr %e) {
+; Function Attrs: nounwind
+define noundef i32 @eval(%Expr %e) #0 {
 entry:
   %n8 = alloca i32, align 4
   %b7 = alloca i32, align 4
@@ -64,7 +65,8 @@ match.arm4:                                       ; preds = %entry
   ret i32 0
 }
 
-define i32 @kind(%Expr %e) {
+; Function Attrs: nounwind
+define noundef i32 @kind(%Expr %e) #0 {
 entry:
   %v4 = alloca i32, align 4
   %match.subj = alloca %Expr, align 8
@@ -102,7 +104,7 @@ match.arm3:                                       ; preds = %entry
   br label %match.end
 }
 
-define i32 @main() {
+define noundef i32 @main() {
 entry:
   %variant.tmp11 = alloca %Expr, align 8
   %variant.tmp9 = alloca %Expr, align 8
@@ -111,6 +113,7 @@ entry:
   %variant.tmp3 = alloca %Expr, align 8
   %variant.tmp1 = alloca %Expr, align 8
   %variant.tmp = alloca %Expr, align 8
+  store %Expr zeroinitializer, ptr %variant.tmp, align 8
   %0 = getelementptr inbounds nuw %Expr, ptr %variant.tmp, i32 0, i32 0
   store i32 0, ptr %0, align 4
   %1 = getelementptr inbounds nuw %Expr, ptr %variant.tmp, i32 0, i32 1
@@ -118,6 +121,7 @@ entry:
   store i32 7, ptr %2, align 4
   %variant.val = load %Expr, ptr %variant.tmp, align 8
   %3 = call i32 @eval(%Expr %variant.val)
+  store %Expr zeroinitializer, ptr %variant.tmp1, align 8
   %4 = getelementptr inbounds nuw %Expr, ptr %variant.tmp1, i32 0, i32 0
   store i32 1, ptr %4, align 4
   %5 = getelementptr inbounds nuw %Expr, ptr %variant.tmp1, i32 0, i32 1
@@ -127,6 +131,7 @@ entry:
   store i32 4, ptr %7, align 4
   %variant.val2 = load %Expr, ptr %variant.tmp1, align 8
   %8 = call i32 @eval(%Expr %variant.val2)
+  store %Expr zeroinitializer, ptr %variant.tmp3, align 8
   %9 = getelementptr inbounds nuw %Expr, ptr %variant.tmp3, i32 0, i32 0
   store i32 2, ptr %9, align 4
   %10 = getelementptr inbounds nuw %Expr, ptr %variant.tmp3, i32 0, i32 1
@@ -134,15 +139,18 @@ entry:
   store i32 9, ptr %11, align 4
   %variant.val4 = load %Expr, ptr %variant.tmp3, align 8
   %12 = call i32 @eval(%Expr %variant.val4)
+  store %Expr zeroinitializer, ptr %variant.tmp5, align 8
   %13 = getelementptr inbounds nuw %Expr, ptr %variant.tmp5, i32 0, i32 0
   store i32 3, ptr %13, align 4
   %variant.val6 = load %Expr, ptr %variant.tmp5, align 8
   %14 = call i32 @eval(%Expr %variant.val6)
   %15 = call i32 (ptr, ...) @printf(ptr @0, i32 %3, i32 %8, i32 %12, i32 %14)
+  store %Expr zeroinitializer, ptr %variant.tmp7, align 8
   %16 = getelementptr inbounds nuw %Expr, ptr %variant.tmp7, i32 0, i32 0
   store i32 3, ptr %16, align 4
   %variant.val8 = load %Expr, ptr %variant.tmp7, align 8
   %17 = call i32 @kind(%Expr %variant.val8)
+  store %Expr zeroinitializer, ptr %variant.tmp9, align 8
   %18 = getelementptr inbounds nuw %Expr, ptr %variant.tmp9, i32 0, i32 0
   store i32 0, ptr %18, align 4
   %19 = getelementptr inbounds nuw %Expr, ptr %variant.tmp9, i32 0, i32 1
@@ -150,6 +158,7 @@ entry:
   store i32 5, ptr %20, align 4
   %variant.val10 = load %Expr, ptr %variant.tmp9, align 8
   %21 = call i32 @kind(%Expr %variant.val10)
+  store %Expr zeroinitializer, ptr %variant.tmp11, align 8
   %22 = getelementptr inbounds nuw %Expr, ptr %variant.tmp11, i32 0, i32 0
   store i32 1, ptr %22, align 4
   %23 = getelementptr inbounds nuw %Expr, ptr %variant.tmp11, i32 0, i32 1
@@ -163,3 +172,5 @@ entry:
   %28 = call i32 (ptr, ...) @printf(ptr @2, i32 0, i32 5, i32 6)
   ret i32 0
 }
+
+attributes #0 = { nounwind }

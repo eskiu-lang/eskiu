@@ -10,7 +10,8 @@
 
 declare i32 @printf(ptr, ...)
 
-define i32 @classify(i32 %c) {
+; Function Attrs: nounwind
+define noundef i32 @classify(i32 noundef %c) #0 {
 entry:
   %c1 = alloca i32, align 4
   store i32 %c, ptr %c1, align 4
@@ -25,7 +26,7 @@ merge:                                            ; preds = %entry
   ret i32 200
 }
 
-define i32 @main() {
+define noundef i32 @main() {
 entry:
   %c = alloca i32, align 4
   %0 = call i32 (ptr, ...) @printf(ptr @0, i32 0, i32 1, i32 2)
@@ -58,3 +59,5 @@ default:                                          ; preds = %entry
   %11 = call i32 (ptr, ...) @printf(ptr @7)
   br label %switch.end
 }
+
+attributes #0 = { nounwind }

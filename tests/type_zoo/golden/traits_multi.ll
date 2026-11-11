@@ -5,7 +5,8 @@
 
 declare i32 @printf(ptr, ...)
 
-define i32 @N_show(ptr %self) {
+; Function Attrs: nounwind
+define noundef i32 @N_show(ptr noundef %self) #0 {
 entry:
   %self1 = alloca ptr, align 8
   store ptr %self, ptr %self1, align 8
@@ -15,7 +16,8 @@ entry:
   ret i32 %v2
 }
 
-define i32 @N_eq(ptr %self, ptr %o) {
+; Function Attrs: nounwind
+define noundef i32 @N_eq(ptr noundef %self, ptr noundef %o) #0 {
 entry:
   %o2 = alloca ptr, align 8
   %self1 = alloca ptr, align 8
@@ -32,18 +34,19 @@ entry:
   ret i32 %3
 }
 
-define i32 @main() {
+define noundef i32 @main() {
 entry:
   %n = alloca %N, align 8
+  store %N zeroinitializer, ptr %n, align 4
   %0 = getelementptr inbounds nuw %N, ptr %n, i32 0, i32 0
   store i32 5, ptr %0, align 4
-  %1 = load %N, ptr %n, align 4
-  %2 = call i32 @dump_N(ptr %n)
-  %3 = call i32 (ptr, ...) @printf(ptr @0, i32 %2)
+  %1 = call i32 @dump_N(ptr %n)
+  %2 = call i32 (ptr, ...) @printf(ptr @0, i32 %1)
   ret i32 0
 }
 
-define i32 @dump_N(ptr %x) {
+; Function Attrs: nounwind
+define noundef i32 @dump_N(ptr noundef %x) #0 {
 entry:
   %x1 = alloca ptr, align 8
   store ptr %x, ptr %x1, align 8
@@ -51,3 +54,5 @@ entry:
   %1 = call i32 @N_show(ptr %0)
   ret i32 %1
 }
+
+attributes #0 = { nounwind }

@@ -7,7 +7,7 @@
 
 declare i32 @printf(ptr, ...)
 
-define i32 @apply2({ ptr, ptr } %op, i32 %a, i32 %b) {
+define noundef i32 @apply2({ ptr, ptr } %op, i32 noundef %a, i32 noundef %b) {
 entry:
   %b3 = alloca i32, align 4
   %a2 = alloca i32, align 4
@@ -24,7 +24,8 @@ entry:
   ret i32 %fn.call
 }
 
-define i32 @add(i32 %a, i32 %b) {
+; Function Attrs: nounwind
+define noundef i32 @add(i32 noundef %a, i32 noundef %b) #0 {
 entry:
   %b2 = alloca i32, align 4
   %a1 = alloca i32, align 4
@@ -36,7 +37,7 @@ entry:
   ret i32 %2
 }
 
-define void @handler(i32 %x) {
+define void @handler(i32 noundef %x) {
 entry:
   %x1 = alloca i32, align 4
   store i32 %x, ptr %x1, align 4
@@ -45,9 +46,10 @@ entry:
   ret void
 }
 
-define void @dispatch(i32 %v, { ptr, ptr } %handler) {
+define void @dispatch(i32 noundef %v, { ptr, ptr } %handler) {
 entry:
   %__lambda0.fat = alloca { ptr, ptr }, align 8
+  %__lambda0.env = alloca %__lambda0.env, align 8
   %w = alloca { ptr, ptr }, align 8
   %pv = alloca ptr, align 8
   %vv = alloca i32, align 4
@@ -57,29 +59,27 @@ entry:
   store { ptr, ptr } %handler, ptr %handler2, align 8
   %0 = load i32, ptr %v1, align 4
   store i32 %0, ptr %vv, align 4
-  %1 = load i32, ptr %vv, align 4
   store ptr %vv, ptr %pv, align 8
-  %__lambda0.env.heap = call ptr @malloc(i64 24)
   %handler3 = load { ptr, ptr }, ptr %handler2, align 8
-  %2 = getelementptr inbounds nuw %__lambda0.env, ptr %__lambda0.env.heap, i32 0, i32 0
-  store { ptr, ptr } %handler3, ptr %2, align 8
+  %1 = getelementptr inbounds nuw %__lambda0.env, ptr %__lambda0.env, i32 0, i32 0
+  store { ptr, ptr } %handler3, ptr %1, align 8
   %pv4 = load ptr, ptr %pv, align 8
-  %3 = getelementptr inbounds nuw %__lambda0.env, ptr %__lambda0.env.heap, i32 0, i32 1
-  store ptr %pv4, ptr %3, align 8
-  %4 = getelementptr inbounds nuw { ptr, ptr }, ptr %__lambda0.fat, i32 0, i32 0
-  %5 = getelementptr inbounds nuw { ptr, ptr }, ptr %__lambda0.fat, i32 0, i32 1
-  store ptr @__lambda0, ptr %4, align 8
-  store ptr %__lambda0.env.heap, ptr %5, align 8
+  %2 = getelementptr inbounds nuw %__lambda0.env, ptr %__lambda0.env, i32 0, i32 1
+  store ptr %pv4, ptr %2, align 8
+  %3 = getelementptr inbounds nuw { ptr, ptr }, ptr %__lambda0.fat, i32 0, i32 0
+  %4 = getelementptr inbounds nuw { ptr, ptr }, ptr %__lambda0.fat, i32 0, i32 1
+  store ptr @__lambda0, ptr %3, align 8
+  store ptr %__lambda0.env, ptr %4, align 8
   %__lambda0.fat.val = load { ptr, ptr }, ptr %__lambda0.fat, align 8
   store { ptr, ptr } %__lambda0.fat.val, ptr %w, align 8
-  %6 = load { ptr, ptr }, ptr %w, align 8
-  %fn.ptr = extractvalue { ptr, ptr } %6, 0
-  %env.ptr = extractvalue { ptr, ptr } %6, 1
+  %5 = load { ptr, ptr }, ptr %w, align 8
+  %fn.ptr = extractvalue { ptr, ptr } %5, 0
+  %env.ptr = extractvalue { ptr, ptr } %5, 1
   call void %fn.ptr(ptr %env.ptr)
   ret void
 }
 
-define void @say(i32 %x) {
+define void @say(i32 noundef %x) {
 entry:
   %x1 = alloca i32, align 4
   store i32 %x, ptr %x1, align 4
@@ -88,27 +88,13 @@ entry:
   ret void
 }
 
-define i32 @main() {
+define noundef i32 @main() {
 entry:
-  %fnptr.fat1 = alloca { ptr, ptr }, align 8
-  %fnptr.fat = alloca { ptr, ptr }, align 8
-  %0 = getelementptr inbounds nuw { ptr, ptr }, ptr %fnptr.fat, i32 0, i32 0
-  store ptr @__fnptr_add, ptr %0, align 8
-  %1 = getelementptr inbounds nuw { ptr, ptr }, ptr %fnptr.fat, i32 0, i32 1
-  store ptr null, ptr %1, align 8
-  %fnptr.fat.val = load { ptr, ptr }, ptr %fnptr.fat, align 8
-  %2 = call i32 @apply2({ ptr, ptr } %fnptr.fat.val, i32 20, i32 22)
-  %3 = call i32 (ptr, ...) @printf(ptr @2, i32 %2)
-  %4 = getelementptr inbounds nuw { ptr, ptr }, ptr %fnptr.fat1, i32 0, i32 0
-  store ptr @__fnptr_say, ptr %4, align 8
-  %5 = getelementptr inbounds nuw { ptr, ptr }, ptr %fnptr.fat1, i32 0, i32 1
-  store ptr null, ptr %5, align 8
-  %fnptr.fat.val2 = load { ptr, ptr }, ptr %fnptr.fat1, align 8
-  call void @dispatch(i32 7, { ptr, ptr } %fnptr.fat.val2)
+  %0 = call i32 @apply2({ ptr, ptr } { ptr @__fnptr_add, ptr null }, i32 20, i32 22)
+  %1 = call i32 (ptr, ...) @printf(ptr @2, i32 %0)
+  call void @dispatch(i32 7, { ptr, ptr } { ptr @__fnptr_say, ptr null })
   ret i32 0
 }
-
-declare ptr @malloc(i64)
 
 define internal void @__lambda0(ptr %env) {
 entry:
@@ -129,7 +115,8 @@ entry:
   ret void
 }
 
-define internal i32 @__fnptr_add(ptr %0, i32 %1, i32 %2) {
+; Function Attrs: nounwind
+define internal i32 @__fnptr_add(ptr %0, i32 %1, i32 %2) #0 {
 entry:
   %3 = call i32 @add(i32 %1, i32 %2)
   ret i32 %3
@@ -140,3 +127,5 @@ entry:
   call void @say(i32 %1)
   ret void
 }
+
+attributes #0 = { nounwind }

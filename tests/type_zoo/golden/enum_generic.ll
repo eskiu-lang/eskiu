@@ -9,7 +9,8 @@
 
 declare i32 @printf(ptr, ...)
 
-define i32 @opt_or(%Option_int %o, i32 %dflt) {
+; Function Attrs: nounwind
+define noundef i32 @opt_or(%Option_int %o, i32 noundef %dflt) #0 {
 entry:
   %v4 = alloca i32, align 4
   %match.subj = alloca %Option_int, align 8
@@ -42,7 +43,8 @@ match.arm3:                                       ; preds = %entry
   ret i32 %5
 }
 
-define i64 @opt64_or(%Option_int64 %o, i64 %dflt) {
+; Function Attrs: nounwind
+define noundef i64 @opt64_or(%Option_int64 %o, i64 noundef %dflt) #0 {
 entry:
   %v4 = alloca i64, align 8
   %match.subj = alloca %Option_int64, align 8
@@ -75,7 +77,8 @@ match.arm3:                                       ; preds = %entry
   ret i64 %5
 }
 
-define i32 @either_i(%Either_int_int %e) {
+; Function Attrs: nounwind
+define noundef i32 @either_i(%Either_int_int %e) #0 {
 entry:
   %b4 = alloca i32, align 4
   %a3 = alloca i32, align 4
@@ -112,7 +115,7 @@ match.arm2:                                       ; preds = %entry
   ret i32 %8
 }
 
-define i32 @main() {
+define noundef i32 @main() {
 entry:
   %variant.tmp7 = alloca %Either_int_int, align 8
   %variant.tmp5 = alloca %Either_int_int, align 8
@@ -120,6 +123,7 @@ entry:
   %big = alloca i64, align 8
   %variant.tmp1 = alloca %Option_int, align 8
   %variant.tmp = alloca %Option_int, align 8
+  store %Option_int zeroinitializer, ptr %variant.tmp, align 8
   %0 = getelementptr inbounds nuw %Option_int, ptr %variant.tmp, i32 0, i32 0
   store i32 1, ptr %0, align 4
   %1 = getelementptr inbounds nuw %Option_int, ptr %variant.tmp, i32 0, i32 1
@@ -127,11 +131,13 @@ entry:
   store i32 42, ptr %2, align 4
   %variant.val = load %Option_int, ptr %variant.tmp, align 8
   %3 = call i32 @opt_or(%Option_int %variant.val, i32 -1)
+  store %Option_int zeroinitializer, ptr %variant.tmp1, align 8
   %4 = getelementptr inbounds nuw %Option_int, ptr %variant.tmp1, i32 0, i32 0
   store i32 0, ptr %4, align 4
   %variant.val2 = load %Option_int, ptr %variant.tmp1, align 8
   %5 = call i32 @opt_or(%Option_int %variant.val2, i32 -1)
   %6 = call i32 (ptr, ...) @printf(ptr @0, i32 %3, i32 %5)
+  store %Option_int64 zeroinitializer, ptr %variant.tmp3, align 8
   %7 = getelementptr inbounds nuw %Option_int64, ptr %variant.tmp3, i32 0, i32 0
   store i32 1, ptr %7, align 4
   %8 = getelementptr inbounds nuw %Option_int64, ptr %variant.tmp3, i32 0, i32 1
@@ -142,6 +148,7 @@ entry:
   store i64 %10, ptr %big, align 8
   %11 = load i64, ptr %big, align 8
   %12 = call i32 (ptr, ...) @printf(ptr @1, i64 %11)
+  store %Either_int_int zeroinitializer, ptr %variant.tmp5, align 8
   %13 = getelementptr inbounds nuw %Either_int_int, ptr %variant.tmp5, i32 0, i32 0
   store i32 0, ptr %13, align 4
   %14 = getelementptr inbounds nuw %Either_int_int, ptr %variant.tmp5, i32 0, i32 1
@@ -149,6 +156,7 @@ entry:
   store i32 7, ptr %15, align 4
   %variant.val6 = load %Either_int_int, ptr %variant.tmp5, align 8
   %16 = call i32 @either_i(%Either_int_int %variant.val6)
+  store %Either_int_int zeroinitializer, ptr %variant.tmp7, align 8
   %17 = getelementptr inbounds nuw %Either_int_int, ptr %variant.tmp7, i32 0, i32 0
   store i32 1, ptr %17, align 4
   %18 = getelementptr inbounds nuw %Either_int_int, ptr %variant.tmp7, i32 0, i32 1
@@ -159,3 +167,5 @@ entry:
   %21 = call i32 (ptr, ...) @printf(ptr @2, i32 %16, i32 %20)
   ret i32 0
 }
+
+attributes #0 = { nounwind }

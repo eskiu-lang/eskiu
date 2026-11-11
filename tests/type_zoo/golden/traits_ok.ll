@@ -6,7 +6,8 @@
 
 declare i32 @printf(ptr, ...)
 
-define i32 @Num_cmp(ptr %self, ptr %o) {
+; Function Attrs: nounwind
+define noundef i32 @Num_cmp(ptr noundef %self, ptr noundef %o) #0 {
 entry:
   %o2 = alloca ptr, align 8
   %self1 = alloca ptr, align 8
@@ -28,33 +29,35 @@ merge:                                            ; preds = %entry
   ret i32 1
 }
 
-define i32 @main() {
+define noundef i32 @main() {
 entry:
   %b = alloca %Box_Num, align 8
   %lo = alloca %Num, align 8
   %y = alloca %Num, align 8
   %x = alloca %Num, align 8
+  store %Num zeroinitializer, ptr %x, align 4
   %0 = getelementptr inbounds nuw %Num, ptr %x, i32 0, i32 0
   store i32 3, ptr %0, align 4
+  store %Num zeroinitializer, ptr %y, align 4
   %1 = getelementptr inbounds nuw %Num, ptr %y, i32 0, i32 0
   store i32 7, ptr %1, align 4
-  %2 = load %Num, ptr %x, align 4
-  %3 = load %Num, ptr %y, align 4
-  %4 = call %Num @pick_Num(ptr %x, ptr %y)
-  store %Num %4, ptr %lo, align 4
-  %5 = getelementptr inbounds nuw %Box_Num, ptr %b, i32 0, i32 0
-  %6 = getelementptr inbounds nuw %Num, ptr %5, i32 0, i32 0
-  store i32 42, ptr %6, align 4
+  %2 = call %Num @pick_Num(ptr %x, ptr %y)
+  store %Num %2, ptr %lo, align 4
+  store %Box_Num zeroinitializer, ptr %b, align 4
+  %3 = getelementptr inbounds nuw %Box_Num, ptr %b, i32 0, i32 0
+  %4 = getelementptr inbounds nuw %Num, ptr %3, i32 0, i32 0
+  store i32 42, ptr %4, align 4
   %v = getelementptr inbounds nuw %Num, ptr %lo, i32 0, i32 0
   %v1 = load i32, ptr %v, align 4
-  %7 = getelementptr inbounds nuw %Box_Num, ptr %b, i32 0, i32 0
-  %v2 = getelementptr inbounds nuw %Num, ptr %7, i32 0, i32 0
+  %5 = getelementptr inbounds nuw %Box_Num, ptr %b, i32 0, i32 0
+  %v2 = getelementptr inbounds nuw %Num, ptr %5, i32 0, i32 0
   %v3 = load i32, ptr %v2, align 4
-  %8 = call i32 (ptr, ...) @printf(ptr @0, i32 %v1, i32 %v3)
+  %6 = call i32 (ptr, ...) @printf(ptr @0, i32 %v1, i32 %v3)
   ret i32 0
 }
 
-define %Num @pick_Num(ptr %a, ptr %b) {
+; Function Attrs: nounwind
+define %Num @pick_Num(ptr noundef %a, ptr noundef %b) #0 {
 entry:
   %b2 = alloca ptr, align 8
   %a1 = alloca ptr, align 8
@@ -68,13 +71,15 @@ entry:
 
 then:                                             ; preds = %entry
   %4 = load ptr, ptr %a1, align 8
-  %5 = getelementptr %Num, ptr %4, i32 0
+  %5 = getelementptr %Num, ptr %4, i64 0
   %6 = load %Num, ptr %5, align 4
   ret %Num %6
 
 merge:                                            ; preds = %entry
   %7 = load ptr, ptr %b2, align 8
-  %8 = getelementptr %Num, ptr %7, i32 0
+  %8 = getelementptr %Num, ptr %7, i64 0
   %9 = load %Num, ptr %8, align 4
   ret %Num %9
 }
+
+attributes #0 = { nounwind }

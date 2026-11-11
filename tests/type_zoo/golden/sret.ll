@@ -5,9 +5,11 @@
 
 declare i32 @printf(ptr, ...)
 
-define void @make(ptr %sret.ptr) {
+; Function Attrs: nounwind
+define void @make(ptr %sret.ptr) #0 {
 entry:
   %x = alloca %Big, align 8
+  store %Big zeroinitializer, ptr %x, align 4
   %0 = getelementptr inbounds nuw %Big, ptr %x, i32 0, i32 0
   store i32 1, ptr %0, align 4
   %1 = getelementptr inbounds nuw %Big, ptr %x, i32 0, i32 1
@@ -23,7 +25,7 @@ entry:
   ret void
 }
 
-define i32 @main() {
+define noundef i32 @main() {
 entry:
   %sret.tmp = alloca %Big, align 8
   %g = alloca %Big, align 8
@@ -39,3 +41,5 @@ entry:
   %1 = call i32 (ptr, ...) @printf(ptr @0, i32 %a1, i32 %c2, i32 %e3)
   ret i32 0
 }
+
+attributes #0 = { nounwind }
