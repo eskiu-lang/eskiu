@@ -1445,7 +1445,8 @@ The [eskiu-lang](https://github.com/eskiu-lang) organization publishes packages 
 added this way: [gpu](https://github.com/eskiu-lang/gpu) (WebGPU compute, 3D and machine learning),
 [onnx](https://github.com/eskiu-lang/onnx), [tflite](https://github.com/eskiu-lang/tflite),
 [compress](https://github.com/eskiu-lang/compress), [audio](https://github.com/eskiu-lang/audio),
-[font](https://github.com/eskiu-lang/font) and [nds](https://github.com/eskiu-lang/nds).
+[font](https://github.com/eskiu-lang/font), [nds](https://github.com/eskiu-lang/nds) and
+[quickjs](https://github.com/eskiu-lang/quickjs) (JavaScript inside an Eskiu program).
 
 The package commands:
 
