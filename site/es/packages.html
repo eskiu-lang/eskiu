@@ -4,12 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Paquetes · Eskiu</title>
-  <meta name="description" content="Los paquetes oficiales de Eskiu: gpu (cómputo, renderizado, modelos glTF y OBJ, inferencia y entrenamiento de Llama sobre WebGPU), onnx, tflite, compress, audio, font, jni y nds, cada uno se agrega con un eskiuc add." />
+  <meta name="description" content="Los paquetes oficiales de Eskiu: gpu (cómputo, renderizado, modelos glTF y OBJ, inferencia y entrenamiento de Llama sobre WebGPU), onnx, tflite, compress, audio, font, jni, quickjs y nds, cada uno se agrega con un eskiuc add." />
   <link rel="canonical" href="https://eskiu-lang.org/es/packages.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
   <meta property="og:title" content="Paquetes · Eskiu" />
-  <meta property="og:description" content="Los paquetes oficiales de Eskiu: gpu (cómputo, renderizado, modelos glTF y OBJ, inferencia y entrenamiento de Llama sobre WebGPU), onnx, tflite, compress, audio, font, jni y nds, cada uno se agrega con un eskiuc add." />
+  <meta property="og:description" content="Los paquetes oficiales de Eskiu: gpu (cómputo, renderizado, modelos glTF y OBJ, inferencia y entrenamiento de Llama sobre WebGPU), onnx, tflite, compress, audio, font, jni, quickjs y nds, cada uno se agrega con un eskiuc add." />
   <meta property="og:url" content="https://eskiu-lang.org/es/packages.html" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
   <meta property="og:image:width" content="1200" />
@@ -42,7 +42,7 @@
     <div class="eyebrow">Paquetes</div>
     <h1>Paquetes oficiales</h1>
     <p class="lede">Bibliotecas de la organización <a href="https://github.com/eskiu-lang">eskiu-lang</a> en GitHub. Cada una es un repositorio de git con un <code>eskiu.toml</code>, y se agrega a un proyecto con un solo comando.</p>
-    <nav class="pkg-grid" aria-label="Paquetes"><a href="#gpu"><b>gpu</b><span>Cómputo en GPU, renderizado, modelos 3D y machine learning para Eskiu, sobre WebGPU.</span></a><a href="#scene"><b>scene</b><span>Un grafo de escena y un renderizador de materiales para Eskiu, sobre gpu.</span></a><a href="#onnx"><b>onnx</b><span>Inferencia de modelos ONNX para Eskiu, sobre ONNX Runtime.</span></a><a href="#tflite"><b>tflite</b><span>Inferencia de modelos de TensorFlow Lite para Eskiu.</span></a><a href="#compress"><b>compress</b><span>zlib, gzip, DEFLATE crudo y archivos ZIP para Eskiu, escrito en Eskiu.</span></a><a href="#yaml"><b>yaml</b><span>Archivos de configuración YAML para Eskiu, leídos al árbol JSON de la biblioteca estándar.</span></a><a href="#audio"><b>audio</b><span>Sonido para Eskiu: archivos WAV, un mezclador y salida con SDL3.</span></a><a href="#font"><b>font</b><span>Fuentes TrueType para Eskiu: contornos de glifos, renderizado con antialiasing, acomodo de texto y atlas.</span></a><a href="#jni"><b>jni</b><span>Métodos nativos para Android y la JVM, escritos en Eskiu.</span></a><a href="#nds"><b>nds</b><span>Formatos de archivo de la Nintendo DS para Eskiu: ROMs, archivos NARC, sonido, gráficos 2D y texturas 3D.</span></a><a href="#location"><b>location</b><span>Dónde está el dispositivo, para apps hechas con eskiu-lang/ui.</span><em>ui</em></a><a href="#notifications"><b>notifications</b><span>Notificaciones locales para apps hechas con eskiu-lang/ui.</span><em>ui</em></a><a href="#camera"><b>camera</b><span>Fotos para apps hechas con eskiu-lang/ui: la galería, la cámara y una vista en vivo.</span><em>ui</em></a><a href="#video"><b>video</b><span>Reproducción de video para apps hechas con eskiu-lang/ui, con los cuadros decodificados en Eskiu.</span><em>ui</em></a><a href="#ar"><b>ar</b><span>Realidad aumentada para apps hechas con eskiu-lang/ui: ARKit en iOS, ARCore en Android y WebXR en la web.</span><em>ui</em></a><a href="#canvas"><b>canvas</b><span>Un canvas 2D para Eskiu, en una app de ui (la GPU en teléfonos, Canvas 2D en la web) o fuera de pantalla.</span><em>ui</em></a><a href="#svg"><b>svg</b><span>Dibujos vectoriales desde texto SVG, para apps hechas con eskiu-lang/ui.</span><em>ui</em></a><a href="#pedometer"><b>pedometer</b><span>Pasos caminados, en vivo y entre dos momentos, para apps de ui en iOS y Android.</span><em>ui</em></a><a href="#barcode"><b>barcode</b><span>Códigos QR y de barras leídos en vivo con la cámara, para apps hechas con eskiu-lang/ui.</span><em>ui</em></a><a href="#securestore"><b>securestore</b><span>Secretos pequeños guardados por el almacenamiento seguro de la plataforma, para apps de ui.</span><em>ui</em></a><a class="pkg-grid-soon" href="#vision"><b>vision</b><span>Visión por computadora, bit por bit con C++.</span><em>privado por ahora</em></a></nav>
+    <nav class="pkg-grid" aria-label="Paquetes"><a href="#gpu"><b>gpu</b><span>Cómputo en GPU, renderizado, modelos 3D y machine learning para Eskiu, sobre WebGPU.</span></a><a href="#scene"><b>scene</b><span>Un grafo de escena y un renderizador de materiales para Eskiu, sobre gpu.</span></a><a href="#onnx"><b>onnx</b><span>Inferencia de modelos ONNX para Eskiu, sobre ONNX Runtime.</span></a><a href="#tflite"><b>tflite</b><span>Inferencia de modelos de TensorFlow Lite para Eskiu.</span></a><a href="#compress"><b>compress</b><span>zlib, gzip, DEFLATE crudo y archivos ZIP para Eskiu, escrito en Eskiu.</span></a><a href="#yaml"><b>yaml</b><span>Archivos de configuración YAML para Eskiu, leídos al árbol JSON de la biblioteca estándar.</span></a><a href="#audio"><b>audio</b><span>Sonido para Eskiu: archivos WAV y Ogg Vorbis, un mezclador y salida con SDL3.</span></a><a href="#font"><b>font</b><span>Fuentes TrueType para Eskiu: contornos de glifos, renderizado con antialiasing, acomodo de texto y atlas.</span></a><a href="#jni"><b>jni</b><span>Métodos nativos para Android y la JVM, escritos en Eskiu.</span></a><a href="#quickjs"><b>quickjs</b><span>JavaScript para programas de Eskiu, sobre QuickJS.</span></a><a href="#nds"><b>nds</b><span>Formatos de archivo de la Nintendo DS para Eskiu: ROMs, archivos NARC, sonido, gráficos 2D, modelos 3D y partículas, y texto de juegos.</span></a><a href="#location"><b>location</b><span>Dónde está el dispositivo, para apps hechas con eskiu-lang/ui.</span><em>ui</em></a><a href="#notifications"><b>notifications</b><span>Notificaciones locales para apps hechas con eskiu-lang/ui.</span><em>ui</em></a><a href="#camera"><b>camera</b><span>Fotos para apps hechas con eskiu-lang/ui: la galería, la cámara y una vista en vivo.</span><em>ui</em></a><a href="#video"><b>video</b><span>Reproducción de video para apps hechas con eskiu-lang/ui, con los cuadros decodificados en Eskiu.</span><em>ui</em></a><a href="#ar"><b>ar</b><span>Realidad aumentada para apps hechas con eskiu-lang/ui: ARKit en iOS, ARCore en Android y WebXR en la web.</span><em>ui</em></a><a href="#canvas"><b>canvas</b><span>Un canvas 2D para Eskiu, en una app de ui (la GPU en teléfonos, Canvas 2D en la web) o fuera de pantalla.</span><em>ui</em></a><a href="#svg"><b>svg</b><span>Dibujos vectoriales desde texto SVG, para apps hechas con eskiu-lang/ui.</span><em>ui</em></a><a href="#pedometer"><b>pedometer</b><span>Pasos caminados, en vivo y entre dos momentos, para apps de ui en iOS y Android.</span><em>ui</em></a><a href="#barcode"><b>barcode</b><span>Códigos QR y de barras leídos en vivo con la cámara, para apps hechas con eskiu-lang/ui.</span><em>ui</em></a><a href="#securestore"><b>securestore</b><span>Secretos pequeños guardados por el almacenamiento seguro de la plataforma, para apps de ui.</span><em>ui</em></a><a class="pkg-grid-soon" href="#vision"><b>vision</b><span>Visión por computadora, bit por bit con C++.</span><em>privado por ahora</em></a></nav>
     <h2 id="using">Cómo usar un paquete</h2>
     <p><code>eskiuc add</code> escribe la dependencia en <code>eskiu.toml</code>, la descarga con git y guarda su commit en <code>eskiu.lock</code>, así que los builds siguientes la reutilizan sin tocar la red. No hay un registro central: una dependencia es una URL de git con un rev (un tag, una rama o un commit) o una ruta local.</p>
     <pre><code>eskiuc new myapp
@@ -52,12 +52,12 @@ eskiuc run</code></pre>
     <p>Los módulos de un paquete se importan con el nombre del paquete y el del archivo, por ejemplo <code>import &lt;gpu/model&gt;;</code>. El capítulo 13 del <a href="../the-book-of-eskiu.html#sec-13-5">libro</a> explica los manifiestos, el lock y <code>eskiuc test</code>.</p>
     <section class="pkg" id="gpu">
       <h2>gpu</h2>
-      <div class="pkg-meta"><span class="tag">v0.5.0</span><a href="https://github.com/eskiu-lang/gpu/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/gpu/actions/workflows/ci.yml/badge.svg" alt="Estado de CI: gpu" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/gpu">github.com/eskiu-lang/gpu</a></div>
+      <div class="pkg-meta"><span class="tag">v0.6.0</span><a href="https://github.com/eskiu-lang/gpu/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/gpu/actions/workflows/ci.yml/badge.svg" alt="Estado de CI: gpu" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/gpu">github.com/eskiu-lang/gpu</a></div>
       <p><strong>Cómputo en GPU, renderizado, modelos 3D y machine learning para Eskiu, sobre WebGPU.</strong></p>
-      <p>Una sola API corre sobre Metal (macOS, iOS), Vulkan (Linux, Android) y DirectX 12 (Windows) a través de wgpu-native, con shaders en WGSL. Dibuja modelos glTF y OBJ con sombreado físico (PBR), corre modelos Llama desde archivos GGUF o safetensors (Llama 2 7B Q4_0 a 45 tokens por segundo en un M4 Pro; llama.cpp da 58 en la misma máquina) y entrena redes pequeñas (97% de precisión en MNIST). Trae lo que necesita un motor 3D: varios render targets, cube maps, mipmaps en la GPU, mapas de sombras, iluminación basada en imágenes, morph targets, texturas KTX2 y HDR, y cuadros de cámara y video dibujados desde YUV. En iOS y Android dibuja en un <code>GpuView</code> de una app de ui, y los mismos programas compilan para el navegador con emdawnwebgpu. <a href="gpu.html">Qué hace, con sus mediciones →</a></p>
-      <p class="note">El primer build descarga wgpu-native 29 por ti. Las ventanas (el módulo <code>&lt;gpu/window&gt;</code>) también necesitan SDL3 del sistema: <code>brew install sdl3</code> en macOS, y compilar con <code>-L/opt/homebrew/lib</code>.</p>
+      <p>Una sola API corre sobre Metal (macOS, iOS), Vulkan (Linux, Android) y DirectX 12 (Windows) a través de wgpu-native, con shaders en WGSL. Dibuja modelos glTF y OBJ con sombreado físico (PBR), corre modelos Llama desde archivos GGUF o safetensors (Llama 2 7B Q4_0 a 45 tokens por segundo en un M4 Pro; llama.cpp da 58 en la misma máquina) y entrena redes pequeñas (97% de precisión en MNIST). Trae lo que necesita un motor 3D: varios render targets, cube maps, mipmaps en la GPU, mapas de sombras, iluminación basada en imágenes, morph targets, texturas KTX2 y HDR, y cuadros de cámara y video dibujados desde YUV. En iOS y Android dibuja en un <code>GpuView</code> de una app de ui, y los mismos programas compilan para el navegador con emdawnwebgpu, con un backend de WebGL2 donde el navegador no tiene WebGPU. Las ventanas de escritorio reciben teclado, mouse, toque y gamepads. <a href="gpu.html">Qué hace, con sus mediciones →</a></p>
+      <p class="note">Nada que instalar: el primer build descarga wgpu-native 29, y SDL3 para una ventana de escritorio (<code>&lt;gpu/window&gt;</code>). Con Eskiu 0.15.1, <code>ESKIU_SYSTEM_LIBS=SDL3</code> enlaza el SDL3 del sistema en su lugar.</p>
       <h3>Instalación</h3>
-      <pre><code>eskiuc add gpu --git https://github.com/eskiu-lang/gpu --rev v0.5.0
+      <pre><code>eskiuc add gpu --git https://github.com/eskiu-lang/gpu --rev v0.6.0
 eskiuc build</code></pre>
       <details class="pkg-example"><summary>Ejemplo del README</summary>
       <pre><code>import &lt;io&gt;;
@@ -236,12 +236,12 @@ int main() {
     </section>
     <section class="pkg" id="audio">
       <h2>audio</h2>
-      <div class="pkg-meta"><span class="tag">v0.3.0</span><a href="https://github.com/eskiu-lang/audio/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/audio/actions/workflows/ci.yml/badge.svg" alt="Estado de CI: audio" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/audio">github.com/eskiu-lang/audio</a></div>
-      <p><strong>Sonido para Eskiu: archivos WAV, un mezclador y salida con SDL3.</strong></p>
-      <p>Lee archivos WAV en todas las codificaciones comunes (PCM, float, ADPCM de IMA y de Microsoft) igual que los decodifica ffmpeg, mezcla todas las voces que quieras con volumen, paneo, tono, loops y listas de intro y loop sin cortes, y manda la mezcla a la salida de audio predeterminada. En una app de ui en iOS y Android suena a través del sistema (RemoteIO, AAudio) y decodifica MP3, AAC y FLAC con los códecs del sistema.</p>
-      <p class="note"><code>&lt;audio/wav&gt;</code> y <code>&lt;audio/mixer&gt;</code> son Eskiu puro; <code>&lt;audio/device&gt;</code> necesita SDL3 (<code>brew install sdl3</code> en macOS).</p>
+      <div class="pkg-meta"><span class="tag">v0.4.0</span><a href="https://github.com/eskiu-lang/audio/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/audio/actions/workflows/ci.yml/badge.svg" alt="Estado de CI: audio" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/audio">github.com/eskiu-lang/audio</a></div>
+      <p><strong>Sonido para Eskiu: archivos WAV y Ogg Vorbis, un mezclador y salida con SDL3.</strong></p>
+      <p>Lee archivos WAV en todas las codificaciones comunes (PCM, float, ADPCM de IMA y de Microsoft) igual que los decodifica ffmpeg, y Ogg Vorbis en todas las plataformas con un decodificador escrito en Eskiu, completo o en streaming, respetando los puntos de loop que trae el archivo. Mezcla todas las voces que quieras con volumen, paneo, tono, loops y listas de intro y loop sin cortes, y manda la mezcla a la salida de audio predeterminada. En una app de ui en iOS y Android suena a través del sistema (RemoteIO, AAudio) y decodifica MP3, AAC y FLAC con los códecs del sistema.</p>
+      <p class="note"><code>&lt;audio/wav&gt;</code>, <code>&lt;audio/ogg&gt;</code> y <code>&lt;audio/mixer&gt;</code> son Eskiu puro; <code>&lt;audio/device&gt;</code> necesita SDL3 (<code>brew install sdl3</code> en macOS).</p>
       <h3>Instalación</h3>
-      <pre><code>eskiuc add audio --git https://github.com/eskiu-lang/audio --rev v0.3.0
+      <pre><code>eskiuc add audio --git https://github.com/eskiu-lang/audio --rev v0.4.0
 eskiuc build -L/opt/homebrew/lib</code></pre>
       <details class="pkg-example"><summary>Ejemplo del README</summary>
       <pre><code>import &lt;time&gt;;
@@ -313,14 +313,60 @@ import &lt;jni&gt;;
 }</code></pre>
       </details>
     </section>
+    <section class="pkg" id="quickjs">
+      <h2>quickjs</h2>
+      <div class="pkg-meta"><span class="tag">v0.1.0</span><a href="https://github.com/eskiu-lang/quickjs/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/quickjs/actions/workflows/ci.yml/badge.svg" alt="Estado de CI: quickjs" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/quickjs">github.com/eskiu-lang/quickjs</a></div>
+      <p><strong>JavaScript para programas de Eskiu, sobre QuickJS.</strong></p>
+      <p>Integra QuickJS, el motor que trae rquickjs 0.6.2 con los mismos parches, para juegos y herramientas que guardan su lógica en JavaScript. Módulos ES con <code>await</code> de nivel superior, valores en los dos sentidos (incluidos JSON y typed arrays), closures de Eskiu como funciones de JavaScript, errores como un <code>Result</code> con su archivo, línea y columna, y límites de memoria, pila y tiempo.</p>
+      <p class="note">Nada que instalar: el primer build descarga la biblioteca de QuickJS precompilada para macOS, Linux, Windows, iOS o Android. Eskiu 0.15 o más nuevo.</p>
+      <h3>Instalación</h3>
+      <pre><code>eskiuc add quickjs --git https://github.com/eskiu-lang/quickjs --rev v0.1.0
+eskiuc build</code></pre>
+      <details class="pkg-example"><summary>Ejemplo del README</summary>
+      <pre><code>import &lt;io&gt;;
+import &lt;quickjs&gt;;
+
+struct Player { double x; }
+
+Result&lt;int, string&gt; boot(*Player p) {
+    *JsRuntime rt = js_runtime()?;
+    defer rt.release();
+    rt.set_fs_loader("scripts");          <span class="c">// "./a.js" from the importer, "lib/b.js" from scripts/</span>
+    JsContext ctx = rt.context()?;
+    defer ctx.release();
+
+    JsValue engine = ctx.object();
+    engine.set_fn("setX", 1, JsValue(*JsContext c, *JsArgs a) {
+        p.x = a.num(0);
+        return c.undefined();
+    });
+    engine.set_fn("log", 1, JsValue(*JsContext c, *JsArgs a) {
+        printf("%s\n", a.str(0));
+        return c.undefined();
+    });
+    ctx.set_global("engine", engine);
+
+    JsValue ns = ctx.eval_file("scripts/main.js")?;
+    defer ns.free();
+    JsValue booted = ctx.call_global_opt("onBoot", null, 0)?;
+    booted.free();
+    JsValue dt = ctx.num(1.0 / 60.0);
+    for (frame in 0..600) {
+        JsValue r = ctx.call_global("onUpdate", &amp;dt, 1)?;
+        r.free();
+    }
+    return Ok&lt;int, string&gt;(0);
+}</code></pre>
+      </details>
+    </section>
     <section class="pkg" id="nds">
       <h2>nds</h2>
-      <div class="pkg-meta"><span class="tag">v0.2.0</span><a href="https://github.com/eskiu-lang/nds/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/nds/actions/workflows/ci.yml/badge.svg" alt="Estado de CI: nds" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/nds">github.com/eskiu-lang/nds</a></div>
-      <p><strong>Formatos de archivo de la Nintendo DS para Eskiu: ROMs, archivos NARC, sonido, gráficos 2D y texturas 3D.</strong></p>
-      <p>Sistemas de archivos y overlays de ROMs, archivos NARC, compresión LZ, sonido SDAT con un sintetizador del driver de sonido de la DS, gráficos 2D y texturas 3D, todo en Eskiu puro. Se portó de las herramientas y el motor de Tallgrass y se comparó contra ellos.</p>
+      <div class="pkg-meta"><span class="tag">v0.3.0</span><a href="https://github.com/eskiu-lang/nds/actions/workflows/ci.yml"><img src="https://github.com/eskiu-lang/nds/actions/workflows/ci.yml/badge.svg" alt="Estado de CI: nds" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-lang/nds">github.com/eskiu-lang/nds</a></div>
+      <p><strong>Formatos de archivo de la Nintendo DS para Eskiu: ROMs, archivos NARC, sonido, gráficos 2D, modelos 3D y partículas, y texto de juegos.</strong></p>
+      <p>Sistemas de archivos y overlays de ROMs, archivos NARC, compresión LZ, sonido SDAT con un sintetizador del driver de sonido de la DS, gráficos 2D y texturas 3D, todo en Eskiu puro. Los modelos NSBMD y sus animaciones de huesos, texturas y materiales se convierten a glTF 2.0, comparados contra apicula en 3,410 modelos, y los archivos de partículas SPL a un formato JSON abierto. Se portó de las herramientas y el motor de Tallgrass y se comparó contra ellos.</p>
       <p class="note">No hay que instalar nada.</p>
       <h3>Instalación</h3>
-      <pre><code>eskiuc add nds --git https://github.com/eskiu-lang/nds --rev v0.2.0</code></pre>
+      <pre><code>eskiuc add nds --git https://github.com/eskiu-lang/nds --rev v0.3.0</code></pre>
       <details class="pkg-example"><summary>Ejemplo del README</summary>
       <pre><code>import &lt;nds/sdat&gt;;
 import &lt;nds/wav&gt;;

@@ -514,7 +514,7 @@ PKG_REV = "v0.1.0"   # the release a package is shown at, unless its entry has "
 PACKAGES_CATALOG = [
     {
         "name": "gpu",
-        "rev": "v0.5.0",
+        "rev": "v0.6.0",
         "section": "Compute",
         "tag_es": "Cómputo en GPU, renderizado, modelos 3D y machine learning para Eskiu, sobre WebGPU.",
         "note_en": "One API runs on Metal (macOS, iOS), Vulkan (Linux, Android) and DirectX 12 (Windows) through "
@@ -525,7 +525,8 @@ PACKAGES_CATALOG = [
                    "several render targets, cube maps, GPU mipmaps, shadow maps, image-based lighting, "
                    "morph targets, KTX2 and HDR textures, and camera and video frames drawn from YUV. "
                    "On iOS and Android it draws into a <code>GpuView</code> of a ui app, and the same "
-                   "programs build for the browser through emdawnwebgpu. "
+                   "programs build for the browser through emdawnwebgpu, with a WebGL2 backend where the "
+                   "browser has no WebGPU. Desktop windows take keyboard, mouse, touch and gamepads. "
                    "<a href=\"gpu.html\">What it does, with its benchmarks →</a>",
         "note_es": "Una sola API corre sobre Metal (macOS, iOS), Vulkan (Linux, Android) y DirectX 12 (Windows) a "
                    "través de wgpu-native, con shaders en WGSL. Dibuja modelos glTF y OBJ con "
@@ -535,16 +536,16 @@ PACKAGES_CATALOG = [
                    "un motor 3D: varios render targets, cube maps, mipmaps en la GPU, mapas de sombras, "
                    "iluminación basada en imágenes, morph targets, texturas KTX2 y HDR, y cuadros de cámara "
                    "y video dibujados desde YUV. En iOS y Android dibuja en un <code>GpuView</code> de una "
-                   "app de ui, y los mismos programas compilan para el navegador con emdawnwebgpu. "
+                   "app de ui, y los mismos programas compilan para el navegador con emdawnwebgpu, con un "
+                   "backend de WebGL2 donde el navegador no tiene WebGPU. Las ventanas de escritorio "
+                   "reciben teclado, mouse, toque y gamepads. "
                    "<a href=\"gpu.html\">Qué hace, con sus mediciones →</a>",
-        "needs_en": "The first build downloads wgpu-native 29 for you. Opening a window "
-                    "(<code>&lt;gpu/window&gt;</code>) also needs SDL3 from the system: "
-                    "<code>brew install sdl3</code> on macOS, then build with "
-                    "<code>-L/opt/homebrew/lib</code>.",
-        "needs_es": "El primer build descarga wgpu-native 29 por ti. Las ventanas (el módulo "
-                    "<code>&lt;gpu/window&gt;</code>) también necesitan SDL3 del sistema: "
-                    "<code>brew install sdl3</code> en macOS, y compilar con "
-                    "<code>-L/opt/homebrew/lib</code>.",
+        "needs_en": "Nothing to install: the first build downloads wgpu-native 29, and SDL3 for a "
+                    "desktop window (<code>&lt;gpu/window&gt;</code>). With Eskiu 0.15.1, "
+                    "<code>ESKIU_SYSTEM_LIBS=SDL3</code> links the system's SDL3 instead.",
+        "needs_es": "Nada que instalar: el primer build descarga wgpu-native 29, y SDL3 para una "
+                    "ventana de escritorio (<code>&lt;gpu/window&gt;</code>). Con Eskiu 0.15.1, "
+                    "<code>ESKIU_SYSTEM_LIBS=SDL3</code> enlaza el SDL3 del sistema en su lugar.",
         "setup": [],
         "build": ["eskiuc build"],
     },
@@ -642,24 +643,27 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "audio",
-        "rev": "v0.3.0",
+        "rev": "v0.4.0",
         "section": "Playing a sound",
-        "tag_es": "Sonido para Eskiu: archivos WAV, un mezclador y salida con SDL3.",
+        "tag_es": "Sonido para Eskiu: archivos WAV y Ogg Vorbis, un mezclador y salida con SDL3.",
         "note_en": "Reads WAV files in every common encoding (PCM, float, IMA and Microsoft ADPCM) "
-                   "as ffmpeg decodes them, mixes any number of voices with volume, pan, pitch, loops "
+                   "as ffmpeg decodes them, and Ogg Vorbis on every platform with a decoder written in "
+                   "Eskiu, whole or streamed, honoring the loop points a file carries. It mixes any number of voices with volume, pan, pitch, loops "
                    "and gapless intro-to-loop playlists, and sends the mix to the default output "
                    "device. In a ui app on iOS and Android it plays through the system (RemoteIO, "
                    "AAudio) and decodes MP3, AAC and FLAC with the system's codecs.",
         "note_es": "Lee archivos WAV en todas las codificaciones comunes (PCM, float, ADPCM de IMA y "
-                   "de Microsoft) igual que los decodifica ffmpeg, mezcla todas las voces que "
+                   "de Microsoft) igual que los decodifica ffmpeg, y Ogg Vorbis en todas las plataformas con un "
+                   "decodificador escrito en Eskiu, completo o en streaming, respetando los puntos de loop "
+                   "que trae el archivo. Mezcla todas las voces que "
                    "quieras con volumen, paneo, tono, loops y listas de intro y loop sin cortes, y "
                    "manda la mezcla a la salida de audio predeterminada. En una app de ui en iOS y "
                    "Android suena a través del sistema (RemoteIO, AAudio) y decodifica MP3, AAC y "
                    "FLAC con los códecs del sistema.",
-        "needs_en": "<code>&lt;audio/wav&gt;</code> and <code>&lt;audio/mixer&gt;</code> are pure "
+        "needs_en": "<code>&lt;audio/wav&gt;</code>, <code>&lt;audio/ogg&gt;</code> and <code>&lt;audio/mixer&gt;</code> are pure "
                     "Eskiu; <code>&lt;audio/device&gt;</code> needs SDL3 (<code>brew install sdl3</code> "
                     "on macOS).",
-        "needs_es": "<code>&lt;audio/wav&gt;</code> y <code>&lt;audio/mixer&gt;</code> son Eskiu puro; "
+        "needs_es": "<code>&lt;audio/wav&gt;</code>, <code>&lt;audio/ogg&gt;</code> y <code>&lt;audio/mixer&gt;</code> son Eskiu puro; "
                     "<code>&lt;audio/device&gt;</code> necesita SDL3 (<code>brew install sdl3</code> en "
                     "macOS).",
         "setup": [],
@@ -699,17 +703,44 @@ PACKAGES_CATALOG = [
         "build": ["eskiuc build --target aarch64-linux-android24 -o libhello.so"],
     },
     {
+        "name": "quickjs",
+        "section": "A game loop",
+        "tag_es": "JavaScript para programas de Eskiu, sobre QuickJS.",
+        "note_en": "Embeds QuickJS, the engine rquickjs 0.6.2 bundles with the same patches, for games "
+                   "and tools that keep their logic in JavaScript. ES modules with top-level "
+                   "<code>await</code>, values both ways (JSON and typed arrays included), Eskiu "
+                   "closures as JavaScript functions, errors as a <code>Result</code> with their file, "
+                   "line and column, and memory, stack and time limits.",
+        "note_es": "Integra QuickJS, el motor que trae rquickjs 0.6.2 con los mismos parches, para juegos "
+                   "y herramientas que guardan su lógica en JavaScript. Módulos ES con <code>await</code> "
+                   "de nivel superior, valores en los dos sentidos (incluidos JSON y typed arrays), "
+                   "closures de Eskiu como funciones de JavaScript, errores como un <code>Result</code> con "
+                   "su archivo, línea y columna, y límites de memoria, pila y tiempo.",
+        "needs_en": "Nothing to install: the first build downloads the prebuilt QuickJS library for "
+                    "macOS, Linux, Windows, iOS or Android. Eskiu 0.15 or newer.",
+        "needs_es": "Nada que instalar: el primer build descarga la biblioteca de QuickJS precompilada "
+                    "para macOS, Linux, Windows, iOS o Android. Eskiu 0.15 o más nuevo.",
+        "setup": [],
+        "build": ["eskiuc build"],
+    },
+    {
         "name": "nds",
-        "rev": "v0.2.0",
+        "rev": "v0.3.0",
         "section": "Example",
         "tag_es": "Formatos de archivo de la Nintendo DS para Eskiu: ROMs, archivos NARC, sonido, "
-                  "gráficos 2D y texturas 3D.",
+                  "gráficos 2D, modelos 3D y partículas, y texto de juegos.",
         "note_en": "ROM file systems and overlays, NARC archives, LZ compression, SDAT sound with a "
                    "synthesizer of the DS sound driver, 2D graphics and 3D textures, in pure Eskiu. "
+                   "NSBMD models and their joint, texture and material animations convert to glTF 2.0, "
+                   "checked against apicula on 3,410 models, and SPL particle archives to an open JSON "
+                   "format. "
                    "It was ported from the tools and engine of Tallgrass and checked against them.",
         "note_es": "Sistemas de archivos y overlays de ROMs, archivos NARC, compresión LZ, sonido "
                    "SDAT con un sintetizador del driver de sonido de la DS, gráficos 2D y texturas 3D, "
-                   "todo en Eskiu puro. Se portó de las herramientas y el motor de Tallgrass y se "
+                   "todo en Eskiu puro. Los modelos NSBMD y sus animaciones de huesos, texturas y "
+                   "materiales se convierten a glTF 2.0, comparados contra apicula en 3,410 modelos, y "
+                   "los archivos de partículas SPL a un formato JSON abierto. "
+                   "Se portó de las herramientas y el motor de Tallgrass y se "
                    "comparó contra ellos.",
         "needs_en": "Nothing to install.",
         "needs_es": "No hay que instalar nada.",
@@ -973,7 +1004,7 @@ PKG_TEXT = {
     "en": {
         "lang": "en", "title": "Packages · Eskiu", "eyebrow": "Packages", "h1": "Official packages",
         "desc": "The official Eskiu packages: gpu (compute, rendering, glTF and OBJ models, Llama "
-                "inference and training over WebGPU), onnx, tflite, compress, audio, font, jni and nds, "
+                "inference and training over WebGPU), onnx, tflite, compress, audio, font, jni, quickjs and nds, "
                 "each added with one eskiuc add.",
         "lede": "Libraries from the <a href=\"https://github.com/eskiu-lang\">eskiu-lang</a> "
                 "organization on GitHub. Each one is a git repository with an "
@@ -1005,7 +1036,7 @@ PKG_TEXT = {
         "lang": "es", "title": "Paquetes · Eskiu", "eyebrow": "Paquetes", "h1": "Paquetes oficiales",
         "desc": "Los paquetes oficiales de Eskiu: gpu (cómputo, renderizado, modelos glTF y OBJ, "
                 "inferencia y entrenamiento de Llama sobre WebGPU), onnx, tflite, compress, audio, "
-                "font, jni y nds, cada uno se agrega con un eskiuc add.",
+                "font, jni, quickjs y nds, cada uno se agrega con un eskiuc add.",
         "lede": "Bibliotecas de la organización <a href=\"https://github.com/eskiu-lang\">eskiu-lang</a> "
                 "en GitHub. Cada una es un repositorio de git con un <code>eskiu.toml</code>, y se "
                 "agrega a un proyecto con un solo comando.",

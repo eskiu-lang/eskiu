@@ -30,12 +30,14 @@ MCP server: `https://eskiu-mcp-9450.orvex.cloud/mcp` (remote, no key). It search
 - [Getting started with ui](https://github.com/eskiu-lang/ui/blob/main/docs/getting-started.md)
 - [ui agent](https://github.com/eskiu-lang/ui/blob/main/docs/agents.md): every operation (tree, layout, screenshot, tap, type, scroll, back, clock, state, logs, perf) and its JSON answer
 - [ui test](https://github.com/eskiu-lang/ui/blob/main/docs/testing.md): `.uitest` steps and expectations
+- [ui web apps](https://github.com/eskiu-lang/ui/blob/main/docs/webapp.md): an Eskiu program as the backend of a web front end in the desktop webview, with `@eskiu/webapp`
 
 ## Packages
 
-- [Package catalog](https://eskiu-lang.org/packages.html): gpu, scene, ar, video, camera, onnx, tflite, audio, font, yaml, jni and more, each with its API reference
+- [Package catalog](https://eskiu-lang.org/packages.html): gpu, scene, ar, video, camera, onnx, tflite, audio, font, yaml, jni, quickjs and more, each with its API reference
 - [gpu](https://github.com/eskiu-lang/gpu): WebGPU compute and rendering, glTF models, image-based lighting, YUV frames
 - [scene](https://github.com/eskiu-lang/scene): a scene graph and material renderer on gpu
+- [quickjs](https://github.com/eskiu-lang/quickjs): JavaScript inside Eskiu programs, over QuickJS (ES modules, host functions, limits)
 
 ## Optional
 
