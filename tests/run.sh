@@ -670,6 +670,18 @@ if [[ "$(uname -s)" == Darwin ]]; then
     else bad "cli/macos-other-arch" "no $other executable"; fi
 fi
 
+# An output in a directory that does not exist yet gets it (-o, -c -o, --emit-header).
+mkdir_work="$(mktemp -d)"
+printf 'export int f(int x) { return x; }\nint main() { return f(0); }\n' > "$mkdir_work/m.esk"
+if "$ESKIUC" "$mkdir_work/m.esk" -o "$mkdir_work/a/b/m" >/dev/null 2>&1 && "$mkdir_work/a/b/m" \
+    && "$ESKIUC" "$mkdir_work/m.esk" -c -o "$mkdir_work/c/m.o" >/dev/null 2>&1 && [[ -f "$mkdir_work/c/m.o" ]] \
+    && "$ESKIUC" "$mkdir_work/m.esk" --emit-header "$mkdir_work/h/m.h" >/dev/null 2>&1 && [[ -f "$mkdir_work/h/m.h" ]]; then
+    ok "cli/output-dir-created"
+else
+    bad "cli/output-dir-created" "an output in a missing directory failed"
+fi
+rm -rf "$mkdir_work"
+
 # `--help` documents the subcommands and lists only Eskiu's options (the LLVM
 # backend's internal flags are hidden).
 help_out="$("$ESKIUC" --help 2>&1)"
