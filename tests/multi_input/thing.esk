@@ -1,0 +1,6 @@
+// A type and Result, imported first by first.esk.
+import <result>;
+
+struct Thing {
+    int v;
+}

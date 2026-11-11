@@ -1,0 +1,4 @@
+// The first input of `eskiuc first.esk second.esk`: it imports the type second.esk uses.
+import "thing.esk";
+
+int helper() { return 1; }

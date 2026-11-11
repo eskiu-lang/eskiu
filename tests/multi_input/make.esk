@@ -1,0 +1,9 @@
+// Parsed while compiling second.esk, after first.esk's parser has already read thing.esk
+// and <result>: `Ok<Thing, string>(t)` must still read as a generic call.
+import <result>;
+import "thing.esk";
+
+Result<Thing, string> make(int v) {
+    Thing t = Thing { v: v };
+    return Ok<Thing, string>(t);
+}

@@ -248,6 +248,28 @@ if [[ $code -eq 3 && "$out" == $'[a]\n[b c]' ]]; then ok "run/args"; else bad "r
 "$ESKIUC" run "$args_esk" crash >/dev/null 2>&1; code=$?
 if [[ $code -eq 139 ]]; then ok "run/signal"; else bad "run/signal" "exit $code (expected 139)"; fi
 
+# ---- several input files ------------------------------------------------------
+# `eskiuc first.esk second.esk`: a type and a generic that an import of the first input
+# declares are known while the second input's imports parse (`Ok<Thing, string>(t)`
+# is a call, not two comparisons), in both compilers.
+echo "Several inputs:"
+mi="$here/multi_input"
+if "$ESKIUC" "$mi/first.esk" "$mi/second.esk" -o "$work/multi_input" >"$work/mi.log" 2>&1 &&
+        [[ "$("$work/multi_input")" == "42" ]]; then
+    ok "inputs/shared-type-names"
+else
+    bad "inputs/shared-type-names" "$(head -2 "$work/mi.log" | tr '\n' ' ')"
+fi
+esk_bin="${ESKIUC_ESK:-$(dirname "$ESKIUC")/eskiuc-esk}"
+if [[ -z "$SANITIZE" && -x "$esk_bin" ]]; then
+    if "$esk_bin" "$mi/first.esk" "$mi/second.esk" -o "$work/multi_input_esk" >"$work/mi.log" 2>&1 &&
+            [[ "$("$work/multi_input_esk")" == "42" ]]; then
+        ok "inputs/shared-type-names (self-host)"
+    else
+        bad "inputs/shared-type-names (self-host)" "$(head -2 "$work/mi.log" | tr '\n' ' ')"
+    fi
+fi
+
 # ---- eskiuc repl -------------------------------------------------------------
 # tests/repl/NAME.in is fed to `eskiuc repl` on stdin (no prompts: not a TTY), from
 # tests/repl so `:load` finds its files; stdout and stderr must match NAME.expected.

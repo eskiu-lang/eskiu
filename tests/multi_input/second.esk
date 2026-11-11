@@ -1,0 +1,12 @@
+// The second input: its import uses a generic and a type the first input's import declared.
+import <io>;
+import "make.esk";
+
+int main() {
+    Result<Thing, string> r = make(41);
+    if (r.ok == 0) {
+        return 1;
+    }
+    printf("%d\n", r.value.v + helper());
+    return 0;
+}

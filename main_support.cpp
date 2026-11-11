@@ -1000,6 +1000,9 @@ std::shared_ptr<Program> loadProgram(const std::vector<std::string>& inputs, con
     std::map<std::string, Macro> macros;     // shared: #defines propagate across files
     seedPredefinedMacros(macros, triple, freestanding);
     std::set<std::string> importedFiles;     // shared: a common import is parsed once
+    // Shared too: a type or generic declared by an earlier input (or an import it parsed)
+    // keeps `Name<T>(x)` and `(T)x` reading as such in a later input.
+    std::set<std::string> typeNames, genericNames;
     ImportCache cache;                       // imports preprocessed at their import line
     cache.stdlibPath = stdlibRoot;
     cache.macros = &macros;
@@ -1034,6 +1037,8 @@ std::shared_ptr<Program> loadProgram(const std::vector<std::string>& inputs, con
         parser.macros = &macros;
         parser.importedFiles = &importedFiles;
         parser.importCache = &cache;
+        parser.sharedTypeNames = &typeNames;
+        parser.sharedGenericNames = &genericNames;
         auto prog = parser.parse();
         if (!prog) return nullptr;
         merged.insert(merged.end(), prog->declarations.begin(), prog->declarations.end());
