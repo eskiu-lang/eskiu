@@ -60,8 +60,10 @@ cmake --build build -j$(nproc)
 Add `./build` to your `PATH` so you can type `eskiuc` from any directory.
 
 `eskiuc doctor` lists what the machine has for each kind of build (the C driver that
-links programs, git and curl for packages, OpenSSL, Emscripten, the Android NDK, the iOS
-SDK) and what to install for what is missing.
+links programs, git and curl for packages, OpenSSL, SDL3, Emscripten, the Android NDK, the
+iOS SDK) and what to install for what is missing. It finds SDL3 the way a build does: the
+`[native.SDL3]` archive of a package (already downloaded, or downloaded by the first build
+that links it), else the system's `libSDL3`.
 
 ---
 
@@ -1402,7 +1404,42 @@ it (`tar`, or `unzip` for a `.zip` on Linux) into `~/.eskiu/native/SHA256`, once
 `eskiuc fetch` downloads every host one ahead. The build then links against that directory
 and records it as the program's run-time path; on Windows the DLLs are copied next to the
 program. A program that does not link the library downloads nothing, and a platform the
-table leaves out links it from the system as before. Only the C++ `eskiuc` reads the table.
+table leaves out links it from the system as before. Both compilers read the table.
+
+To link the system's copy of a library instead of the archive (a distribution package, a
+build of your own, or a machine with no network), name it in `ESKIU_SYSTEM_LIBS`,
+separated by commas (`*` names every one):
+
+```bash
+ESKIU_SYSTEM_LIBS=SDL3 eskiuc build
+ESKIU_SYSTEM_LIBS=SDL3,wgpu_native eskiuc run
+```
+
+The archive is then neither downloaded nor linked, and the build looks for `libNAME` in
+`LIBRARY_PATH`, the directory `pkg-config` gives for it (the C++ `eskiuc` only), and the
+usual library directories (`/opt/homebrew/lib`, `/usr/local/lib`, `/usr/lib` and the
+others), adding its directory as `-L` and run-time path. When the download of an archive
+fails (no network) and the system has the library, the build prints a warning and links
+the system's instead; without one it stops with the download error. Both apply to builds
+for this machine; a `--target` build for another one skips a listed archive and takes the
+library from its own `-L`. `eskiuc doctor` shows which one a build of SDL3 would use.
+
+### Web assets
+
+A package whose code needs files next to the page in a browser (a WebAssembly module it
+loads, a worker script) lists them in a `[web]` table, as paths inside the package:
+
+```toml
+[web]
+assets = ["web/gpu-naga.wasm"]
+```
+
+A build for `wasm32-unknown-emscripten` in the package, or in a package that depends on
+it, copies each one (a file, or a directory with its contents) into the directory of the
+output (`build/app.html` gets `build/gpu-naga.wasm`), with either compiler. An asset that
+does not exist, or that has the file name of another package's, is a warning. A compiler
+older than 0.15.1 rejects the table (`unknown table [web]`), so a package that adds it
+needs 0.15.1 or newer.
 
 The [eskiu-lang](https://github.com/eskiu-lang) organization publishes packages that are
 added this way: [gpu](https://github.com/eskiu-lang/gpu) (WebGPU compute, 3D and machine learning),
@@ -1414,6 +1451,7 @@ The package commands:
 
 ```bash
 eskiuc build [-o out] [flags]   # compile src/main.esk to build/NAME
+eskiuc build tool.esk [flags]   # compile tool.esk (an example, a tool) to build/tool
 eskiuc run [args]               # build, then run with args
 eskiuc test                     # compile and run every tests/*.esk, pass = exit code 0
 eskiuc fetch                    # re-resolve the dependencies, rewrite eskiu.lock

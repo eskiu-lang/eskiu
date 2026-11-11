@@ -302,7 +302,7 @@ manifest format.
 | `eskiuc new NAME` | Create `NAME/eskiu.toml`, `NAME/src/main.esk` (hello world) and `NAME/.gitignore`. |
 | `eskiuc add NAME --git URL [--rev REV]` | Add a git dependency to `eskiu.toml`, fetch it and update the lock. `REV` is a tag, branch or commit (default: the remote's default branch). |
 | `eskiuc add NAME --path DIR` | Add a local dependency, used in place. |
-| `eskiuc build [-o OUT] [FLAGS]` | Fetch what the lock names and is missing, then compile the package's main file to `build/NAME` (or `OUT`). Other flags go to the compiler. |
+| `eskiuc build [FILE.esk] [-o OUT] [FLAGS]` | Fetch what the lock names and is missing, then compile the package's main file to `build/NAME` (or `OUT`). With a `.esk` file named, compile that file instead (an example or a tool of the package, with its dependencies) to `build/FILE`. Other flags go to the compiler. |
 | `eskiuc run [ARGS]` | Build, then run the program with `ARGS`. With a `.esk` file named, `eskiuc run file.esk` compiles that file as before. |
 | `eskiuc test` | Compile and run each `tests/*.esk` of the package; a test passes when it exits with 0. |
 | `eskiuc fetch` | Resolve every dependency again (fetching the git mirrors) and rewrite `eskiu.lock`. |
@@ -325,7 +325,11 @@ A package's prebuilt native libraries (`[native.NAME]`, see
 `~/.eskiu/native/SHA256` by the first build that links one (or the host ones by
 `eskiuc fetch`) and checked against their SHA-256; a build in the package links them
 with no `-L`, with either compiler (`eskiuc` or the self-hosted `eskiuc-esk`). The lock
-does not list them: the manifest's SHA-256 names each one.
+does not list them: the manifest's SHA-256 names each one. `ESKIU_SYSTEM_LIBS=NAME,...`
+links the system's library in place of the archive, and a build whose download fails
+falls back to the system's library when there is one, with a warning (see
+[getting started](getting-started.md#native-libraries)). A web build copies the files a
+package lists in `[web] assets` next to its output ([web assets](getting-started.md#web-assets)).
 
 ## Running Tests
 
