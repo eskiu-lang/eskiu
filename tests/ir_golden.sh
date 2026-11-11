@@ -7,6 +7,7 @@
 #   - `signext` / `zeroext` on narrow integer parameters and return types
 #   - `personality` function and `landingpad` on exception blocks
 #   - `@__cabi_*` callback thunks for C function pointers
+#   - `noundef` on scalar parameters and results, `nounwind` only where nothing can throw
 #
 # Usage: ./tests/ir_golden.sh [path-to-eskiuc]
 
@@ -85,6 +86,44 @@ if "$ESKIUC" "$here/c_abi_callback.esk" --test-codegen > "$ir" 2>&1; then
     fi
 else
     bad "ir/cabi_callback_thunks" "codegen failed"
+fi
+
+# 5. noundef on scalar parameters and results; nounwind on a function that cannot throw
+# (a leaf, and its caller), not on one that throws, calls a C function (which may call
+# back into code that throws) or calls through a pointer.
+ir="$work/attrs.ll"
+cat > "$work/attrs.esk" <<'EOF'
+extern int puts(string s);
+int leaf(int a, double b, *int p) { return a + (int)b + *p; }
+int calls_leaf(int a) { int v = 1; return leaf(a, 2.0, &v); }
+int throws(int a) { if (a > 3) { throw a; } return a; }
+int calls_c(string s) { return puts(s); }
+int indirect(fn(int)->int f) { return f(1); }
+struct Big { int64 a; int64 b; int64 c; }
+Big big(int x) { Big r; r.a = (int64)x; return r; }
+int leaf1(int x) { return x; }
+int main() { return calls_leaf(1) + throws(1) + calls_c("x") + indirect(leaf1) + (int)big(1).a; }
+EOF
+if "$ESKIUC" "$work/attrs.esk" --test-codegen > "$ir" 2>&1; then
+    nounwind() {
+        local g
+        g="$(grep "^define .*@$1(" "$ir" | grep -o '#[0-9]*' | tr -d '#')"
+        [[ -n "$g" ]] && grep "^attributes #$g = " "$ir" | grep -q nounwind
+    }
+    if grep -q "^define noundef i32 @leaf(i32 noundef %a, double noundef %b, ptr noundef %p)" "$ir" &&
+            grep -q "^define void @big(ptr %sret.ptr, i32 noundef %x)" "$ir"; then
+        ok "ir/noundef"
+    else
+        bad "ir/noundef" "$(grep -E '^define .*@(leaf|big)\(' "$ir")"
+    fi
+    if nounwind leaf && nounwind calls_leaf && ! nounwind throws && ! nounwind calls_c &&
+            ! nounwind indirect && ! nounwind main; then
+        ok "ir/nounwind"
+    else
+        bad "ir/nounwind" "$(grep -E '^(define|attributes)' "$ir" | tr '\n' ' ')"
+    fi
+else
+    bad "ir/noundef" "codegen failed: $(head -3 "$ir")"
 fi
 
 echo ""

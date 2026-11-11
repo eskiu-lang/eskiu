@@ -213,10 +213,16 @@ llvm::Function* CodeGen::declareFunction(
         funcType, llvm::Function::ExternalLinkage, name, module.get());
     // A narrow integer result is extended by the callee (signext/zeroext), so a C
     // caller (a callback, or C calling an Eskiu function) reads it the C way.
+    // Every Eskiu value is initialized (locals start at zero), so a scalar argument or
+    // result is never undef or poison: noundef, as clang marks C's.
+    auto scalar = [](llvm::Type* t) { return t->isIntegerTy() || t->isFloatingPointTy() || t->isPointerTy(); };
     if (!sret) {
         llvm::Attribute::AttrKind rext = cabiExtAttr(returnTypeStr, returnType);
         if (rext != llvm::Attribute::None) func->addRetAttr(rext);
+        if (scalar(returnType)) func->addRetAttr(llvm::Attribute::NoUndef);
     }
+    for (unsigned i = sret ? 1 : 0; i < func->arg_size(); ++i)
+        if (scalar(func->getArg(i)->getType())) func->addParamAttr(i, llvm::Attribute::NoUndef);
 
     // Set parameter names (skip index 0 for sret functions — that's the hidden ret ptr)
     size_t paramIdx = 0;

@@ -219,6 +219,55 @@ static llvm::FunctionType* byPointerType(llvm::FunctionType* ft) {
 // the alignment the chain proves instead: the base's (its own chain's, else the C alignment
 // of the GEP's source type), lowered by each field offset and element stride. Chains with
 // no packed struct are left alone. selfhost cg_align_packed applies the same rule to its IR.
+// A function defined here that can raise no exception gets nounwind: one with no invoke,
+// landingpad or resume whose every call is to an intrinsic, inline assembly, or a function
+// that is nounwind itself (one defined here and found so, as a recursive group is when
+// nothing in it can throw). A call through a pointer, to an extern or to a prototype
+// defined elsewhere may throw (a C function can call back into Eskiu code that throws),
+// and so may __cxa_throw.
+void CodeGen::inferNoUnwind(llvm::Module& m) {
+    std::set<llvm::Function*> may;   // defined functions that may unwind
+    auto callMayUnwind = [&](const llvm::CallBase* cb) {
+        if (cb->doesNotThrow() || cb->isInlineAsm()) return false;
+        const llvm::Function* f = cb->getCalledFunction();
+        if (!f) return true;
+        if (f->isIntrinsic()) return !f->doesNotThrow();
+        if (f->isDeclaration() || f->isInterposable()) return !f->doesNotThrow();
+        return may.count(const_cast<llvm::Function*>(f)) > 0;
+    };
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (llvm::Function& f : m) {
+            if (f.isDeclaration() || f.doesNotThrow() || may.count(&f)) continue;
+            if (f.isInterposable()) {
+                may.insert(&f);
+                changed = true;
+                continue;
+            }
+            bool unwinds = false;
+            for (llvm::BasicBlock& bb : f) {
+                for (llvm::Instruction& in : bb) {
+                    if (llvm::isa<llvm::InvokeInst>(in) || llvm::isa<llvm::ResumeInst>(in) ||
+                        llvm::isa<llvm::LandingPadInst>(in) || in.isEHPad()) {
+                        unwinds = true;
+                    } else if (auto* cb = llvm::dyn_cast<llvm::CallBase>(&in)) {
+                        unwinds = callMayUnwind(cb);
+                    }
+                    if (unwinds) break;
+                }
+                if (unwinds) break;
+            }
+            if (unwinds) {
+                may.insert(&f);
+                changed = true;
+            }
+        }
+    }
+    for (llvm::Function& f : m)
+        if (!f.isDeclaration() && !may.count(&f)) f.setDoesNotThrow();
+}
+
 void CodeGen::alignPackedAccesses(llvm::Module& m) {
     const llvm::DataLayout& dl = m.getDataLayout();
     auto lower = [](uint64_t a, uint64_t off) {
@@ -446,6 +495,7 @@ llvm::Module* CodeGen::generateCode(std::shared_ptr<Program> program) {
     emitUncaughtReporter();
     if (sharedLibrary && !exportedFns.empty()) hideNonExports(triple);
     alignPackedAccesses(*module);
+    inferNoUnwind(*module);
     if (strictAliasing) addTypeBasedAliasInfo(*module);
     if (triple.isWasm()) passLargeAggregatesByPointer(*module);
 
