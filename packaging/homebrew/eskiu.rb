@@ -5,28 +5,28 @@
 class Eskiu < Formula
   desc "Self-hosting systems language with a C-style surface and an LLVM backend"
   homepage "https://eskiu-lang.org"
-  version "0.15.0"
+  version "0.15.1"
   license "MIT"
 
   on_macos do
     on_arm do
-      url "https://github.com/eskiu-lang/eskiu/releases/download/v0.15.0/eskiuc-macos-arm64.tar.gz"
-      sha256 "e7c49b920221d4ccf1a3763245447c9f7de2fbd37bcd0aad654fb6635fb13b84"
+      url "https://github.com/eskiu-lang/eskiu/releases/download/v0.15.1/eskiuc-macos-arm64.tar.gz"
+      sha256 "984a275e38b9effa60aac7cb9719bfa777d7999047db3079694963c6664f6bd7"
     end
     on_intel do
-      url "https://github.com/eskiu-lang/eskiu/releases/download/v0.15.0/eskiuc-macos-x86_64.tar.gz"
-      sha256 "ecbf88f11fb059c697be72ffb6be42e43336aee80bdf422a9f132d43cad2a56e"
+      url "https://github.com/eskiu-lang/eskiu/releases/download/v0.15.1/eskiuc-macos-x86_64.tar.gz"
+      sha256 "9710b0208f0133cf37a6cfcfc4620ccbdafa9624514bf26c569883ef18dec7a7"
     end
   end
 
   on_linux do
     on_intel do
-      url "https://github.com/eskiu-lang/eskiu/releases/download/v0.15.0/eskiuc-linux-x86_64.tar.gz"
-      sha256 "2a0cd660dbca783d8ea6848a705256682248f2395cf26a1333ec8a1885f8ad1f"
+      url "https://github.com/eskiu-lang/eskiu/releases/download/v0.15.1/eskiuc-linux-x86_64.tar.gz"
+      sha256 "8f90f5ab02f491a22e07f0b40f55b26389f6cb55408bf20bfa3dcc7bf4c7122f"
     end
     on_arm do
-      url "https://github.com/eskiu-lang/eskiu/releases/download/v0.15.0/eskiuc-linux-arm64.tar.gz"
-      sha256 "6ba72ee21dc223dbb2d61ec39efde4ce089548400b1547360261555a31d5e034"
+      url "https://github.com/eskiu-lang/eskiu/releases/download/v0.15.1/eskiuc-linux-arm64.tar.gz"
+      sha256 "d8183943924804ecfb7148e12d25bcecb944737f19688f2f25d5f9ff126f039d"
     end
   end
 
