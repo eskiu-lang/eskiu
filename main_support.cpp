@@ -1184,7 +1184,19 @@ std::string findCDriver(bool sanitized, std::vector<std::string>* ccArgs, const 
         for (std::string w; ws >> w;) words.push_back(w);
         if (!words.empty()) {
             if (auto p = llvm::sys::findProgramByName(words[0])) {
-                if (ccArgs) ccArgs->assign(words.begin() + 1, words.end());
+                if (ccArgs) {
+                    ccArgs->assign(words.begin() + 1, words.end());
+#ifdef __APPLE__
+                    // A --target for macOS (the other architecture) still needs selecting
+                    // when $CC names the driver, unless its words already select one.
+                    bool selects = false;
+                    for (const auto& w : *ccArgs)
+                        if (w == "-target" || w == "-arch" || w.rfind("--target=", 0) == 0) selects = true;
+                    if (!selects && triple.find("apple") != std::string::npos &&
+                        (triple.find("-macos") != std::string::npos || triple.find("-darwin") != std::string::npos))
+                        ccArgs->insert(ccArgs->end(), {"-target", triple});
+#endif
+                }
                 return *p;
             }
             std::cerr << "warning: $CC ('" << cc << "') was not found; "

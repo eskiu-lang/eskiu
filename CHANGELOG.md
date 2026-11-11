@@ -57,7 +57,8 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   generator now give the file, line and column, and say when a variable hides a function.
 - `--target` for the other macOS architecture on a Mac (`x86_64-apple-macosx11.0` from
   Apple silicon, or arm64 from an Intel Mac) linked the object as the host's architecture and
-  failed; the driver now links it with `cc -target`.
+  failed; the driver now links it with `cc -target` (or `$CC -target` when `CC` is set and
+  does not select a target itself).
 
 ## [0.15.0] - 2026-11-09
 
