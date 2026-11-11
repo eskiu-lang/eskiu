@@ -1,8 +1,10 @@
 // `eskiuc doctor`: what this machine has for each kind of build, and what is missing.
 // It only looks (no download, no build): the C driver that links native programs, the
-// tools packages need, OpenSSL for <fetch>'s https, SDL3 for the gpu and audio packages,
+// tools packages need, OpenSSL for <fetch>'s https, SDL3 for the gpu and audio packages
+// (found as a build finds it: a package's [native.SDL3] archive, else the system library),
 // and the toolchain each cross target uses (the same lookups as findCDriver/crossDriver).
 #include "main_support.h"
+#include "pkg.h"
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -83,20 +85,62 @@ bool openssl(std::string& where) {
     return false;
 }
 
-bool sdl3(std::string& where) {
-    std::vector<std::string> dirs = {"/opt/homebrew/include", "/usr/local/include", "/usr/include"};
-    if (const char* p = std::getenv("SDL3_DIR"); p && *p) dirs.insert(dirs.begin(), std::string(p) + "/include");
-    for (const auto& d : dirs)
-        if (exists(d + "/SDL3/SDL.h")) {
-            where = d + "/SDL3";
-            return true;
-        }
-    std::string pc = onPath("pkg-config");
-    if (!pc.empty() && llvm::sys::ExecuteAndWait(pc, {pc, "--exists", "sdl3"}) == 0) {
-        where = "pkg-config sdl3 " + firstLine(pc, {"--modversion", "sdl3"});
-        return true;
+// SDL3 as a build gets it: the archive a package declares in [native.SDL3] (already in
+// $ESKIU_HOME/native, or downloaded by the first build that links it), else the system's
+// libSDL3. Prints its own lines; true when a build can link it.
+bool sdl3() {
+    std::vector<KnownNative> archives = pkgKnownNatives("SDL3");
+    std::string file;
+    std::string sysDir = pkgFindSystemLib("SDL3", &file);
+    bool preferSys = pkgPreferSystemLib("SDL3");
+    const KnownNative* cached = nullptr;
+    for (const auto& a : archives) if (a.cached && !cached) cached = &a;
+    std::string what = "SDL3 (gpu, audio packages)";
+    std::string sysText = sysDir.empty() ? "" : "system library " + file;
+    std::string version;
+    if (!sysDir.empty()) {
+        std::string pc = onPath("pkg-config");
+        if (!pc.empty()) version = firstLine(pc, {"--modversion", "sdl3"});
+        if (!version.empty() && version.find_first_not_of("0123456789.") == std::string::npos)
+            sysText += " (" + version + ")";
     }
-    return false;
+    bool ok = true;
+    if (preferSys) {
+        ok = !sysDir.empty();
+        report(ok, what, ok ? sysText + ", used in place of the package archive (ESKIU_SYSTEM_LIBS)"
+                            : "ESKIU_SYSTEM_LIBS names SDL3 but no libSDL3 is installed");
+    } else if (cached) {
+        report(true, what, "prebuilt archive of package '" + cached->pkg + "' in " + cached->dir);
+    } else if (!archives.empty()) {
+        report(true, what, "prebuilt archive of package '" + archives[0].pkg +
+                               "', downloaded by the first build that links it (needs curl)");
+        std::cout << std::string(39, ' ') << "from " << archives[0].url << "\n";
+    } else if (!sysDir.empty()) {
+        report(true, what, sysText);
+    } else {
+        ok = false;
+        report(false, what, "no package archive and no system libSDL3");
+    }
+    std::string pad(39, ' ');
+    const char* install =
+#if defined(__APPLE__)
+        "brew install sdl3";
+#elif defined(_WIN32)
+        "pacman -S mingw-w64-x86_64-sdl3 (MSYS2)";
+#else
+        "apt install libsdl3-dev, or dnf install SDL3-devel";
+#endif
+    if (!preferSys && !sysDir.empty() && !archives.empty())
+        std::cout << pad << "also " << sysText << ": ESKIU_SYSTEM_LIBS=SDL3 links it instead\n";
+    if (!preferSys && sysDir.empty() && !cached && !archives.empty())
+        std::cout << pad << "to build offline, run eskiuc fetch in the package first, or install SDL3: "
+                  << install << "\n";
+    if (!ok && !preferSys)
+        std::cout << pad << "build in a package that depends on gpu or audio (the first build downloads\n"
+                  << pad << "their SDL3), or install SDL3: " << install << "\n";
+    if (!ok && preferSys)
+        std::cout << pad << "install SDL3, or unset ESKIU_SYSTEM_LIBS to use the package archive\n";
+    return ok;
 }
 
 }  // namespace
@@ -126,9 +170,7 @@ int doctorCommand(const std::string& version) {
     std::string where;
     report(openssl(where), "OpenSSL (https in <fetch>)",
            where.empty() ? "libssl 3 or 1.1 not loadable: https fetches fail, http works" : where);
-    where.clear();
-    report(sdl3(where), "SDL3 (gpu, audio packages)",
-           where.empty() ? "headers not found: a [native.SDL3] package entry, or install SDL3" : where);
+    sdl3();
 
     std::cout << "\nCross targets:\n";
     std::string emcc = onPath("emcc");
