@@ -94,7 +94,7 @@
   </header>
   <main>
     <section class="bar ui-hero">
-      <div class="eyebrow">eskiu-lang/ui · v0.4.0 · preview</div>
+      <div class="eyebrow">eskiu-lang/ui · v0.5.0 · preview</div>
       <h1>Native apps, written in Eskiu</h1>
       <p class="lede">
         Write the interface once as Eskiu functions. It draws UIKit views on iOS,
@@ -389,7 +389,43 @@ dependencies = ["com.google.android.material:material:1.12.0"]
 permissions = ["android.permission.CAMERA"]</code></pre>
       </section>
 
-      <section class="ui-row flip" id="ship">
+      <section class="ui-row flip" id="webapp">
+        <div>
+          <h2>Web apps on the desktop</h2>
+          <p>
+            An Eskiu program can also be the backend of a web front end, the way Tauri does it for
+            Rust. <code>&lt;ui/webapp&gt;</code> opens the page (a React bundle, or any HTML) in the
+            system&#x27;s webview: WKWebView on macOS, WebView2 on Windows and WebKitGTK on Linux.
+            The page calls the program&#x27;s commands with JSON arguments and gets JSON, strings or
+            bytes back, events go both ways, and the program serves files through URL schemes of
+            its own and opens the system&#x27;s dialogs.
+          </p>
+          <p>
+            The page talks to it through <code>@eskiu/webapp</code>, which has the shape of
+            <code>@tauri-apps/api</code> (<code>invoke</code>, <code>listen</code>,
+            <code>emit</code>, dialogs, the window), with TypeScript types. A project with
+            <code>[webapp] frontend</code> in <code>ui.toml</code> builds with
+            <code>ui build macos</code>, <code>linux</code> or <code>windows</code>, and
+            <code>--dev</code> loads the bundler&#x27;s dev server.
+          </p>
+        </div>
+        <pre><code>import &lt;ui/webapp&gt;;
+
+int main() {
+    webapp_command("greet", void(*WebappCall call) {
+        string name = call.string("name");
+        if (name == null) { call.reject("greet: no name"); return; }
+        call.resolve_string(name);
+    });
+    webapp_window(WebappWindow{title: "My App", width: 1280, height: 800});
+    return webapp_run();
+}
+
+<span class="c">// the page, with @eskiu/webapp</span>
+const hello = await invoke("greet", { name: "Ada" });</code></pre>
+      </section>
+
+      <section class="ui-row" id="ship">
         <div>
           <h2>From your editor to the stores</h2>
           <p>
