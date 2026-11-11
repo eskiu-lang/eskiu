@@ -1014,26 +1014,40 @@ int compileWithSelf(const std::string& self, const std::string& file, const std:
     return runExecutable(self, a);
 }
 
-// Build the package's main program; `out` receives the executable path.
+bool endsWithEsk(const std::string& s) {
+    return s.size() > 4 && s.compare(s.size() - 4, 4, ".esk") == 0;
+}
+
+// Build the package's main program, or the program `file.esk` names in its place (an
+// example or a tool of the package, with the package's dependencies); `out` receives the
+// executable path.
 int buildPackage(const char* argv0, const std::vector<std::string>& args, std::string& out) {
     std::vector<std::string> flags;
+    std::string program;
     for (size_t i = 0; i < args.size(); ++i) {
         if (args[i] == "-o") {
             if (i + 1 >= args.size()) throw PkgError("-o needs a value");
             out = args[++i];
+        } else if (endsWithEsk(args[i]) && (i == 0 || args[i - 1] != "--link-arg")) {
+            if (!program.empty())
+                throw PkgError("eskiuc build takes one program file; to compile several files "
+                               "into one program, run eskiuc " + program + " " + args[i] + " -o OUT");
+            program = args[i];
         } else {
             flags.push_back(args[i]);
         }
     }
     Manifest m = manifestFromCwd();
-    resolveAndLock(m, false);
-    std::string main = m.dir + "/" + m.main;
     std::error_code ec;
+    if (!program.empty() && !fs::is_regular_file(program, ec))
+        throw PkgError("no file " + program);
+    resolveAndLock(m, false);
+    std::string main = program.empty() ? m.dir + "/" + m.main : program;
     if (!fs::is_regular_file(main, ec))
         throw PkgError("main file " + displayPath(main) + " not found (set main in [package])");
     if (out.empty()) {
         fs::create_directories(m.dir + "/build", ec);
-        out = m.dir + "/build/" + m.name;
+        out = m.dir + "/build/" + (program.empty() ? m.name : fs::path(program).stem().string());
     }
     return compileWithSelf(selfExe(argv0), main, out, flags);
 }
@@ -1074,10 +1088,6 @@ int cmdTest(const char* argv0, const std::vector<std::string>& flags) {
     }
     std::cout << passed << " passed, " << failed << " failed" << std::endl;
     return failed ? 1 : 0;
-}
-
-bool endsWithEsk(const std::string& s) {
-    return s.size() > 4 && s.compare(s.size() - 4, 4, ".esk") == 0;
 }
 
 }  // namespace

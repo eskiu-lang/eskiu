@@ -129,6 +129,24 @@ else
     bad "compile/file-in-package" "did not build"
 fi
 
+# `eskiuc build FILE.esk` builds that file (with the package's dependencies) in place of
+# main, to build/FILE; two files are refused with the command that compiles them.
+mkdir -p examples
+printf 'import <io>;\nimport <util/math>;\nint main() { printf("%%d\\n", util_twice(21)); return 0; }\n' > examples/tool.esk
+if "$ESKIUC" build examples/tool.esk > "$work/build.out" 2>&1 && [[ "$(build/tool)" == "42" ]]; then
+    ok "build/file"
+else
+    bad "build/file" "$(cat "$work/build.out")"
+fi
+err="$("$ESKIUC" build examples/tool.esk src/main.esk 2>&1)"; code=$?
+if [[ $code -ne 0 && "$err" == "error: eskiuc build takes one program file; to compile several files into one program, run eskiuc examples/tool.esk src/main.esk -o OUT" ]]; then
+    ok "build/two-files"
+else
+    bad "build/two-files" "$err"
+fi
+err="$("$ESKIUC" build examples/none.esk 2>&1)"; code=$?
+if [[ $code -ne 0 && "$err" == "error: no file examples/none.esk" ]]; then ok "build/missing-file"; else bad "build/missing-file" "$err"; fi
+
 # ---- test ----------------------------------------------------------------------
 printf 'import <mid>;\nint main() { return mid_value() == 42 ? 0 : 1; }\n' > tests/good.esk
 printf 'int main() { return 3; }\n' > tests/bad.esk
