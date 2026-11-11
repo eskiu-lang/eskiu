@@ -66,7 +66,7 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
-## [0.15.0] - 2026-11-09
+## [0.15.0]
 
 ### Added
 - `--diagnostics=json` prints errors and warnings on stderr as JSON lines, one object per
