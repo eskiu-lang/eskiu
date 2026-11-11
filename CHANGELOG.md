@@ -9,6 +9,10 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ## [Unreleased]
 
+---
+
+## [0.15.1] - 2026-11-10
+
 ### Added
 
 - `install.sh --with-ui` (`ESKIU_WITH_UI=1` for `install.ps1`) also installs the `ui` tool
@@ -59,6 +63,8 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   Apple silicon, or arm64 from an Intel Mac) linked the object as the host's architecture and
   failed; the driver now links it with `cc -target` (or `$CC -target` when `CC` is set and
   does not select a target itself).
+
+---
 
 ## [0.15.0] - 2026-11-09
 
