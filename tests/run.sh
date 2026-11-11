@@ -262,7 +262,9 @@ else
 fi
 esk_bin="${ESKIUC_ESK:-$(dirname "$ESKIUC")/eskiuc-esk}"
 if [[ -z "$SANITIZE" && -x "$esk_bin" ]]; then
-    if "$esk_bin" "$mi/first.esk" "$mi/second.esk" -o "$work/multi_input_esk" >"$work/mi.log" 2>&1 &&
+    # eskiuc-esk assembles its IR with $CLANG (default clang); CI names the matching one in $CC.
+    esk_clang="${CLANG:-${CC%% *}}"
+    if CLANG="$esk_clang" "$esk_bin" "$mi/first.esk" "$mi/second.esk" -o "$work/multi_input_esk" >"$work/mi.log" 2>&1 &&
             [[ "$("$work/multi_input_esk")" == "42" ]]; then
         ok "inputs/shared-type-names (self-host)"
     else
