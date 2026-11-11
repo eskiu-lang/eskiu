@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <climits>
 #include <set>
+#include <filesystem>
 #ifdef __APPLE__
   #include <mach-o/dyld.h>
 #elif defined(__linux__)
@@ -749,6 +750,15 @@ static int compilerMain(int argc, char** argv) {
                 return 1;
             }
         }
+    }
+
+    // An output in a directory that does not exist yet (`-o build/app.html`) gets it, as the
+    // package commands make build/; the C driver and emcc would fail instead.
+    for (const std::string& out : { std::string(OutputFilename), std::string(EmitHeader) }) {
+        if (out.empty() || out == "-") continue;
+        std::filesystem::path dir = std::filesystem::path(out).parent_path();
+        std::error_code ec;
+        if (!dir.empty()) std::filesystem::create_directories(dir, ec);
     }
 
     if (EirAssemble) {

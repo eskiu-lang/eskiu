@@ -620,6 +620,33 @@ int eir_run_cc(string cc, string triple, List<string>* args, string what) {
 // The EIR's ARM64 assembly `asm_path` and the runtime it calls as one object `out`
 // (eir/eir_obj.cpp): the assembly assembled, the runtime C (EC_RT_STANDALONE, generated
 // from eir_runtime.cpp) compiled at -O2, both joined with a relocatable link.
+// Creates the directory that holds path, if path names one (`build/app` makes build/).
+void make_parent_dir(string path) {
+    if (path == null || cg_streq(path, "-") == 1) {
+        return;
+    }
+    int last = -1;
+    int i = 0;
+    while (path[i] != 0) {
+        if (path[i] == '/' || path[i] == '\\') {
+            last = i;
+        }
+        i = i + 1;
+    }
+    if (last <= 0) {
+        return;
+    }
+    let dir: String;
+    dir.init(last + 1);
+    int k = 0;
+    while (k < last) {
+        dir.push(path[k]);
+        k = k + 1;
+    }
+    (void)fs_mkdir_p(dir.data);
+    dir.free();
+}
+
 int eir_join_runtime(string cc, string triple, string asm_path, string out) {
     string code_obj = temp_file("eir", ".o");
     string rt_src = temp_file("rt", ".c");
@@ -1694,6 +1721,13 @@ int esk_main(int argc, string* argv) {
             }
             ii = ii + 1;
         }
+    }
+
+    // An output in a directory that does not exist yet (`-o build/app.html`) gets it, as the
+    // package commands make build/ (C++ main).
+    if (runmode == 0) {
+        make_parent_dir(outfile);
+        make_parent_dir(emit_header);
     }
 
     // The EIR backend emits the program as written, so an option that changes how LLVM
