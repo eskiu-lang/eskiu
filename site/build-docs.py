@@ -96,7 +96,7 @@ NAVS = {"lang": NAV_LANG, "dev": NAV_DEV}
 GH_BLOB = "https://github.com/eskiu-lang/eskiu/blob/main/"
 
 # Shown in the shared top bar (kept in step with the homepage). Bump per release.
-VERSION = "v0.15.0"
+VERSION = "v0.15.1"
 GH = "https://github.com/eskiu-lang/eskiu"
 
 CSS = r"""
@@ -442,6 +442,10 @@ def collapse_changelog(text):
             rest = rest[:m.start()] + rest[m.end():]
         rest = rest.strip()
         block = head + "\n\n"
+        if re.fullmatch(r"-{3,}", rest):
+            # A section with no entries yet (a fresh [Unreleased]): just its rule.
+            block += rest + "\n\n"
+            rest = ""
         if hl:
             block += hl + "\n\n"
         if rest:
