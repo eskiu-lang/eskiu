@@ -88,7 +88,7 @@
     <div class="bar">
       <section class="g-hero">
         <div>
-          <div class="eyebrow">Paquete · eskiu-lang/gpu · v0.5.0</div>
+          <div class="eyebrow">Paquete · eskiu-lang/gpu · v0.6.0</div>
           <h1>Cómputo, gráficos y machine learning en la GPU</h1>
           <p class="lede">Kernels, modelos PBR, inferencia y entrenamiento de LLM sobre WebGPU. Una sola API para Metal, Vulkan y DirectX 12, en escritorio y en teléfonos, con shaders en WGSL.</p>
           <div class="g-cta">
@@ -134,7 +134,7 @@ Result&lt;int, string&gt; run() {
       <section class="g-row flip" id="models">
         <div>
           <h2>Modelos 3D, el formato de AR y VR</h2>
-          <p><code>&lt;gpu/gltf&gt;</code> carga glTF 2.0 (<code>.gltf</code> y <code>.glb</code>) y <code>&lt;gpu/obj&gt;</code> OBJ de Wavefront con sus materiales MTL, y <code>&lt;gpu/model&gt;</code> dibuja ambos con sombreado físico, normal maps, modos de alfa, skinning, morph targets y animación, con iluminación basada en imágenes (<code>&lt;gpu/ibl&gt;</code>) y sombras.</p><p>Debajo están las piezas de un renderizador completo: varios render targets, stencil, multisampling, texturas cúbicas y en arreglo, mipmaps hechos en la GPU, mapas de sombras con samplers de comparación, texturas BC, ETC2 y ASTC desde archivos KTX2, y cuadros de cámara y de video dibujados desde YUV (<code>&lt;gpu/yuv&gt;</code>). El paquete <a href="packages.html#scene">scene</a> arma encima un grafo de escena con luces y materiales.</p><p>PNG, JPEG (baseline y progresivo, con su orientación EXIF) y HDR de Radiance se decodifican en Eskiu puro. <code>&lt;gpu/window&gt;</code> abre una ventana con SDL3, con su teclado y su mouse.</p>
+          <p><code>&lt;gpu/gltf&gt;</code> carga glTF 2.0 (<code>.gltf</code> y <code>.glb</code>) y <code>&lt;gpu/obj&gt;</code> OBJ de Wavefront con sus materiales MTL, y <code>&lt;gpu/model&gt;</code> dibuja ambos con sombreado físico, normal maps, modos de alfa, skinning, morph targets y animación, con iluminación basada en imágenes (<code>&lt;gpu/ibl&gt;</code>) y sombras.</p><p>Debajo están las piezas de un renderizador completo: varios render targets, stencil, multisampling, texturas cúbicas y en arreglo, mipmaps hechos en la GPU, mapas de sombras con samplers de comparación, texturas BC, ETC2 y ASTC desde archivos KTX2, y cuadros de cámara y de video dibujados desde YUV (<code>&lt;gpu/yuv&gt;</code>). El paquete <a href="packages.html#scene">scene</a> arma encima un grafo de escena con luces y materiales.</p><p>PNG, JPEG (baseline y progresivo, con su orientación EXIF) y HDR de Radiance se decodifican en Eskiu puro. <code>&lt;gpu/window&gt;</code> abre una ventana con SDL3, con su teclado, su mouse (en pixeles del área de dibujo, también en pantallas de alta densidad), toque y gamepads, con conexión en caliente, zonas muertas y vibración.</p>
           <pre><code>Gltf data = model_load("helmet.glb")?;   <span class="c">// or a .gltf, or an .obj</span>
 defer data.free();
 GpuModel model = gpu.model(&amp;data, surface.format)?;
@@ -185,21 +185,21 @@ g.adam(0.001);       <span class="c">// and the optimizer step</span></code></pr
       <section class="g-row" id="platforms">
         <div>
           <h2>Dónde corre</h2>
-          <p>Los módulos de GPU pasan por wgpu-native, en escritorio y en teléfonos. En una app de <a href="ui.html">eskiu-lang/ui</a>, <code>&lt;gpu/ui&gt;</code> monta un <code>GpuView</code> donde dibujar (un <code>CAMetalLayer</code> en iOS, un <code>SurfaceView</code> en Android). En el navegador WebGPU es el del propio navegador, que no puede bloquearse esperando a la GPU, así que ahí los mismos programas compilan con emdawnwebgpu de emscripten, y JSPI o Asyncify hacen las esperas. Lo demás es Eskiu puro y corre en todas las plataformas.</p>
+          <p>Los módulos de GPU pasan por wgpu-native, en escritorio y en teléfonos. En una app de <a href="ui.html">eskiu-lang/ui</a>, <code>&lt;gpu/ui&gt;</code> monta un <code>GpuView</code> donde dibujar (un <code>CAMetalLayer</code> en iOS, un <code>SurfaceView</code> en Android). En el navegador WebGPU es el del propio navegador, que no puede bloquearse esperando a la GPU, así que ahí los mismos programas compilan con emdawnwebgpu de emscripten, y JSPI o Asyncify hacen las esperas. Un navegador sin adaptador de WebGPU los corre sobre WebGL2, con los shaders de WGSL traducidos a GLSL por naga: el renderizado, los modelos, la iluminación basada en imágenes y los cuadros YUV dan los mismos pixeles, y el cómputo queda fuera. Lo demás es Eskiu puro y corre en todas las plataformas.</p>
         </div>
         <div class="tablewrap"><table>
-          <tr><th>Plataforma</th><th>Backend</th></tr><tr><td>macOS arm64</td><td>Metal</td></tr><tr><td>Linux x86-64</td><td>Vulkan</td></tr><tr><td>Windows x86-64</td><td>DirectX 12, Vulkan</td></tr><tr><td>iOS (arm64, simulador)</td><td>Metal</td></tr><tr><td>Android (arm64, x86-64)</td><td>Vulkan</td></tr><tr><td>WebAssembly</td><td>El WebGPU del navegador (emdawnwebgpu)</td></tr>
+          <tr><th>Plataforma</th><th>Backend</th></tr><tr><td>macOS arm64</td><td>Metal</td></tr><tr><td>Linux x86-64</td><td>Vulkan</td></tr><tr><td>Windows x86-64</td><td>DirectX 12, Vulkan</td></tr><tr><td>iOS (arm64, simulador)</td><td>Metal</td></tr><tr><td>Android (arm64, x86-64)</td><td>Vulkan</td></tr><tr><td>WebAssembly</td><td>El WebGPU del navegador (emdawnwebgpu), o WebGL2</td></tr>
         </table></div>
       </section>
 
       <section class="g-row flip" id="start">
         <div>
           <h2>Empieza</h2>
-          <p>El paquete nombra en su manifiesto los archivos de release de wgpu-native: el primer build descarga el de tu máquina, comprueba su SHA-256 y lo enlaza. Una ventana de escritorio necesita además SDL3 (<code>brew install sdl3</code> en macOS). Requiere Eskiu 0.14 o más nuevo.</p>
+          <p>El paquete nombra en su manifiesto los archivos de release de wgpu-native: el primer build descarga el de tu máquina, comprueba su SHA-256 y lo enlaza. Una ventana de escritorio obtiene SDL3 igual, de un build que publica el paquete; <code>ESKIU_SYSTEM_LIBS=SDL3</code> enlaza la copia del sistema en su lugar (Eskiu 0.15.1). Requiere Eskiu 0.14 o más nuevo.</p>
           <div class="g-cards"><a href="https://github.com/eskiu-lang/gpu"><b>GitHub</b><span>Código, pruebas e issues</span></a><a href="https://github.com/eskiu-lang/gpu/tree/main/examples"><b>Ejemplos</b><span>Un triángulo, un cubo con textura, un visor de glTF y OBJ, Llama 2, MNIST</span></a><a href="packages.html"><b>Todos los paquetes</b><span>Lo demás que está a un eskiuc add de distancia</span></a></div>
         </div>
         <pre><code>eskiuc new myapp &amp;&amp; cd myapp
-eskiuc add gpu --git https://github.com/eskiu-lang/gpu --rev v0.5.0
+eskiuc add gpu --git https://github.com/eskiu-lang/gpu --rev v0.6.0
 eskiuc build</code></pre>
       </section>
     </div>
