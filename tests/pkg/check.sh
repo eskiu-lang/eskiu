@@ -365,6 +365,74 @@ if [[ -n "$plat" && "$plat" != -* ]] && command -v "$cc_prog" > /dev/null 2>&1 &
     else
         bad "native/target-triple" "exit $code: $out ($(ls "$work" | tr '\n' ' '))"
     fi
+    # ESKIU_SYSTEM_LIBS=nat: the system's libnat (found through LIBRARY_PATH, here one that
+    # returns 42) is linked and the archive is not downloaded. A download that fails falls
+    # back to it with a warning. Both compilers.
+    case "$plat" in macos-*|linux-*)
+        mkdir -p "$work/natsys"
+        printf 'int nat_value(void) { return 42; }\n' > "$work/natsys/nat.c"
+        case "$plat" in
+            macos-*) "$cc_prog" -shared -o "$work/natsys/libnat.dylib" -install_name @rpath/libnat.dylib "$work/natsys/nat.c" ;;
+            *)       "$cc_prog" -shared -fPIC -o "$work/natsys/libnat.so" "$work/natsys/nat.c" ;;
+        esac
+        for c in eskiuc esk; do
+            comp="$ESKIUC"; [[ $c == esk ]] && comp="$ESK"
+            [[ -x "$comp" ]] || continue
+            rm -rf "$ESKIU_HOME/native"
+            out="$(cd "$work/nat" && ESKIU_SYSTEM_LIBS=other,nat LIBRARY_PATH="$work/natsys" "$comp" src/main.esk -o "$work/nat_sys" 2>&1 && "$work/nat_sys")"
+            if [[ "$out" == "42" && ! -d "$ESKIU_HOME/native" ]]; then ok "native/system-libs ($c)"; else bad "native/system-libs ($c)" "$out"; fi
+            mv "$work/natsrc/natlib.tgz" "$work/natsrc/natlib.tgz.away"
+            rm -rf "$ESKIU_HOME/native"
+            out="$(cd "$work/nat" && LIBRARY_PATH="$work/natsys" "$comp" src/main.esk -o "$work/nat_fb" 2>&1 && "$work/nat_fb")"
+            if [[ "$out" == *"warning: could not download the native library 'nat' of package 'nat' from file://"*"; linking the system's $work/natsys/libnat."*" instead"* && "$out" == *"42" ]]; then
+                ok "native/offline-fallback ($c)"
+            else
+                bad "native/offline-fallback ($c)" "$out"
+            fi
+            out="$(cd "$work/nat" && LIBRARY_PATH="$work/none" "$comp" src/main.esk -o "$work/nat_fb" 2>&1)"; code=$?
+            if [[ $code -ne 0 && "$out" == *"error: could not download the native library 'nat'"* ]]; then
+                ok "native/offline-no-system ($c)"
+            else
+                bad "native/offline-no-system ($c)" "$out"
+            fi
+            mv "$work/natsrc/natlib.tgz.away" "$work/natsrc/natlib.tgz"
+        done
+        ;;
+    esac
+    # eskiuc doctor reports SDL3 as a build would get it: the package's [native.SDL3]
+    # archive (to download, then cached), or with ESKIU_SYSTEM_LIBS=SDL3 the system's
+    # library (here a file in LIBRARY_PATH).
+    case "$plat" in macos-*|linux-*)
+        sdlsum="1111111111111111111111111111111111111111111111111111111111111111"
+        mkdir -p "$work/sdlpkg" "$work/sdlsys"
+        printf '[package]\nname = "sdlpkg"\n\n[native.SDL3]\n%s = { url = "https://example.invalid/sdl3.tgz", sha256 = "%s" }\n' \
+            "$plat" "$sdlsum" > "$work/sdlpkg/eskiu.toml"
+        (cd "$work/sdlpkg" && ESKIU_SYSTEM_LIBS=SDL3 "$ESKIUC" fetch > /dev/null 2>&1)
+        rm -rf "$ESKIU_HOME/native"
+        out="$(cd "$work/sdlpkg" && "$ESKIUC" doctor 2>&1 | grep -A1 'SDL3 (gpu')"
+        if [[ "$out" == *"ok       SDL3 (gpu, audio packages)  prebuilt archive of package 'sdlpkg', downloaded by the first build that links it"* &&
+                "$out" == *"from https://example.invalid/sdl3.tgz"* ]]; then
+            ok "doctor/sdl3-archive"
+        else
+            bad "doctor/sdl3-archive" "$out"
+        fi
+        mkdir -p "$ESKIU_HOME/native/$sdlsum/lib"
+        out="$(cd "$work/sdlpkg" && "$ESKIUC" doctor 2>&1 | grep 'SDL3 (gpu')"
+        if [[ "$out" == *"prebuilt archive of package 'sdlpkg' in $ESKIU_HOME/native/$sdlsum/lib"* ]]; then
+            ok "doctor/sdl3-cached"
+        else
+            bad "doctor/sdl3-cached" "$out"
+        fi
+        rm -rf "$ESKIU_HOME/native"
+        touch "$work/sdlsys/libSDL3.a"
+        out="$(cd "$work/sdlpkg" && ESKIU_SYSTEM_LIBS=SDL3 LIBRARY_PATH="$work/sdlsys" "$ESKIUC" doctor 2>&1 | grep 'SDL3 (gpu')"
+        if [[ "$out" == *"ok       SDL3 (gpu, audio packages)  system library $work/sdlsys/libSDL3.a"*"used in place of the package archive (ESKIU_SYSTEM_LIBS)"* ]]; then
+            ok "doctor/sdl3-system"
+        else
+            bad "doctor/sdl3-system" "$out"
+        fi
+        ;;
+    esac
     zeros="0000000000000000000000000000000000000000000000000000000000000000"
     sed "s/$sum/$zeros/" "$work/nat/eskiu.toml" > "$work/nat/toml.new" && mv "$work/nat/toml.new" "$work/nat/eskiu.toml"
     out="$(cd "$work/nat" && "$ESKIUC" build 2>&1)"; code=$?
@@ -387,6 +455,57 @@ if [[ -n "$plat" && "$plat" != -* ]] && command -v "$cc_prog" > /dev/null 2>&1 &
     fi
 else
     echo "skip native libraries (no platform key, C compiler or curl)"
+fi
+
+# ---- [web] assets: copied next to the output of an emscripten build -----------
+# webdep lists a file and a directory (the array spans lines); webapp depends on it. The
+# manifest errors need no emcc; the copy does (skipped without it).
+mkdir -p "$work/webdep/web/extra" "$work/webapp/src"
+printf 'wasm' > "$work/webdep/web/thing.wasm"
+printf 'x' > "$work/webdep/web/extra/a.txt"
+printf 'int webdep_value() { return 7; }\n' > "$work/webdep/lib.esk"
+cat > "$work/webdep/eskiu.toml" <<'EOF'
+[package]
+name = "webdep"
+
+[web]
+assets = [
+    "web/thing.wasm",   # loaded by the page
+    "web/extra",
+]
+EOF
+printf '[package]\nname = "webapp"\n\n[deps]\nwebdep = { path = "../webdep" }\n' > "$work/webapp/eskiu.toml"
+printf 'import <webdep/lib>;\nint main() { return webdep_value() - 7; }\n' > "$work/webapp/src/main.esk"
+if (cd "$work/webapp" && "$ESKIUC" build > "$work/web.out" 2>&1); then ok "web/manifest"; else bad "web/manifest" "$(cat "$work/web.out")"; fi
+if command -v emcc > /dev/null 2>&1; then
+    for c in eskiuc esk; do
+        comp="$ESKIUC"; [[ $c == esk ]] && comp="$ESK"
+        [[ -x "$comp" ]] || continue
+        rm -rf "$work/webapp/out" && mkdir -p "$work/webapp/out"
+        # $CC would replace emcc as the linker (run.sh sets it).
+        if (cd "$work/webapp" && unset CC && "$comp" src/main.esk --target wasm32-unknown-emscripten -o out/app.js > "$work/web.out" 2>&1) &&
+                [[ "$(cat "$work/webapp/out/thing.wasm")" == "wasm" && -f "$work/webapp/out/extra/a.txt" ]]; then
+            ok "web/assets-copied ($c)"
+        else
+            bad "web/assets-copied ($c)" "$(cat "$work/web.out"; ls "$work/webapp/out")"
+        fi
+    done
+else
+    echo "skip web/assets-copied: emcc not found"
+fi
+printf '[package]\nname = "webdep"\n\n[web]\nassets = "web/thing.wasm"\n' > "$work/webdep/eskiu.toml"
+err="$(cd "$work/webdep" && "$ESKIUC" build 2>&1)"; code=$?
+if [[ $code -ne 0 && "$err" == 'error: eskiu.toml:5: assets in [web] must be an array of paths: assets = ["web/app.wasm"]' ]]; then
+    ok "web/not-an-array"
+else
+    bad "web/not-an-array" "$err"
+fi
+printf '[package]\nname = "webdep"\n\n[web]\nassets = ["../x.wasm"]\n' > "$work/webdep/eskiu.toml"
+err="$(cd "$work/webdep" && "$ESKIUC" build 2>&1)"; code=$?
+if [[ $code -ne 0 && "$err" == "error: eskiu.toml:5: web asset '../x.wasm' must be a path inside the package" ]]; then
+    ok "web/outside-package"
+else
+    bad "web/outside-package" "$err"
 fi
 
 # ---- a path dependency is relative in the lock: the tree can move -----------

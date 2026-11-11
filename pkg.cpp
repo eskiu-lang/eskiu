@@ -1,9 +1,9 @@
 // The package manager (see pkg.h).
 //
 // eskiu.toml is read by a small TOML subset reader (tables, string values, inline
-// tables of strings, comments). Dependencies are resolved breadth-first from the root
-// manifest, each package's own eskiu.toml adding its dependencies; the result is written
-// to eskiu.lock, one tab-separated line per package, sorted by name:
+// tables of strings, arrays of strings, comments). Dependencies are resolved breadth-first
+// from the root manifest, each package's own eskiu.toml adding its dependencies; the result
+// is written to eskiu.lock, one tab-separated line per package, sorted by name:
 //
 //   NAME  git   URL  REV  COMMIT     fetched into $ESKIU_HOME/pkgs/NAME/COMMIT
 //   NAME  path  ABSOLUTE-DIR         used in place
@@ -59,8 +59,10 @@ struct PkgError : std::runtime_error {
 struct TomlValue {
     int line = 0;
     bool isTable = false;
+    bool isArray = false;
     std::string str;
     std::vector<std::pair<std::string, std::string>> table;   // inline table entries
+    std::vector<std::string> items;                            // array entries
 };
 
 // Table name ("" before the first header) -> its keys in order.
@@ -199,7 +201,33 @@ private:
             }
             return v;
         }
-        err("expected a string or an inline table");
+        if (i < src.size() && src[i] == '[') {
+            // An array of strings, which may span lines and hold comments.
+            ++i;
+            v.isArray = true;
+            auto skipBlank = [&]() {
+                while (i < src.size()) {
+                    char c = src[i];
+                    if (c == ' ' || c == '\t' || c == '\r') ++i;
+                    else if (c == '\n') { ++i; ++line; }
+                    else if (c == '#') { while (i < src.size() && src[i] != '\n') ++i; }
+                    else break;
+                }
+            };
+            while (true) {
+                skipBlank();
+                if (i < src.size() && src[i] == ']') { ++i; break; }
+                if (i >= src.size() || (src[i] != '"' && src[i] != '\''))
+                    err("expected a string in an array");
+                v.items.push_back(quoted());
+                skipBlank();
+                if (i < src.size() && src[i] == ',') { ++i; continue; }
+                if (i < src.size() && src[i] == ']') { ++i; break; }
+                err("expected ',' or ']' in an array");
+            }
+            return v;
+        }
+        err("expected a string, an array or an inline table");
     }
 };
 
@@ -226,6 +254,7 @@ struct Manifest {
     std::string name, version, main;
     std::vector<Dep> deps;
     std::vector<NativeLib> natives;
+    std::vector<std::string> webAssets;   // [web] assets: files a web build copies next to its page
 };
 
 const char* const kNativePlatforms[] = {"macos-arm64",         "macos-x86_64",        "linux-x86_64",
@@ -323,7 +352,7 @@ Manifest readManifest(const std::string& dir) {
         throw fail(kv.second.line, "key '" + kv.first + "' outside a table");
     bool sawName = false;
     for (const auto& kv : doc["package"]) {
-        if (kv.second.isTable)
+        if (kv.second.isTable || kv.second.isArray)
             throw fail(kv.second.line, "'" + kv.first + "' must be a string");
         if (kv.first == "name") {
             if (!validName(kv.second.str))
@@ -404,8 +433,19 @@ Manifest readManifest(const std::string& dir) {
         }
         m.natives.push_back(lib);
     }
+    for (const auto& kv : doc["web"]) {
+        const TomlValue& v = kv.second;
+        if (kv.first != "assets") throw fail(v.line, "unknown key '" + kv.first + "' in [web] (assets)");
+        if (!v.isArray)
+            throw fail(v.line, "assets in [web] must be an array of paths: assets = [\"web/app.wasm\"]");
+        for (const auto& a : v.items) {
+            if (a.empty() || fs::path(a).is_absolute() || a.find("..") != std::string::npos)
+                throw fail(v.line, "web asset '" + a + "' must be a path inside the package");
+            m.webAssets.push_back(a);
+        }
+    }
     for (const auto& t : doc)
-        if (!t.first.empty() && t.first != "package" && t.first != "deps" &&
+        if (!t.first.empty() && t.first != "package" && t.first != "deps" && t.first != "web" &&
             t.first.rfind("native.", 0) != 0)
             throw PkgError(shown + ": unknown table [" + t.first + "]");
     return m;
@@ -741,6 +781,88 @@ void fetchNative(const std::string& pkg, const std::string& lib, const NativeSou
     }
 }
 
+// The stdout of `name args` (trimmed), or "" when it fails or is not on PATH.
+std::string toolOutput(const std::string& name, const std::vector<std::string>& args) {
+    auto found = llvm::sys::findProgramByName(name);
+    if (!found) return "";
+    llvm::SmallString<128> outFile;
+    if (llvm::sys::fs::createTemporaryFile("eskiu-tool", "out", outFile)) return "";
+    std::vector<std::string> argv = {*found};
+    argv.insert(argv.end(), args.begin(), args.end());
+    std::vector<llvm::StringRef> refs(argv.begin(), argv.end());
+    std::optional<llvm::StringRef> redirects[] = {llvm::StringRef(""), llvm::StringRef(outFile),
+                                                  llvm::StringRef("")};
+    int rc = llvm::sys::ExecuteAndWait(*found, refs, std::nullopt, redirects, 20);
+    std::string out = rc == 0 ? trim(readText(std::string(outFile))) : "";
+    llvm::sys::fs::remove(outFile);
+    return out;
+}
+
+}  // namespace
+
+bool pkgPreferSystemLib(const std::string& lib) {
+    const char* env = std::getenv("ESKIU_SYSTEM_LIBS");
+    if (!env) return false;
+    std::string cur;
+    for (const char* p = env;; ++p) {
+        if (*p == ',' || *p == ' ' || *p == '\t' || *p == 0) {
+            if (cur == "*" || cur == lib) return true;
+            cur.clear();
+            if (*p == 0) return false;
+        } else {
+            cur += *p;
+        }
+    }
+}
+
+std::string pkgFindSystemLib(const std::string& lib, std::string* file) {
+    std::vector<std::string> dirs;
+    auto addList = [&](const char* var) {
+        const char* v = std::getenv(var);
+        if (!v) return;
+#ifdef _WIN32
+        const char sep = ';';
+#else
+        const char sep = ':';
+#endif
+        std::stringstream ss(v);
+        std::string d;
+        while (std::getline(ss, d, sep))
+            if (!d.empty()) dirs.push_back(d);
+    };
+    addList("LIBRARY_PATH");
+    std::string lower = lib;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    for (const std::string& pc : {lib, lower}) {
+        std::string d = toolOutput("pkg-config", {"--variable=libdir", pc});
+        if (!d.empty()) dirs.push_back(d);
+    }
+#if defined(__APPLE__)
+    for (const char* d : {"/opt/homebrew/lib", "/usr/local/lib", "/opt/local/lib"}) dirs.push_back(d);
+    const char* names[] = {".dylib", ".tbd", ".a"};
+#elif defined(_WIN32)
+    if (const char* m = std::getenv("MINGW_PREFIX"); m && *m) dirs.push_back(std::string(m) + "/lib");
+    const char* names[] = {".dll.a", ".a", ".lib"};
+#else
+    for (const char* d : {"/usr/local/lib", "/usr/lib", "/lib", "/usr/lib64", "/lib64",
+                          "/usr/lib/x86_64-linux-gnu", "/usr/lib/aarch64-linux-gnu"})
+        dirs.push_back(d);
+    const char* names[] = {".so", ".a"};
+#endif
+    std::error_code ec;
+    for (const auto& d : dirs)
+        for (const char* ext : names) {
+            std::string f = d + "/lib" + lib + ext;
+            if (fs::exists(f, ec)) {
+                if (file) *file = f;
+                return d;
+            }
+        }
+    return "";
+}
+
+namespace {
+
 struct HostNative {
     std::string pkg, lib;
     NativeSource src;
@@ -769,7 +891,8 @@ std::vector<HostNative> hostNatives(const std::string& lockDir,
 }
 
 void fetchNatives(const std::string& lockDir) {
-    for (const auto& n : hostNatives(lockDir, readLock(lockDir))) fetchNative(n.pkg, n.lib, n.src);
+    for (const auto& n : hostNatives(lockDir, readLock(lockDir)))
+        if (!pkgPreferSystemLib(n.lib)) fetchNative(n.pkg, n.lib, n.src);
 }
 
 std::string describe(const LockEntry& e) {
@@ -1130,11 +1253,15 @@ bool pkgCommand(int argc, char** argv, int& rc) {
 
 namespace {
 std::vector<HostNative> packageNatives;   // this host's [native.NAME] archives, by pkgLoadRoots
+bool packageTargetIsHost = true;          // the build runs here: a system library can stand in
+std::vector<std::pair<std::string, std::string>> packageWebAssets;   // package, absolute path
 }
 
 void pkgLoadRoots(const std::string& input, const std::string& triple) {
     packageRoots = PackageRoots();
     packageNatives.clear();
+    packageWebAssets.clear();
+    packageTargetIsHost = triple.empty() || targetPlatform(triple) == hostPlatform();
     std::error_code ec;
     fs::path in = fs::absolute(input, ec);
     std::string root = findPackageRoot(in.parent_path().generic_string());
@@ -1167,17 +1294,109 @@ void pkgLoadRoots(const std::string& input, const std::string& triple) {
         packageNatives = hostNatives(root, lock, triple);
     } catch (const std::exception&) {
     }
+    for (const auto& kv : lock) {
+        std::string dir = kv.second.root(root);
+        if (!fs::is_regular_file(dir + "/eskiu.toml", ec)) continue;
+        try {
+            for (const auto& a : readManifest(dir).webAssets) packageWebAssets.push_back({kv.first, dir + "/" + a});
+        } catch (const std::exception&) {
+        }
+    }
 }
 
-std::vector<std::string> pkgNativeLibDirs(const std::vector<std::string>& linked) {
+std::vector<std::string> pkgNativeLibDirs(const std::vector<std::string>& linked,
+                                          std::vector<std::string>* systemDirs) {
     std::vector<std::string> dirs;
     std::set<std::string> want(linked.begin(), linked.end());
+    auto useSystem = [&](const std::string& dir) {
+        if (systemDirs && !dir.empty() &&
+            std::find(systemDirs->begin(), systemDirs->end(), dir) == systemDirs->end())
+            systemDirs->push_back(dir);
+    };
     for (const auto& n : packageNatives) {
         if (!want.count(n.lib)) continue;
-        fetchNative(n.pkg, n.lib, n.src);
+        if (pkgPreferSystemLib(n.lib)) {
+            // ESKIU_SYSTEM_LIBS: the linker finds it (a cross build gets it from its own -L).
+            if (packageTargetIsHost) useSystem(pkgFindSystemLib(n.lib));
+            continue;
+        }
+        try {
+            fetchNative(n.pkg, n.lib, n.src);
+        } catch (const PkgError& e) {
+            std::string file;
+            std::string dir = packageTargetIsHost ? pkgFindSystemLib(n.lib, &file) : "";
+            if (dir.empty()) throw;
+            std::cerr << "warning: " << e.what() << "; linking the system's " << file << " instead" << std::endl;
+            useSystem(dir);
+            continue;
+        }
         dirs.push_back(nativeDir(n.src) + "/" + n.src.lib);
     }
     return dirs;
+}
+
+void pkgCopyWebAssets(const std::string& page) {
+    std::error_code ec;
+    fs::path to = fs::absolute(page, ec).parent_path();
+    std::set<std::string> copied;
+    for (const auto& a : packageWebAssets) {
+        fs::path from(a.second);
+        std::string name = from.filename().string();
+        if (!fs::exists(from, ec)) {
+            std::cerr << "warning: web asset " << displayPath(a.second) << " of package '" << a.first
+                      << "' ([web] assets in its eskiu.toml) does not exist" << std::endl;
+            continue;
+        }
+        if (!copied.insert(name).second) {
+            std::cerr << "warning: web asset " << name << " of package '" << a.first
+                      << "' has the name of another package's; keeping the first" << std::endl;
+            continue;
+        }
+        if (fs::equivalent(from, to / name, ec)) continue;
+        if (fs::is_directory(from, ec))
+            fs::copy(from, to / name, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+        else
+            fs::copy_file(from, to / name, fs::copy_options::overwrite_existing, ec);
+        if (ec)
+            std::cerr << "warning: could not copy web asset " << displayPath(a.second) << " to "
+                      << displayPath((to / name).generic_string()) << ": " << ec.message() << std::endl;
+    }
+}
+
+std::vector<KnownNative> pkgKnownNatives(const std::string& lib) {
+    std::vector<KnownNative> out;
+    std::string platform = hostPlatform();
+    if (platform.empty()) return out;
+    std::set<std::string> seen;
+    auto scan = [&](const std::string& pkg, const std::string& dir) {
+        try {
+            for (const auto& n : readManifest(dir).natives) {
+                auto it = n.platforms.find(platform);
+                if (n.name != lib || it == n.platforms.end() || !seen.insert(it->second.sha256).second) continue;
+                std::error_code ec;
+                KnownNative k;
+                k.pkg = pkg;
+                k.url = it->second.url;
+                k.dir = nativeDir(it->second) + "/" + it->second.lib;
+                k.cached = fs::is_directory(k.dir, ec);
+                out.push_back(k);
+            }
+        } catch (const std::exception&) {
+        }
+    };
+    std::error_code ec;
+    std::string root = findPackageRoot(".");
+    if (!root.empty()) {
+        try {
+            for (const auto& kv : readLock(root)) scan(kv.first, kv.second.root(root));
+        } catch (const std::exception&) {
+        }
+    }
+    for (const auto& pkg : fs::directory_iterator(pkgHome() + "/pkgs", ec))
+        for (const auto& rev : fs::directory_iterator(pkg.path(), ec))
+            if (fs::is_regular_file(rev.path() / "eskiu.toml", ec))
+                scan(pkg.path().filename().string(), rev.path().generic_string());
+    return out;
 }
 
 void copyNativeDlls(const std::vector<std::string>& dirs, const std::string& exe) {

@@ -21,8 +21,32 @@ void pkgLoadRoots(const std::string& input, const std::string& triple = "");
 // The directories of the prebuilt native libraries ([native.NAME] in eskiu.toml, NAME the
 // library -lNAME links) that the package of the compile's first input and its dependencies
 // declare for the target (or host), one per name in `linked` that has one. An archive not in
-// $ESKIU_HOME/native yet is downloaded and checked first; a failure throws.
-std::vector<std::string> pkgNativeLibDirs(const std::vector<std::string>& linked);
+// $ESKIU_HOME/native yet is downloaded and checked first; a failure throws, unless the build
+// is for this machine and the system has the library: then a warning, and its directory goes
+// to `systemDirs`. A name in $ESKIU_SYSTEM_LIBS skips the archive (its system directory, when
+// found, goes to `systemDirs`).
+std::vector<std::string> pkgNativeLibDirs(const std::vector<std::string>& linked,
+                                          std::vector<std::string>* systemDirs = nullptr);
+
+// Is `lib` named in $ESKIU_SYSTEM_LIBS (separated by commas or spaces; "*" names every one),
+// so that it is linked from the system instead of its package's [native.NAME] archive?
+bool pkgPreferSystemLib(const std::string& lib);
+
+// The directory where this machine has lib<NAME> for the linker ($LIBRARY_PATH, pkg-config's
+// libdir, then the usual library directories), or "" when none has it; `file` gets the file.
+std::string pkgFindSystemLib(const std::string& lib, std::string* file = nullptr);
+
+// Copy the [web] assets of the compile's package and its dependencies next to `page`, the
+// output of a WebAssembly (emscripten) build.
+void pkgCopyWebAssets(const std::string& page);
+
+// A [native.NAME] archive for this host that a package declares: the package of the current
+// directory and its dependencies, and every package fetched into $ESKIU_HOME/pkgs.
+struct KnownNative {
+    std::string pkg, url, dir;   // dir: its library directory once fetched
+    bool cached = false;         // already in $ESKIU_HOME/native
+};
+std::vector<KnownNative> pkgKnownNatives(const std::string& lib);
 
 // Copy the DLLs of `dirs` next to `exe`, where Windows looks for them first.
 void copyNativeDlls(const std::vector<std::string>& dirs, const std::string& exe);

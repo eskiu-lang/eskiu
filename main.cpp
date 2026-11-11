@@ -1198,29 +1198,38 @@ static int compilerMain(int argc, char** argv) {
             // its packages declare for the target (or host) platform (pkg.cpp): -L, an rpath
             // for run time (Windows: the DLLs are copied next to the program).
             bool winTarget = macros.count("_WIN32") > 0;
-            std::vector<std::string> nativeDirs;
+            std::vector<std::string> nativeDirs, systemDirs;
             {
                 std::vector<std::string> linked(LinkLibs.begin(), LinkLibs.end());
                 if (!NoDefaultLibs) linked.insert(linked.end(), pragmaLibs.begin(), pragmaLibs.end());
                 try {
-                    nativeDirs = pkgNativeLibDirs(linked);
+                    nativeDirs = pkgNativeLibDirs(linked, &systemDirs);
                 } catch (const std::exception& e) {
                     std::cerr << "error: " << e.what() << std::endl;
                     llvm::sys::fs::remove(tmpObjPath);
                     return 1;
                 }
+                bool rpath = !winTarget && !macros.count("__wasm__") && !macros.count("__ANDROID__") &&
+                             !macros.count("TARGET_OS_IPHONE");
                 for (const auto& d : nativeDirs) {
                     paths.push_back(d);
                     // An rpath to this machine's cache helps a program run here; an app for a
                     // phone carries its libraries in its package, so it gets none.
-                    if (!winTarget && !macros.count("__wasm__") && !macros.count("__ANDROID__") &&
-                        !macros.count("TARGET_OS_IPHONE"))
-                        extra.push_back("-Wl,-rpath," + d);
+                    if (rpath) extra.push_back("-Wl,-rpath," + d);
+                }
+                // A system library in place of an archive (ESKIU_SYSTEM_LIBS, or an archive
+                // that could not be downloaded): its directory, unless the linker and the
+                // loader search it already.
+                for (const auto& d : systemDirs) {
+                    if (d == "/usr/lib" || d == "/lib" || d == "/usr/lib64" || d == "/lib64") continue;
+                    paths.push_back(d);
+                    if (rpath) extra.push_back("-Wl,-rpath," + d);
                 }
             }
             bool ok = linkExecutable(tmpObjPath, outFile, libs, paths, extra, /*sanitized=*/Asan,
                                      std::string(TargetTriple));
             if (ok && winTarget) copyNativeDlls(nativeDirs, outFile);
+            if (ok && macros.count("__EMSCRIPTEN__") && !g_runMode) pkgCopyWebAssets(outFile);
             llvm::sys::fs::remove(tmpObjPath);
             if (!ok) { if (g_runMode) llvm::sys::fs::remove(runExePath); return 1; }
 

@@ -3,9 +3,10 @@
 // archives the target's platform gets from the package and the dependencies its lock
 // names), ntv_lib_dirs is pkgNativeLibDirs (fetch the ones a build links, return their
 // `lib` directories), ntv_fetch is fetchNative (curl, SHA-256 check, tar or unzip into
-// $ESKIU_HOME/native/SHA256, renamed into place when complete) and ntv_copy_dlls is
-// copyNativeDlls. A manifest that does not parse contributes nothing here, as in the C++
-// driver (the package commands report it).
+// $ESKIU_HOME/native/SHA256, renamed into place when complete), ntv_copy_dlls is
+// copyNativeDlls, ntv_find_system is pkgFindSystemLib (without pkg-config) and
+// ntv_copy_web is pkgCopyWebAssets. A manifest that does not parse contributes nothing
+// here, as in the C++ driver (the package commands report it).
 
 import <hash>;
 
@@ -18,6 +19,9 @@ struct NtvSrc {
 }
 
 List<NtvSrc> g_natives;
+List<string> g_web_assets;   // absolute paths of the [web] assets of the package and its deps
+List<string> g_web_pkgs;     // the package that lists each
+int g_ntv_host = 1;          // the build is for this machine: a system library can stand in
 
 // The platform key of a target triple, or of this host for an empty one ("" when no key
 // names it): macos-arm64, linux-x86_64, ios-arm64-simulator, android-arm64, ...
@@ -195,7 +199,34 @@ string ntv_lower(string s) {
     return out;
 }
 
-// Add the [native.NAME] archives for `platform` that the eskiu.toml in `root` declares.
+// The quoted strings of text[a, end) into g_web_assets (relative to `root`); 1 when the
+// array's `]` is among them.
+int ntv_web_items(string pkg, string root, string text, int a, int end) {
+    int i = a;
+    while (i < end) {
+        int c = (int)text[i];
+        if (c == 93) {
+            return 1;
+        }
+        if (c == 35) {
+            return 0;
+        }
+        if (c == 34) {
+            string v = ntv_string(text, &i, end);
+            if (i < 0) {
+                return 1;
+            }
+            List_push<string>(&g_web_assets, str_concat(root, str_concat("/", v)));
+            List_push<string>(&g_web_pkgs, pkg);
+        } else {
+            i = i + 1;
+        }
+    }
+    return 0;
+}
+
+// Add the [native.NAME] archives for `platform` (none when it is "") and the [web] assets
+// that the eskiu.toml in `root` declares.
 void ntv_read_manifest(string pkg, string root, string platform) {
     let len: int64 = 0;
     *uint8 raw = fs_read_all(str_concat(root, "/eskiu.toml"), &len);
@@ -204,6 +235,8 @@ void ntv_read_manifest(string pkg, string root, string platform) {
     }
     string text = (string)raw;
     string lib = "";
+    int web = 0;
+    int in_assets = 0;
     int pos = 0;
     while (pos < (int)len) {
         int end = pos;
@@ -214,13 +247,26 @@ void ntv_read_manifest(string pkg, string root, string platform) {
         while (a < end && ntv_is_space((int)text[a]) == 1) {
             a = a + 1;
         }
-        if (a < end && (int)text[a] == 91) {
+        if (in_assets == 1) {
+            if (ntv_web_items(pkg, root, text, a, end) == 1) {
+                in_assets = 0;
+            }
+        } else if (a < end && (int)text[a] == 91) {
             int b = a + 1;
             while (b < end && (int)text[b] != 93) {
                 b = b + 1;
             }
             string table = p_sub(text, a + 1, b);
-            lib = str_starts(table, "native.") == 1 ? str_after(table, 7) : "";
+            lib = str_starts(table, "native.") == 1 && platform[0] != 0 ? str_after(table, 7) : "";
+            web = str_eq(table, "web");
+        } else if (web == 1 && a < end && str_starts(str_after(text, a), "assets") == 1) {
+            int k = a;
+            while (k < end && (int)text[k] != 91) {
+                k = k + 1;
+            }
+            if (k < end && ntv_web_items(pkg, root, text, k + 1, end) == 0) {
+                in_assets = 1;
+            }
         } else if (lib[0] != 0 && a < end && (int)text[a] != 35) {
             let src: NtvSrc;
             if (ntv_entry(text, a, end, platform, &src) == 1) {
@@ -244,13 +290,13 @@ void ntv_read_manifest(string pkg, string root, string platform) {
 // Fill g_natives from the package pkg_load_roots found (none outside a package).
 void ntv_load(string triple) {
     List_init<NtvSrc>(&g_natives, 4);
+    List_init<string>(&g_web_assets, 2);
+    List_init<string>(&g_web_pkgs, 2);
     if (g_pkg_active == 0) {
         return;
     }
     string platform = ntv_platform(triple);
-    if (platform[0] == 0) {
-        return;
-    }
+    g_ntv_host = triple[0] == 0 || str_eq(platform, ntv_platform("")) == 1 ? 1 : 0;
     for (i in 0..List_len<string>(&g_pkg_roots)) {
         ntv_read_manifest(List_get<string>(&g_pkg_names, i), List_get<string>(&g_pkg_roots, i), platform);
     }
@@ -287,10 +333,10 @@ int ntv_run_quiet(List<string>* args) {
     return (st >> 8) & 255;
 }
 
+string g_ntv_err = "";   // why the last ntv_fetch failed
+
 int ntv_fail(string msg) {
-    eprint("error: ");
-    eprint(msg);
-    eprint("\n");
+    g_ntv_err = msg;
     return 1;
 }
 
@@ -299,7 +345,7 @@ string ntv_dir(NtvSrc* src) {
 }
 
 // Download, check and unpack `src` into ntv_dir(src) unless it is already there: 0, or 1
-// after printing the error.
+// with the reason in g_ntv_err.
 int ntv_fetch(NtvSrc* src) {
     string dir = ntv_dir(src);
     if (fs_is_dir(dir) == 1) {
@@ -420,9 +466,119 @@ int ntv_fetch(NtvSrc* src) {
     return 0;
 }
 
+// Is `lib` named in $ESKIU_SYSTEM_LIBS (separated by commas or spaces, "*" for every one)?
+int ntv_prefer_system(string lib) {
+    string env = getenv("ESKIU_SYSTEM_LIBS");
+    if (env == null) {
+        return 0;
+    }
+    int a = 0;
+    int i = 0;
+    while (1 == 1) {
+        int c = (int)env[i];
+        if (c == 0 || c == 44 || c == 32 || c == 9) {
+            string item = p_sub(env, a, i);
+            if (str_eq(item, "*") == 1 || str_eq(item, lib) == 1) {
+                return 1;
+            }
+            if (c == 0) {
+                return 0;
+            }
+            a = i + 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// The directory where this machine has lib<NAME> for the linker ($LIBRARY_PATH, then the
+// usual library directories), or "" when none has it; *file gets the file.
+string ntv_find_system(string lib, *string file) {
+    List<string> dirs;
+    List_init<string>(&dirs, 8);
+    string lp = getenv("LIBRARY_PATH");
+    if (lp != null) {
+        int sep = 58;
+#ifdef _WIN32
+        sep = 59;
+#endif
+        int a = 0;
+        int i = 0;
+        while (1 == 1) {
+            int c = (int)lp[i];
+            if (c == 0 || c == sep) {
+                if (i > a) {
+                    List_push<string>(&dirs, p_sub(lp, a, i));
+                }
+                if (c == 0) {
+                    break;
+                }
+                a = i + 1;
+            }
+            i = i + 1;
+        }
+    }
+    List<string> exts;
+    List_init<string>(&exts, 3);
+#ifdef __APPLE__
+    List_push<string>(&dirs, "/opt/homebrew/lib");
+    List_push<string>(&dirs, "/usr/local/lib");
+    List_push<string>(&dirs, "/opt/local/lib");
+    List_push<string>(&exts, ".dylib");
+    List_push<string>(&exts, ".tbd");
+    List_push<string>(&exts, ".a");
+#endif
+#ifdef __linux__
+    List_push<string>(&dirs, "/usr/local/lib");
+    List_push<string>(&dirs, "/usr/lib");
+    List_push<string>(&dirs, "/lib");
+    List_push<string>(&dirs, "/usr/lib64");
+    List_push<string>(&dirs, "/lib64");
+    List_push<string>(&dirs, "/usr/lib/x86_64-linux-gnu");
+    List_push<string>(&dirs, "/usr/lib/aarch64-linux-gnu");
+    List_push<string>(&exts, ".so");
+    List_push<string>(&exts, ".a");
+#endif
+#ifdef _WIN32
+    string mp = getenv("MINGW_PREFIX");
+    if (mp != null && mp[0] != 0) {
+        List_push<string>(&dirs, str_concat(mp, "/lib"));
+    }
+    List_push<string>(&exts, ".dll.a");
+    List_push<string>(&exts, ".a");
+    List_push<string>(&exts, ".lib");
+#endif
+    for (i in 0..List_len<string>(&dirs)) {
+        string d = List_get<string>(&dirs, i);
+        for (k in 0..List_len<string>(&exts)) {
+            string f = str_concat(d, str_concat("/lib", str_concat(lib, List_get<string>(&exts, k))));
+            if (fs_exists(f) == 1) {
+                *file = f;
+                return d;
+            }
+        }
+    }
+    *file = "";
+    return "";
+}
+
+void ntv_add_dir(List<string>* dirs, string d) {
+    if (d[0] == 0) {
+        return;
+    }
+    for (i in 0..List_len<string>(dirs)) {
+        if (str_eq(List_get<string>(dirs, i), d) == 1) {
+            return;
+        }
+    }
+    List_push<string>(dirs, d);
+}
+
 // The `lib` directories of the native libraries named in `linked` (fetched when missing)
-// into `dirs`: 0, or 1 after printing the error.
-int ntv_lib_dirs(List<string>* linked, List<string>* dirs) {
+// into `dirs`, and the system directories that stand in for an archive into `sys_dirs`
+// ($ESKIU_SYSTEM_LIBS, or a download that failed while the system has the library): 0,
+// or 1 after printing the error.
+int ntv_lib_dirs(List<string>* linked, List<string>* dirs, List<string>* sys_dirs) {
     for (i in 0..List_len<NtvSrc>(&g_natives)) {
         NtvSrc src = List_get<NtvSrc>(&g_natives, i);
         int want = 0;
@@ -432,13 +588,83 @@ int ntv_lib_dirs(List<string>* linked, List<string>* dirs) {
             }
         }
         if (want == 1) {
-            if (ntv_fetch(&src) != 0) {
-                return 1;
+            string file = "";
+            if (ntv_prefer_system(src.lib) == 1) {
+                if (g_ntv_host == 1) {
+                    ntv_add_dir(sys_dirs, ntv_find_system(src.lib, &file));
+                }
+            } else if (ntv_fetch(&src) != 0) {
+                string sd = g_ntv_host == 1 ? ntv_find_system(src.lib, &file) : "";
+                eprint(sd[0] == 0 ? "error: " : "warning: ");
+                eprint(g_ntv_err);
+                if (sd[0] == 0) {
+                    eprint("\n");
+                    return 1;
+                }
+                eprint("; linking the system's ");
+                eprint(file);
+                eprint(" instead\n");
+                ntv_add_dir(sys_dirs, sd);
+            } else {
+                List_push<string>(dirs, str_concat(ntv_dir(&src), str_concat("/", src.libdir)));
             }
-            List_push<string>(dirs, str_concat(ntv_dir(&src), str_concat("/", src.libdir)));
         }
     }
     return 0;
+}
+
+// Copy `from` (a file, or a directory with what it holds) to `to`.
+void ntv_copy_tree(string from, string to) {
+    if (fs_is_dir(from) == 0) {
+        fs_copy(from, to);
+        return;
+    }
+    fs_mkdir_p(to);
+    let names: List<String>;
+    List_init<String>(&names, 8);
+    fs_list_dir(from, &names);
+    for (i in 0..List_len<String>(&names)) {
+        String nm = List_get<String>(&names, i);
+        ntv_copy_tree(str_concat(from, str_concat("/", nm.cstr())), str_concat(to, str_concat("/", nm.cstr())));
+    }
+}
+
+// Copy the [web] assets next to `page`, the output of an emscripten build.
+void ntv_copy_web(string page) {
+    string to = str_dir(canonical_path(page));
+    List<string> done;
+    List_init<string>(&done, 4);
+    for (i in 0..List_len<string>(&g_web_assets)) {
+        string from = List_get<string>(&g_web_assets, i);
+        string pkg = List_get<string>(&g_web_pkgs, i);
+        int slash = strlen(from) - 1;
+        while (slash >= 0 && (int)from[slash] != 47) {
+            slash = slash - 1;
+        }
+        string name = str_after(from, slash + 1);
+        if (fs_exists(from) == 0) {
+            eprint("warning: web asset ");
+            eprint(from);
+            eprint(str_concat(" of package '", str_concat(pkg, "' ([web] assets in its eskiu.toml) does not exist\n")));
+            continue;
+        }
+        int dup = 0;
+        for (k in 0..List_len<string>(&done)) {
+            if (str_eq(List_get<string>(&done, k), name) == 1) {
+                dup = 1;
+            }
+        }
+        if (dup == 1) {
+            eprint(str_concat("warning: web asset ", str_concat(name, str_concat(" of package '",
+                   str_concat(pkg, "' has the name of another package's; keeping the first\n")))));
+            continue;
+        }
+        List_push<string>(&done, name);
+        string dest = str_concat(to, str_concat("/", name));
+        if (str_eq(canonical_path(from), canonical_path(dest)) == 0) {
+            ntv_copy_tree(from, dest);
+        }
+    }
 }
 
 // Copy the .dll files of `dirs` next to the program `exe` (a Windows target).
