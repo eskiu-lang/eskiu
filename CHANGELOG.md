@@ -17,6 +17,28 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 - The site has a page for coding agents (`agents.html`: install, `--diagnostics=json`,
   `ui agent web --json`, `ui test`, the `ghcr.io/eskiu-lang/agent` image and the MCP
   server) and an `llms.txt`.
+- `ESKIU_SYSTEM_LIBS=SDL3,...` links the system's copy of a library a package ships in
+  `[native.NAME]` instead of downloading the archive (`*` names every one). The build
+  looks for `libNAME` in `LIBRARY_PATH`, `pkg-config`'s directory for it and the usual
+  library directories. A build for this machine whose download fails (offline) links the
+  system's library when there is one, with a warning, instead of stopping. Both compilers.
+- A package can list files a web build needs next to its page: `[web] assets =
+  ["web/gpu-naga.wasm"]` in its `eskiu.toml`. A `wasm32-unknown-emscripten` build in that
+  package, or in one that depends on it, copies them into the output's directory. Older
+  compilers reject the table, so a package that adds it needs 0.15.1. `eskiu.toml` arrays
+  of strings may span lines.
+- `eskiuc build FILE.esk` builds that file of the package (an example, a tool) with the
+  package's dependencies, to `build/FILE`, in place of the package's main.
+
+### Changed
+
+- `eskiuc doctor` reports SDL3 the way a build gets it: the `[native.SDL3]` archive of a
+  package (the current one or one already fetched), cached or still to download, else the
+  system's `libSDL3`, with what to do when there is neither. It used to look for SDL3's C
+  headers, which no build uses.
+- The LLVM code generator marks scalar parameters and results of Eskiu functions
+  `noundef`, and a function `nounwind` when nothing it does can throw. Code at `-O2` is
+  unchanged on the test corpus; `-O0` objects are about 4% smaller.
 
 ### Fixed
 
@@ -25,6 +47,14 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   a local `path`, or to another rev), so the old source was built until `eskiuc fetch`. It
   now resolves the dependencies again when the lock does not match the manifest, as
   `eskiuc build` does.
+- A program of several input files failed to parse when an import of a later file used a
+  type or a generic that an earlier file's imports declared: `eskiuc a.esk b.esk` reported
+  `Expected ';'` at `return Ok<GpuSurface, string>(s);`. What `eskiuc build file.esk` ran
+  before (the package's main and the file, as one program) hit it in the gpu package.
+- A generic function instantiated while compiling another function saw that function's
+  locals, so `List_push` or `List_free` failed to compile in a function with a local named
+  `free` ("Call target is not a function", with no location). Errors at a call in the code
+  generator now give the file, line and column, and say when a variable hides a function.
 - `--target` for the other macOS architecture on a Mac (`x86_64-apple-macosx11.0` from
   Apple silicon, or arm64 from an Intel Mac) linked the object as the host's architecture and
   failed; the driver now links it with `cc -target`.
