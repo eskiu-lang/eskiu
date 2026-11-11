@@ -297,8 +297,10 @@ cmake --build build -j$(nproc)
 </code></pre>
 <p>Add <code>./build</code> to your <code>PATH</code> so you can type <code>eskiuc</code> from any directory.</p>
 <p><code>eskiuc doctor</code> lists what the machine has for each kind of build (the C driver that
-links programs, git and curl for packages, OpenSSL, Emscripten, the Android NDK, the iOS
-SDK) and what to install for what is missing.</p>
+links programs, git and curl for packages, OpenSSL, SDL3, Emscripten, the Android NDK, the
+iOS SDK) and what to install for what is missing. It finds SDL3 the way a build does: the
+<code>[native.SDL3]</code> archive of a package (already downloaded, or downloaded by the first build
+that links it), else the system's <code>libSDL3</code>.</p>
 <hr>
 <h2 id="your-first-program">Your First Program</h2>
 <p>Create <code>hello.esk</code>:</p>
@@ -1568,7 +1570,33 @@ it (<code>tar</code>, or <code>unzip</code> for a <code>.zip</code> on Linux) in
 <code>eskiuc fetch</code> downloads every host one ahead. The build then links against that directory
 and records it as the program's run-time path; on Windows the DLLs are copied next to the
 program. A program that does not link the library downloads nothing, and a platform the
-table leaves out links it from the system as before. Only the C++ <code>eskiuc</code> reads the table.</p>
+table leaves out links it from the system as before. Both compilers read the table.</p>
+<p>To link the system's copy of a library instead of the archive (a distribution package, a
+build of your own, or a machine with no network), name it in <code>ESKIU_SYSTEM_LIBS</code>,
+separated by commas (<code>*</code> names every one):</p>
+<pre><code class="language-bash">ESKIU_SYSTEM_LIBS=SDL3 eskiuc build
+ESKIU_SYSTEM_LIBS=SDL3,wgpu_native eskiuc run
+</code></pre>
+<p>The archive is then neither downloaded nor linked, and the build looks for <code>libNAME</code> in
+<code>LIBRARY_PATH</code>, the directory <code>pkg-config</code> gives for it (the C++ <code>eskiuc</code> only), and the
+usual library directories (<code>/opt/homebrew/lib</code>, <code>/usr/local/lib</code>, <code>/usr/lib</code> and the
+others), adding its directory as <code>-L</code> and run-time path. When the download of an archive
+fails (no network) and the system has the library, the build prints a warning and links
+the system's instead; without one it stops with the download error. Both apply to builds
+for this machine; a <code>--target</code> build for another one skips a listed archive and takes the
+library from its own <code>-L</code>. <code>eskiuc doctor</code> shows which one a build of SDL3 would use.</p>
+<h3 id="web-assets">Web assets</h3>
+<p>A package whose code needs files next to the page in a browser (a WebAssembly module it
+loads, a worker script) lists them in a <code>[web]</code> table, as paths inside the package:</p>
+<pre><code class="language-toml">[web]
+assets = [&quot;web/gpu-naga.wasm&quot;]
+</code></pre>
+<p>A build for <code>wasm32-unknown-emscripten</code> in the package, or in a package that depends on
+it, copies each one (a file, or a directory with its contents) into the directory of the
+output (<code>build/app.html</code> gets <code>build/gpu-naga.wasm</code>), with either compiler. An asset that
+does not exist, or that has the file name of another package's, is a warning. A compiler
+older than 0.15.1 rejects the table (<code>unknown table [web]</code>), so a package that adds it
+needs 0.15.1 or newer.</p>
 <p>The <a href="https://github.com/eskiu-lang">eskiu-lang</a> organization publishes packages that are
 added this way: <a href="https://github.com/eskiu-lang/gpu">gpu</a> (WebGPU compute, 3D and machine learning),
 <a href="https://github.com/eskiu-lang/onnx">onnx</a>, <a href="https://github.com/eskiu-lang/tflite">tflite</a>,
@@ -1576,6 +1604,7 @@ added this way: <a href="https://github.com/eskiu-lang/gpu">gpu</a> (WebGPU comp
 <a href="https://github.com/eskiu-lang/font">font</a> and <a href="https://github.com/eskiu-lang/nds">nds</a>.</p>
 <p>The package commands:</p>
 <pre><code class="language-bash">eskiuc build [-o out] [flags]   # compile src/main.esk to build/NAME
+eskiuc build tool.esk [flags]   # compile tool.esk (an example, a tool) to build/tool
 eskiuc run [args]               # build, then run with args
 eskiuc test                     # compile and run every tests/*.esk, pass = exit code 0
 eskiuc fetch                    # re-resolve the dependencies, rewrite eskiu.lock

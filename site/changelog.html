@@ -247,6 +247,28 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <li>The site has a page for coding agents (<code>agents.html</code>: install, <code>--diagnostics=json</code>,
   <code>ui agent web --json</code>, <code>ui test</code>, the <code>ghcr.io/eskiu-lang/agent</code> image and the MCP
   server) and an <code>llms.txt</code>.</li>
+<li><code>ESKIU_SYSTEM_LIBS=SDL3,...</code> links the system's copy of a library a package ships in
+  <code>[native.NAME]</code> instead of downloading the archive (<code>*</code> names every one). The build
+  looks for <code>libNAME</code> in <code>LIBRARY_PATH</code>, <code>pkg-config</code>'s directory for it and the usual
+  library directories. A build for this machine whose download fails (offline) links the
+  system's library when there is one, with a warning, instead of stopping. Both compilers.</li>
+<li>A package can list files a web build needs next to its page: <code>[web] assets =
+  ["web/gpu-naga.wasm"]</code> in its <code>eskiu.toml</code>. A <code>wasm32-unknown-emscripten</code> build in that
+  package, or in one that depends on it, copies them into the output's directory. Older
+  compilers reject the table, so a package that adds it needs 0.15.1. <code>eskiu.toml</code> arrays
+  of strings may span lines.</li>
+<li><code>eskiuc build FILE.esk</code> builds that file of the package (an example, a tool) with the
+  package's dependencies, to <code>build/FILE</code>, in place of the package's main.</li>
+</ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li><code>eskiuc doctor</code> reports SDL3 the way a build gets it: the <code>[native.SDL3]</code> archive of a
+  package (the current one or one already fetched), cached or still to download, else the
+  system's <code>libSDL3</code>, with what to do when there is neither. It used to look for SDL3's C
+  headers, which no build uses.</li>
+<li>The LLVM code generator marks scalar parameters and results of Eskiu functions
+  <code>noundef</code>, and a function <code>nounwind</code> when nothing it does can throw. Code at <code>-O2</code> is
+  unchanged on the test corpus; <code>-O0</code> objects are about 4% smaller.</li>
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
@@ -255,6 +277,14 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
   a local <code>path</code>, or to another rev), so the old source was built until <code>eskiuc fetch</code>. It
   now resolves the dependencies again when the lock does not match the manifest, as
   <code>eskiuc build</code> does.</li>
+<li>A program of several input files failed to parse when an import of a later file used a
+  type or a generic that an earlier file's imports declared: <code>eskiuc a.esk b.esk</code> reported
+  <code>Expected ';'</code> at <code>return Ok&lt;GpuSurface, string&gt;(s);</code>. What <code>eskiuc build file.esk</code> ran
+  before (the package's main and the file, as one program) hit it in the gpu package.</li>
+<li>A generic function instantiated while compiling another function saw that function's
+  locals, so <code>List_push</code> or <code>List_free</code> failed to compile in a function with a local named
+  <code>free</code> ("Call target is not a function", with no location). Errors at a call in the code
+  generator now give the file, line and column, and say when a variable hides a function.</li>
 <li><code>--target</code> for the other macOS architecture on a Mac (<code>x86_64-apple-macosx11.0</code> from
   Apple silicon, or arm64 from an Intel Mac) linked the object as the host's architecture and
   failed; the driver now links it with <code>cc -target</code>.</li>
@@ -327,7 +357,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <li><code>tests/index.sh</code> prints the test catalog from each test's first comment, and <code>run.sh</code>
   fails on a test without one.</li>
 </ul>
-<h3 id="changed">Changed</h3>
+<h3 id="changed_1">Changed</h3>
 <ul>
 <li>The compiler is faster: the <code>ui</code> kit gallery's <code>-O0</code> object (about 47,000 lines of IR,
   nearly all of it the <code>ui</code> library and the stdlib) builds in 0.29 s instead of 0.47 s, and

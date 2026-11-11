@@ -490,8 +490,8 @@ manifest format.</p>
 <td>Add a local dependency, used in place.</td>
 </tr>
 <tr>
-<td><code>eskiuc build [-o OUT] [FLAGS]</code></td>
-<td>Fetch what the lock names and is missing, then compile the package's main file to <code>build/NAME</code> (or <code>OUT</code>). Other flags go to the compiler.</td>
+<td><code>eskiuc build [FILE.esk] [-o OUT] [FLAGS]</code></td>
+<td>Fetch what the lock names and is missing, then compile the package's main file to <code>build/NAME</code> (or <code>OUT</code>). With a <code>.esk</code> file named, compile that file instead (an example or a tool of the package, with its dependencies) to <code>build/FILE</code>. Other flags go to the compiler.</td>
 </tr>
 <tr>
 <td><code>eskiuc run [ARGS]</code></td>
@@ -521,7 +521,11 @@ util    path   /home/me/util
 <code>~/.eskiu/native/SHA256</code> by the first build that links one (or the host ones by
 <code>eskiuc fetch</code>) and checked against their SHA-256; a build in the package links them
 with no <code>-L</code>, with either compiler (<code>eskiuc</code> or the self-hosted <code>eskiuc-esk</code>). The lock
-does not list them: the manifest's SHA-256 names each one.</p>
+does not list them: the manifest's SHA-256 names each one. <code>ESKIU_SYSTEM_LIBS=NAME,...</code>
+links the system's library in place of the archive, and a build whose download fails
+falls back to the system's library when there is one, with a warning (see
+<a href="getting-started.html#native-libraries">getting started</a>). A web build copies the files a
+package lists in <code>[web] assets</code> next to its output (<a href="getting-started.html#web-assets">web assets</a>).</p>
 <h2 id="running-tests">Running Tests</h2>
 <p>The automated suite is driven by <code>tests/run.sh</code>, which compiles, links, and runs every
 <code>tests/*.esk</code> case (matching stdout against <code>*.expected</code>, smoke-running the rest, and

@@ -14,7 +14,11 @@ Usage:  python3 site/build-docs.py                 (run from anywhere)
         python3 site/build-docs.py --packages      (only the package catalog)
         python3 site/build-docs.py --no-packages   (offline: skip the catalog)
 
-Requires: markdown  (pip install --user markdown)
+Requires: markdown. Install it in a virtual environment and run the script with
+its Python (a system Python may refuse pip installs):
+        python3 -m venv ~/.venvs/eskiu-site
+        ~/.venvs/eskiu-site/bin/pip install markdown
+        ~/.venvs/eskiu-site/bin/python site/build-docs.py
 Re-run whenever the Markdown sources change, then commit site/docs/.
 """
 
@@ -24,7 +28,13 @@ import os
 import re
 import sys
 
-import markdown
+try:
+    import markdown
+except ImportError:
+    sys.exit("build-docs.py needs Python's markdown module: create a virtual environment\n"
+             "(python3 -m venv ~/.venvs/eskiu-site), install it there\n"
+             "(~/.venvs/eskiu-site/bin/pip install markdown) and run this script with that\n"
+             "environment's python.")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "site", "docs")

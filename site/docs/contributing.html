@@ -250,6 +250,14 @@ the output of each stage and are the quickest way to see what a change does.</p>
 <p>Worth reading before a larger change: <a href="architecture.html">architecture.md</a>,
 <a href="design.html">design.md</a>, <code>ast/ast.h</code>, <code>sema/type.{h,cpp}</code> (the <code>ty::Type</code> representation
 shared by sema and codegen) and <a href="self-hosting.html">self-hosting.md</a>.</p>
+<p>The site's docs pages (<code>site/docs/</code>) and package catalog are generated from the Markdown
+in <code>docs/</code> by <code>site/build-docs.py</code>, which needs Python's <code>markdown</code> module. Install it in a
+virtual environment and run the script with that environment's Python:</p>
+<pre><code class="language-bash">python3 -m venv ~/.venvs/eskiu-site
+~/.venvs/eskiu-site/bin/pip install markdown
+~/.venvs/eskiu-site/bin/python site/build-docs.py
+</code></pre>
+<p>Run it again after changing a page in <code>docs/</code>, and commit <code>site/</code> with the change.</p>
 <h2 id="two-compilers">Two compilers</h2>
 <p>Eskiu has a C++ compiler (the released <code>eskiuc</code>) and a second one written in Eskiu under
 <code>selfhost/</code>. A change to the language, its semantics or its diagnostics has to land in

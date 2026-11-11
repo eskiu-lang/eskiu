@@ -25,6 +25,18 @@ Worth reading before a larger change: [architecture.md](architecture.md),
 [design.md](design.md), `ast/ast.h`, `sema/type.{h,cpp}` (the `ty::Type` representation
 shared by sema and codegen) and [self-hosting.md](self-hosting.md).
 
+The site's docs pages (`site/docs/`) and package catalog are generated from the Markdown
+in `docs/` by `site/build-docs.py`, which needs Python's `markdown` module. Install it in a
+virtual environment and run the script with that environment's Python:
+
+```bash
+python3 -m venv ~/.venvs/eskiu-site
+~/.venvs/eskiu-site/bin/pip install markdown
+~/.venvs/eskiu-site/bin/python site/build-docs.py
+```
+
+Run it again after changing a page in `docs/`, and commit `site/` with the change.
+
 ## Two compilers
 
 Eskiu has a C++ compiler (the released `eskiuc`) and a second one written in Eskiu under
