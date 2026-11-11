@@ -236,6 +236,13 @@ llvm::Function* CodeGen::declareFunction(
     return func;
 }
 
+void CodeGen::failAt(const ASTNode* node, const std::string& msg) const {
+    if (!node || node->line <= 0) throw std::runtime_error(msg);
+    std::string file = diagFile.empty() ? "<input>" : diagFile;
+    throw std::runtime_error(file + ":" + std::to_string(node->line) + ":" + std::to_string(node->col) +
+                             ": " + msg);
+}
+
 void CodeGen::visit(FunctionDecl* node) {
     if (!node->typeParams.empty()) {
         // A generic prototype (`T f<T>(T x);`) never replaces its definition.
@@ -251,6 +258,12 @@ void CodeGen::visit(FunctionDecl* node) {
         ~MemoScope() { cg.chainTypeMemo = saved; }
     } memoScope{*this, chainTypeMemo};
     chainTypeMemo = nullptr;
+    struct FileScope {
+        CodeGen& cg;
+        std::string saved;
+        ~FileScope() { cg.diagFile = saved; }
+    } fileScope{*this, diagFile};
+    if (!node->sourceFile.empty()) diagFile = node->sourceFile;
 
     // Declare (or reuse) the prototype, then emit the body.
     llvm::Function* func = declareFunction(node->name, node->returnType, node->params);
@@ -278,6 +291,23 @@ void CodeGen::visit(FunctionDecl* node) {
     // inside a `try`) is a fresh scope-exit context: never the enclosing function's
     // defers/finally, loops, or landingpad.
     BodyContext bodyCtx(this);
+    // Nor does it see the enclosing function's locals: a local `free` there must not
+    // hide the function `free` from the instantiated body (sema checks each instance
+    // with only the globals in scope).
+    struct NameScope {
+        CodeGen& cg;
+        std::map<std::string, llvm::Value*> symbols;
+        std::vector<std::map<std::string, llvm::Value*>> scopes;
+        std::vector<std::map<std::string, std::string>> varTypes;
+        ~NameScope() {
+            cg.symbolTable = std::move(symbols);
+            cg.scopeStack = std::move(scopes);
+            cg.varTypeStack = std::move(varTypes);
+        }
+    } nameScope{*this, symbolTable, std::move(scopeStack), std::move(varTypeStack)};
+    if (!nameScope.scopes.empty()) symbolTable = nameScope.scopes.front();
+    scopeStack.clear();
+    varTypeStack.clear();
 
     // Push scope for function parameters
     pushScope();
@@ -853,6 +883,7 @@ void CodeGen::visit(StructDecl* node) {
             auto mangled = std::make_shared<FunctionDecl>(
                 node->name + "_" + func->name,
                 func->returnType, params, func->body);
+            mangled->sourceFile = func->sourceFile.empty() ? node->sourceFile : func->sourceFile;
             mangled->accept(this);
         }
     }

@@ -163,6 +163,7 @@ llvm::Function* CodeGen::instantiateGenericMethod(const std::string& instName, c
     auto                       savedOverride  = typeParamOverride;
     typeParamOverride = subs;
     auto inst = std::make_shared<FunctionDecl>(mangled, substType(mf->returnType, subs), params, mf->body);
+    inst->sourceFile = mf->sourceFile;
     inst->accept(this);
     typeParamOverride = savedOverride;
     currentFunction  = savedFunc;
@@ -602,7 +603,7 @@ void CodeGen::visit(CallExpr* node) {
         // general indirect-call path (evaluateExpr(callee) yields the fat ptr).
         std::string ft = getExprEskiuType(node->callee);
         if (!(ft.size() > 3 && ft.substr(0, 3) == "fn("))
-            throw std::runtime_error("Undefined method: " + baseType + "::" + member->member);
+            failAt(node, "undefined method '" + member->member + "' on type '" + baseType + "'");
     }
 
     // A bare name that resolves to a function (and is not shadowed by a local
@@ -614,7 +615,7 @@ void CodeGen::visit(CallExpr* node) {
             calleeVal = module->getFunction(ident->name);
     }
     if (!calleeVal) calleeVal = evaluateExpr(node->callee);
-    if (!calleeVal) throw std::runtime_error("Call target is null");
+    if (!calleeVal) failAt(node, "the called expression has no value");
 
     // Indirect call through a fat-pointer closure {fn_ptr, env_ptr}
     if (!llvm::isa<llvm::Function>(calleeVal)) {
@@ -655,7 +656,14 @@ void CodeGen::visit(CallExpr* node) {
                 fty, fnPtr, iargs, retTy->isVoidTy() ? "" : "fn.call"));
             return;
         }
-        throw std::runtime_error("Call target is not a function");
+        if (auto* ident = nodeCast<IdentExpr>(node->callee.get())) {
+            std::string shadow = module->getFunction(ident->name) ? " (a variable named '" + ident->name +
+                                                                        "' hides the function of that name)"
+                                                                  : "";
+            failAt(node->callee.get(), "'" + ident->name + "' is a variable of type '" + eskiuType +
+                                           "', not a function" + shadow);
+        }
+        failAt(node->callee.get(), "the called expression has type '" + eskiuType + "', not a function type");
     }
     llvm::Function* func = llvm::cast<llvm::Function>(calleeVal);
 
@@ -912,6 +920,7 @@ llvm::Function* CodeGen::instantiateFnTemplate(FunctionDecl* fd, const std::stri
 
         typeParamOverride = subs;
         auto inst = std::make_shared<FunctionDecl>(mangledName, fd->returnType, fd->params, fd->body);
+        inst->sourceFile = fd->sourceFile;
         inst->accept(this);
         typeParamOverride = savedOverride;
 
@@ -952,7 +961,7 @@ void CodeGen::visit(TemplateCallExpr* node) {
     }
     auto templ = funcTemplateDecls.find(node->templateName);
     if (templ == funcTemplateDecls.end())
-        throw std::runtime_error("Unknown template function: " + node->templateName);
+        failAt(node, "unknown generic function '" + node->templateName + "'");
 
     FunctionDecl* fd = templ->second;
     auto& tp = fd->typeParams;
@@ -973,7 +982,7 @@ void CodeGen::visit(TemplateCallExpr* node) {
     for (const auto& t : node->typeArgs) mangledName += "_" + mangleTemplate(resolveArg(t));
 
     llvm::Function* func = instantiateFnTemplate(fd, mangledName, subs);
-    if (!func) throw std::runtime_error("Template instantiation failed: " + mangledName);
+    if (!func) failAt(node, "could not instantiate '" + mangledName + "'");
 
     // An argument bound to an interface parameter (`Sh y`, or `T x` with T = Sh) is
     // boxed to the interface, as for a direct call.

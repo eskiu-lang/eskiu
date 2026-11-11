@@ -1,0 +1,18 @@
+// A generic body instantiated while compiling a function does not see that function's
+// locals: List_push and List_free call `free` and `realloc` even where the caller has
+// locals with those names (codegen once stopped with "Call target is not a function").
+import <io>;
+import <list>;
+
+int main() {
+    int free = 2;
+    int realloc = 3;
+    List<int> l;
+    List_init<int>(&l, 1);
+    for (i in 0..10) {
+        List_push<int>(&l, i * free + realloc);
+    }
+    printf("%d %d\n", List_len<int>(&l), List_get<int>(&l, 9));
+    List_free<int>(&l);
+    return 0;
+}

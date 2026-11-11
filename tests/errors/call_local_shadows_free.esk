@@ -1,0 +1,10 @@
+// EXPECT-ERROR: 8:5: undefined function 'free' ('free' is a variable of type 'int')
+// A local named like a function hides it: the call is located at the name and says what
+// the name is here.
+import <mem>;
+int main() {
+    *int p = alloc<int>(4);
+    int free = 3;
+    free(p);
+    return 0;
+}

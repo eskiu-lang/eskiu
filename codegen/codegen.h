@@ -148,6 +148,10 @@ private:
 
     // Current function being compiled
     llvm::Function* currentFunction = nullptr;
+    // The source file of the function being compiled ("" when unknown), for located errors.
+    std::string diagFile;
+    // Throw an error at `node` in diagFile: "FILE:LINE:COL: msg" (main prints "error: " first).
+    [[noreturn]] void failAt(const ASTNode* node, const std::string& msg) const;
 
     // Concrete struct registry
     std::map<std::string, llvm::StructType*> structTypes;
