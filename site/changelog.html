@@ -291,6 +291,9 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
   Apple silicon, or arm64 from an Intel Mac) linked the object as the host's architecture and
   failed; the driver now links it with <code>cc -target</code> (or <code>$CC -target</code> when <code>CC</code> is set and
   does not select a target itself).</li>
+<li>An output in a directory that did not exist yet (<code>-o build/app.html</code>, <code>-c -o</code>,
+  <code>--emit-header</code>) failed in the C driver, emcc or the file write; the compiler now creates
+  that directory first, in both compilers.</li>
 </ul>
 <hr>
 </details>

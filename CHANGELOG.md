@@ -63,6 +63,9 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   Apple silicon, or arm64 from an Intel Mac) linked the object as the host's architecture and
   failed; the driver now links it with `cc -target` (or `$CC -target` when `CC` is set and
   does not select a target itself).
+- An output in a directory that did not exist yet (`-o build/app.html`, `-c -o`,
+  `--emit-header`) failed in the C driver, emcc or the file write; the compiler now creates
+  that directory first, in both compilers.
 
 ---
 

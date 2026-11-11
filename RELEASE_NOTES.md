@@ -46,6 +46,8 @@ package with the package's dependencies. It also fixes three bugs that the gpu p
   matched `eskiu.toml` after a dependency was edited; it now resolves the dependencies again.
 - `--target` for the other macOS architecture on a Mac links the program with `cc -target`
   (or `$CC -target`).
+- An output in a directory that does not exist yet (`-o build/app.html`) gets that directory
+  instead of failing to link.
 
 Code that compiles with 0.15.0 compiles with 0.15.1. The full list is in the
 [changelog](https://eskiu-lang.org/changelog.html).
