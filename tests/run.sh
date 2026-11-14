@@ -668,6 +668,16 @@ if [[ "$(uname -s)" == Darwin ]]; then
     if "$ESKIUC" "$work/obj.esk" --target "$other-apple-macosx11.0" -o "$work/objother" >/dev/null 2>&1 \
         && file "$work/objother" | grep -q "$other"; then ok "cli/macos-other-arch"
     else bad "cli/macos-other-arch" "no $other executable"; fi
+    # visionOS links through xcrun -sdk xros / xrsimulator (platforms 11 and 12), with
+    # TARGET_OS_VISION predefined; skipped without the visionOS SDK.
+    if xcrun --sdk xros --show-sdk-path >/dev/null 2>&1; then
+        printf '#ifdef TARGET_OS_VISION\nint main() { return 0; }\n#endif\n' > "$work/xros.esk"
+        if "$ESKIUC" "$work/xros.esk" --target arm64-apple-xros1.0 -o "$work/xrosexe" >/dev/null 2>&1 \
+            && otool -l "$work/xrosexe" | grep -q "platform 11" \
+            && "$ESKIUC" "$work/xros.esk" --target arm64-apple-xros1.0-simulator -o "$work/xrossim" >/dev/null 2>&1 \
+            && otool -l "$work/xrossim" | grep -q "platform 12"; then ok "cli/visionos"
+        else bad "cli/visionos" "no visionOS executable"; fi
+    fi
 fi
 
 # An output in a directory that does not exist yet gets it (-o, -c -o, --emit-header).
