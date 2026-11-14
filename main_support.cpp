@@ -978,6 +978,13 @@ void seedPredefinedMacros(std::map<std::string, Macro>& macros, const std::strin
         macros["TARGET_OS_IOS"] = os;
         if (tt.find("simulator") != std::string::npos) macros["TARGET_IPHONE_SIMULATOR"] = os;
     }
+    // visionOS has UIKit as iOS does: TARGET_OS_IPHONE and TARGET_OS_VISION, as Apple's
+    // TargetConditionals.h sets them (TARGET_OS_IOS stays 0 there).
+    if (tt.find("-xros") != std::string::npos || tt.find("-visionos") != std::string::npos) {
+        macros["TARGET_OS_IPHONE"] = os;
+        macros["TARGET_OS_VISION"] = os;
+        if (tt.find("simulator") != std::string::npos) macros["TARGET_OS_SIMULATOR"] = os;
+    }
 
     // Predefine __ESKIU_FREESTANDING__ under --freestanding so stdlib (e.g.
     // <mem>'s alloc/free) can target esk_alloc/esk_free instead of libc.
@@ -1112,7 +1119,8 @@ std::string androidNdk() {
 // architecture uses when $CC is not set, with the arguments that select the target: emcc
 // for emscripten, clang with --target for the other wasm32 triples (the LLVM toolchain's
 // own, which has the WebAssembly backend and wasm-ld), the NDK's clang for Android (from
-// $ANDROID_NDK_HOME or $ANDROID_NDK_ROOT), `xcrun -sdk iphoneos clang` for iOS, and on a
+// $ANDROID_NDK_HOME or $ANDROID_NDK_ROOT), `xcrun -sdk iphoneos clang` for iOS (`xros` for
+// visionOS), and on a
 // Mac `cc -target` for macOS.
 static bool crossDriver(const std::string& triple, std::string& driver, std::vector<std::string>& args) {
     auto has = [&](const char* s) { return triple.find(s) != std::string::npos; };
@@ -1149,6 +1157,13 @@ static bool crossDriver(const std::string& triple, std::string& driver, std::vec
         if (!p) return false;
         driver = *p;
         args = {"-sdk", has("simulator") ? "iphonesimulator" : "iphoneos", "clang", "-target", triple};
+        return true;
+    }
+    if (has("-xros") || has("-visionos")) {
+        auto p = llvm::sys::findProgramByName("xcrun");
+        if (!p) return false;
+        driver = *p;
+        args = {"-sdk", has("simulator") ? "xrsimulator" : "xros", "clang", "-target", triple};
         return true;
     }
 #ifdef __APPLE__
