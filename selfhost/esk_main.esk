@@ -357,7 +357,8 @@ int cross_driver(string triple, List<string>* out) {
     int wasm = str_starts(triple, "wasm32");
     int android = str_contains(triple, "android");
     int ios = str_contains(triple, "-ios");
-    if ((wasm == 0 || str_contains(triple, "emscripten") == 0) && android == 0 && ios == 0) {
+    int xros = str_contains(triple, "-xros") == 1 || str_contains(triple, "-visionos") == 1 ? 1 : 0;
+    if ((wasm == 0 || str_contains(triple, "emscripten") == 0) && android == 0 && ios == 0 && xros == 0) {
         return 0;
     }
     string cc = getenv("CC");
@@ -393,7 +394,15 @@ int cross_driver(string triple, List<string>* out) {
     }
     List_push<string>(out, "xcrun");
     List_push<string>(out, "-sdk");
-    if (str_contains(triple, "simulator") == 1) {
+    if (xros == 1) {
+        if (str_contains(triple, "simulator") == 1) {
+            List_push<string>(out, "xrsimulator");
+        }
+        else {
+            List_push<string>(out, "xros");
+        }
+    }
+    else if (str_contains(triple, "simulator") == 1) {
         List_push<string>(out, "iphonesimulator");
     }
     else {
@@ -1839,6 +1848,13 @@ int esk_main(int argc, string* argv) {
         List_push<string>(&g_pp_predef, "TARGET_OS_IOS");
         if (str_contains(triple, "simulator") == 1) {
             List_push<string>(&g_pp_predef, "TARGET_IPHONE_SIMULATOR");
+        }
+    }
+    if (str_contains(triple, "-xros") == 1 || str_contains(triple, "-visionos") == 1) {
+        List_push<string>(&g_pp_predef, "TARGET_OS_IPHONE");
+        List_push<string>(&g_pp_predef, "TARGET_OS_VISION");
+        if (str_contains(triple, "simulator") == 1) {
+            List_push<string>(&g_pp_predef, "TARGET_OS_SIMULATOR");
         }
     }
     g_stdlib_root = find_stdlib_root();
