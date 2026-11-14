@@ -56,7 +56,9 @@ Three more families get the macros clang predefines for them: a `wasm32` triple 
 `__wasm__` and `__wasm32__` (plus `__EMSCRIPTEN__` for emscripten and `__wasi__` for WASI),
 an Android triple defines `__ANDROID__` next to `__linux__`, and an iOS triple defines
 `TARGET_OS_IPHONE` and `TARGET_OS_IOS` next to `__APPLE__` (plus `TARGET_IPHONE_SIMULATOR`
-for a simulator).
+for a simulator). A visionOS triple defines `TARGET_OS_IPHONE` and `TARGET_OS_VISION` (plus
+`TARGET_OS_SIMULATOR`), as Apple's TargetConditionals.h does: UIKit code for iOS builds
+there too, and `TARGET_OS_VISION` tells the headset apart.
 
 `--freestanding` additionally predefines `__ESKIU_FREESTANDING__` and routes `alloc`/`free`
 to caller-supplied `esk_alloc`/`esk_free` instead of libc.
@@ -236,6 +238,18 @@ xcodebuild -create-xcframework -library ios/libtracker.a -library sim/libtracker
 
 The C ABI is the Darwin AArch64 one, as on macOS. `tests/mobile/check.sh` runs the test
 corpus on a booted simulator (`xcrun simctl spawn`).
+
+## visionOS
+
+`arm64-apple-xros1.0` builds for Apple Vision Pro and `arm64-apple-xros1.0-simulator` for
+its simulator, linked through `xcrun -sdk xros clang` (`xrsimulator`). The C ABI is the
+Darwin AArch64 one. A program runs on a booted simulator with `xcrun simctl spawn`, as on
+iOS:
+
+```bash
+eskiuc hello.esk --target arm64-apple-xros1.0-simulator -o hello
+xcrun simctl spawn "Apple Vision Pro" ./hello
+```
 
 ## Windows GUI programs
 

@@ -9,6 +9,12 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ## [Unreleased]
 
+### Added
+
+- visionOS targets: `--target arm64-apple-xros1.0` (and `-simulator`) links through
+  `xcrun -sdk xros` / `xrsimulator` with no `$CC`, and predefines `TARGET_OS_IPHONE` and
+  `TARGET_OS_VISION`, in both compilers (`docs/dev/cross-compile.md`).
+
 ---
 
 ## [0.15.1] - 2026-11-10
