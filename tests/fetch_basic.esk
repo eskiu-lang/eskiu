@@ -119,8 +119,13 @@ int main() {
     Json_obj_begin(&j);  Json_key(&j, "msg");  Json_str(&j, "hi \"there\"");  Json_obj_end(&j);
     FetchOptions_body_json(&o, &j);
     Json_free(&j);
+    // the body's bytes sent, as they go (an upload's progress)
+    int64 body_sent = 0;
+    o.body_sent = &body_sent;
     rc = fetch_with("http://127.0.0.1:18431/echo", &o, &r);
     show("post-json", rc, &r);
+    printf("  body sent=%s\n", body_sent == o.body.len ? "all" : "short");
+    o.body_sent = null;
     let m: String;  m.init(8);
     Response_header(&r, "x-method", &m);
     printf("  method=%s\n", m.cstr());

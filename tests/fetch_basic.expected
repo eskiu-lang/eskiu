@@ -3,6 +3,7 @@ json: name=eskiu tags=2 n=3
 404: 404 Not Found ok=0 type=[] len=12 body=[no such page] url=http://127.0.0.1:18431/missing redirects=0
 query: 200 OK ok=1 type=[] len=8 body=[query ok] url=http://127.0.0.1:18431/q?a=1&b=x%20y redirects=0
 post-json: 200 OK ok=1 type=[] len=22 body=[{"msg":"hi \"there\""}] url=http://127.0.0.1:18431/echo redirects=0
+  body sent=all
   method=POST
   sent type=application/json
 303: 200 OK ok=1 type=[] len=0 body=[] url=http://127.0.0.1:18431/echo redirects=1

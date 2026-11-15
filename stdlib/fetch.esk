@@ -181,6 +181,7 @@ struct FetchOptions {
     int verify_tls;        // 1: check the certificate and host name
     String ca_file;           // extra PEM CA bundle to trust ("" = system store only)
     int bad_header;        // 1 if FetchOptions_header rejected a header
+    *int64 body_sent;        // the body's bytes sent so far, stored as they go (null: not kept)
 }
 
 void FetchOptions_init(FetchOptions* self) {
@@ -711,6 +712,9 @@ struct _FetchCall {
     int conn_err;
     Bytes req;
     int64 sent;
+    // FetchOptions.body_sent, and where the body starts in req
+    *int64 body_sent;
+    int64 body_at;
     FetchParser parser;
     int parser_live;
     *uint8 rbuf;
@@ -868,6 +872,7 @@ void _fetch_render(_FetchCall* c) {
         String_free(&cl);
     }
     _fetch_put(b, "Connection: close\r\n\r\n");
+    c.body_at = b.len;
     if (c.send_body == 1) {
         Bytes_append_raw(b, c.body.data, c.body.len);
     }
@@ -1152,6 +1157,9 @@ int _fetch_step(_FetchCall* c) {
                     return _fetch_io_failed("sending the request");
                 }
                 c.sent += w;
+                if (c.body_sent != null && c.sent > c.body_at) {
+                    atomic_store64(c.body_sent, c.sent - c.body_at);
+                }
             }
             FetchParser_init(&c.parser, c.max_body, String_eq_cstr(&c.method, "HEAD"));
             c.parser_live = 1;
@@ -1226,6 +1234,7 @@ int _fetch_begin(_FetchCall* c, string url, FetchOptions* o, Response* out) {
     c.follow = o.follow_redirects;
     c.max_redirects = o.max_redirects;
     c.max_body = o.max_body;
+    c.body_sent = o.body_sent;
     String_from(&c.user_agent, o.user_agent.cstr());
     c.verify = o.verify_tls;
     String_from(&c.ca_file, o.ca_file.cstr());
