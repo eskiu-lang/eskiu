@@ -67,6 +67,8 @@ set(SOURCES
     sema/typecheck_access.cpp
     sema/typecheck_builtin.cpp
     sema/typecheck_type.cpp
+    sema/typecheck_layout.cpp
+    sema/typecheck_assign.cpp
     sema/c_header.cpp
     sema/async_transform.cpp
     codegen/codegen_module.cpp
