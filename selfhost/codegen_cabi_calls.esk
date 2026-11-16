@@ -1,0 +1,593 @@
+// codegen_cabi_calls.esk: extern declarations, calls and callback thunks (part of codegen_cabi.esk, imported in order)
+
+// Classify extern `d`; when it has a by-value aggregate, register it and return the
+// lowered `declare` line (else "" — the extern keeps its plain declaration).
+string cg_cabi_declare(Codegen* g, *DeclNode d) {
+    if (g.abi == 0) {
+        return "";
+    }
+    int any = cg_abi_is_agg(cg_lltype(g, d.ret_type));
+    int np = List_len<Param>(&d.params);
+    int i = 0;
+    while (i < np) {
+        Param pm = List_get<Param>(&d.params, i);
+        if (cg_streq(pm.ty, "...") == 0 && cg_abi_is_agg(cg_lltype(g, pm.ty)) == 1) {
+            any = 1;
+        }
+        i = i + 1;
+    }
+    if (any == 0) {
+        return "";
+    }
+    let c: CgCabi;
+    c.name = d.name;
+    List_init<CgAbi>(&c.params, np);
+    int fint = 6;
+    int fsse = 8;
+    c.ret.kind = 0;
+    c.ret.ty = "";
+    c.ret.ty2 = "";
+    c.ret.align = 0;
+    c.ret.salign = 0;
+    c.ret.off = 0;
+    string lret = cg_lltype(g, d.ret_type);
+    if (cg_streq(lret, "void") == 0) {
+        c.ret = cg_abi_classify(g, d.ret_type, 1, &fint, &fsse);
+    }
+    if (c.ret.kind == 5 && fint > 0) {
+        fint = fint - 1;
+    }
+    String decl;      // params with attributes (the declare line)
+    String_init(&decl, 64);
+    String fixed;    // bare lowered types (a variadic call's fn type)
+    String_init(&fixed, 64);
+    int variadic = 0;
+    if (c.ret.kind == 5) {
+        String_append(&decl, cg_cat("ptr sret(", cg_cat(c.ret.ty, cg_cat(") align ", cg_itoa(c.ret.align)))));
+        String_append(&fixed, "ptr");
+    }
+    i = 0;
+    while (i < np) {
+        Param pm = List_get<Param>(&d.params, i);
+        if (cg_streq(pm.ty, "...") == 1) {
+            variadic = 1;
+            i = i + 1;
+            continue;
+        }
+        string cety = pm.ty;
+        if (cg_is_fnty(cg_dealias(g, pm.ty)) == 1) {   // a C function pointer
+            cety = "*void";
+        }
+        if (cg_streq(cg_dealias(g, pm.ty), "va_list") == 1) {   // a C va_list (cg_c_va_list)
+            cety = "*void";
+        }
+        CgAbi a = cg_abi_classify(g, cety, 0, &fint, &fsse);
+        List_push<CgAbi>(&c.params, a);
+        string lty = cg_lltype(g, cety);
+        string bare = lty;
+        if (a.kind == 1) {
+            bare = a.ty;
+        }
+        else if (a.kind == 2) {
+            bare = cg_cat(a.ty, cg_cat(", ", a.ty2));
+        }
+        else if (a.kind == 6) {
+            bare = a.ty;
+        }
+        else if (a.kind >= 3) {
+            bare = "ptr";
+        }
+        if (String_len(&decl) > 0) {
+            String_append(&decl, ", ");
+            String_append(&fixed, ", ");
+        }
+        String_append(&decl, cg_abi_param_decl(a, lty));
+        if (a.kind == 0 && cg_streq(lty, "ptr") == 0) {
+            String_append(&decl, cg_ext_attr(g, cety));
+        }
+        String_append(&fixed, bare);
+        i = i + 1;
+    }
+    c.lowret = lret;
+    if (c.ret.kind == 5) {
+        c.lowret = "void";
+    }
+    else if (c.ret.kind == 1) {
+        c.lowret = c.ret.ty;
+    }
+    c.lowfixed = (string)String_cstr(&fixed);
+    List_push<CgCabi>(&g.cabis, c);
+    string params = (string)String_cstr(&decl);
+    if (variadic == 1) {
+        params = cg_va(params);
+    }
+    string rattr = "";
+    if (c.ret.kind == 0) {
+        rattr = cg_ext_attr(g, d.ret_type);
+    }
+    return cg_cat("declare", cg_cat(rattr, cg_cat(" ", cg_cat(c.lowret, cg_cat(" @", cg_cat(d.name, cg_cat("(", cg_cat(params, ")\n"))))))));
+}
+
+// Reinterpret value `op` of LLVM type `from` as type `to` through a stack slot big and
+// aligned enough for both (clang's coerced load/store). Returns the new operand.
+string cg_abi_reinterp(Codegen* g, string op, string from, string to) {
+    if (cg_streq(from, to) == 1) {
+        return op;
+    }
+    int fs = cg_ll_size_of(g, from);
+    int ts = cg_ll_size_of(g, to);
+    int a = cg_ll_align_of(g, from);
+    int ta = cg_ll_align_of(g, to);
+    if (ta > a) {
+        a = ta;
+    }
+    string big = from;
+    if (ts > fs) {
+        big = to;
+    }
+    string slot = cg_entry_alloca(g, cg_cat(big, cg_cat(", align ", cg_itoa(a))));
+    if (fs < ts) {
+        cg_emit(g, "  store ");
+        cg_emit(g, to);
+        cg_emit(g, " zeroinitializer, ptr ");
+        cg_emit(g, slot);
+        cg_emit(g, "\n");
+    }
+    cg_emit(g, "  store ");
+    cg_emit(g, from);
+    cg_emit(g, " ");
+    cg_emit(g, op);
+    cg_emit(g, ", ptr ");
+    cg_emit(g, slot);
+    cg_emit(g, "\n");
+    string t = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, t);
+    cg_emit(g, " = load ");
+    cg_emit(g, to);
+    cg_emit(g, ", ptr ");
+    cg_emit(g, slot);
+    cg_emit(g, "\n");
+    return t;
+}
+
+// A coerced value `op` to / from the aggregate of LLVM type `lt` (cg_abi_reinterp at k.off,
+// through `<{ [off x i8], ty }>`; C++ CodeGen::cabiToCoerced / cabiFromCoerced).
+string cg_abi_to_coerced(Codegen* g, string op, string lt, CgAbi k) {
+    if (k.off == 0) {
+        return cg_abi_reinterp(g, op, lt, k.ty);
+    }
+    string w = cg_cat("<{ [", cg_cat(cg_itoa(k.off), cg_cat(" x i8], ", cg_cat(k.ty, " }>"))));
+    string wv = cg_abi_reinterp(g, op, lt, w);
+    string t = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, t);
+    cg_emit(g, " = extractvalue ");
+    cg_emit(g, w);
+    cg_emit(g, " ");
+    cg_emit(g, wv);
+    cg_emit(g, ", 1\n");
+    return t;
+}
+
+string cg_abi_from_coerced(Codegen* g, string op, CgAbi k, string lt) {
+    if (k.off == 0) {
+        return cg_abi_reinterp(g, op, k.ty, lt);
+    }
+    string w = cg_cat("<{ [", cg_cat(cg_itoa(k.off), cg_cat(" x i8], ", cg_cat(k.ty, " }>"))));
+    string t = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, t);
+    cg_emit(g, " = insertvalue ");
+    cg_emit(g, w);
+    cg_emit(g, " zeroinitializer, ");
+    cg_emit(g, k.ty);
+    cg_emit(g, " ");
+    cg_emit(g, op);
+    cg_emit(g, ", 1\n");
+    return cg_abi_reinterp(g, t, w, lt);
+}
+
+// Call the lowered extern `c` with logical argument values (already coerced to its Eskiu
+// parameter types; variadic extras promoted). `f` is its Eskiu-level signature. Returns
+// the logical result.
+CgVal cg_cabi_call(Codegen* g, CgCabi* c, CgFn* f, List<CgVal>* args) {
+    let v: CgVal;
+    v.op = "";
+    v.ty = "void";
+    v.ety = f.rety;
+    String ir;
+    String_init(&ir, 64);
+    string sslot = "";
+    if (c.ret.kind == 5) {
+        sslot = cg_entry_alloca(g, cg_cat(c.ret.ty, cg_cat(", align ", cg_itoa(c.ret.align))));
+        String_append(&ir, cg_cat("ptr sret(", cg_cat(c.ret.ty, cg_cat(") align ", cg_cat(cg_itoa(c.ret.align), cg_cat(" ", sslot))))));
+    }
+    int n = List_len<CgVal>(args);
+    int i = 0;
+    while (i < n) {
+        CgVal a = List_get<CgVal>(args, i);
+        string piece = cg_cat(a.ty, cg_cat(" ", a.op));
+        if (i < List_len<CgAbi>(&c.params)) {
+            CgAbi k = List_get<CgAbi>(&c.params, i);
+            if (k.kind == 1) {
+                piece = cg_cat(cg_abi_param_decl(k, a.ty), cg_cat(" ", cg_abi_to_coerced(g, a.op, a.ty, k)));
+            } else if (k.kind == 2) {
+                string pty = cg_cat("{ ", cg_cat(k.ty, cg_cat(", ", cg_cat(k.ty2, " }"))));
+                string pair = cg_abi_reinterp(g, a.op, a.ty, pty);
+                string e0 = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, e0);
+                cg_emit(g, " = extractvalue ");
+                cg_emit(g, pty);
+                cg_emit(g, " ");
+                cg_emit(g, pair);
+                cg_emit(g, ", 0\n");
+                string e1 = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, e1);
+                cg_emit(g, " = extractvalue ");
+                cg_emit(g, pty);
+                cg_emit(g, " ");
+                cg_emit(g, pair);
+                cg_emit(g, ", 1\n");
+                piece = cg_cat(k.ty, cg_cat(" ", cg_cat(e0, cg_cat(", ", cg_cat(k.ty2, cg_cat(" ", e1))))));
+            } else if (k.kind == 6) {
+                string pty = cg_cat("{ ", cg_cat(k.ty, " }"));
+                string pack = cg_abi_reinterp(g, a.op, a.ty, pty);
+                List<string> els = cg_abi_expand_list(k.ty);
+                String pc;
+                String_init(&pc, 32);
+                int ei = 0;
+                while (ei < List_len<string>(&els)) {
+                    string ev = cg_tmp(g);
+                    cg_emit(g, "  ");
+                    cg_emit(g, ev);
+                    cg_emit(g, " = extractvalue ");
+                    cg_emit(g, pty);
+                    cg_emit(g, " ");
+                    cg_emit(g, pack);
+                    cg_emit(g, ", ");
+                    cg_emit(g, cg_itoa(ei));
+                    cg_emit(g, "\n");
+                    if (ei > 0) {
+                        String_append(&pc, ", ");
+                    }
+                    String_append(&pc, List_get<string>(&els, ei));
+                    String_append(&pc, " ");
+                    String_append(&pc, ev);
+                    ei = ei + 1;
+                }
+                piece = (string)String_cstr(&pc);
+            } else if (k.kind == 3 || k.kind == 4) {
+                int cal = cg_ll_align_of(g, a.ty);
+                if (k.align > cal) {
+                    cal = k.align;
+                }
+                string copy = cg_entry_alloca(g, cg_cat(a.ty, cg_cat(", align ", cg_itoa(cal))));
+                cg_emit(g, "  store ");
+                cg_emit(g, a.ty);
+                cg_emit(g, " ");
+                cg_emit(g, a.op);
+                cg_emit(g, ", ptr ");
+                cg_emit(g, copy);
+                cg_emit(g, "\n");
+                piece = cg_cat(cg_abi_param_decl(k, a.ty), cg_cat(" ", copy));
+            }
+        }
+        if (String_len(&ir) > 0) {
+            String_append(&ir, ", ");
+        }
+        String_append(&ir, piece);
+        i = i + 1;
+    }
+    string callty = c.lowret;
+    if (f.variadic == 1) {
+        callty = cg_cat(c.lowret, cg_cat(" (", cg_cat(cg_va(c.lowfixed), ")")));
+    }
+    int isvoid = cg_streq(c.lowret, "void");
+    string t = cg_emit_callish(g, callty, cg_cat("@", c.name), (string)String_cstr(&ir), isvoid);
+    if (c.ret.kind == 5) {
+        string r = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, r);
+        cg_emit(g, " = load ");
+        cg_emit(g, f.retty);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, sslot);
+        cg_emit(g, "\n");
+        v.op = r;
+        v.ty = f.retty;
+        return v;
+    }
+    if (isvoid == 1) {
+        return v;
+    }
+    if (c.ret.kind == 1) {
+        v.op = cg_abi_from_coerced(g, t, c.ret, f.retty);
+        v.ty = f.retty;
+        return v;
+    }
+    v.op = t;
+    v.ty = f.retty;
+    return v;
+}
+
+// Does the Eskiu function `f` take or return an aggregate by value, or take a va_list
+// (so C must reach it through a C-ABI thunk)? Externs lowered at declaration and variadics are left alone.
+int cg_cabi_needs_thunk(Codegen* g, CgFn* f) {
+    if (g.abi == 0 || f.variadic == 1) {
+        return 0;
+    }
+    if (cg_find_cabi(g, f.name).name[0] != 0) {
+        return 0;
+    }
+    if (cg_abi_is_agg(f.retty) == 1) {
+        return 1;
+    }
+    int i = 0;
+    while (i < List_len<string>(&f.ptys)) {
+        string pt = List_get<string>(&f.ptys, i);
+        if (cg_abi_is_agg(pt) == 1 || cg_streq(pt, "%__va_list") == 1) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// The raw address C calls for the top-level function `name` (`(*void)f`): `@name`, or
+// its `@__cabi_<name>` thunk (queued) when it has a by-value aggregate.
+string cg_cabi_callback(Codegen* g, string name) {
+    CgFn f = cg_find_fn(g, name);
+    if (cg_cabi_needs_thunk(g, &f) == 0) {
+        return cg_cat("@", name);
+    }
+    string key = cg_cat("cabi:", name);
+    if (cg_seen_inst(g, cg_cat("thunk:", key)) == 0) {
+        cg_push_inst(g, cg_cat("thunk:", key));
+        List_push<string>(&g.fnthunks, key);
+    }
+    return cg_cat("@__cabi_", name);
+}
+
+// The Eskiu va_list value of the va_list C passed in `c` (C++ CodeGen::cVaListToEskiu):
+// on x86-64 System V and AArch64 outside Darwin and Windows the C va_list (24 or 32
+// bytes) at that address, copied into the front of the storage; elsewhere the `char*`
+// itself, at offset 0.
+string cg_va_from_c(Codegen* g, string c) {
+    string r = cg_tmp(g);
+    if (g.abi == 3 || (g.abi == 2 && g.wintgt == 0)) {
+        string slot = cg_entry_alloca(g, "%__va_list");
+        string n = "32";
+        if (g.abi == 3) {
+            n = "24";
+        }
+        cg_emit(g, cg_cat("  store %__va_list zeroinitializer, ptr ", cg_cat(slot, "\n")));
+        cg_emit(g, cg_cat("  call void @llvm.memcpy.p0.p0.i64(ptr align 8 ", cg_cat(slot, cg_cat(", ptr align 8 ", cg_cat(c, cg_cat(", i64 ", cg_cat(n, ", i1 false)\n")))))));
+        cg_emit(g, cg_cat("  ", cg_cat(r, cg_cat(" = load %__va_list, ptr ", cg_cat(slot, "\n")))));
+        return r;
+    }
+    cg_emit(g, cg_cat("  ", cg_cat(r, cg_cat(" = insertvalue %__va_list zeroinitializer, ptr ", cg_cat(c, ", 0\n")))));
+    return r;
+}
+
+// Emit `__cabi_<name>`: the lowered C signature (like an extern's), rebuilding the Eskiu
+// values, calling `name` with first-class aggregates and returning the result the C way
+// (mirrors CodeGen::cabiCallbackThunk).
+void cg_emit_cabi_thunk_as(Codegen* g, string name, string callee, string sym, int internal);
+
+void cg_emit_cabi_thunk(Codegen* g, string name) {
+    cg_emit_cabi_thunk_as(g, name, name, cg_cat("__cabi_", name), 1);
+}
+
+// The same thunk for the function `name`, calling `@callee` and defined as `@sym`
+// (internal, or external for an `export` entry).
+void cg_emit_cabi_thunk_as(Codegen* g, string name, string callee, string sym, int internal) {
+    CgFn f = cg_find_fn(g, name);
+    int np = List_len<string>(&f.ptys);
+    int fint = 6;
+    int fsse = 8;
+    let ra: CgAbi;
+    ra.kind = 0;
+    ra.ty = "";
+    ra.ty2 = "";
+    ra.align = 0;
+    ra.salign = 0;
+    ra.off = 0;
+    if (cg_streq(f.retty, "void") == 0) {
+        ra = cg_abi_classify(g, f.rety, 1, &fint, &fsse);
+    }
+    if (ra.kind == 5 && fint > 0) {
+        fint = fint - 1;
+    }
+    String hdr;
+    String_init(&hdr, 64);
+    if (ra.kind == 5) {
+        String_append(&hdr, cg_cat("ptr sret(", cg_cat(ra.ty, cg_cat(") align ", cg_cat(cg_itoa(ra.align), " %sr")))));
+    }
+    List<CgAbi> ks;
+    List_init<CgAbi>(&ks, np);
+    int i = 0;
+    while (i < np) {
+        string lty = List_get<string>(&f.ptys, i);
+        // A va_list comes from C the way C passes its va_list (cg_va_from_c).
+        string ety = List_get<string>(&f.petys, i);
+        if (cg_streq(lty, "%__va_list") == 1) {
+            lty = "ptr";
+            ety = "*void";
+        }
+        CgAbi k = cg_abi_classify(g, ety, 0, &fint, &fsse);
+        List_push<CgAbi>(&ks, k);
+        string an = cg_cat("%a", cg_itoa(i));
+        if (String_len(&hdr) > 0) {
+            String_append(&hdr, ", ");
+        }
+        if (k.kind == 2) {
+            String_append(&hdr, cg_cat(k.ty, cg_cat(" ", cg_cat(an, cg_cat("l, ", cg_cat(k.ty2, cg_cat(" ", cg_cat(an, "h"))))))));
+        } else if (k.kind == 6) {
+            List<string> els = cg_abi_expand_list(k.ty);
+            int ei = 0;
+            while (ei < List_len<string>(&els)) {
+                if (ei > 0) {
+                    String_append(&hdr, ", ");
+                }
+                String_append(&hdr, cg_cat(List_get<string>(&els, ei), cg_cat(" ", cg_cat(an, cg_cat("_", cg_itoa(ei))))));
+                ei = ei + 1;
+            }
+        } else {
+            String_append(&hdr, cg_cat(cg_abi_param_decl(k, lty), cg_cat(" ", an)));
+        }
+        i = i + 1;
+    }
+    string lowret = f.retty;
+    if (ra.kind == 5) {
+        lowret = "void";
+    } else if (ra.kind == 1) {
+        lowret = ra.ty;
+    }
+    String_init(&g.entry_buf, 128);
+    String saved = g.out;
+    String_init(&g.out, 256);
+    String args;
+    String_init(&args, 64);
+    i = 0;
+    while (i < np) {
+        CgAbi k = List_get<CgAbi>(&ks, i);
+        string an = cg_cat("%a", cg_itoa(i));
+        string lty = List_get<string>(&f.ptys, i);
+        string op = an;
+        if (cg_streq(lty, "%__va_list") == 1) {
+            op = cg_va_from_c(g, an);
+        }
+        else if (k.kind == 1) {
+            op = cg_abi_from_coerced(g, an, k, lty);
+        }
+        else if (k.kind == 2) {
+            string pty = cg_cat("{ ", cg_cat(k.ty, cg_cat(", ", cg_cat(k.ty2, " }"))));
+            string p0 = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, p0);
+            cg_emit(g, " = insertvalue ");
+            cg_emit(g, pty);
+            cg_emit(g, " undef, ");
+            cg_emit(g, k.ty);
+            cg_emit(g, " ");
+            cg_emit(g, an);
+            cg_emit(g, "l, 0\n");
+            string p1 = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, p1);
+            cg_emit(g, " = insertvalue ");
+            cg_emit(g, pty);
+            cg_emit(g, " ");
+            cg_emit(g, p0);
+            cg_emit(g, ", ");
+            cg_emit(g, k.ty2);
+            cg_emit(g, " ");
+            cg_emit(g, an);
+            cg_emit(g, "h, 1\n");
+            op = cg_abi_reinterp(g, p1, pty, lty);
+        } else if (k.kind == 6) {
+            string pty = cg_cat("{ ", cg_cat(k.ty, " }"));
+            List<string> els = cg_abi_expand_list(k.ty);
+            string acc = "undef";
+            int ei = 0;
+            while (ei < List_len<string>(&els)) {
+                string nx = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, nx);
+                cg_emit(g, " = insertvalue ");
+                cg_emit(g, pty);
+                cg_emit(g, " ");
+                cg_emit(g, acc);
+                cg_emit(g, ", ");
+                cg_emit(g, List_get<string>(&els, ei));
+                cg_emit(g, " ");
+                cg_emit(g, an);
+                cg_emit(g, "_");
+                cg_emit(g, cg_itoa(ei));
+                cg_emit(g, ", ");
+                cg_emit(g, cg_itoa(ei));
+                cg_emit(g, "\n");
+                acc = nx;
+                ei = ei + 1;
+            }
+            op = cg_abi_reinterp(g, acc, pty, lty);
+        } else if (k.kind == 3 || k.kind == 4) {
+            op = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, op);
+            cg_emit(g, " = load ");
+            cg_emit(g, lty);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, an);
+            cg_emit(g, "\n");
+        }
+        if (i > 0) {
+            String_append(&args, ", ");
+        }
+        String_append(&args, cg_cat(lty, cg_cat(" ", op)));
+        i = i + 1;
+    }
+    string argstr = (string)String_cstr(&args);
+    if (cg_streq(f.retty, "void") == 1) {
+        cg_emit(g, "  call void @");
+        cg_emit(g, callee);
+        cg_emit(g, "(");
+        cg_emit(g, argstr);
+        cg_emit(g, ")\n");
+        cg_emit(g, "  ret void\n");
+    } else {
+        string r = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, r);
+        cg_emit(g, " = call ");
+        cg_emit(g, f.retty);
+        cg_emit(g, " @");
+        cg_emit(g, callee);
+        cg_emit(g, "(");
+        cg_emit(g, argstr);
+        cg_emit(g, ")\n");
+        if (ra.kind == 5) {
+            cg_emit(g, "  store ");
+            cg_emit(g, f.retty);
+            cg_emit(g, " ");
+            cg_emit(g, r);
+            cg_emit(g, ", ptr %sr\n");
+            cg_emit(g, "  ret void\n");
+        } else {
+            string rv = r;
+            if (ra.kind == 1) {
+                rv = cg_abi_to_coerced(g, r, f.retty, ra);
+            }
+            cg_emit(g, "  ret ");
+            cg_emit(g, lowret);
+            cg_emit(g, " ");
+            cg_emit(g, rv);
+            cg_emit(g, "\n");
+        }
+    }
+    string bodytext = (string)String_cstr(&g.out);
+    g.out = saved;
+    cg_emit(g, internal == 1 ? "define internal" : "define");
+    if (ra.kind == 0) {
+        cg_emit(g, cg_ext_attr(g, f.rety));
+    }
+    cg_emit(g, " ");
+    cg_emit(g, lowret);
+    cg_emit(g, " @");
+    cg_emit(g, sym);
+    cg_emit(g, "(");
+    cg_emit(g, (string)String_cstr(&hdr));
+    cg_emit(g, ") {\nentry:\n");
+    cg_emit(g, (string)String_cstr(&g.entry_buf));
+    cg_emit(g, bodytext);
+    cg_emit(g, "}\n\n");
+}
+
+// An IR identifier character (after the `@` of a global's name).
+int cg_ir_ident_ch(int c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+        || c == '_' || c == '.' || c == '$' || c == '-' ? 1 : 0;
+}

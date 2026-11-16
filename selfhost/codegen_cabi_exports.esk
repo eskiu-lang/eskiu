@@ -1,0 +1,599 @@
+// codegen_cabi_exports.esk: symbol renames, exports and the uncaught-exception reporter (part of codegen_cabi.esk, imported in order)
+
+// The IR text `s` with every use of the global `@from` (not inside a quoted string)
+// renamed `@to`, and with `internal` linkage on its definition when `def` is 1.
+void cg_rename_sym(String* s, string from, string to, int def) {
+    *char src = (*char)String_cstr(s);
+    const int64 n = String_len(s);
+    const int64 fl = (int64)cg_strlen(from);
+    let out: String;
+    String_init(&out, n + 64);
+    int64 i = 0;
+    int64 last = 0;
+    int64 line = 0;
+    bool inq = false;
+    while (i < n) {
+        const int c = (int)src[i];
+        if (c == '\n') {
+            line = i + 1;
+        }
+        if (c == '"') {
+            inq = !inq;
+        } else if (!inq && c == '@' && i + 1 + fl <= n && memcmp((*void)(src + i + 1), (*void)from, (size_t)fl) == 0
+                   && (i + 1 + fl == n || cg_ir_ident_ch((int)src[i + 1 + fl]) == 0)) {
+            if (def == 1 && i + 1 + fl < n && src[i + 1 + fl] == '(' && i - line >= 7
+                && memcmp((*void)(src + line), (*void)"define ", (size_t)7) == 0) {
+                String_append_bytes(&out, src + last, line + 7 - last);
+                String_append(&out, "internal ");
+                last = line + 7;
+            }
+            String_append_bytes(&out, src + last, i + 1 - last);
+            String_append(&out, to);
+            i = i + 1 + fl;
+            last = i;
+            continue;
+        }
+        i = i + 1;
+    }
+    String_append_bytes(&out, src + last, n - last);
+    String_free(s);
+    *s = out;
+}
+
+// `export T f(...)` (CodeGen::emitExportEntries): when C's convention differs from the
+// Eskiu one, the body becomes the internal `@f.esk` (every use renamed) and `@f` is the
+// C-signature thunk that calls it.
+void cg_emit_exports(Codegen* g, *Program prog) {
+    int i = 0;
+    while (i < List_len<*DeclNode>(&prog.decls)) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        i = i + 1;
+        if (d.kind != DK_FUNCTION || d.is_export == 0 || d.body == null) {
+            continue;
+        }
+        CgFn f = cg_find_fn(g, d.name);
+        if (cg_cabi_needs_thunk(g, &f) == 0) {
+            continue;
+        }
+        string esk = cg_cat(d.name, ".esk");
+        cg_rename_sym(&g.out, d.name, esk, 1);
+        cg_rename_sym(&g.globals, d.name, esk, 0);
+        cg_emit_cabi_thunk_as(g, d.name, esk, d.name, 0);
+    }
+}
+
+// 1 when the text at `p` starts a linkage keyword (the symbol is not external).
+int cg_local_linkage(*char p) {
+    string[10] kws = {"internal ", "private ", "linkonce", "weak", "available_externally ",
+                      "extern_weak ", "common ", "appending ", "external ", "hidden "};
+    int k = 0;
+    while (k < 10) {
+        if (cg_has_prefix((string)p, kws[k]) == 1) {
+            return 1;
+        }
+        k = k + 1;
+    }
+    return 0;
+}
+
+// The name after `@` at `p` (quoted or not) is one of `names`.
+int cg_sym_in(*char p, List<string>* names) {
+    int64 n = 0;
+    *char s = p;
+    if (p[0] == '"') {
+        s = p + 1;
+        while (s[n] != 0 && s[n] != '"') {
+            n = n + 1;
+        }
+    } else {
+        while (cg_ir_ident_ch((int)s[n]) == 1) {
+            n = n + 1;
+        }
+    }
+    int i = 0;
+    while (i < List_len<string>(names)) {
+        string e = List_get<string>(names, i);
+        if ((int64)cg_strlen(e) == n && memcmp((*void)s, (*void)e, (size_t)n) == 0) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// CodeGen::hideNonExports over the IR text in `s`: each external definition (a
+// `define` line or an `@x = global/constant` line) that is not an export gets `hidden`,
+// or on Windows each export gets `dllexport` instead.
+void cg_hide_text(Codegen* g, String* s, List<string>* exports) {
+    *char src = (*char)String_cstr(s);
+    const int64 n = String_len(s);
+    let out: String;
+    String_init(&out, n + 1024);
+    int64 i = 0;
+    while (i < n) {
+        int64 e = i;
+        while (e < n && src[e] != '\n') {
+            e = e + 1;
+        }
+        int64 ins = -1;
+        *char name = null;
+        if (cg_has_prefix((string)(src + i), "define ") == 1 && cg_local_linkage(src + i + 7) == 0) {
+            ins = i + 7;
+            int64 j = ins;
+            while (j < e && src[j] != '@') {
+                j = j + 1;
+            }
+            name = src + j + 1;
+        } else if (src[i] == '@') {
+            int64 j = i + 1;
+            if (src[j] == '"') {
+                j = j + 1;
+                while (j < e && src[j] != '"') {
+                    j = j + 1;
+                }
+                j = j + 1;
+            } else {
+                while (j < e && cg_ir_ident_ch((int)src[j]) == 1) {
+                    j = j + 1;
+                }
+            }
+            if (j + 3 <= e && src[j] == ' ' && src[j + 1] == '=' && src[j + 2] == ' '
+                && cg_local_linkage(src + j + 3) == 0
+                && cg_has_prefix((string)(src + i + 1), "llvm.") == 0) {
+                ins = j + 3;
+                name = src + i + 1;
+            }
+        }
+        if (ins >= 0) {
+            const int isexp = cg_sym_in(name, exports);
+            String_append_bytes(&out, src + i, ins - i);
+            if (g.wintgt == 1) {
+                if (isexp == 1) {
+                    String_append(&out, "dllexport ");
+                }
+            } else if (isexp == 0) {
+                String_append(&out, "hidden ");
+            }
+            String_append_bytes(&out, src + ins, e - ins);
+        } else {
+            String_append_bytes(&out, src + i, e - i);
+        }
+        if (e < n) {
+            String_append(&out, "\n");
+        }
+        i = e + 1;
+    }
+    String_free(s);
+    *s = out;
+}
+
+void cg_hide_non_exports(Codegen* g, *Program prog) {
+    List<string> exports;
+    List_init<string>(&exports, 4);
+    int i = 0;
+    while (i < List_len<*DeclNode>(&prog.decls)) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        i = i + 1;
+        if (d.kind == DK_FUNCTION && d.is_export == 1 && d.body != null) {
+            List_push<string>(&exports, d.name);
+        }
+    }
+    if (List_len<string>(&exports) > 0) {
+        cg_hide_text(g, &g.out, &exports);
+        cg_hide_text(g, &g.globals, &exports);
+    }
+    List_free<string>(&exports);
+}
+
+// An enum is an ADT (tagged union) when some variant carries a payload.
+int cg_enum_is_adt(*DeclNode d) {
+    int j = 0;
+    while (j < List_len<Param>(&d.params)) {
+        List<string> pl = List_get<List<string>>(&d.payloads, j);
+        if (List_len<string>(&pl) > 0) {
+            return 1;
+        }
+        j = j + 1;
+    }
+    return 0;
+}
+
+// An ADT enum's tagged-union type `%E = type { i32, [N x i64] }`: N = i64 slots holding
+// the largest variant payload, laid out by BYTES with field alignment (as the C++
+// makeAdtStruct does via DataLayout), so arrays, structs and nested enums fit.
+void cg_emit_adt_type(Codegen* g, *DeclNode d) {
+    int slots = 0;
+    int j = 0;
+    while (j < List_len<Param>(&d.params)) {
+        List<string> pl = List_get<List<string>>(&d.payloads, j);
+        int isl = (cg_layout_size(g, &pl) + 7) / 8;
+        if (isl > slots) {
+            slots = isl;
+        }
+        j = j + 1;
+    }
+    if (slots < 1) {
+        slots = 1;
+    }
+    cg_deftype(g, d.name, cg_cat("{ i32, [", cg_cat(cg_itoa(slots), " x i64] }")));
+}
+
+// Emit the named type line for a (non-generic) struct / union / ADT enum decl, once.
+// Called in declaration order by pass 1b/1c, and on demand by the layout queries when a
+// type's size is needed before its turn (a union member or payload declared later).
+void cg_emit_tydecl_body(Codegen* g, *DeclNode d);   // fwd
+
+// Is the LLVM type `lt` (an array's element) a struct/union holding a nonzero unnamed
+// bitfield (g.nonhomog)?
+int cg_ll_nonhomog(Codegen* g, string lt) {
+    int p = 0;
+    while ((int)lt[p] == 91) {                       // `[N x T]`
+        p = p + 1;
+        cg_ll_ws(lt, &p);
+        cg_ll_num(lt, &p);
+        cg_ll_ws(lt, &p);
+        cg_ll_kw(lt, &p, "x");
+        cg_ll_ws(lt, &p);
+    }
+    if ((int)lt[p] != 37) {
+        return 0;
+    }
+    int e = p + 1;
+    while (lt[e] != 0 && (int)lt[e] != 93 && (int)lt[e] != 32 && (int)lt[e] != 44) {
+        e = e + 1;
+    }
+    return cg_in_strlist(&g.nonhomog, cg_sub_str(lt, p + 1, e));
+}
+
+// Note a struct/union whose C ABI is not a homogeneous FP aggregate: it holds an unnamed
+// bitfield of nonzero width, directly or in a field (C++ CodeGen::notHomogeneous).
+void cg_note_nonhomog(Codegen* g, string name, *DeclNode d, List<string>* ftys) {
+    int nh = 0;
+    int i = 0;
+    while (i < List_len<int>(&d.pad_bits)) {
+        if (List_get<int>(&d.pad_bits, i) > 0) {
+            nh = 1;
+        }
+        i = i + 1;
+    }
+    i = 0;
+    while (i < List_len<string>(ftys)) {
+        if (cg_ll_nonhomog(g, cg_lltype(g, List_get<string>(ftys, i))) == 1) {
+            nh = 1;
+        }
+        i = i + 1;
+    }
+    if (nh == 1 && cg_in_strlist(&g.nonhomog, name) == 0) {
+        List_push<string>(&g.nonhomog, name);
+    }
+}
+
+void cg_emit_tydecl(Codegen* g, *DeclNode d) {
+    if (cg_tydef_body(g, d.name)[0] != 0) {
+        return;
+    }
+    string mark = cg_cat("tyd:", d.name);
+    if (cg_seen_inst(g, mark) == 1) {          // in progress (self-containing type)
+        return;
+    }
+    cg_push_inst(g, mark);
+    cg_emit_tydecl_body(g, d);
+    if (d.kind == DK_STRUCT || d.kind == DK_UNION) {
+        List<string> ftys;
+        List_init<string>(&ftys, 4);
+        int i = 0;
+        while (i < List_len<Param>(&d.params)) {
+            List_push<string>(&ftys, List_get<Param>(&d.params, i).ty);
+            i = i + 1;
+        }
+        cg_note_nonhomog(g, d.name, d, &ftys);
+    }
+}
+
+void cg_emit_tydecl_body(Codegen* g, *DeclNode d) {
+    if (d.kind == DK_UNION) {
+        cg_emit_union(g, d);
+        return;
+    }
+    if (d.kind == DK_ENUM) {
+        cg_emit_adt_type(g, d);
+        return;
+    }
+    if (cg_struct_has_bf(d) == 1) {
+        cg_bf_layout(g, d);
+        return;
+    }
+    if (d.pack_align >= 2) {   // #pragma pack(N>=2): padding + phys slots
+        cg_emit_manual(g, d, d.pack_align);
+        return;
+    }
+    if (cg_needs_manual(g, d) == 1) {      // holds a pack(N) struct
+        cg_emit_manual(g, d, 0);
+        return;
+    }
+    // Build the body first: a generic field type instantiates into g.globals and must
+    // precede this line, not interleave (see cg_ensure_struct_inst).
+    String body;
+    String_init(&body, 32);
+    int nf = List_len<Param>(&d.params);
+    int fi = 0;
+    while (fi < nf) {
+        if (fi > 0) {
+            String_append(&body, ", ");
+        }
+        String_append(&body, cg_lltype(g, List_get<Param>(&d.params, fi).ty));
+        fi = fi + 1;
+    }
+    // A `packed` struct (or `#pragma pack(1)`) is an LLVM packed struct `<{…}>` (no
+    // inter-field padding, align 1); indices are unchanged (no fillers).
+    string op = "{ ";
+    string cl = " }";
+    if (d.is_packed == 1) {
+        op = "<{ ";
+        cl = " }>";
+    }
+    cg_deftype(g, d.name, cg_cat(op, cg_cat((string)String_cstr(&body), cl)));
+}
+
+// One type of the uncaught-exception report or exception_text(): block `is<k>` (the name
+// matched: load the payload as that type, widen, snprintf) and `not<k>` (try the next).
+// `kind` is 'i'/'u' (signed/unsigned of `bits`), 'f' (float/double), 'b' bool, 'c' char,
+// 's' string. `head` is `"error: uncaught exception: %s"` or `"%s"`, `nl` is `"\n"` or `""`.
+void cg_ux_entry_ex(Codegen* g, String* phi, int k, string name, int kind, int bits, string head, string nl) {
+    string ks = cg_itoa(k);
+    string nm = cg_string_global_n(g, name, cg_strlen(name));
+    cg_emit(g, "  %c");
+    cg_emit(g, ks);
+    cg_emit(g, " = call i32 @strcmp(ptr %tn, ptr ");
+    cg_emit(g, nm);
+    cg_emit(g, ")\n");
+    cg_emit(g, "  %e");
+    cg_emit(g, ks);
+    cg_emit(g, " = icmp eq i32 %c");
+    cg_emit(g, ks);
+    cg_emit(g, ", 0\n");
+    cg_emit(g, "  br i1 %e");
+    cg_emit(g, ks);
+    cg_emit(g, ", label %is");
+    cg_emit(g, ks);
+    cg_emit(g, ", label %not");
+    cg_emit(g, ks);
+    cg_emit(g, "\n");
+    cg_emit(g, "is");
+    cg_emit(g, ks);
+    cg_emit(g, ":\n");
+    string fmt = "";
+    string arg = "";
+    string aty = "i64";
+    string v = cg_cat("%v", ks);
+    string w = cg_cat("%w", ks);
+    if (kind == 105 || kind == 117) {
+        string it = cg_cat("i", cg_itoa(bits));
+        cg_emit(g, "  ");
+        cg_emit(g, v);
+        cg_emit(g, " = load ");
+        cg_emit(g, it);
+        cg_emit(g, ", ptr %pay\n");
+        if (bits == 64) {
+            arg = v;
+        }
+        else {
+            cg_emit(g, "  ");
+            cg_emit(g, w);
+            cg_emit(g, " = ");
+            if (kind == 105) {
+                cg_emit(g, "sext ");
+            } else {
+                cg_emit(g, "zext ");
+            }
+            cg_emit(g, it);
+            cg_emit(g, " ");
+            cg_emit(g, v);
+            cg_emit(g, " to i64\n");
+            arg = w;
+        }
+        if (kind == 105) {
+            fmt = cg_cat(head, cg_cat(" %lld", nl));
+        } else {
+            fmt = cg_cat(head, cg_cat(" %llu", nl));
+        }
+        fmt = cg_string_global_n(g, fmt, cg_strlen(fmt));
+    } else if (kind == 102) {
+        aty = "double";
+        if (bits == 32) {
+            cg_emit(g, "  ");
+            cg_emit(g, v);
+            cg_emit(g, " = load float, ptr %pay\n");
+            cg_emit(g, "  ");
+            cg_emit(g, w);
+            cg_emit(g, " = fpext float ");
+            cg_emit(g, v);
+            cg_emit(g, " to double\n");
+            arg = w;
+        } else {
+            cg_emit(g, "  ");
+            cg_emit(g, v);
+            cg_emit(g, " = load double, ptr %pay\n");
+            arg = v;
+        }
+        string f0 = cg_cat(head, cg_cat(" %g", nl));
+        fmt = cg_string_global_n(g, f0, cg_strlen(f0));
+    } else if (kind == 98) {
+        aty = "ptr";
+        string tt = cg_string_global_n(g, "true", 4);
+        string ff = cg_string_global_n(g, "false", 5);
+        cg_emit(g, "  ");
+        cg_emit(g, v);
+        cg_emit(g, " = load i8, ptr %pay\n");
+        cg_emit(g, "  %t");
+        cg_emit(g, ks);
+        cg_emit(g, " = icmp ne i8 ");
+        cg_emit(g, v);
+        cg_emit(g, ", 0\n");
+        cg_emit(g, "  ");
+        cg_emit(g, w);
+        cg_emit(g, " = select i1 %t");
+        cg_emit(g, ks);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, tt);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, ff);
+        cg_emit(g, "\n");
+        arg = w;
+        string f0 = cg_cat(head, cg_cat(" %s", nl));
+        fmt = cg_string_global_n(g, f0, cg_strlen(f0));
+    } else if (kind == 99) {
+        aty = "i32";
+        cg_emit(g, "  ");
+        cg_emit(g, v);
+        cg_emit(g, " = load i8, ptr %pay\n");
+        cg_emit(g, "  ");
+        cg_emit(g, w);
+        cg_emit(g, " = zext i8 ");
+        cg_emit(g, v);
+        cg_emit(g, " to i32\n");
+        arg = w;
+        string f0 = cg_cat(head, cg_cat(" '%c'", nl));
+        fmt = cg_string_global_n(g, f0, cg_strlen(f0));
+    } else {
+        aty = "ptr";
+        string f1 = cg_cat(head, nl);
+        string f2 = cg_cat(head, cg_cat(" \"%s\"", nl));
+        string g1 = cg_string_global_n(g, f1, cg_strlen(f1));
+        string g2 = cg_string_global_n(g, f2, cg_strlen(f2));
+        cg_emit(g, "  ");
+        cg_emit(g, v);
+        cg_emit(g, " = load ptr, ptr %pay\n");
+        cg_emit(g, "  %t");
+        cg_emit(g, ks);
+        cg_emit(g, " = icmp eq ptr ");
+        cg_emit(g, v);
+        cg_emit(g, ", null\n");
+        cg_emit(g, "  ");
+        cg_emit(g, w);
+        cg_emit(g, " = select i1 %t");
+        cg_emit(g, ks);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, g1);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, g2);
+        cg_emit(g, "\n");
+        arg = v;
+        fmt = w;
+    }
+    cg_emit(g, "  %n");
+    cg_emit(g, ks);
+    cg_emit(g, cg_cat(" = call i32 (ptr, ", cg_cat(cg_size_ty(g), cg_cat(", ptr, ...) @snprintf(ptr %buf, ", cg_cat(cg_size_ty(g), " 512, ptr ")))));
+    cg_emit(g, fmt);
+    cg_emit(g, ", ptr %tn, ");
+    cg_emit(g, aty);
+    cg_emit(g, " ");
+    cg_emit(g, arg);
+    cg_emit(g, ")\n");
+    cg_emit(g, "  br label %out\n");
+    cg_emit(g, "not");
+    cg_emit(g, ks);
+    cg_emit(g, ":\n");
+    String_append(phi, cg_cat(cg_cat(cg_cat(cg_cat("[ %n", ks), ", %is"), ks), " ], "));
+}
+
+void cg_ux_entry(Codegen* g, String* phi, int k, string name, int kind, int bits) {
+    cg_ux_entry_ex(g, phi, k, name, kind, bits, "error: uncaught exception: %s", "\n");
+}
+
+void cg_emit_ex_text_fn(Codegen* g) {
+    string sz = cg_size_ty(g);
+    cg_ensure_extern(g, "snprintf", cg_cat("declare i32 @snprintf(ptr, ", cg_cat(sz, ", ptr, ...)\n")));
+    // Into the catch handler's own 512-byte buffer (`%buf`), which it returns.
+    cg_emit(g, "define internal ptr @__eskiu_exception_text(ptr %obj, ptr %buf) {\nentry:\n");
+    cg_emit(g, "  %tnp = getelementptr i8, ptr %obj, i64 8\n  %tn = load ptr, ptr %tnp\n  %pay = getelementptr i8, ptr %obj, i64 16\n");
+    let phi: String;
+    String_init(&phi, 256);
+    cg_ux_entry_ex(g, &phi, 0, "int", 105, 32, "%s", "");
+    cg_ux_entry_ex(g, &phi, 1, "int8", 105, 8, "%s", "");
+    cg_ux_entry_ex(g, &phi, 2, "int16", 105, 16, "%s", "");
+    cg_ux_entry_ex(g, &phi, 3, "int64", 105, 64, "%s", "");
+    cg_ux_entry_ex(g, &phi, 4, "uint", 117, 32, "%s", "");
+    cg_ux_entry_ex(g, &phi, 5, "uint8", 117, 8, "%s", "");
+    cg_ux_entry_ex(g, &phi, 6, "uint16", 117, 16, "%s", "");
+    cg_ux_entry_ex(g, &phi, 7, "uint64", 117, 64, "%s", "");
+    cg_ux_entry_ex(g, &phi, 8, "double", 102, 64, "%s", "");
+    cg_ux_entry_ex(g, &phi, 9, "float", 102, 32, "%s", "");
+    cg_ux_entry_ex(g, &phi, 10, "bool", 98, 8, "%s", "");
+    cg_ux_entry_ex(g, &phi, 11, "char", 99, 8, "%s", "");
+    cg_ux_entry_ex(g, &phi, 12, "string", 115, 0, "%s", "");
+    string fo = cg_string_global_n(g, "%s", 2);
+    cg_emit(g, cg_cat("  %nz = call i32 (ptr, ", cg_cat(sz, cg_cat(", ptr, ...) @snprintf(ptr %buf, ", cg_cat(sz, " 512, ptr ")))));
+    cg_emit(g, fo);
+    cg_emit(g, ", ptr %tn)\n");
+    cg_emit(g, "  br label %out\n");
+    cg_emit(g, "out:\n  ret ptr %buf\n}\n");
+}
+
+// A program that throws reports an exception nobody catches by type and value
+// (mirrors the C++ emitUncaughtReporter): a constructor installs a std::terminate
+// handler that rethrows into a catch-all, prints to stderr and aborts.
+void cg_emit_uncaught(Codegen* g, *Program prog) {
+    if (g.freestanding == 1 || cg_prog_defines(prog, "main") == 0) {
+        return;
+    }
+    if (cg_prog_defines(prog, "strcmp") == 1 || cg_prog_defines(prog, "snprintf") == 1 || cg_prog_defines(prog, "fflush") == 1
+        || cg_prog_defines(prog, "write") == 1 || cg_prog_defines(prog, "abort") == 1) {
+        return;
+    }
+    string sz = cg_size_ty(g);   // size_t
+    cg_ensure_extern(g, "snprintf", cg_cat("declare i32 @snprintf(ptr, ", cg_cat(sz, ", ptr, ...)\n")));
+    cg_ensure_extern(g, "fflush", "declare i32 @fflush(ptr)\n");
+    cg_ensure_extern(g, "write", cg_cat("declare ", cg_cat(sz, cg_cat(" @write(i32, ptr, ", cg_cat(sz, ")\n")))));
+    cg_ensure_extern(g, "abort", "declare void @abort()\n");
+    cg_ensure_extern(g, "_ZSt13set_terminatePFvvE", "declare ptr @_ZSt13set_terminatePFvvE(ptr)\n");
+    String_append(&g.globals, "@llvm.global_ctors = appending global [1 x { i32, ptr, ptr }] [{ i32, ptr, ptr } { i32 65535, ptr @__eskiu_install_terminate, ptr null }]\n");
+    cg_emit(g, "define internal void @__eskiu_terminate() personality ptr @");
+    cg_emit(g, cg_eh_pers(g));
+    cg_emit(g, " {\n");
+    cg_emit(g, "entry:\n  %buf = alloca [512 x i8]\n  invoke void @__cxa_rethrow() to label %never unwind label %lp\n");
+    cg_emit(g, "never:\n  unreachable\n");
+    cg_emit(g, "lp:\n  %pad = landingpad { ptr, i32 } catch ptr null\n  %exc = extractvalue { ptr, i32 } %pad, 0\n");
+    if (g.emscripten == 1) {             // the landingpad's is the object (see SK_TRY)
+        cg_emit(g, "  %obj0 = call ptr @__cxa_begin_catch(ptr %exc)\n  %obj = getelementptr i8, ptr %exc, i64 0\n");
+    }
+    else {
+        cg_emit(g, "  %obj = call ptr @__cxa_begin_catch(ptr %exc)\n");
+    }
+    cg_emit(g, "  %tnp = getelementptr i8, ptr %obj, i64 8\n  %tn = load ptr, ptr %tnp\n  %pay = getelementptr i8, ptr %obj, i64 16\n");
+    // One entry per primitive type an exception can carry (mirrors the C++ table): the
+    // payload is read with that type only after its name matched.
+    let phi: String;
+    String_init(&phi, 256);
+    cg_ux_entry(g, &phi, 0, "int", 105, 32);
+    cg_ux_entry(g, &phi, 1, "int8", 105, 8);
+    cg_ux_entry(g, &phi, 2, "int16", 105, 16);
+    cg_ux_entry(g, &phi, 3, "int64", 105, 64);
+    cg_ux_entry(g, &phi, 4, "uint", 117, 32);
+    cg_ux_entry(g, &phi, 5, "uint8", 117, 8);
+    cg_ux_entry(g, &phi, 6, "uint16", 117, 16);
+    cg_ux_entry(g, &phi, 7, "uint64", 117, 64);
+    cg_ux_entry(g, &phi, 8, "double", 102, 64);
+    cg_ux_entry(g, &phi, 9, "float", 102, 32);
+    cg_ux_entry(g, &phi, 10, "bool", 98, 8);
+    cg_ux_entry(g, &phi, 11, "char", 99, 8);
+    cg_ux_entry(g, &phi, 12, "string", 115, 0);
+    string fo0 = "error: uncaught exception: %s\n";
+    string fo = cg_string_global_n(g, fo0, cg_strlen(fo0));
+    cg_emit(g, cg_cat("  %nz = call i32 (ptr, ", cg_cat(cg_size_ty(g), cg_cat(", ptr, ...) @snprintf(ptr %buf, ", cg_cat(cg_size_ty(g), " 512, ptr ")))));
+    cg_emit(g, fo);
+    cg_emit(g, ", ptr %tn)\n");
+    cg_emit(g, "  br label %out\n");
+    cg_emit(g, "out:\n  %n = phi i32 ");
+    cg_emit(g, (string)String_cstr(&phi));
+    cg_emit(g, "[ %nz, %not12 ]\n");
+    cg_emit(g, "  %big = icmp sgt i32 %n, 511\n  %len = select i1 %big, i32 511, i32 %n\n");
+    if (cg_streq(sz, "i64") == 1) {
+        cg_emit(g, "  %len64 = sext i32 %len to i64\n");
+    }
+    else {
+        cg_emit(g, "  %len64 = add i32 %len, 0\n");
+    }
+    cg_emit(g, cg_cat("  %fl = call i32 @fflush(ptr null)\n  %wr = call ", cg_cat(sz, cg_cat(" @write(i32 2, ptr %buf, ", cg_cat(sz, " %len64)\n  call void @abort()\n  unreachable\n}\n")))));
+    cg_emit(g, "define internal void @__eskiu_install_terminate() {\nentry:\n  %old = call ptr @_ZSt13set_terminatePFvvE(ptr @__eskiu_terminate)\n  ret void\n}\n");
+}
