@@ -15,6 +15,12 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   `xcrun -sdk xros` / `xrsimulator` with no `$CC`, and predefines `TARGET_OS_IPHONE` and
   `TARGET_OS_VISION`, in both compilers (`docs/dev/cross-compile.md`).
 
+- Editors: go to definition, find references, rename and hover work on a type name wherever a
+  type is written (parameter, return, local and field types, `*T`, `?*T`, `T[]`, `T[N]`,
+  generic arguments, casts, `sizeof(T)`, struct literals, constraints, alias targets) and at
+  the type's declaration, for structs, unions, enums, interfaces and aliases. Hover shows the
+  declaration (`struct Point`). Both compilers.
+
 ### Fixed
 
 - Editors (VS Code, IntelliJ, any LSP client): a file that is a part of a module

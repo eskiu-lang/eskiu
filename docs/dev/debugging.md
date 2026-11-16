@@ -60,6 +60,17 @@ The VS Code extension drives two CLI flags that are also useful for manual diagn
 - `--hover-at LINE:COL` runs the pipeline through the type checker and prints the inferred Eskiu type of the innermost AST node containing that position (read straight from the resolved expression-type table). Use it to confirm what type the resolver actually assigned an expression.
 - `--definition-at LINE:COL` finds the symbol at that position and prints the `file:line:col` where it was declared.
 
+A type name works in all three queries (`--hover-at`, `--definition-at`, `--references-at`)
+wherever a type is written: parameter, return, local, global and field types, the pointer,
+nullable, array and slice forms, generic arguments, casts, `sizeof(T)`, struct literals,
+constraints and alias targets. The parser records each named type token of the primary input
+(`Program::typeRefs`, built by `Parser::noteTypeRef`; a backtrack in `rewindTo` drops the ones
+read past it), and `TypeChecker::typeDefAt` resolves it through `typeDefs`, the declared
+structs, unions, enums, interfaces and aliases. Hover prints the declaration text
+(`struct Point`, `type A = Point`). The self-host mirrors it: `p_note_type` / `p_rewind` in
+the parser fill `Program.tr_*`, and `sema_tool_type_at` (`selfhost/sema_tooling_types.esk`)
+answers in `run_tool`.
+
 Because `--hover-at` reports the resolver's own answer, it is the quickest way to see whether a bug is "the type checker resolved the wrong type" versus "codegen lowered a correctly-resolved type wrongly."
 
 ## Note: the type checker runs twice (single resolver)
