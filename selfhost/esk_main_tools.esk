@@ -1,0 +1,583 @@
+// esk_main_tools.esk: freestanding IR, loading inputs and the editor tools (part of esk_main.esk, imported in order)
+
+// --freestanding: mark every function "no-builtins", as clang -ffreestanding does, so the
+// optimizer never turns a loop into a call to memset/memcpy that no libc provides. clang
+// ignores -fno-builtin for a .ll input, so the attribute goes on each `define` line,
+// before its personality clause or the opening brace.
+string ir_no_builtins(string ir) {
+    let out: String;
+    String_init(&out, 8192);
+    int i = 0;
+    while (ir[i] != 0) {
+        int e = i;
+        while (ir[e] != 0 && ir[e] != 10) {
+            e = e + 1;
+        }
+        int at = -1;
+        if (e - i > 7 && ir[i] == 100 && ir[i+1] == 101 && ir[i+2] == 102 && ir[i+3] == 105
+            && ir[i+4] == 110 && ir[i+5] == 101 && ir[i+6] == 32 && ir[e-1] == 123) {      // "define " ... "{"
+            int k = i;
+            while (k + 13 <= e && at < 0) {                                              // " personality "
+                if (ir[k] == 32 && ir[k+1] == 112 && ir[k+2] == 101 && ir[k+3] == 114 && ir[k+4] == 115
+                    && ir[k+5] == 111 && ir[k+6] == 110 && ir[k+7] == 97 && ir[k+8] == 108
+                    && ir[k+9] == 105 && ir[k+10] == 116 && ir[k+11] == 121 && ir[k+12] == 32) {
+                    at = k;
+                }
+                k = k + 1;
+            }
+            if (at < 0) {                                                   // " {"
+                at = e - 2;
+            }
+        }
+        int j = i;
+        while (j < e) {
+            if (j == at) {
+                String_append(&out, " \"no-builtins\"");
+            }
+            String_push(&out, ir[j]);
+            j = j + 1;
+        }
+        if (ir[e] == 10) {
+            String_push(&out, (char)10);
+            e = e + 1;
+        }
+        i = e;
+    }
+    return (string)String_cstr(&out);
+}
+
+// Parse every input into the one shared program (multi-file merge; the shared
+// import/type-name session dedups across files, like the C++ driver). The primary
+// input's text is `primary_src` when that is not null (the completion splice). 0 when an
+// input cannot be read or has a preprocessor error (reported); a syntax error is
+// reported and exits.
+int load_inputs(List<string>* infiles, string primary_src, *Program prog) {
+    int fi = 0;
+    while (fi < List_len<string>(infiles)) {
+        string f = List_get<string>(infiles, fi);
+        // Register the root input, so an import cycle back to it (or an input an
+        // earlier input already imported) is not parsed twice.
+        if (register_file(f) == 0) {
+            fi = fi + 1;
+            continue;
+        }
+        let flen: int64 = 0;
+        *uint8 raw = null;
+        if (fi == 0 && primary_src != null) {
+            raw = (*uint8)primary_src;
+            while (primary_src[flen] != 0) {
+                flen = flen + (int64)1;
+            }
+        } else {
+            raw = fs_read_all(f, &flen);
+        }
+        if (raw == null) {
+            uint8[512] eb;
+            sprintf((string)&eb[0], "error: could not open file '%s'\n", f);
+            eprint((string)&eb[0]);
+            return 0;
+        }
+        let pperr: int = 0;
+        string pp = pp_run((string)raw, (int)flen, f, &pperr);
+        if (pperr != 0) {       // a directive error (reported by pp_run) aborts the build
+            return 0;
+        }
+        *uint8 src = (*uint8)pp;
+        int plen = g_pp_out_len;
+        let p: Parser;
+        g_lex_file = f;
+        p_init(&p, src, plen);
+        p.basedir = str_dir(f);
+        parse_into(&p, prog);
+        fi = fi + 1;
+    }
+    // A program has one main: a script's statements are its main, so no other input may
+    // define one or have top-level statements too (mirrors the C++ loadProgram).
+    *DeclNode script_main = null;
+    *DeclNode named_main = null;
+    int di = 0;
+    while (di < List_len<*DeclNode>(&prog.decls)) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, di);
+        di = di + 1;
+        if (d.kind != DK_FUNCTION || cg_streq(d.name, "main") == 0 || d.from_import == 1) {
+            continue;
+        }
+        int script = 0;
+        if (List_len<Param>(&d.params) == 2 && cg_streq(List_get<Param>(&d.params, 0).name, "__argc") == 1
+            && d.body != null) {
+            script = 1;
+        }
+        if (script == 0) {
+            if (named_main == null) {
+                named_main = d;
+            }
+            continue;
+        }
+        if (script_main != null) {
+            uint8[1024] mb;
+            sprintf((string)&mb[0], "error: %s:%d:%d: only one input file may have top-level statements (they are its main)\n",
+                    d.file, d.body.line, d.body.col);
+            eprint((string)&mb[0]);
+            return 0;
+        }
+        script_main = d;
+    }
+    if (script_main != null && named_main != null) {
+        uint8[1024] sb;
+        sprintf((string)&sb[0], "error: %s:%d:%d: a file with top-level statements has no 'main': the statements are its main\n",
+                script_main.file, script_main.body.line, script_main.body.col);
+        eprint((string)&sb[0]);
+        return 0;
+    }
+    return 1;
+}
+
+// Do the inputs parse? The parser exits at a syntax error, so the editor modes try the
+// parse in a child process first, its diagnostics captured (and echoed to stderr when
+// `echo`). On failure, the first diagnostic's line and column (0 when none).
+int probe_parse(List<string>* infiles, string primary_src, int echo, *int eline, *int ecol) {
+    eline[0] = 0;
+    ecol[0] = 0;
+    *int fds = alloc<int>(2);
+    if (pipe(fds) != 0) {
+        return 1;
+    }
+    int pid = fork();
+    if (pid < 0) {
+        return 1;
+    }
+    if (pid == 0) {
+        close(fds[0]);
+        dup2(fds[1], 2);
+        close(fds[1]);
+        parser_session_init();
+        if (List_len<string>(infiles) > 0) {
+            pkg_load_roots(List_get<string>(infiles, 0));
+        }
+        *Program pr = alloc<Program>(1);
+        List_init<*DeclNode>(&pr.decls, 4);
+        if (load_inputs(infiles, primary_src, pr) == 0) {
+            _exit(1);
+        }
+        _exit(0);
+    }
+    close(fds[1]);
+    String out;
+    String_init(&out, 256);
+    uint8[4096] buf;
+    int64 got = read(fds[0], (*void)&buf[0], (int64)4096);
+    while (got > (int64)0) {
+        int64 k = (int64)0;
+        while (k < got) {
+            String_push(&out, (char)buf[k]);
+            k = k + (int64)1;
+        }
+        got = read(fds[0], (*void)&buf[0], (int64)4096);
+    }
+    close(fds[0]);
+    let st: int = 0;
+    waitpid(pid, &st, 0);
+    string text = (string)String_cstr(&out);
+    if (echo == 1) {
+        eprint(text);
+    }
+    if ((st & 127) == 0 && ((st >> 8) & 255) == 0) {
+        return 1;
+    }
+    // "error: FILE:LINE:COL: message": the first `:digits:digits:` after the prefix.
+    int i = 0;
+    if (str_starts(text, "error: ") == 1) {
+        i = 7;
+    }
+    while (text[i] != 0 && (int)text[i] != 10) {
+        if ((int)text[i] == 58) {
+            int j = i + 1;
+            int ln = 0;
+            int nd = 0;
+            while ((int)text[j] >= 48 && (int)text[j] <= 57) {
+                ln = ln * 10 + ((int)text[j] - 48);
+                j = j + 1;
+                nd = nd + 1;
+            }
+            if (nd > 0 && (int)text[j] == 58) {
+                int k2 = j + 1;
+                int cl = 0;
+                int nc = 0;
+                while ((int)text[k2] >= 48 && (int)text[k2] <= 57) {
+                    cl = cl * 10 + ((int)text[k2] - 48);
+                    k2 = k2 + 1;
+                    nc = nc + 1;
+                }
+                if (nc > 0 && (int)text[k2] == 58) {
+                    eline[0] = ln;
+                    ecol[0] = cl;
+                    return 0;
+                }
+            }
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// `--symbols`: the declarations of the input file, one per line as
+// kind<TAB>name<TAB>LINE:COL<TAB>container<TAB>detail (an editor's outline; the C++ driver's).
+string sym_sig(*DeclNode f, string name) {
+    string sg = cg_cat(cg_cat(cg_cat(f.ret_type, " "), name), "(");
+    int i = 0;
+    while (i < List_len<Param>(&f.params)) {
+        Param pm = List_get<Param>(&f.params, i);
+        if (i > 0) {
+            sg = cg_cat(sg, ", ");
+        }
+        sg = cg_cat(sg, pm.ty);
+        if (pm.name != null && pm.name[0] != 0) {
+            sg = cg_cat(cg_cat(sg, " "), pm.name);
+        }
+        i = i + 1;
+    }
+    return cg_cat(sg, ")");
+}
+
+void sym_emit(string kind, string name, int line, int col, string container, string detail) {
+    printf("%s\t%s\t%d:%d\t%s\t%s\n", kind, name, line, col, container, detail);
+}
+
+void print_symbols(*Program prog, string infile) {
+    string self = canonical_path(infile);
+    int i = 0;
+    while (i < List_len<*DeclNode>(&prog.decls)) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        i = i + 1;
+        if (d.from_import == 1 || d.line <= 0) {   // not an implicit one (a script's argc)
+            continue;
+        }
+        if (d.file != null && d.file[0] != 0 && cg_streq(canonical_path(d.file), self) == 0) {
+            continue;
+        }
+        if (d.kind == DK_FUNCTION) {
+            sym_emit("function", d.name, d.line, d.col, "", sym_sig(d, d.name));
+        }
+        else if (d.kind == DK_STRUCT || d.kind == DK_UNION) {
+            if (d.kind == DK_STRUCT) {
+                sym_emit("struct", d.name, d.line, d.col, "", cg_cat("struct ", d.name));
+            }
+            else {
+                sym_emit("struct", d.name, d.line, d.col, "", cg_cat("union ", d.name));
+            }
+            int k = 0;
+            while (k < List_len<Param>(&d.params)) {
+                Param fl = List_get<Param>(&d.params, k);
+                sym_emit("field", fl.name, fl.line, fl.col, d.name, fl.ty);
+                k = k + 1;
+            }
+            k = 0;
+            while (d.kind == DK_STRUCT && k < List_len<*DeclNode>(&d.methods)) {
+                *DeclNode m = List_get<*DeclNode>(&d.methods, k);
+                sym_emit("method", m.name, m.line, m.col, d.name, sym_sig(m, m.name));
+                k = k + 1;
+            }
+        }
+        else if (d.kind == DK_ENUM) {
+            sym_emit("enum", d.name, d.line, d.col, "", cg_cat("enum ", d.name));
+        }
+        else if (d.kind == DK_INTERFACE) {
+            sym_emit("interface", d.name, d.line, d.col, "", cg_cat("interface ", d.name));
+        }
+        else if (d.kind == DK_TYPEALIAS) {
+            sym_emit("type", d.name, d.line, d.col, "", cg_cat(cg_cat(cg_cat("type ", d.name), " = "), d.ret_type));
+        }
+        else if (d.kind == DK_VARDECL) {
+            if (d.is_const == 1) {
+                sym_emit("constant", d.name, d.line, d.col, "", d.ret_type);
+            }
+            else {
+                sym_emit("variable", d.name, d.line, d.col, "", d.ret_type);
+            }
+        }
+    }
+}
+
+// "LINE:COL" (the C++ sscanf("%d:%d")): 1 when both are read.
+int parse_line_col(string at, *int line, *int col) {
+    int i = 0;
+    int l = 0;
+    int nd = 0;
+    while ((int)at[i] >= 48 && (int)at[i] <= 57) {
+        l = l * 10 + ((int)at[i] - 48);
+        i = i + 1;
+        nd = nd + 1;
+    }
+    if (nd == 0 || (int)at[i] != 58) {
+        return 0;
+    }
+    i = i + 1;
+    int c = 0;
+    int nc = 0;
+    int neg = 0;
+    if ((int)at[i] == 45) {
+        neg = 1;
+        i = i + 1;
+    }
+    while ((int)at[i] >= 48 && (int)at[i] <= 57) {
+        c = c * 10 + ((int)at[i] - 48);
+        i = i + 1;
+        nc = nc + 1;
+    }
+    if (nc == 0) {
+        return 0;
+    }
+    if (neg == 1) {
+        c = 0 - c;
+    }
+    line[0] = l;
+    col[0] = c;
+    return 1;
+}
+
+// The text of `src` with line `ln` (1-based) as [b, e) (e at its newline). 0 past the end.
+int line_span(string src, int ln, *int b, *int e) {
+    int n = 0;
+    while (src[n] != 0) {
+        n = n + 1;
+    }
+    int at = 0;
+    int l = 1;
+    while (l < ln) {
+        while (at < n && (int)src[at] != 10) {
+            at = at + 1;
+        }
+        if (at >= n) {
+            return 0;
+        }
+        at = at + 1;
+        l = l + 1;
+    }
+    int en = at;
+    while (en < n && (int)src[en] != 10) {
+        en = en + 1;
+    }
+    b[0] = at;
+    e[0] = en;
+    return 1;
+}
+
+int is_id_char(int c) {
+    return (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || (c >= 48 && c <= 57) || c == 95;
+}
+
+// The editor modes (the C++ main.cpp): --symbols, --hover-at, --definition-at and
+// --complete-at, all over the program as a build would see it.
+int run_tool(string tool, string at, List<string>* infiles, string triple) {
+    int line = 0;
+    int col = 0;
+    if (cg_streq(tool, "symbols") == 0 && parse_line_col(at, &line, &col) == 0) {
+        eprint("error: --");
+        eprint(tool);
+        eprint("-at expects LINE:COL format\n");
+        return 1;
+    }
+    string infile = List_get<string>(infiles, 0);
+    string src = null;
+    if (cg_streq(tool, "complete") == 1) {
+        // The identifier at the cursor (or the member after `recv.`) becomes the sentinel
+        // the checker completes at; a cursor at the end of its line ends the statement.
+        let fl: int64 = 0;
+        *uint8 raw = fs_read_all(infile, &fl);
+        if (raw == null) {
+            raw = (*uint8)"";
+        }
+        string text = (string)raw;
+        int ls = 0;
+        int le = 0;
+        int tn = 0;
+        while (text[tn] != 0) {
+            tn = tn + 1;
+        }
+        if (line_span(text, line, &ls, &le) == 0) {
+            ls = tn;
+            le = tn;
+        }
+        int c0 = col - 1;
+        if (c0 < 0) {
+            c0 = 0;
+        }
+        int cur = ls + c0;
+        if (cur > le) {
+            cur = le;
+        }
+        int p0 = cur;
+        int q0 = cur;
+        while (p0 > ls && is_id_char((int)text[p0 - 1]) == 1) {
+            p0 = p0 - 1;
+        }
+        while (q0 < le && is_id_char((int)text[q0]) == 1) {
+            q0 = q0 + 1;
+        }
+        int blank = 1;
+        int r = q0;
+        while (r < le) {
+            int ch = (int)text[r];
+            if (ch != 32 && ch != 9 && ch != 13) {
+                blank = 0;
+            }
+            r = r + 1;
+        }
+        String sp;
+        String_init(&sp, tn + 32);
+        int k = 0;
+        while (k < p0) {
+            String_push(&sp, (char)text[k]);
+            k = k + 1;
+        }
+        String_append(&sp, "__eskiu_complete__");
+        if (blank == 1) {
+            String_append(&sp, ";");
+        }
+        k = q0;
+        while (k < tn) {
+            String_push(&sp, (char)text[k]);
+            k = k + 1;
+        }
+        src = (string)String_cstr(&sp);
+        // A syntax error elsewhere (the user is mid-edit): blank the broken line and try
+        // again. An error at a line's first token blames the line before it; a line that
+        // opens or closes a block is kept, and so is the cursor's line.
+        int ok = 0;
+        int attempt = 0;
+        while (attempt < 8 && ok == 0) {
+            int el = 0;
+            int ec = 0;
+            if (probe_parse(infiles, src, 0, &el, &ec) == 1) {
+                ok = 1;
+            }
+            else {
+                int bad = el;
+                if (bad <= 0) {
+                    attempt = 8;
+                }
+                else {
+                    int b = 0;
+                    int e = 0;
+                    if (line_span(src, bad, &b, &e) == 0) {
+                        attempt = 8;
+                    }
+                    else {
+                        int first = b;
+                        while (first < e && ((int)src[first] == 32 || (int)src[first] == 9)) {
+                            first = first + 1;
+                        }
+                        if (first >= e || first - b + 1 >= ec) {
+                            bad = bad - 1;
+                            while (bad > 0 && line_span(src, bad, &b, &e) == 1) {
+                                int f2 = b;
+                                while (f2 < e && ((int)src[f2] == 32 || (int)src[f2] == 9 || (int)src[f2] == 13)) {
+                                    f2 = f2 + 1;
+                                }
+                                if (f2 < e) {
+                                    break;
+                                }
+                                bad = bad - 1;
+                            }
+                        }
+                        if (bad <= 0 || bad == line || line_span(src, bad, &b, &e) == 0) {
+                            attempt = 8;
+                        }
+                        else {
+                            int brace = 0;
+                            int x = b;
+                            while (x < e) {
+                                if ((int)src[x] == 123 || (int)src[x] == 125) {
+                                    brace = 1;
+                                }
+                                x = x + 1;
+                            }
+                            if (brace == 1) {
+                                attempt = 8;
+                            }
+                            else {
+                                *uint8 w = (*uint8)src;
+                                x = b;
+                                while (x < e) {
+                                    w[x] = (uint8)32;
+                                    x = x + 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            attempt = attempt + 1;
+        }
+        if (ok == 0) {
+            printf("(parse error)\n");
+            return 0;
+        }
+    } else {
+        int el = 0;
+        int ec = 0;
+        if (probe_parse(infiles, null, 1, &el, &ec) == 0) {
+            printf("(parse error)\n");
+            return 0;
+        }
+    }
+    parser_session_init();
+    pkg_load_roots(infile);
+    *Program prog = alloc<Program>(1);
+    List_init<*DeclNode>(&prog.decls, 4);
+    if (load_inputs(infiles, src, prog) == 0) {
+        printf("(parse error)\n");
+        return 0;
+    }
+    if (cg_streq(tool, "symbols") == 1) {
+        print_symbols(prog, infile);
+        return 0;
+    }
+    let sm: Sema;
+    sema_init(&sm, infile);
+    sm.no_depr = 1;
+    sm.wnone = 1;                      // no warning in an editor query (the C++ turns them off)
+    sema_set_target(&sm, triple);
+    sm.primary = infile;
+    sm.tq_line = line;
+    sm.tq_col = col;
+    if (cg_streq(tool, "hover") == 1) {
+        sm.tool = 1;
+    }
+    else if (cg_streq(tool, "definition") == 1) {
+        sm.tool = 2;
+    }
+    else {
+        sm.tool = 3;
+    }
+    int ok2 = sema_check(&sm, prog);
+    if (sm.tool == 3) {
+        int i = 0;
+        while (i < List_len<string>(&sm.tc_name)) {
+            printf("%s\t%s\t%s\n", List_get<string>(&sm.tc_kind, i), List_get<string>(&sm.tc_name, i), List_get<string>(&sm.tc_detail, i));
+            i = i + 1;
+        }
+        return 0;
+    }
+    string r = "";
+    if (sm.tool == 1) {
+        r = sema_tool_hover(&sm);
+    } else {
+        r = sema_tool_definition(&sm);
+    }
+    if (r[0] != 0) {
+        printf("%s\n", r);
+        return 0;
+    }
+    if (ok2 == 0) {
+        printf("(semantic error)\n");
+        return 0;
+    }
+    if (sm.tool == 1) {
+        printf("(no type at %d:%d)\n", line, col);
+    }
+    else {
+        printf("(no definition at %d:%d)\n", line, col);
+    }
+    return 0;
+}
