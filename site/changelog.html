@@ -248,6 +248,9 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
+<li><code>&lt;fetch&gt;</code>: HTTPS loads OpenSSL 4 (<code>libssl-4-x64.dll</code>, <code>libssl.so.4</code>, <code>libssl.4.dylib</code> and
+  Homebrew's <code>openssl@4</code>) when OpenSSL 3 is not there. MSYS2 ships OpenSSL 4.1, so on
+  Windows an <code>https://</code> request failed with <code>FETCH_ERR_NO_TLS</code>.</li>
 <li>Self-hosted compiler: a member access through a const pointer (<code>P* const q</code>, then <code>q.v</code>)
   emitted invalid IR, and reassigning a local <code>int* const</code> was not an error.</li>
 </ul>

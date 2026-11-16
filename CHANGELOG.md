@@ -18,6 +18,9 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ### Fixed
 
+- `<fetch>`: HTTPS loads OpenSSL 4 (`libssl-4-x64.dll`, `libssl.so.4`, `libssl.4.dylib` and
+  Homebrew's `openssl@4`) when OpenSSL 3 is not there. MSYS2 ships OpenSSL 4.1, so on
+  Windows an `https://` request failed with `FETCH_ERR_NO_TLS`.
 - Self-hosted compiler: a member access through a const pointer (`P* const q`, then `q.v`)
   emitted invalid IR, and reassigning a local `int* const` was not an error.
 

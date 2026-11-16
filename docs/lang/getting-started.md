@@ -1266,7 +1266,7 @@ o.timeout_ms = 5000;
 int rc = fetch_with("https://example.com/api/items", &o, &r);
 ```
 
-Redirects are followed (up to 10). HTTPS loads OpenSSL (libssl 3 or 1.1) the first
+Redirects are followed (up to 10). HTTPS loads OpenSSL (libssl 3, 4 or 1.1) the first
 time it is needed, so a program that only fetches `http://` URLs runs without it; on
 macOS install it with `brew install openssl@3`, on Debian or Ubuntu it is the `libssl3`
 package (usually present already).

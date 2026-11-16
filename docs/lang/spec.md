@@ -3102,8 +3102,8 @@ HTTPS goes through OpenSSL 3 or 1.1, which `<fetch_tls>` loads with `dlopen` (or
 `LoadLibraryA`) on the first `https://` request instead of linking it, so programs that
 import `<fetch>` link and run without OpenSSL, and only an `https://` request fails
 (`FETCH_ERR_NO_TLS`) where it is missing. It looks for the file named by `ESKIU_LIBSSL`,
-then `libssl.3.dylib` / `libssl.so.3` / `libssl-3-x64.dll` (and the 1.1 names) on the
-library path, and on macOS also in Homebrew (`/opt/homebrew/opt/openssl@3/lib`,
+then `libssl.3.dylib` / `libssl.so.3` / `libssl-3-x64.dll` (and the 4.x and 1.1 names) on the
+library path, and on macOS also in Homebrew (`/opt/homebrew/opt/openssl@3/lib`, `openssl@4`,
 `/usr/local/opt/openssl@3/lib`) and MacPorts; `fetch_tls_available()` reports whether it
 was found. The client sends SNI, verifies the certificate against OpenSSL's default trust
 store and checks the host name (`SSL_set1_host`); `verify_tls = 0` skips both, for local

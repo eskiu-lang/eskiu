@@ -3349,8 +3349,8 @@ a body (a <code>HEAD</code> stays a <code>HEAD</code>); 307 and 308 repeat it un
 <code>LoadLibraryA</code>) on the first <code>https://</code> request instead of linking it, so programs that
 import <code>&lt;fetch&gt;</code> link and run without OpenSSL, and only an <code>https://</code> request fails
 (<code>FETCH_ERR_NO_TLS</code>) where it is missing. It looks for the file named by <code>ESKIU_LIBSSL</code>,
-then <code>libssl.3.dylib</code> / <code>libssl.so.3</code> / <code>libssl-3-x64.dll</code> (and the 1.1 names) on the
-library path, and on macOS also in Homebrew (<code>/opt/homebrew/opt/openssl@3/lib</code>,
+then <code>libssl.3.dylib</code> / <code>libssl.so.3</code> / <code>libssl-3-x64.dll</code> (and the 4.x and 1.1 names) on the
+library path, and on macOS also in Homebrew (<code>/opt/homebrew/opt/openssl@3/lib</code>, <code>openssl@4</code>,
 <code>/usr/local/opt/openssl@3/lib</code>) and MacPorts; <code>fetch_tls_available()</code> reports whether it
 was found. The client sends SNI, verifies the certificate against OpenSSL's default trust
 store and checks the host name (<code>SSL_set1_host</code>); <code>verify_tls = 0</code> skips both, for local

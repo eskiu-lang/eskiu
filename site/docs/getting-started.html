@@ -1461,7 +1461,7 @@ FetchOptions_body_text(&amp;o, &quot;{\&quot;name\&quot;:\&quot;eskiu\&quot;}&qu
 o.timeout_ms = 5000;
 int rc = fetch_with(&quot;https://example.com/api/items&quot;, &amp;o, &amp;r);
 </code></pre>
-<p>Redirects are followed (up to 10). HTTPS loads OpenSSL (libssl 3 or 1.1) the first
+<p>Redirects are followed (up to 10). HTTPS loads OpenSSL (libssl 3, 4 or 1.1) the first
 time it is needed, so a program that only fetches <code>http://</code> URLs runs without it; on
 macOS install it with <code>brew install openssl@3</code>, on Debian or Ubuntu it is the <code>libssl3</code>
 package (usually present already).</p>
