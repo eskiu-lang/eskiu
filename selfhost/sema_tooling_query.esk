@@ -1,0 +1,552 @@
+// sema_tooling_query.esk: completion, hover and definition (part of sema_tooling.esk, imported in order)
+
+// The names visible at an identifier: the variables in scope (innermost scope first, each
+// by name), then the program's functions, types, enum members and constants.
+void sema_complete_scope(Sema* s) {
+    let seen: StrTab;
+    memset((*void)&seen, 0, sizeof(StrTab));
+    StrTab_set(&seen, "__eskiu_complete__", 1);
+    int d = s.depth;
+    while (d >= 0) {
+        List<string> ns;
+        List_init<string>(&ns, 8);
+        List<string> ts;
+        List_init<string>(&ts, 8);
+        let local: StrTab;
+        memset((*void)&local, 0, sizeof(StrTab));
+        int i = List_len<Sym>(&s.syms) - 1;
+        while (i >= 0) {
+            Sym y = List_get<Sym>(&s.syms, i);
+            if (y.depth == d && StrTab_has(&local, y.name) == 0
+                && (d > 0 || (StrTab_has(&s.gvar_set, y.name) == 1 && StrTab_has(&s.late_globals, y.name) == 0))) {
+                StrTab_set(&local, y.name, 1);
+                List_push<string>(&ns, y.name);
+                List_push<string>(&ts, sema_display_ty(s, y.type));
+            }
+            i = i - 1;
+        }
+        string kind = "variable";
+        if (d == 0) {
+            kind = "global";
+        }
+        sema_tool_add_group(s, &seen, kind, &ns, &ts);
+        d = d - 1;
+    }
+    // Functions: the non-generic ones (with each non-generic struct's inline methods,
+    // `S_m`), then the generic ones.
+    List<string> fns;
+    List_init<string>(&fns, 64);
+    List<string> fds;
+    List_init<string>(&fds, 64);
+    List<string> gns;
+    List_init<string>(&gns, 16);
+    List<string> gds;
+    List_init<string>(&gds, 16);
+    let fseen: StrTab;
+    memset((*void)&fseen, 0, sizeof(StrTab));
+    int fi = 0;
+    while (fi < List_len<*DeclNode>(&s.fndecls)) {
+        *DeclNode fd = List_get<*DeclNode>(&s.fndecls, fi);
+        fi = fi + 1;
+        if (StrTab_has(&fseen, fd.name) == 1) {
+            continue;
+        }
+        StrTab_set(&fseen, fd.name, 1);
+        if (fd.kind == DK_FUNCTION && List_len<TypeParam>(&fd.type_params) > 0) {
+            List_push<string>(&gns, fd.name);
+            List_push<string>(&gds, sema_sig_text(s, fd.name));
+        } else {
+            List_push<string>(&fns, fd.name);
+            List_push<string>(&fds, sema_sig_text(s, fd.name));
+        }
+    }
+    int si = 0;
+    while (si < List_len<*DeclNode>(&s.sdecls)) {
+        *DeclNode sd = List_get<*DeclNode>(&s.sdecls, si);
+        si = si + 1;
+        if (sd.kind != DK_STRUCT || List_len<TypeParam>(&sd.type_params) > 0) {
+            continue;
+        }
+        int mi = 0;
+        while (mi < List_len<*DeclNode>(&sd.methods)) {
+            string mn = sema_cat(sema_cat(sd.name, "_"), List_get<*DeclNode>(&sd.methods, mi).name);
+            if (StrTab_has(&fseen, mn) == 0) {
+                StrTab_set(&fseen, mn, 1);
+                List_push<string>(&fns, mn);
+                List_push<string>(&fds, sema_sig_text(s, mn));
+            }
+            mi = mi + 1;
+        }
+    }
+    int ib = 0;
+    while (ib < List_len<string>(&s.ti_base)) {
+        string base = List_get<string>(&s.ti_base, ib);
+        *DeclNode isd = sema_find_struct(s, sema_base_name(base));
+        int mi = 0;
+        while (mi < List_len<*DeclNode>(&isd.methods)) {
+            *DeclNode im = List_get<*DeclNode>(&isd.methods, mi);
+            string mn = sema_cat(sema_cat(sema_flat_name(base), "_"), im.name);
+            if (StrTab_has(&fseen, mn) == 0) {
+                StrTab_set(&fseen, mn, 1);
+                List_push<string>(&fns, mn);
+                List_push<string>(&fds, sema_tool_inst_sig(s, isd, im, base));
+            }
+            mi = mi + 1;
+        }
+        ib = ib + 1;
+    }
+    sema_tool_add_group(s, &seen, "function", &fns, &fds);
+    sema_tool_add_group(s, &seen, "function", &gns, &gds);
+    // Types: structs and unions, generic structs, interfaces, sum types, aliases.
+    List<string> sn;
+    List_init<string>(&sn, 16);
+    List<string> sdt;
+    List_init<string>(&sdt, 16);
+    List<string> gsn;
+    List_init<string>(&gsn, 8);
+    List<string> gsd;
+    List_init<string>(&gsd, 8);
+    List<string> isn;
+    List_init<string>(&isn, 8);
+    List<string> isd;
+    List_init<string>(&isd, 8);
+    List<string> esn;
+    List_init<string>(&esn, 8);
+    List<string> esd;
+    List_init<string>(&esd, 8);
+    List<string> asn;
+    List_init<string>(&asn, 8);
+    List<string> asd;
+    List_init<string>(&asd, 8);
+    List<string> cn;
+    List_init<string>(&cn, 8);
+    List<string> cd;
+    List_init<string>(&cd, 8);
+    List<string> vn;
+    List_init<string>(&vn, 8);
+    List<string> vd;
+    List_init<string>(&vd, 8);
+    let tseen: StrTab;
+    memset((*void)&tseen, 0, sizeof(StrTab));
+    int ti = 0;
+    while (ti < List_len<*DeclNode>(&s.tdecls)) {
+        *DeclNode td = List_get<*DeclNode>(&s.tdecls, ti);
+        ti = ti + 1;
+        if (StrTab_has(&tseen, td.name) == 1) {
+            continue;
+        }
+        StrTab_set(&tseen, td.name, 1);
+        int generic = 0;
+        if (List_len<TypeParam>(&td.type_params) > 0) {
+            generic = 1;
+        }
+        if (td.kind == DK_STRUCT && generic == 0) {
+            List_push<string>(&sn, td.name);
+            List_push<string>(&sdt, sema_cat("struct ", td.name));
+        }
+        else if (td.kind == DK_UNION) {
+            List_push<string>(&sn, td.name);
+            List_push<string>(&sdt, sema_cat("union ", td.name));
+        }
+        else if (td.kind == DK_STRUCT) {
+            List_push<string>(&gsn, td.name);
+            List_push<string>(&gsd, sema_cat("struct ", td.name));
+        }
+        else if (td.kind == DK_INTERFACE) {
+            List_push<string>(&isn, td.name);
+            List_push<string>(&isd, sema_cat("interface ", td.name));
+        }
+        else if (td.kind == DK_TYPEALIAS) {
+            List_push<string>(&asn, td.name);
+            List_push<string>(&asd, sema_cat(sema_cat(sema_cat("type ", td.name), " = "), td.ret_type));
+        }
+        else if (td.kind == DK_ENUM && sema_is_plain_enum_decl(td) == 0 && generic == 0) {
+            List_push<string>(&esn, td.name);
+            List_push<string>(&esd, sema_cat("enum ", td.name));
+        }
+        if (td.kind == DK_ENUM && generic == 0) {
+            int plain = sema_is_plain_enum_decl(td);
+            int k = 0;
+            while (k < List_len<Param>(&td.params)) {
+                Param em = List_get<Param>(&td.params, k);
+                if (plain == 1) {
+                    List_push<string>(&cn, em.name);
+                    List_push<string>(&cd, em.ty);
+                }
+                else {
+                    List_push<string>(&vn, em.name);
+                    List_push<string>(&vd, td.name);
+                }
+                k = k + 1;
+            }
+        }
+    }
+    sema_tool_add_group(s, &seen, "struct", &sn, &sdt);
+    sema_tool_add_group(s, &seen, "struct", &gsn, &gsd);
+    sema_tool_add_group(s, &seen, "interface", &isn, &isd);
+    sema_tool_add_group(s, &seen, "enum", &esn, &esd);
+    sema_tool_add_group(s, &seen, "type", &asn, &asd);
+    sema_tool_add_group(s, &seen, "enummember", &cn, &cd);
+    sema_tool_add_group(s, &seen, "enummember", &vn, &vd);
+}
+
+// The members `recv.` can be followed by: its struct's fields, the functions dot syntax
+// reaches (`T_m` whose first parameter points to T, a generic `G_m` on an instance of G)
+// and an interface's methods.
+void sema_complete_members(Sema* s, string recv) {
+    let seen: StrTab;
+    memset((*void)&seen, 0, sizeof(StrTab));
+    string t = sema_strip_nullable(sema_strip_const(recv));
+    t = sema_strip_nullable(sema_dealias(s, t));
+    if (sema_slice_elem(t)[0] != 0 && sema_has_star(t) == 0) {
+        sema_tool_add(s, &seen, "field", "len", "int64");
+        return;
+    }
+    string base = sema_strip_ptr_sp(sema_strip_const(t));
+    string bn = sema_base_name(sema_dealias(s, base));
+    *DeclNode sd = sema_find_struct(s, bn);
+    List<string> targs;
+    List_init<string>(&targs, 2);
+    sema_parse_targs(base, &targs);
+    int inst = 0;
+    if (sd != null && List_len<TypeParam>(&sd.type_params) > 0 && List_len<string>(&targs) == List_len<TypeParam>(&sd.type_params)) {
+        inst = 1;
+    }
+    string nb = bn;
+    if (inst == 1) {
+        nb = sema_flat_name(base);
+    }
+    if (sd != null && (List_len<TypeParam>(&sd.type_params) == 0 || inst == 1)) {
+        int i = 0;
+        while (i < List_len<Param>(&sd.params)) {
+            Param f = List_get<Param>(&sd.params, i);
+            sema_tool_add(s, &seen, "field", f.name, sema_subst_params(f.ty, &sd.type_params, &targs));
+            i = i + 1;
+        }
+    }
+    // `nb_m(*nb self, ...)`: the program's functions and a non-generic struct's inline methods.
+    string prefix = sema_cat(nb, "_");
+    int pl = sema_slen(prefix);
+    List<string> mns;
+    List_init<string>(&mns, 16);
+    List<string> mds;
+    List_init<string>(&mds, 16);
+    let fseen: StrTab;
+    memset((*void)&fseen, 0, sizeof(StrTab));
+    int fi = 0;
+    while (fi < List_len<*DeclNode>(&s.fndecls)) {
+        *DeclNode fd = List_get<*DeclNode>(&s.fndecls, fi);
+        fi = fi + 1;
+        if (List_len<TypeParam>(&fd.type_params) > 0 || StrTab_has(&fseen, fd.name) == 1) {
+            continue;
+        }
+        if (sema_slen(fd.name) <= pl || sema_streq(sema_sub_str(fd.name, 0, pl), prefix) == 0) {
+            continue;
+        }
+        if (List_len<Param>(&fd.params) == 0) {
+            continue;
+        }
+        string p0 = sema_strip_const(List_get<Param>(&fd.params, 0).ty);
+        if (sema_has_star(p0) == 0) {
+            continue;
+        }
+        string pe = sema_strip_ptr_sp(p0);
+        if (sema_streq(pe, bn) == 0 && sema_streq(sema_flat_name(sema_dealias(s, pe)), nb) == 0) {
+            continue;
+        }
+        StrTab_set(&fseen, fd.name, 1);
+        List_push<string>(&mns, sema_sub_str(fd.name, pl, sema_slen(fd.name)));
+        List_push<string>(&mds, sema_sig_text(s, fd.name));
+    }
+    if (inst == 1) {                       // the instance's inline methods (`Box_int_get`)
+        sema_tool_note_inst(s, base);
+        int im2 = 0;
+        while (im2 < List_len<*DeclNode>(&sd.methods)) {
+            *DeclNode imd = List_get<*DeclNode>(&sd.methods, im2);
+            string full2 = sema_cat(prefix, imd.name);
+            if (StrTab_has(&fseen, full2) == 0) {
+                StrTab_set(&fseen, full2, 1);
+                List_push<string>(&mns, imd.name);
+                List_push<string>(&mds, sema_tool_inst_sig(s, sd, imd, base));
+            }
+            im2 = im2 + 1;
+        }
+    }
+    if (sd != null && sd.kind == DK_STRUCT && List_len<TypeParam>(&sd.type_params) == 0) {
+        int mi = 0;
+        while (mi < List_len<*DeclNode>(&sd.methods)) {
+            string mn = List_get<*DeclNode>(&sd.methods, mi).name;
+            string full = sema_cat(prefix, mn);
+            if (StrTab_has(&fseen, full) == 0) {
+                StrTab_set(&fseen, full, 1);
+                List_push<string>(&mns, mn);
+                List_push<string>(&mds, sema_sig_text(s, full));
+            }
+            mi = mi + 1;
+        }
+    }
+    sema_tool_sort(&mns, &mds);
+    int k = 0;
+    while (k < List_len<string>(&mns)) {
+        sema_tool_add(s, &seen, "method", List_get<string>(&mns, k), List_get<string>(&mds, k));
+        k = k + 1;
+    }
+    if (inst == 1) {
+        // A generic `G_m` with parameters, then G's own fields and inline methods.
+        string gp = sema_cat(sd.name, "_");
+        int gl = sema_slen(gp);
+        List<string> gns;
+        List_init<string>(&gns, 16);
+        List<string> gds;
+        List_init<string>(&gds, 16);
+        let gseen: StrTab;
+        memset((*void)&gseen, 0, sizeof(StrTab));
+        int gi = 0;
+        while (gi < List_len<*DeclNode>(&s.fndecls)) {
+            *DeclNode fd = List_get<*DeclNode>(&s.fndecls, gi);
+            gi = gi + 1;
+            if (fd.kind != DK_FUNCTION || List_len<TypeParam>(&fd.type_params) == 0 || StrTab_has(&gseen, fd.name) == 1) {
+                continue;
+            }
+            if (sema_slen(fd.name) <= gl || sema_streq(sema_sub_str(fd.name, 0, gl), gp) == 0 || List_len<Param>(&fd.params) == 0) {
+                continue;
+            }
+            StrTab_set(&gseen, fd.name, 1);
+            List_push<string>(&gns, sema_sub_str(fd.name, gl, sema_slen(fd.name)));
+            List_push<string>(&gds, sema_sig_text(s, fd.name));
+        }
+        sema_tool_sort(&gns, &gds);
+        int g = 0;
+        while (g < List_len<string>(&gns)) {
+            sema_tool_add(s, &seen, "method", List_get<string>(&gns, g), List_get<string>(&gds, g));
+            g = g + 1;
+        }
+        int fi2 = 0;
+        while (fi2 < List_len<Param>(&sd.params)) {
+            Param f2 = List_get<Param>(&sd.params, fi2);
+            sema_tool_add(s, &seen, "field", f2.name, f2.ty);
+            fi2 = fi2 + 1;
+        }
+        int mi2 = 0;
+        while (mi2 < List_len<*DeclNode>(&sd.methods)) {
+            string mn2 = List_get<*DeclNode>(&sd.methods, mi2).name;
+            sema_tool_add(s, &seen, "method", mn2, sema_sig_text(s, sema_cat(gp, mn2)));
+            mi2 = mi2 + 1;
+        }
+    }
+    *DeclNode ifd = sema_find_iface(s, bn);
+    if (ifd != null) {
+        int ii = 0;
+        while (ii < List_len<*DeclNode>(&ifd.methods)) {
+            *DeclNode im = List_get<*DeclNode>(&ifd.methods, ii);
+            sema_tool_add(s, &seen, "method", im.name, sym_sig_text(im));
+            ii = ii + 1;
+        }
+    }
+}
+
+// `R name(T a, U b)` of a declaration as written (an interface method's detail).
+string sym_sig_text(*DeclNode f) {
+    string r = sema_cat(sema_cat(sema_cat(f.ret_type, " "), f.name), "(");
+    int i = 0;
+    while (i < List_len<Param>(&f.params)) {
+        Param pm = List_get<Param>(&f.params, i);
+        if (i > 0) {
+            r = sema_cat(r, ", ");
+        }
+        r = sema_cat(r, pm.ty);
+        if (pm.name != null && pm.name[0] != 0) {
+            r = sema_cat(sema_cat(r, " "), pm.name);
+        }
+        i = i + 1;
+    }
+    return sema_cat(r, ")");
+}
+
+// Completion at the sentinel the driver spliced in (once: the first one reached).
+void sema_tool_complete_scope(Sema* s) {
+    if (s.tool != 3 || s.tc_done == 1) {
+        return;
+    }
+    s.tc_done = 1;
+    sema_complete_scope(s);
+}
+
+void sema_tool_complete_members(Sema* s, string recv) {
+    if (s.tool != 3 || s.tc_done == 1) {
+        return;
+    }
+    s.tc_done = 1;
+    sema_complete_members(s, recv);
+}
+
+// --hover-at: a declared or member name there, else a function's signature where it is
+// used or declared, else the narrowest expression's type.
+string sema_tool_hover(Sema* s) {
+    int c = s.tq_col;
+    int i = 0;
+    while (i < List_len<int>(&s.th_col)) {
+        int hc = List_get<int>(&s.th_col, i);
+        int hw = List_get<int>(&s.th_w, i);
+        if (hw < 1) {
+            hw = 1;
+        }
+        string ht = List_get<string>(&s.th_ty, i);
+        if (ht[0] != 0 && c >= hc && c < hc + hw) {
+            return ht;
+        }
+        i = i + 1;
+    }
+    int best = -1;                         // useLocations in column order
+    i = 0;
+    while (i < List_len<int>(&s.tu_col)) {
+        int uc = List_get<int>(&s.tu_col, i);
+        string un = List_get<string>(&s.tu_name, i);
+        if (c >= uc && c < uc + sema_slen(un) && sema_tool_is_fn(s, un) == 1
+            && (best < 0 || uc < List_get<int>(&s.tu_col, best))) {
+            best = i;
+        }
+        i = i + 1;
+    }
+    if (best >= 0) {
+        return sema_sig_text(s, List_get<string>(&s.tu_name, best));
+    }
+    if (s.th_best_w == 0) {
+        string bn = null;                  // definitionLocations in name order
+        i = 0;
+        while (i < List_len<string>(&s.tl_name)) {
+            string dn = List_get<string>(&s.tl_name, i);
+            int dc = List_get<int>(&s.tl_col, i);
+            if (sema_streq(List_get<string>(&s.tl_file, i), s.primary) == 1 && List_get<int>(&s.tl_line, i) == s.tq_line
+                && c >= dc && c < dc + sema_slen(dn) && sema_tool_is_fn(s, dn) == 1 && (bn == null || strcmp(dn, bn) < 0)) {
+                bn = dn;
+            }
+            i = i + 1;
+        }
+        if (bn != null) {
+            return sema_sig_text(s, bn);
+        }
+        return "";
+    }
+    return s.th_best;
+}
+
+string sema_tool_loc(string file, int line, int col) {
+    uint8[32] nb;
+    sprintf((string)&nb[0], ":%d:%d", line, col);
+    return sema_cat(file, (string)&nb[0]);
+}
+
+// The declaration of a definitionLocations entry, or null.
+string sema_tool_defof(Sema* s, string name) {
+    int i = 0;
+    while (i < List_len<string>(&s.tl_name)) {
+        if (sema_streq(List_get<string>(&s.tl_name, i), name) == 1) {
+            return sema_tool_loc(List_get<string>(&s.tl_file, i), List_get<int>(&s.tl_line, i), List_get<int>(&s.tl_col, i));
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+// --definition-at: a local's declaration, a member function's, a global's by name, the
+// declaration under the cursor, or a declared name there.
+string sema_tool_definition(Sema* s) {
+    int c = s.tq_col;
+    int best = -1;
+    int i = 0;
+    while (i < List_len<int>(&s.tdu_col)) {
+        int uc = List_get<int>(&s.tdu_col, i);
+        if (c >= uc && c < uc + List_get<int>(&s.tdu_w, i) && (best < 0 || uc < List_get<int>(&s.tdu_col, best))) {
+            best = i;
+        }
+        i = i + 1;
+    }
+    if (best >= 0) {
+        return sema_tool_loc(List_get<string>(&s.tdu_file, best), List_get<int>(&s.tdu_line, best), List_get<int>(&s.tdu_dcol, best));
+    }
+    // memberUses, in column order: an inline method's position, else the function's.
+    List<int> order;
+    List_init<int>(&order, 4);
+    i = 0;
+    while (i < List_len<int>(&s.tm_col)) {
+        int a = 0;
+        while (a < List_len<int>(&order) && List_get<int>(&s.tm_col, List_get<int>(&order, a)) < List_get<int>(&s.tm_col, i)) {
+            a = a + 1;
+        }
+        List_push<int>(&order, i);
+        int b = List_len<int>(&order) - 1;
+        while (b > a) {
+            List_set<int>(&order, b, List_get<int>(&order, b - 1));
+            b = b - 1;
+        }
+        List_set<int>(&order, a, i);
+        i = i + 1;
+    }
+    i = 0;
+    while (i < List_len<int>(&order)) {
+        int k = List_get<int>(&order, i);
+        int mc = List_get<int>(&s.tm_col, k);
+        if (c >= mc && c < mc + List_get<int>(&s.tm_w, k)) {
+            string fname = List_get<string>(&s.tm_fn, k);
+            *DeclNode ow = null;
+            *DeclNode md = sema_tool_fn(s, fname, &ow);
+            if (md != null && ow != null) {
+                string of = ow.file;
+                if (of == null || of[0] == 0) {
+                    of = s.primary;
+                }
+                return sema_tool_loc(of, md.line, md.col);
+            }
+            string dl = sema_tool_defof(s, fname);
+            if (dl != null) {
+                return dl;
+            }
+        }
+        i = i + 1;
+    }
+    // useLocations, in column order.
+    best = -1;
+    i = 0;
+    while (i < List_len<int>(&s.tu_col)) {
+        int uc = List_get<int>(&s.tu_col, i);
+        string un = List_get<string>(&s.tu_name, i);
+        if (c >= uc && c < uc + sema_slen(un) && sema_tool_defof(s, un) != null
+            && (best < 0 || uc < List_get<int>(&s.tu_col, best))) {
+            best = i;
+        }
+        i = i + 1;
+    }
+    if (best >= 0) {
+        return sema_tool_defof(s, List_get<string>(&s.tu_name, best));
+    }
+    string bn = null;
+    string bl = null;
+    i = 0;
+    while (i < List_len<string>(&s.tl_name)) {
+        string dn = List_get<string>(&s.tl_name, i);
+        int dc = List_get<int>(&s.tl_col, i);
+        if (sema_streq(List_get<string>(&s.tl_file, i), s.primary) == 1 && List_get<int>(&s.tl_line, i) == s.tq_line
+            && c >= dc && c < dc + sema_slen(dn) && (bn == null || strcmp(dn, bn) < 0)) {
+            bn = dn;
+            bl = sema_tool_loc(List_get<string>(&s.tl_file, i), List_get<int>(&s.tl_line, i), dc);
+        }
+        i = i + 1;
+    }
+    if (bl != null) {
+        return bl;
+    }
+    i = 0;
+    while (i < List_len<int>(&s.th_col)) {
+        int hc = List_get<int>(&s.th_col, i);
+        int hw = List_get<int>(&s.th_w, i);
+        if (hw < 1) {
+            hw = 1;
+        }
+        if (c >= hc && c < hc + hw) {
+            return sema_tool_loc(s.primary, s.tq_line, hc);
+        }
+        i = i + 1;
+    }
+    return "";
+}

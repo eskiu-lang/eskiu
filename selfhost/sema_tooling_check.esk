@@ -1,0 +1,538 @@
+// sema_tooling_check.esk: unused functions, instances, exports and the check entry (part of sema_tooling.esk, imported in order)
+
+// -Wall: a top-level function defined here (its last declaration's position wins, as the
+// C++ map entry).
+void sema_def_fn(Sema* s, *DeclNode d) {
+    int i = 0;
+    while (i < List_len<string>(&s.def_fns)) {
+        if (sema_streq(List_get<string>(&s.def_fns, i), d.name) == 1) {
+            List_set<int>(&s.def_lines, i, d.line);
+            List_set<int>(&s.def_cols, i, d.col);
+            return;
+        }
+        i = i + 1;
+    }
+    List_push<string>(&s.def_fns, d.name);
+    List_push<int>(&s.def_lines, d.line);
+    List_push<int>(&s.def_cols, d.col);
+    List_push<string>(&s.def_disp, sema_fn_display(d));
+}
+
+// -Wall: the functions nothing references, in name order, after every body is checked.
+void sema_warn_unused_fns(Sema* s) {
+    if (s.wall == 0) {
+        return;
+    }
+    int n = List_len<string>(&s.def_fns);
+    List<int> idx;
+    List_init<int>(&idx, n + 1);
+    int i = 0;
+    while (i < n) {
+        if (StrTab_has(&s.called_fns, List_get<string>(&s.def_fns, i)) == 0) {
+            List_push<int>(&idx, i);
+        }
+        i = i + 1;
+    }
+    int m = List_len<int>(&idx);
+    int a = 1;
+    while (a < m) {
+        int v = List_get<int>(&idx, a);
+        int b = a - 1;
+        while (b >= 0 && strcmp(List_get<string>(&s.def_fns, List_get<int>(&idx, b)), List_get<string>(&s.def_fns, v)) > 0) {
+            List_set<int>(&idx, b + 1, List_get<int>(&idx, b));
+            b = b - 1;
+        }
+        List_set<int>(&idx, b + 1, v);
+        a = a + 1;
+    }
+    s.cur_import = 0;
+    s.in_inst = 0;
+    int k = 0;
+    while (k < m) {
+        int j = List_get<int>(&idx, k);
+        sema_lint(s, List_get<int>(&s.def_lines, j), List_get<int>(&s.def_cols, j),
+                  sema_cat(sema_cat("unused function '", List_get<string>(&s.def_disp, j)), "'"));
+        k = k + 1;
+    }
+}
+
+// Check each queued generic instance: the template body with its type parameters bound
+// to the instance's arguments. Checking one may queue more, so this runs until the
+// queue drains. A failing instance is followed by a note naming it.
+void sema_check_insts(Sema* s, string primary) {
+    int i = 0;
+    while (i < List_len<SInst>(&s.insts)) {
+        SInst p = List_get<SInst>(&s.insts, i);
+        *DeclNode top = p.func;
+        if (p.owner != null) {
+            top = p.owner;
+        }
+        sema_enter_decl(s, top, primary);
+        s.line = p.func.line;
+        s.col = p.func.col;
+        if (p.depth > 64) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: generic instantiation of '%s' is nested more than 64 levels deep (infinitely recursive generic?)\n",
+                   s.filename, s.line, s.col, p.display);
+            return;
+        }
+        List<TypeParam>* tps = &p.func.type_params;
+        if (p.owner != null) {
+            tps = &p.owner.type_params;
+        }
+        List_init<string>(&s.isub_p, 4);
+        List_init<string>(&s.isub_a, 4);
+        List_init<string>(&s.tparams, 4);
+        int k = 0;
+        while (k < List_len<TypeParam>(tps) && k < List_len<string>(&p.targs)) {
+            List_push<string>(&s.isub_p, List_get<TypeParam>(tps, k).name);
+            List_push<string>(&s.tparams, List_get<TypeParam>(tps, k).name);
+            List_push<string>(&s.isub_a, List_get<string>(&p.targs, k));
+            k = k + 1;
+        }
+        string self_t = "";
+        if (p.owner != null) {
+            self_t = sema_cat(p.owner.name, "<");
+            int a = 0;
+            while (a < List_len<string>(&p.targs)) {
+                if (a > 0) {
+                    self_t = sema_cat(self_t, ",");
+                }
+                self_t = sema_cat(self_t, List_get<string>(&p.targs, a));
+                a = a + 1;
+            }
+            self_t = sema_cat(self_t, ">");
+        }
+        int saved = s.had_error;
+        s.had_error = 0;
+        s.in_inst = 1;
+        s.inst_depth = p.depth;
+        if (p.owner == null) {
+            s.cur_tmpl = p.func;
+        }
+        sema_check_fn(s, p.func, self_t);
+        s.cur_tmpl = null;
+        s.in_inst = 0;
+        s.inst_depth = 0;
+        if (s.had_error == 1) {
+            dprintf(2, "note: %s:%d:%d: (in instantiation of %s)\n", s.filename, p.func.line, p.func.col, p.display);
+        }
+        if (saved == 1) {
+            s.had_error = 1;
+        }
+        List_init<string>(&s.isub_p, 4);
+        List_init<string>(&s.isub_a, 4);
+        List_init<string>(&s.tparams, 4);
+        i = i + 1;
+    }
+}
+
+// Returns 1 if the program type-checks (no errors), 0 otherwise.
+// Why `t0` cannot be a parameter or result of an `export` function (null: it can), as
+// TypeChecker::exportTypeError: C has no closures, interfaces, slices or sum types and
+// passes no array by value, and a generic instance has no name a C header can keep.
+string sema_export_type_err(Sema* s, string t0) {
+    string t = sema_canon(s, sema_strip_nullable(sema_strip_const(t0)));
+    if (sema_is_fn_type(t) == 1) {
+        return "is a closure, which C cannot call";
+    }
+    if (sema_is_arr_ty(t) == 1) {
+        if (sema_is_fixed_arr_ty(t) == 1) {
+            return "is an array, which C does not pass by value";
+        }
+        return "is a slice (pass a pointer and a length)";
+    }
+    if (sema_has_star(t) == 1) {
+        return null;
+    }
+    if (sema_streq(t, "va_list") == 1) {
+        return "is a va_list";
+    }
+    if (sema_has_lt(t) == 1) {
+        return "is a generic instance, which has no stable C name (wrap it in a named struct)";
+    }
+    if (sema_find_iface(s, t) != null) {
+        return "is an interface value";
+    }
+    if (sema_is_enum(s, t) == 1) {
+        return "is a sum type, which has no C layout";
+    }
+    return null;
+}
+
+// `export T f(...)`: a C entry point (TypeChecker::checkExport).
+void sema_check_export(Sema* s, *DeclNode d) {
+    if (d.body == null) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: 'export' needs a definition: put it on the body of '%s'\n", s.filename, s.line, s.col, d.name);
+    }
+    int generic = List_len<TypeParam>(&d.type_params) > 0 ? 1 : 0;
+    if (generic == 1) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: exported function '%s' cannot be generic (C calls one instance by its name)\n", s.filename, s.line, s.col, d.name);
+    }
+    if (d.is_async == 1) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: exported function '%s' cannot be async (C cannot run the future it returns)\n", s.filename, s.line, s.col, d.name);
+    }
+    if (d.operator_sym != null && d.operator_sym[0] != 0) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: an operator overload cannot be exported (it has no C name)\n", s.filename, s.line, s.col);
+    }
+    int np = List_len<Param>(&d.params);
+    if (np > 0 && sema_streq(List_get<Param>(&d.params, np - 1).ty, "...") == 1) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: exported function '%s' cannot be variadic\n", s.filename, s.line, s.col, d.name);
+    }
+    if (generic == 1) {
+        return;
+    }
+    int i = 0;
+    while (i < np) {
+        Param pm = List_get<Param>(&d.params, i);
+        if (sema_streq(pm.ty, "...") == 0) {
+            string why = sema_export_type_err(s, pm.ty);
+            if (why != null) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: parameter '%s' of exported function '%s' %s\n", s.filename, s.line, s.col, pm.name, d.name, why);
+            }
+        }
+        i = i + 1;
+    }
+    string rwhy = sema_export_type_err(s, d.ret_type);
+    if (rwhy != null) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: the result of exported function '%s' %s\n", s.filename, s.line, s.col, d.name, rwhy);
+    }
+}
+
+int sema_check(Sema* s, *Program prog) {
+    // Every `&name` in the program: a global whose address is taken is never narrowed.
+    List_init<string>(&s.gaddr, 8);
+    int gi = 0;
+    while (gi < List_len<*DeclNode>(&prog.decls)) {
+        *DeclNode gd = List_get<*DeclNode>(&prog.decls, gi);
+        if (gd.kind == DK_FUNCTION) {
+            sema_addr_names(gd.body, &s.gaddr);
+        }
+        else if (gd.kind == DK_VARDECL) {
+            sema_addr_names_e(gd.init, &s.gaddr);
+        }
+        else if (gd.kind == DK_STRUCT) {
+            int gm = 0;
+            while (gm < List_len<*DeclNode>(&gd.methods)) {
+                sema_addr_names(List_get<*DeclNode>(&gd.methods, gm).body, &s.gaddr);
+                gm = gm + 1;
+            }
+        }
+        gi = gi + 1;
+    }
+    memset((*void)&s.gaddr_set, 0, sizeof(StrTab));
+    gi = 0;
+    while (gi < List_len<string>(&s.gaddr)) {
+        StrTab_set(&s.gaddr_set, List_get<string>(&s.gaddr, gi), 1);
+        gi = gi + 1;
+    }
+    sema_register_globals(s, prog);
+    sema_check_top_names(s, prog);
+    int top_err = s.had_error;
+    s.had_error = 0;
+    sema_check_alias_cycles(s);
+    if (s.had_error == 1) {   // a cyclic alias makes every later type check meaningless
+        return 0;
+    }
+    if (top_err == 1) {   // a duplicate name: the rest is still checked (as the C++)
+        s.had_error = 1;
+    }
+    let defined_fns: StrTab;    // top-level functions WITH a body, to catch a redefinition (a set)
+    memset((*void)&defined_fns, 0, sizeof(StrTab));
+    string primary = s.filename;
+    int i = 0;
+    int n = List_len<*DeclNode>(&prog.decls);
+    int gi0 = 0;
+    while (gi0 < n) {
+        *DeclNode gd = List_get<*DeclNode>(&prog.decls, gi0);
+        if (gd.kind == DK_VARDECL) {
+            StrTab_set(&s.late_globals, gd.name, 1);
+        }
+        gi0 = gi0 + 1;
+    }
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        sema_enter_decl(s, d, primary);
+        s.line = d.line;
+        s.col = d.col;
+        if (d.kind == DK_FUNCTION && d.body != null) {
+            if (StrTab_has(&defined_fns, d.name) == 1) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: redefinition of function '%s'\n", s.filename, s.line, s.col, sema_fn_display(d));
+            } else {
+                StrTab_set(&defined_fns, d.name, 1);
+            }
+        }
+        if (d.kind == DK_INTRINSIC) {
+            if (ast_atomic_op(d.name)[0] == 0) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: unknown intrinsic '%s'\n", s.filename, s.line, s.col, d.name);
+            }
+        }
+        if ((d.kind == DK_FUNCTION && List_len<TypeParam>(&d.type_params) == 0) || d.kind == DK_EXTERN) {
+            sema_check_sig_types(s, d);
+        }
+        // A type parameter is named once (`<T, T>`).
+        if (d.kind == DK_FUNCTION || d.kind == DK_STRUCT || d.kind == DK_ENUM) {
+            List<string> tpn;
+            List_init<string>(&tpn, 2);
+            int ti2 = 0;
+            while (ti2 < List_len<TypeParam>(&d.type_params)) {
+                string tpname = List_get<TypeParam>(&d.type_params, ti2).name;
+                if (sema_in_list(&tpn, tpname) == 1) {
+                    s.had_error = 1;
+                    dprintf(2, "error: %s:%d:%d: duplicate type parameter '%s' in '%s'\n", s.filename, s.line, s.col, tpname, sema_fn_display(d));
+                } else {
+                    List_push<string>(&tpn, tpname);
+                }
+                ti2 = ti2 + 1;
+            }
+        }
+        // An interface requires each method once.
+        if (d.kind == DK_INTERFACE) {
+            List<string> imn;
+            List_init<string>(&imn, 4);
+            int ii2 = 0;
+            while (ii2 < List_len<*DeclNode>(&d.methods)) {
+                string imname = List_get<*DeclNode>(&d.methods, ii2).name;
+                if (sema_in_list(&imn, imname) == 1) {
+                    s.had_error = 1;
+                    dprintf(2, "error: %s:%d:%d: duplicate method '%s' in interface '%s'\n", s.filename, s.line, s.col, imname, d.name);
+                } else {
+                    List_push<string>(&imn, imname);
+                }
+                ii2 = ii2 + 1;
+            }
+        }
+        // `must_use` asks the caller to use a result; a void function has none.
+        if (d.kind == DK_FUNCTION && d.is_mustuse == 1 && sema_streq(sema_strip_const(d.ret_type), "void") == 1) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: 'must_use' on '%s', which returns void (there is no result to use)\n", s.filename, s.line, s.col, sema_fn_display(d));
+        }
+        if (d.kind == DK_FUNCTION && d.is_export == 1) {
+            sema_check_export(s, d);
+        }
+        // `main` is called by the C runtime as `main()` or `main(argc, argv[, envp])`.
+        if (d.kind == DK_FUNCTION && sema_streq(d.name, "main") == 1 && List_len<Param>(&d.params) > 0) {
+            int mok = 0;
+            int mnp = List_len<Param>(&d.params);
+            string a0 = sema_resolve_scalar(s, List_get<Param>(&d.params, 0).ty);
+            if ((mnp == 2 || mnp == 3) && (sema_streq(a0, "int") == 1 || sema_streq(a0, "int32") == 1)) {
+                mok = 1;
+            }
+            int mi2 = 1;
+            while (mok == 1 && mi2 < mnp) {
+                string at = sema_strip_const(List_get<Param>(&d.params, mi2).ty);
+                string abase = sema_strip_ptr_sp(at);
+                int ad = sema_ptr_depth(at);
+                if (!((ad == 1 && sema_streq(abase, "string") == 1)
+                      || (ad == 2 && (sema_streq(abase, "char") == 1 || sema_streq(abase, "uint8") == 1 || sema_streq(abase, "int8") == 1)))) {
+                    mok = 0;
+                }
+                mi2 = mi2 + 1;
+            }
+            if (mok == 0) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: 'main' must take no parameters or (int argc, string* argv): the C runtime calls it that way\n", s.filename, s.line, s.col);
+            }
+        }
+        // An operator overload extends an operator to a user type: one operand must be a
+        // struct/union, a sum type or an interface value (mirrors the C++ check).
+        if (d.kind == DK_FUNCTION && d.operator_sym != null && d.operator_sym[0] != 0) {
+            int user = 0;
+            int oi = 0;
+            while (oi < List_len<Param>(&d.params)) {
+                string ot = sema_dealias(s, List_get<Param>(&d.params, oi).ty);
+                if (sema_has_star(ot) == 0 && sema_is_fn_type(ot) == 0 && sema_is_arr_ty(ot) == 0
+                    && sema_is_aggregate(s, ot) == 1) {
+                    user = 1;
+                }
+                oi = oi + 1;
+            }
+            if (user == 0) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: '%s' does not overload an operator for a user type: an operand must be a struct, union, sum type or interface (built-in operands keep their built-in meaning)\n",
+                       s.filename, s.line, s.col, sema_fn_display(d));
+            }
+            // Operand count: `!`, `~` and unary `-` take one, every other operator two.
+            string op = d.operator_sym;
+            int want = 2;
+            if (sema_streq(op, "u-") == 1 || sema_streq(op, "!") == 1 || sema_streq(op, "~") == 1) {
+                want = 1;
+            }
+            int got = List_len<Param>(&d.params);
+            if (got != want) {
+                string shown = op;
+                if (sema_streq(op, "u-") == 1) {
+                    shown = "-";
+                }
+                string cnt = "2 parameters";
+                if (sema_streq(shown, "-") == 1) {
+                    cnt = "1 or 2 parameters";
+                }
+                else if (want == 1) {
+                    cnt = "1 parameter";
+                }
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: operator '%s' takes %s, got %d\n", s.filename, s.line, s.col, shown, cnt, got);
+            }
+        }
+        if (s.tool != 0 && ((d.kind == DK_FUNCTION && List_len<TypeParam>(&d.type_params) == 0) || d.kind == DK_ENUM)) {
+            sema_tool_defloc(s, d.name, d.file, d.line, d.col);
+        }
+        if (s.tool != 0 && d.kind == DK_VARDECL && d.line > 0) {
+            sema_tool_defloc(s, d.name, d.file, d.line, d.col);
+            sema_tool_hsym(s, d.line, d.col, sema_slen(d.name), sema_display_ty(s, d.ret_type));
+        }
+        if (d.kind == DK_FUNCTION) {
+            s.addr_fn = d.name;
+            if (List_len<TypeParam>(&d.type_params) == 0 && d.from_import == 0 && sema_streq(d.name, "main") == 0) {
+                sema_def_fn(s, d);
+            }
+            if (sema_streq(d.name, "main") == 1 && List_len<Param>(&d.params) > 0
+                && sema_streq(List_get<Param>(&d.params, 0).name, "__argc") == 1) {
+                s.in_script = 1;
+                int gk = 0;
+                while (gk < n) {
+                    *DeclNode gv = List_get<*DeclNode>(&prog.decls, gk);
+                    gk = gk + 1;
+                    if (gv.kind == DK_VARDECL && gv.from_import == 0 && gv.file != null && d.file != null && sema_streq(gv.file, d.file) == 1
+                        && sema_streq(gv.name, "argc") == 0 && sema_streq(gv.name, "argv") == 0
+                        && StrTab_has(&s.script_lines, gv.name) == 0) {
+                        StrTab_set(&s.script_lines, gv.name, gv.line);
+                        StrTab_set(&s.script_cols, gv.name, gv.col);
+                    }
+                }
+            }
+            sema_check_fn(s, d, "");
+            s.in_script = 0;
+        }
+        // A global's initializer runs at compile time (no code runs before `main`), so it
+        // must be a constant expression, as in C.
+        if (d.kind == DK_VARDECL) {   // a global's type must exist
+            sema_check_decl_type(s, d.ret_type);
+        }
+        if (d.kind == DK_VARDECL && d.is_static == 1) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: 'static' is only allowed on a local variable\n", s.filename, d.line, d.col);
+        }
+        if (d.kind == DK_TYPEALIAS) {  // so must an alias's
+            sema_check_decl_type(s, d.ret_type);
+        }
+        if (d.kind == DK_ENUM && sema_is_plain_enum_decl(d) == 1) {
+            sema_fold_enum(s, d, 1);
+        }
+        if (d.kind == DK_ENUM) {           // a classic enum is an int: each member value must fit it
+            int adt = 0;
+            int pj = 0;
+            while (pj < List_len<List<string>>(&d.payloads)) {
+                List<string> epl = List_get<List<string>>(&d.payloads, pj);
+                if (List_len<string>(&epl) > 0) {
+                    adt = 1;
+                }
+                pj = pj + 1;
+            }
+            int ej = 0;
+            while (adt == 0 && List_len<TypeParam>(&d.type_params) == 0 && ej < List_len<Param>(&d.params)) {
+                Param em = List_get<Param>(&d.params, ej);
+                if (sema_int_lit_fits("int", em.ty) == 0) {
+                    s.had_error = 1;
+                    dprintf(2, "error: %s:%d:%d: enum member '%s' of '%s' has value %s, out of range for 'int'\n",
+                           s.filename, s.line, s.col, em.name, d.name, em.ty);
+                }
+                ej = ej + 1;
+            }
+        }
+        if (d.kind == DK_VARDECL && d.is_extern == 0 && d.init != null) {
+            // The initializer is an expression like any other (names, operators, shift
+            // counts), checked before the global itself is declared.
+            if (d.init.kind == EK_LAMBDA && sema_is_fn_type(d.ret_type) == 1) {
+                s.lam_ret = sema_fn_ret(d.ret_type);
+                d.init.lam_ret = sema_fn_ret(d.ret_type);
+            }
+            sema_expr(s, d.init);
+            s.lam_ret = "";
+        }
+        if (d.kind == DK_VARDECL && d.is_extern == 0 && d.init != null && d.script_init == 0
+            && sema_is_const_init(s, d.init) == 0) {
+            sema_error(s, sema_cat(sema_cat("initializer of global '", d.name), "' is not a compile-time constant"));
+        }
+        // A global's initializer converts to its type like a local's (mirrors the C++ VarDecl
+        // check, which runs for globals too).
+        if (d.kind == DK_VARDECL && d.is_extern == 0 && d.init != null && d.init.kind != EK_LAMBDA
+            && d.ret_type != null && d.ret_type[0] != 0) {
+            string gerr = sema_assign_err(s, d.ret_type, d.init);
+            if (gerr[0] != 0) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: initializing '%s': %s\n", s.filename, s.line, s.col, d.name, gerr);
+            }
+        }
+        if (d.kind == DK_VARDECL) {
+            // every entry of the name (an `extern` declaration and the definition)
+            StrTab_remove(&s.late_globals, d.name);
+        }
+        if (d.kind == DK_STRUCT || d.kind == DK_UNION) {
+            List_init<string>(&s.tparams, 4);
+            int ti = 0;
+            int tn = List_len<TypeParam>(&d.type_params);
+            while (ti < tn) {
+                List_push<string>(&s.tparams, List_get<TypeParam>(&d.type_params, ti).name);
+                ti = ti + 1;
+            }
+            int fi = 0;
+            int fn2 = List_len<Param>(&d.params);
+            while (fi < fn2) {
+                sema_check_decl_type(s, List_get<Param>(&d.params, fi).ty);
+                fi = fi + 1;
+            }
+            sema_check_fields(s, d);
+            sema_check_field_defaults(s, d);
+            int k = 0;
+            int mm = List_len<*DeclNode>(&d.methods);
+            while (k < mm) {
+                sema_check_sig_types(s, List_get<*DeclNode>(&d.methods, k));
+                // A generic struct's method bodies are checked per instance (sema_check_insts).
+                if (tn == 0) {
+                    sema_check_fn(s, List_get<*DeclNode>(&d.methods, k), d.name);
+                }
+                k = k + 1;
+            }
+            List_init<string>(&s.tparams, 4);
+        }
+        i = i + 1;
+    }
+    i = 0;                                 // defaults of a function no call reached
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        if (d.kind == DK_FUNCTION && List_len<*ExprNode>(&d.param_defaults) > 0) {
+            sema_pdefs(s, d.name, null, "");
+        }
+        if (d.kind == DK_STRUCT) {
+            int m = 0;
+            while (m < List_len<*DeclNode>(&d.methods)) {
+                *DeclNode md = List_get<*DeclNode>(&d.methods, m);
+                if (List_len<*ExprNode>(&md.param_defaults) > 0) {
+                    sema_pdefs(s, sema_cat(sema_cat(d.name, "_"), md.name), d, md.name);
+                }
+                m = m + 1;
+            }
+        }
+        i = i + 1;
+    }
+    sema_check_insts(s, primary);
+    sema_finalize_generic_escapes(s);
+    s.filename = primary;
+    sema_check_value_cycles(s);
+    sema_warn_unused_fns(s);
+    if (s.had_error == 1) {
+        return 0;
+    }
+    return 1;
+}
