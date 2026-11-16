@@ -112,6 +112,11 @@ set(SOURCES
     eir/eir_vm_extern.cpp
     eir/eir_vm_exec.cpp
     eir/eir_asm_arm64.cpp
+    eir/eir_asm_values.cpp
+    eir/eir_asm_abi.cpp
+    eir/eir_asm_fn.cpp
+    eir/eir_asm_inst.cpp
+    eir/eir_asm_call.cpp
     eir/eir_c.cpp
     eir/eir_c_decls.cpp
     eir/eir_c_fn.cpp
