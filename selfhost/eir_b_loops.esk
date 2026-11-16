@@ -1,0 +1,448 @@
+// eir_b_loops.esk: jumps, loops, switch and match (part of eir_b_stmt.esk, imported in order)
+
+*ELoop eb_jump_target(EB* b, string label, int is_continue) {
+    int i = List_len<*ELoop>(&b.loops) - 1;
+    while (i >= 0) {
+        *ELoop l = List_get<*ELoop>(&b.loops, i);
+        i = i - 1;
+        if (et_len(label) > 0 && et_eq(l.label, label) == 0) {
+            continue;
+        }
+        if (is_continue == 1 && l.cont == null) {
+            continue;
+        }
+        return l;
+    }
+    return null;
+}
+
+void eb_jump_to(EB* b, *ELoop l, int is_continue) {
+    eb_run_cleanups(b, l.cdepth, 0);
+    int h = b.hdepth;
+    while (h > l.hdepth) {
+        eb_i0(b, EO_POPHANDLER, "", et_void());
+        h = h - 1;
+    }
+    if (b.blk != null && b.blk.term == 0) {
+        if (is_continue == 1) {
+            eb_br(b, l.cont);
+        } else {
+            eb_br(b, l.brk);
+        }
+    }
+}
+
+void eb_break(EB* b, *StmtNode node, int is_continue) {
+    *ELoop l = eb_jump_target(b, et_s(node.label), is_continue);
+    if (l != null) {
+        eb_jump_to(b, l, is_continue);
+    }
+}
+
+void eb_do_while(EB* b, *StmtNode node) {
+    *EBlock body_bb = eb_block(b, "dowhile.body");
+    *EBlock cond_bb = eb_block(b, "dowhile.cond");
+    *EBlock exit_bb = eb_block(b, "dowhile.exit");
+    eb_br(b, body_bb);
+    eb_set_block(b, body_bb);
+    eb_push_loop(b, exit_bb, cond_bb, node.label);
+    eb_visit_body(b, node.s1);
+    if (b.blk.term == 0) {
+        eb_br(b, cond_bb);
+    }
+    eb_pop_loop(b);
+    eb_set_block(b, cond_bb);
+    EOp c = eb_truth(b, eb_eval(b, node.expr));
+    eb_br_cond(b, c, body_bb, exit_bb);
+    eb_set_block(b, exit_bb);
+}
+
+int eb_addressable(EB* b, *ExprNode e) {
+    if (e.kind == EK_IDENT) {
+        return 1;
+    }
+    if (e.kind == EK_UNARY) {
+        if (et_eq(e.sval, "*") == 1 && et_len(e.op_fn) == 0) {
+            return 1;
+        }
+        return 0;
+    }
+    if (e.kind == EK_INDEX) {
+        if (et_len(e.op_fn) == 0 && List_len<*ExprNode>(&e.kids) == 0) {
+            return 1;
+        }
+        return 0;
+    }
+    if (e.kind == EK_MEMBER) {
+        *ETy bt = eb_expr_type(b, e.a);
+        if (et_is_ptr(bt) == 1) {
+            return 1;
+        }
+        return eb_addressable(b, e.a);
+    }
+    return 0;
+}
+
+void eb_for_in(EB* b, *StmtNode node) {
+    string idx_name = et_cat("__forin_i_", et_itoa(b.for_in_counter));
+    b.for_in_counter = b.for_in_counter + 1;
+    string it_type = et_s(node.resolved_iter);
+    if (SMap_len(&b.tpo) > 0) {
+        it_type = ty_subst_type(it_type, &b.tpo);
+    }
+    if (SMap_len(&b.tpo) > 0 || et_len(it_type) == 0) {
+        string st = eb_sema_type(b, node.expr);
+        if (et_len(st) > 0) {
+            it_type = st;
+        }
+    }
+    it_type = tyq_strip(it_type);
+    string al = SMap_get(&b.aliases, it_type);
+    if (al != null) {
+        it_type = al;
+    }
+    *ExprNode iterable = node.expr;
+    *StmtNode hold = null;
+    *TyT k = ty_parse(it_type);
+    if (ast_stable_place(node.expr) == 0) {
+        int by_ref = 0;
+        if (k.kind != TYK_ARRAY && k.kind != TYK_SLICE && k.kind != TYK_POINTER && eb_addressable(b, node.expr) == 1) {
+            by_ref = 1;
+        }
+        *ExprNode init = node.expr;
+        string ht = it_type;
+        if (by_ref == 1) {
+            init = eb_mk_un("&", node.expr);
+            ht = et_cat("*", it_type);
+        }
+        hold = eb_mk_vardecl(et_cat(idx_name, "_v"), ht, init);
+        iterable = eb_mk_ident(et_cat(idx_name, "_v"));
+    }
+    string elem_type = "";
+    *ExprNode length = null;
+    *ExprNode elem = null;
+    if (k.kind == TYK_ARRAY && k.elem != null) {
+        elem_type = ty_str(k.elem);
+        *ETy at = eb_type(b, it_type);
+        int64 n = (int64)0;
+        if (et_is_array(at) == 1) {
+            n = at.size;
+        }
+        length = eb_mk_int(et_ltoa(n));
+        elem = eb_mk_index(iterable, eb_mk_ident(idx_name));
+    } else if (k.kind == TYK_SLICE && k.elem != null) {
+        elem_type = ty_str(k.elem);
+        length = eb_mk_member(iterable, "len");
+        elem = eb_mk_index(iterable, eb_mk_ident(idx_name));
+    } else {
+        *TyT base = k;
+        while (base.kind == TYK_POINTER && base.pointee != null) {
+            base = base.pointee;
+        }
+        string sname = "";
+        if (base.kind == TYK_TEMPLATE) {
+            sname = eb_mangle_note(b, ty_str(base));
+        } else {
+            sname = ty_nominal(base);
+        }
+        if (k.kind == TYK_POINTER && hold == null) {
+            hold = eb_mk_vardecl(et_cat(idx_name, "_p"), it_type, node.expr);
+            iterable = eb_mk_ident(et_cat(idx_name, "_p"));
+        }
+        eb_ensure_layout(b, sname);
+        *EStruct st = em_layout(b.m, sname);
+        if (st != null && es_field(st, "size") != null) {
+            elem_type = et_s(node.resolved_elem);
+            if (SMap_len(&b.tpo) > 0) {
+                elem_type = ty_subst_type(elem_type, &b.tpo);
+            }
+        }
+        if (et_len(elem_type) == 0) {
+            // The C++ builder throws here: the build stops.
+            dprintf(2, "error: EIR: for-in over unsupported type: %s\n", it_type);
+            exit(1);
+            return;
+        }
+        length = eb_mk_member(iterable, "size");
+        elem = eb_mk_index(eb_mk_member(iterable, "data"), eb_mk_ident(idx_name));
+    }
+    *StmtNode init_b = eb_mk_block();
+    if (hold != null) {
+        List_push<*StmtNode>(&init_b.items, hold);
+    }
+    List_push<*StmtNode>(&init_b.items, eb_mk_vardecl(idx_name, "int", eb_mk_int("0")));
+    *StmtNode loop = ast_new_stmt();
+    loop.kind = SK_FOR;
+    loop.s1 = init_b;
+    loop.expr = eb_mk_bin("<", eb_mk_ident(idx_name), length);
+    loop.expr2 = eb_mk_bin("=", eb_mk_ident(idx_name), eb_mk_bin("+", eb_mk_ident(idx_name), eb_mk_int("1")));
+    *StmtNode body = eb_mk_block();
+    List_push<*StmtNode>(&body.items, eb_mk_vardecl(node.name, elem_type, elem));
+    List_push<*StmtNode>(&body.items, node.s1);
+    loop.s2 = body;
+    loop.label = node.label;
+    eb_for(b, loop);
+}
+
+void eb_switch(EB* b, *StmtNode node) {
+    EOp subj = eb_eval(b, node.expr);
+    *EBlock end_bb = eb_block(b, "switch.end");
+    List<*EBlock> case_bbs;
+    List<int64> vals;
+    *EBlock dflt = end_bb;
+    int n = List_len<*StmtNode>(&node.items);
+    int i = 0;
+    while (i < n) {
+        *StmtNode c = List_get<*StmtNode>(&node.items, i);
+        string lbl = "switch.default";
+        if (c.expr != null) {
+            lbl = et_cat("switch.case.", et_itoa(i));
+        }
+        *EBlock bb = eb_block(b, lbl);
+        List_push<*EBlock>(&case_bbs, bb);
+        if (c.expr == null) {
+            dflt = bb;
+            List_push<int64>(&vals, (int64)0);
+        } else {
+            List_push<int64>(&vals, eb_fold_int(b, c.expr));
+        }
+        i = i + 1;
+    }
+    EInst sw = ei_make(EO_SWITCH, "", et_void());
+    ei_add(&sw, subj);
+    sw.dflt = dflt.name;
+    i = 0;
+    while (i < n) {
+        if (List_get<*StmtNode>(&node.items, i).expr != null) {
+            List_push<int64>(&sw.case_vals, List_get<int64>(&vals, i));
+            List_push<string>(&sw.case_lbls, List_get<*EBlock>(&case_bbs, i).name);
+        }
+        i = i + 1;
+    }
+    eb_emit(b, sw);
+    eb_push_loop(b, end_bb, null, "");
+    eb_push_scope(b);
+    i = 0;
+    while (i < n) {
+        *StmtNode c = List_get<*StmtNode>(&node.items, i);
+        eb_set_block(b, List_get<*EBlock>(&case_bbs, i));
+        eb_push_frame(b);
+        int depth = eb_nframes(b) - 1;
+        int j = 0;
+        while (j < List_len<*StmtNode>(&c.items)) {
+            if (b.blk.term == 1) {
+                break;
+            }
+            eb_stmt(b, List_get<*StmtNode>(&c.items, j));
+            j = j + 1;
+        }
+        if (b.blk.term == 0) {
+            eb_run_cleanups(b, depth, 0);
+        }
+        eb_pop_frame(b);
+        if (b.blk.term == 0) {
+            *EBlock nx = end_bb;
+            if (i + 1 < n) {
+                nx = List_get<*EBlock>(&case_bbs, i + 1);
+            }
+            eb_br(b, nx);
+        }
+        i = i + 1;
+    }
+    eb_pop_scope(b);
+    eb_pop_loop(b);
+    eb_set_block(b, end_bb);
+}
+
+// An arm's label: `V(a, b)` -> V and the bindings; `_` the default.
+string eb_arm_variant(string label, List<string>* binds) {
+    int p = et_findc(label, '(');
+    if (p < 0) {
+        return label;
+    }
+    string inner = et_sub(label, p + 1, et_len(label) - 1);
+    List<string> parts;
+    ty_split_top(inner, ',', &parts);
+    int i = 0;
+    while (i < List_len<string>(&parts)) {
+        string t = et_trim(List_get<string>(&parts, i));
+        if (et_len(t) > 0) {
+            List_push<string>(binds, t);
+        }
+        i = i + 1;
+    }
+    return et_sub(label, 0, p);
+}
+
+void eb_match(EB* b, *StmtNode node) {
+    string enum_name = tyq_strip(et_s(node.type));
+    if (et_len(enum_name) > 0) {
+        string al = SMap_get(&b.aliases, enum_name);
+        if (al != null) {
+            enum_name = tyq_strip(al);
+        }
+        if (et_findc(enum_name, '<') >= 0) {
+            enum_name = eb_mangle_note(b, enum_name);
+        } else {
+            enum_name = eb_strip_struct(enum_name);
+        }
+    }
+    if (et_len(enum_name) == 0) {
+        *ETy st = eb_expr_type(b, node.expr);
+        if (st != null) {
+            enum_name = et_nominal(st);
+        }
+    }
+    int n = List_len<*StmtNode>(&node.items);
+    *DeclNode ped = DMap_get(&b.plain_enums, enum_name);
+    if (ped != null) {
+        EOp subj = eb_eval(b, node.expr);
+        *EBlock end_bb = eb_block(b, "match.end");
+        List<*EBlock> arms;
+        *EBlock dflt = end_bb;
+        int i = 0;
+        while (i < n) {
+            *EBlock ab = eb_block(b, "match.arm");
+            List_push<*EBlock>(&arms, ab);
+            List<string> bs;
+            string v = eb_arm_variant(List_get<*StmtNode>(&node.items, i).name, &bs);
+            if (et_len(v) == 0 || et_eq(v, "_") == 1) {
+                dflt = ab;
+            }
+            i = i + 1;
+        }
+        EInst sw = ei_make(EO_SWITCH, "", et_void());
+        ei_add(&sw, subj);
+        sw.dflt = dflt.name;
+        i = 0;
+        while (i < n) {
+            List<string> bs;
+            string v = eb_arm_variant(List_get<*StmtNode>(&node.items, i).name, &bs);
+            if (et_len(v) > 0 && et_eq(v, "_") == 0) {
+                int64 val = (int64)0;
+                if (IMap_has(&b.enum_consts, v) == 1) {
+                    val = IMap_get(&b.enum_consts, v);
+                } else {
+                    int k = 0;
+                    while (k < List_len<Param>(&ped.params)) {
+                        Param pm = List_get<Param>(&ped.params, k);
+                        if (et_eq(pm.name, v) == 1) {
+                            val = et_parse_signed(pm.ty);
+                            break;
+                        }
+                        k = k + 1;
+                    }
+                }
+                List_push<int64>(&sw.case_vals, val);
+                List_push<string>(&sw.case_lbls, List_get<*EBlock>(&arms, i).name);
+            }
+            i = i + 1;
+        }
+        eb_emit(b, sw);
+        i = 0;
+        while (i < n) {
+            eb_set_block(b, List_get<*EBlock>(&arms, i));
+            eb_push_scope(b);
+            eb_visit_body(b, List_get<*StmtNode>(&node.items, i).s1);
+            eb_pop_scope(b);
+            if (b.blk.term == 0) {
+                eb_br(b, end_bb);
+            }
+            i = i + 1;
+        }
+        eb_set_block(b, end_bb);
+        return;
+    }
+    EOp subj = eb_eval(b, node.expr);
+    EOp addr = subj;
+    *ETy enum_ty = et_struct(enum_name, null);
+    if (et_is_ptr(subj.ty) == 0) {
+        string tmp = et_cat(eb_new_var(b), ".match_subj");
+        eb_i1(b, EO_ALLOCA, tmp, enum_ty, eo_int((int64)8, et_i32()));
+        eb_store(b, subj, eo_var(tmp, et_ptr(enum_ty)));
+        addr = eo_var(tmp, et_ptr(enum_ty));
+    }
+    string tag = et_cat(eb_new_var(b), ".tag");
+    eb_i1(b, EO_LOAD, tag, et_i32(), addr);
+    EOp tag_op = eo_var(tag, et_i32());
+    *EBlock end_bb = eb_block(b, "match.end");
+    List<*EBlock> arms;
+    *EBlock dflt = end_bb;
+    int i = 0;
+    while (i < n) {
+        *EBlock ab = eb_block(b, "match.arm");
+        List_push<*EBlock>(&arms, ab);
+        List<string> bs;
+        string v = eb_arm_variant(List_get<*StmtNode>(&node.items, i).name, &bs);
+        if (et_len(v) == 0 || et_eq(v, "_") == 1) {
+            dflt = ab;
+        }
+        i = i + 1;
+    }
+    EInst sw = ei_make(EO_SWITCH, "", et_void());
+    ei_add(&sw, tag_op);
+    sw.dflt = dflt.name;
+    string inst = "";
+    *ETy sty = eb_expr_type(b, node.expr);
+    if (sty != null) {
+        inst = et_nominal(sty);
+        if (IAMap_get(&b.inst_args, inst) == null) {
+            inst = "";
+        }
+    }
+    i = 0;
+    while (i < n) {
+        List<string> bs;
+        string v = eb_arm_variant(List_get<*StmtNode>(&node.items, i).name, &bs);
+        if (et_len(v) > 0 && et_eq(v, "_") == 0) {
+            int vidx = 0;
+            *EVariant var = eb_variant_for(b, v, inst);
+            if (var != null) {
+                vidx = var.idx;
+            }
+            List_push<int64>(&sw.case_vals, (int64)vidx);
+            List_push<string>(&sw.case_lbls, List_get<*EBlock>(&arms, i).name);
+        }
+        i = i + 1;
+    }
+    eb_emit(b, sw);
+    i = 0;
+    while (i < n) {
+        *StmtNode arm = List_get<*StmtNode>(&node.items, i);
+        eb_set_block(b, List_get<*EBlock>(&arms, i));
+        eb_push_scope(b);
+        List<string> binds;
+        string v = eb_arm_variant(arm.name, &binds);
+        if (et_len(v) > 0 && et_eq(v, "_") == 0 && List_len<string>(&binds) > 0) {
+            *EVariant vp = eb_variant_for(b, v, inst);
+            if (vp != null) {
+                int64 off = (int64)8;
+                int k = 0;
+                while (k < List_len<string>(&binds) && k < List_len<*ETy>(&vp.payload)) {
+                    *ETy bt = List_get<*ETy>(&vp.payload, k);
+                    string bn = List_get<string>(&binds, k);
+                    int64 ba = et_type_align(bt, b.m);
+                    off = (off + ba - (int64)1) & ~(ba - (int64)1);
+                    string fp = et_cat3(eb_new_var(b), ".", bn);
+                    fp = et_cat(fp, ".ptr");
+                    eb_i2(b, EO_OFFSETPTR, fp, et_ptr(bt), addr, eo_int(off, et_i64()));
+                    string lv = et_cat3(eb_new_var(b), ".", bn);
+                    eb_i1(b, EO_LOAD, lv, bt, eo_var(fp, et_ptr(bt)));
+                    string slot = et_cat3("%", bn, ".addr");
+                    eb_i1(b, EO_ALLOCA, slot, bt, eo_int(et_type_align(bt, null), et_i32()));
+                    eb_store(b, eo_var(lv, bt), eo_var(slot, et_ptr(bt)));
+                    eb_declare(b, bn, eo_var(slot, et_ptr(bt)), bt);
+                    off = off + et_type_size(bt, b.m);
+                    k = k + 1;
+                }
+            }
+        }
+        eb_visit_body(b, arm.s1);
+        eb_pop_scope(b);
+        if (b.blk.term == 0) {
+            eb_br(b, end_bb);
+        }
+        i = i + 1;
+    }
+    eb_set_block(b, end_bb);
+}
