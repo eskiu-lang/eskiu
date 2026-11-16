@@ -1,0 +1,463 @@
+// async_lower_lambdas.esk: lambdas capturing a frame-hoisted local (part of async_lower.esk, imported in order)
+
+// ── Lambdas capturing a frame-hoisted local ────────────────────────────────────
+// The resume function has no local of that name (it lives in `fr.<name>`, and al_rewrite
+// stops at a lambda), so each statement whose own expressions create such a lambda is
+// wrapped as `{ T x = fr.x; <stmt> }`: a by-value snapshot at the creation point, exactly
+// what the closure's capture takes. Mirrors the C++ AsyncTransform wrapCaps pass.
+void al_collect_idents_s(*StmtNode s, List<string>* out);
+void al_collect_idents_e(*ExprNode e, List<string>* out) {
+    if (e == null) {
+        return;
+    }
+    if (e.kind == EK_IDENT) {
+        List_push<string>(out, e.sval);
+        return;
+    }
+    if (e.kind == EK_LAMBDA) {
+        al_collect_idents_s(e.stmt, out);
+        return;
+    }
+    List<*ExprNode> ch;
+    List_init<*ExprNode>(&ch, 4);
+    al_children(e, &ch);
+    int i = 0;
+    while (i < List_len<*ExprNode>(&ch)) {
+        al_collect_idents_e(List_get<*ExprNode>(&ch, i), out);
+        i = i + 1;
+    }
+}
+
+void al_collect_idents_s(*StmtNode s, List<string>* out) {
+    if (s == null) {
+        return;
+    }
+    al_collect_idents_e(s.expr, out);
+    al_collect_idents_e(s.expr2, out);
+    al_collect_idents_s(s.s1, out);
+    al_collect_idents_s(s.s2, out);
+    if (s.kind == SK_BLOCK || s.kind == SK_SWITCH || s.kind == SK_CASE || s.kind == SK_MATCH || s.kind == SK_TRY) {
+        int i = 0;
+        while (i < List_len<*StmtNode>(&s.items)) {
+            al_collect_idents_s(List_get<*StmtNode>(&s.items, i), out);
+            i = i + 1;
+        }
+    }
+}
+
+// Parameter names of a lambda signature `int(int y, fn(int)->int g)` → ["y", "g"].
+void al_lambda_params(string sig, List<string>* out) {
+    int i = 0;   // to '('
+    while (sig[i] != 0 && (int)sig[i] != 40) {
+        i = i + 1;
+    }
+    if (sig[i] == 0) {
+        return;
+    }
+    i = i + 1;
+    int depth = 1;
+    int start = i;
+    while (sig[i] != 0 && depth > 0) {
+        int ch = (int)sig[i];
+        if (ch == 40) {
+            depth = depth + 1;
+        }
+        else if (ch == 41) {
+            depth = depth - 1;
+        }
+        if ((ch == 44 && depth == 1) || depth == 0) {
+            int e = i;
+            while (e > start && (int)sig[e - 1] == 32) {
+                e = e - 1;
+            }
+            int b = e;
+            while (b > start && (int)sig[b - 1] != 32) {
+                b = b - 1;
+            }
+            if (e > b) {
+                List_push<string>(out, al_substr(sig, b, e));
+            }
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+}
+
+// Is `a` before `b` byte by byte (std::string's order)?
+int al_str_before(string a, string b) {
+    int i = 0;
+    while (a[i] != 0 && a[i] == b[i]) {
+        i = i + 1;
+    }
+    return (int)(uint8)a[i] < (int)(uint8)b[i];
+}
+
+// The frame locals each lambda in `e` captures, in order of the lambdas, a lambda's own
+// by name (the checker's capture list is ordered by name).
+void al_lambda_caps(*AlCtx c, *ExprNode e, List<string>* caps) {
+    if (e == null) {
+        return;
+    }
+    if (e.kind == EK_LAMBDA) {
+        List<string> ids;
+        List_init<string>(&ids, 8);
+        al_collect_idents_s(e.stmt, &ids);
+        List<string> ps;
+        List_init<string>(&ps, 2);
+        al_lambda_params(e.sval, &ps);
+        List<string> own;
+        List_init<string>(&own, 4);
+        int i = 0;
+        while (i < List_len<string>(&ids)) {
+            string nm = List_get<string>(&ids, i);
+            i = i + 1;
+            if (al_in(&c.vars, nm) == 1 && al_in(&ps, nm) == 0 && al_in(&own, nm) == 0) {
+                int at = List_len<string>(&own);
+                List_push<string>(&own, nm);
+                while (at > 0 && al_str_before(nm, List_get<string>(&own, at - 1)) == 1) {
+                    List_set<string>(&own, at, List_get<string>(&own, at - 1));
+                    at = at - 1;
+                }
+                List_set<string>(&own, at, nm);
+            }
+        }
+        i = 0;
+        while (i < List_len<string>(&own)) {
+            if (al_in(caps, List_get<string>(&own, i)) == 0) {
+                List_push<string>(caps, List_get<string>(&own, i));
+            }
+            i = i + 1;
+        }
+        return;
+    }
+    List<*ExprNode> ch;
+    List_init<*ExprNode>(&ch, 4);
+    al_children(e, &ch);
+    int i = 0;
+    while (i < List_len<*ExprNode>(&ch)) {
+        al_lambda_caps(c, List_get<*ExprNode>(&ch, i), caps);
+        i = i + 1;
+    }
+}
+
+string al_field_type(*AlCtx c, string nm) {
+    int i = 0;
+    while (i < List_len<Param>(&c.fields)) {
+        Param f = List_get<Param>(&c.fields, i);
+        if (str_eq(f.name, nm) == 1) {
+            return f.ty;
+        }
+        i = i + 1;
+    }
+    return "int";
+}
+
+*StmtNode al_wrap_caps(*AlCtx c, *StmtNode s) {
+    if (s == null) {
+        return s;
+    }
+    if (s.kind == SK_BLOCK) {
+        int i = 0;
+        while (i < List_len<*StmtNode>(&s.items)) {
+            List_set<*StmtNode>(&s.items, i, al_wrap_caps(c, List_get<*StmtNode>(&s.items, i)));
+            i = i + 1;
+        }
+        return s;
+    }
+    List<string> caps;
+    List_init<string>(&caps, 2);
+    if (s.kind == SK_SWITCH || s.kind == SK_MATCH) {
+        al_lambda_caps(c, s.expr, &caps);
+        int i = 0;
+        while (i < List_len<*StmtNode>(&s.items)) {
+            *StmtNode cs = List_get<*StmtNode>(&s.items, i);
+            i = i + 1;
+            if (s.kind == SK_SWITCH) {
+                al_lambda_caps(c, cs.expr, &caps);
+                int j = 0;
+                while (j < List_len<*StmtNode>(&cs.items)) {
+                    List_set<*StmtNode>(&cs.items, j, al_wrap_caps(c, List_get<*StmtNode>(&cs.items, j)));
+                    j = j + 1;
+                }
+            } else {
+                cs.s1 = al_wrap_caps(c, cs.s1);
+            }
+        }
+    } else {
+        // Every other kind: its own expressions (cond / step / value / initializer) and
+        // its nested statements (then/else, body, for-init, defer body).
+        al_lambda_caps(c, s.expr, &caps);
+        al_lambda_caps(c, s.expr2, &caps);
+        s.s1 = al_wrap_caps(c, s.s1);
+        s.s2 = al_wrap_caps(c, s.s2);
+        if (s.kind == SK_TRY) {                        // and each catch clause's body
+            int i = 0;
+            while (i < List_len<*StmtNode>(&s.items)) {
+                *StmtNode cl = List_get<*StmtNode>(&s.items, i);
+                cl.s1 = al_wrap_caps(c, cl.s1);
+                i = i + 1;
+            }
+        }
+    }
+    if (List_len<string>(&caps) == 0) {
+        return s;
+    }
+    List<*StmtNode> blk;
+    List_init<*StmtNode>(&blk, 4);
+    int k = 0;
+    while (k < List_len<string>(&caps)) {
+        string nm = List_get<string>(&caps, k);
+        k = k + 1;
+        List_push<*StmtNode>(&blk, mk_vardecl(nm, al_field_type(c, nm), al_fr(nm), 0));
+    }
+    List_push<*StmtNode>(&blk, s);
+    return al_block(&blk);
+}
+
+// Every local becomes a frame field keyed by its name, so two declarations of one name
+// (a nested-block `let x` shadowing an outer `x`, or two sibling blocks each declaring
+// `x`) would collapse into one field. Before hoisting, give every re-declaration a
+// unique name (`x__sN`) and rewrite the references in its lexical scope (mirrors the
+// C++ ShadowRenamer). keys/vals is a scope stack of name → current spelling.
+// `static` locals of the async function itself (not of a lambda in it) are one cell for
+// every call, not frame fields: each gets a fresh name and is taken out of the body
+// (`statics`); the lowering declares them at the top of the resume function.
+struct AlRen {
+    List<string> keys;
+    List<string> vals;
+    List<string> seen;
+    List<string>* used;
+    List<*StmtNode> statics;
+    int ldepth;
+}
+
+string al_ren_lookup(AlRen* r, string n) {
+    int i = List_len<string>(&r.keys) - 1;
+    while (i >= 0) {
+        if (str_eq(List_get<string>(&r.keys, i), n) == 1) {
+            return List_get<string>(&r.vals, i);
+        }
+        i = i - 1;
+    }
+    return n;
+}
+
+void al_ren_bind(AlRen* r, string n, string v) {
+    List_push<string>(&r.keys, n);
+    List_push<string>(&r.vals, v);
+}
+
+string al_ren_declare(AlRen* r, string n) {
+    string nn = n;
+    if (al_in(&r.seen, n) == 1) {
+        nn = fresh_name(str_concat(n, "__s"), r.used);
+    }
+    else {
+        List_push<string>(&r.seen, n);
+    }
+    al_ren_bind(r, n, nn);
+    return nn;
+}
+
+void al_ren_pop(AlRen* r, int mark) {
+    while (List_len<string>(&r.keys) > mark) {
+        List_remove<string>(&r.keys, List_len<string>(&r.keys) - 1);
+        List_remove<string>(&r.vals, List_len<string>(&r.vals) - 1);
+    }
+}
+
+void al_ren_stmt(AlRen* r, *StmtNode s);
+void al_ren_expr(AlRen* r, *ExprNode e) {
+    if (e == null) {
+        return;
+    }
+    if (e.kind == EK_SIZEOF && e.a != null) {   // sizeof(expr)
+        al_ren_expr(r, e.a);
+        return;
+    }
+    if (e.kind == EK_IDENT || e.kind == EK_SIZEOF) {
+        e.sval = al_ren_lookup(r, e.sval);
+        return;
+    }
+    if (e.kind == EK_LAMBDA) {                           // body follows renames; params shadow
+        int lmark = List_len<string>(&r.keys);
+        List<string> lps;
+        List_init<string>(&lps, 2);
+        al_lambda_params(e.sval, &lps);
+        int li = 0;
+        while (li < List_len<string>(&lps)) {
+            al_ren_bind(r, List_get<string>(&lps, li), List_get<string>(&lps, li));
+            li = li + 1;
+        }
+        r.ldepth = r.ldepth + 1;
+        al_ren_stmt(r, e.stmt);
+        r.ldepth = r.ldepth - 1;
+        al_ren_pop(r, lmark);
+        return;
+    }
+    if (e.kind == EK_MEMBER) {   // sval is the field name
+        al_ren_expr(r, e.a);
+        return;
+    }
+    al_ren_expr(r, e.a);
+    al_ren_expr(r, e.b);
+    int i = 0;
+    while (i < List_len<*ExprNode>(&e.kids)) {
+        al_ren_expr(r, List_get<*ExprNode>(&e.kids, i));
+        i = i + 1;
+    }
+}
+
+void al_ren_scoped(AlRen* r, *StmtNode s) {
+    int mark = List_len<string>(&r.keys);
+    al_ren_stmt(r, s);
+    al_ren_pop(r, mark);
+}
+
+void al_ren_items(AlRen* r, List<*StmtNode>* items) {
+    List<*StmtNode> kept;
+    List_init<*StmtNode>(&kept, List_len<*StmtNode>(items) + 1);
+    int i = 0;
+    while (i < List_len<*StmtNode>(items)) {
+        *StmtNode it = List_get<*StmtNode>(items, i);
+        i = i + 1;
+        if (it.kind == SK_VARDECL && it.is_static == 1 && r.ldepth == 0) {
+            al_ren_expr(r, it.expr);
+            string nn = fresh_name(str_concat(it.name, "__st"), r.used);
+            if (al_in(&r.seen, it.name) == 0) {
+                List_push<string>(&r.seen, it.name);
+            }
+            al_ren_bind(r, it.name, nn);
+            it.name = nn;
+            List_push<*StmtNode>(&r.statics, it);
+            continue;
+        }
+        al_ren_stmt(r, it);
+        List_push<*StmtNode>(&kept, it);
+    }
+    while (List_len<*StmtNode>(items) > 0) {
+        List_remove<*StmtNode>(items, List_len<*StmtNode>(items) - 1);
+    }
+    i = 0;
+    while (i < List_len<*StmtNode>(&kept)) {
+        List_push<*StmtNode>(items, List_get<*StmtNode>(&kept, i));
+        i = i + 1;
+    }
+}
+
+void al_ren_stmt(AlRen* r, *StmtNode s) {
+    if (s == null) {
+        return;
+    }
+    int mark = List_len<string>(&r.keys);
+    if (s.kind == SK_VARDECL) {
+        al_ren_expr(r, s.expr);                          // the initializer sees the outer binding
+        s.name = al_ren_declare(r, s.name);
+        return;
+    }
+    if (s.kind == SK_FOR) {
+        if (s.s1 != null && s.s1.kind == SK_BLOCK) {
+            al_ren_items(r, &s.s1.items);
+        } else {
+            al_ren_stmt(r, s.s1);
+        }
+        al_ren_expr(r, s.expr);
+        al_ren_expr(r, s.expr2);
+        al_ren_scoped(r, s.s2);
+        al_ren_pop(r, mark);
+        return;
+    }
+    if (s.kind == SK_FORIN) {
+        al_ren_expr(r, s.expr);
+        s.name = al_ren_declare(r, s.name);
+        al_ren_scoped(r, s.s1);
+        al_ren_pop(r, mark);
+        return;
+    }
+    if (s.kind == SK_ARM) {                              // `V(a, b)`: the bindings shadow
+        string lb = s.name;
+        int n = 0;
+        while (lb[n] != 0) {
+            n = n + 1;
+        }
+        int i = 0;
+        while (i < n && (int)lb[i] != 40) {
+            i = i + 1;
+        }
+        i = i + 1;
+        while (i < n) {
+            while (i < n && ((int)lb[i] == 32 || (int)lb[i] == 44)) {
+                i = i + 1;
+            }
+            int st = i;
+            while (i < n && (int)lb[i] != 44 && (int)lb[i] != 41 && (int)lb[i] != 32) {
+                i = i + 1;
+            }
+            if (i > st) {
+                // A binding gets its own spelling too, so a hoisted local of the same name
+                // is not substituted for it.
+                string bn = al_substr(lb, st, i);
+                string nb = bn;
+                if (str_eq(bn, "_") == 0) {
+                    nb = al_ren_declare(r, bn);
+                }
+                if (str_eq(nb, bn) == 0) {
+                    lb = str_concat(al_substr(lb, 0, st), str_concat(nb, al_substr(lb, i, n)));
+                    i = st + cstr_len(nb);
+                    n = cstr_len(lb);
+                }
+            }
+            if (i < n && (int)lb[i] == 41) {
+                i = n;
+            }
+        }
+        s.name = lb;
+        al_ren_scoped(r, s.s1);
+        al_ren_pop(r, mark);
+        return;
+    }
+    if (s.kind == SK_CATCH) {                            // "Type name": the name shadows
+        string cn = s.name;
+        int n = 0;
+        while (cn[n] != 0) {
+            n = n + 1;
+        }
+        int i = n;
+        while (i > 0 && (int)cn[i - 1] != 32) {
+            i = i - 1;
+        }
+        string bn = al_substr(cn, i, n);
+        if (bn[0] != 0 && str_eq(cn, "_") == 0) {
+            string nb = al_ren_declare(r, bn);
+            if (str_eq(nb, bn) == 0) {
+                s.name = str_concat(al_substr(cn, 0, i), nb);
+            }
+        }
+        al_ren_scoped(r, s.s1);
+        al_ren_pop(r, mark);
+        return;
+    }
+    if (s.kind == SK_BLOCK) {
+        al_ren_items(r, &s.items);
+        al_ren_pop(r, mark);
+        return;
+    }
+    if (s.kind == SK_SWITCH) {                           // the switch body is one scope (C)
+        al_ren_expr(r, s.expr);
+        int k = 0;
+        while (k < List_len<*StmtNode>(&s.items)) {
+            *StmtNode cs = List_get<*StmtNode>(&s.items, k);
+            k = k + 1;
+            al_ren_expr(r, cs.expr);
+            al_ren_items(r, &cs.items);
+        }
+        al_ren_pop(r, mark);
+        return;
+    }
+    al_ren_expr(r, s.expr);
+    al_ren_expr(r, s.expr2);
+    al_ren_scoped(r, s.s1);
+    al_ren_scoped(r, s.s2);
+    al_ren_items(r, &s.items);
+    al_ren_pop(r, mark);
+}

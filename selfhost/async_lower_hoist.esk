@@ -1,0 +1,411 @@
+// async_lower_hoist.esk: desugar: hoisting every await into a let of its own (part of async_lower.esk, imported in order)
+
+// ── Desugar: hoist every await into a `let` of its own, in evaluation order ──────
+//   return await E;       →  let __aw_tN = await E; return __aw_tN;
+//   x += g() + await E;   →  let __sp_tN = g(); let __aw_tN = await E; x += __sp_tN + __aw_tN;
+// An operand evaluated before an await in the same expression is held in a temporary
+// first when it has a side effect, so effects keep the order of the synchronous
+// expression; an assignment target's parts (an index, a pointer) are evaluated once,
+// before the await. `&&`/`||` and `?:` become ifs, so an await in a conditional operand
+// runs only when that operand is evaluated. A loop condition or step that awaits is
+// re-evaluated at the top of each pass. Recurses into control flow (mirrors the C++).
+void al_error_at(*AlCtx c, int line, int col, string msg) {
+    string ff = c.curfn.file;
+    if (ff == null) {
+        ff = "";
+    }
+    int ln = line;
+    int cl = col;
+    if (ln == 0) {
+        ln = c.curfn.line;
+        cl = c.curfn.col;
+    }
+    dprintf(2, "error: %s:%d:%d: async function '%s': %s\n", ff, ln, cl, c.errname, msg);
+    exit(1);
+}
+
+string al_fresh(*AlCtx c, string base) {
+    string n = fresh_name(str_concat(base, int_to_str(c.tmpn)), c.used);
+    c.tmpn = c.tmpn + 1;
+    return n;
+}
+
+int al_is_assign_op(string op) {
+    if (str_eq(op, "=") == 1) {
+        return 1;
+    }
+    int n = cstr_len(op);
+    if (n < 2 || (int)op[n - 1] != 61) {
+        return 0;
+    }
+    if (str_eq(op, "==") == 1 || str_eq(op, "!=") == 1 || str_eq(op, "<=") == 1 || str_eq(op, ">=") == 1) {
+        return 0;
+    }
+    return 1;
+}
+
+int al_has_opfn(*ExprNode e) {
+    if (e.op_fn != null && e.op_fn[0] != 0) {
+        return 1;
+    }
+    return 0;
+}
+
+// Whether evaluating `e` may have a side effect: a call (a user operator counts), an
+// assignment, `++`/`--`, an await, `?`, `alloc_with`, `thread_create` or `free_closure`.
+int al_has_side(*ExprNode e) {
+    if (e == null) {
+        return 0;
+    }
+    int k = e.kind;
+    if (k == EK_LAMBDA || k == EK_SIZEOF) {
+        return 0;
+    }
+    if (k == EK_CALL || k == EK_TEMPLATECALL || k == EK_AWAIT || k == EK_INCDEC || k == EK_QUESTION
+        || k == EK_ALLOCWITH || k == EK_THREADCREATE || k == EK_FREECLOSURE) {
+        return 1;
+    }
+    if (k == EK_BINARY && (al_is_assign_op(e.sval) == 1 || al_has_opfn(e) == 1)) {
+        return 1;
+    }
+    if ((k == EK_UNARY || k == EK_INDEX) && al_has_opfn(e) == 1) {
+        return 1;
+    }
+    List<*ExprNode> ch;
+    List_init<*ExprNode>(&ch, 4);
+    al_children(e, &ch);
+    int i = 0;
+    while (i < List_len<*ExprNode>(&ch)) {
+        if (al_has_side(List_get<*ExprNode>(&ch, i)) == 1) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// The type sema inferred for `e` ("" when unknown, and inside a generic function, whose
+// instances differ; mirrors the C++).
+string al_type_of(*AlCtx c, *ExprNode e) {
+    if (List_len<TypeParam>(&c.curfn.type_params) > 0) {
+        return al_generalize(c, e.ainst, 0 - 1);
+    }
+    string t = e.aty;
+    if (t == null || t[0] == 0) {   // not stamped (the codegen-only driver)
+        t = al_expr_type(c.prog, c.curfn, e);
+    }
+    if (t == null || t[0] == 0 || str_eq(t, "unknown") == 1 || str_eq(t, "null") == 1 || str_eq(t, "void") == 1) {
+        return "";
+    }
+    return t;
+}
+
+*ExprNode al_hoist(*AlCtx c, *ExprNode e, List<*StmtNode>* pre);
+*ExprNode al_spill(*AlCtx c, *ExprNode e, List<*StmtNode>* pre) {
+    string t = al_type_of(c, e);
+    if (t[0] == 0) {
+        al_error_at(c, e.line, e.col, "an operand with a side effect is evaluated before an 'await' in the same expression and its type is not known here; bind it to a local first");
+    }
+    string tn = al_fresh(c, "__sp_t");
+    List_push<*StmtNode>(pre, mk_vardecl(tn, t, e, 0));
+    return mk_ident(tn);
+}
+
+*ExprNode al_rval(*AlCtx c, *ExprNode e, List<*StmtNode>* pre) {
+    if (al_expr_has_await(e) == 1) {
+        return al_hoist(c, e, pre);
+    }
+    if (al_has_side(e) == 1) {
+        return al_spill(c, e, pre);
+    }
+    return e;
+}
+
+int al_place_shaped(*ExprNode e) {
+    if (e == null) {
+        return 0;
+    }
+    if (e.kind == EK_IDENT || e.kind == EK_MEMBER || e.kind == EK_INDEX) {
+        return 1;
+    }
+    if (e.kind == EK_UNARY && str_eq(e.sval, "*") == 1) {
+        return 1;
+    }
+    return 0;
+}
+
+*ExprNode al_place_sub(*AlCtx c, *ExprNode x, List<*StmtNode>* pre, int spill) {
+    if (al_expr_has_await(x) == 1) {
+        return al_hoist(c, x, pre);
+    }
+    if (spill == 1 && al_has_side(x) == 1) {
+        return al_spill(c, x, pre);
+    }
+    return x;
+}
+
+// An assignment target keeps its place; the sub-expressions that compute it are hoisted,
+// or held when a later await follows (`spill`).
+void al_place(*AlCtx c, *ExprNode e, List<*StmtNode>* pre, int spill) {
+    if (e == null || e.kind == EK_IDENT) {
+        return;
+    }
+    if (e.kind == EK_MEMBER) {
+        if (al_place_shaped(e.a) == 1) {
+            al_place(c, e.a, pre, spill);
+        } else {
+            e.a = al_place_sub(c, e.a, pre, spill);
+        }
+        return;
+    }
+    if (e.kind == EK_INDEX && al_has_opfn(e) == 0 && List_len<*ExprNode>(&e.kids) == 0) {
+        if (al_place_shaped(e.a) == 1) {
+            al_place(c, e.a, pre, spill);
+        } else {
+            e.a = al_place_sub(c, e.a, pre, spill);
+        }
+        e.b = al_place_sub(c, e.b, pre, spill);
+        return;
+    }
+    if (e.kind == EK_UNARY && str_eq(e.sval, "*") == 1 && al_has_opfn(e) == 0) {
+        e.a = al_place_sub(c, e.a, pre, spill);
+        return;
+    }
+    if (al_expr_has_await(e) == 1 || (spill == 1 && al_has_side(e) == 1)) {
+        al_error_at(c, e.line, e.col, "'await' is not supported with this assignment target; bind the value to a local first");
+    }
+}
+
+*StmtNode al_set_true(string tn) {
+    List<*StmtNode> b;
+    List_init<*StmtNode>(&b, 1);
+    List_push<*StmtNode>(&b, al_assign(mk_ident(tn), mk_lit(LIT_BOOL, "true")));
+    return al_block(&b);
+}
+
+// The value type of `await E`, as the let that holds it is declared.
+string al_hoist_await_type(*AlCtx c, *ExprNode aw) {
+    string ti = al_await_type_or(c.prog, c.curfn, aw.a);
+    if (ti[0] == 0 && aw.aty != null) {
+        ti = aw.aty;
+    }
+    if (ti[0] == 0) {
+        ti = "int";
+    }
+    return ti;
+}
+
+// Operand slots of `e` in evaluation order: -1 = e.a, -2 = e.b, -3 = e.a.a (a method
+// call's receiver), k >= 0 = e.kids[k].
+void al_slots(*ExprNode e, List<int>* out) {
+    int k = e.kind;
+    if (k == EK_CALL) {
+        if (e.a != null && e.a.kind == EK_MEMBER) {
+            List_push<int>(out, 0 - 3);
+        }
+        else if (e.a != null && e.a.kind != EK_IDENT) {
+            List_push<int>(out, 0 - 1);
+        }
+    } else if (k == EK_BINARY || k == EK_INDEX || k == EK_TERNARY || k == EK_ALLOCWITH) {
+        List_push<int>(out, 0 - 1);
+        List_push<int>(out, 0 - 2);
+    } else if (k == EK_UNARY || k == EK_INCDEC || k == EK_MEMBER || k == EK_CAST || k == EK_QUESTION
+               || k == EK_AWAIT || k == EK_FREECLOSURE || k == EK_THREADCREATE) {
+        List_push<int>(out, 0 - 1);
+    }
+    if (k == EK_CALL || k == EK_TEMPLATECALL || k == EK_STRUCTINIT || k == EK_ARRAYLIT
+        || k == EK_INDEX || k == EK_TERNARY) {
+        int i = 0;
+        while (i < List_len<*ExprNode>(&e.kids)) {
+            List_push<int>(out, i);
+            i = i + 1;
+        }
+    }
+}
+
+*ExprNode al_slot_get(*ExprNode e, int sl) {
+    if (sl == 0 - 1) {
+        return e.a;
+    }
+    if (sl == 0 - 2) {
+        return e.b;
+    }
+    if (sl == 0 - 3) {
+        return e.a.a;
+    }
+    return List_get<*ExprNode>(&e.kids, sl);
+}
+
+void al_slot_set(*ExprNode e, int sl, *ExprNode v) {
+    if (sl == 0 - 1) {
+        e.a = v;
+        return;
+    }
+    if (sl == 0 - 2) {
+        e.b = v;
+        return;
+    }
+    if (sl == 0 - 3) {
+        e.a.a = v;
+        return;
+    }
+    List_set<*ExprNode>(&e.kids, sl, v);
+}
+
+*ExprNode al_hoist(*AlCtx c, *ExprNode e, List<*StmtNode>* pre) {
+    if (e == null) {
+        return e;
+    }
+    int k = e.kind;
+    if (k == EK_AWAIT) {
+        string ti = al_hoist_await_type(c, e);
+        e.aty = ti;
+        if (al_expr_has_await(e.a) == 1) {
+            e.a = al_hoist(c, e.a, pre);
+        }
+        string tn = al_fresh(c, "__aw_t");
+        List_push<*StmtNode>(pre, mk_vardecl(tn, ti, e, 0));
+        return mk_ident(tn);
+    }
+    if (k == EK_LAMBDA || k == EK_SIZEOF) {       // not evaluated here
+        return e;
+    }
+    if (k == EK_BINARY) {
+        if ((str_eq(e.sval, "&&") == 1 || str_eq(e.sval, "||") == 1) && al_expr_has_await(e.b) == 1) {
+            if (al_expr_has_await(e.a) == 1) {
+                e.a = al_hoist(c, e.a, pre);
+            }
+            string tn = al_fresh(c, "__sc_t");
+            List_push<*StmtNode>(pre, mk_vardecl(tn, "bool", mk_lit(LIT_BOOL, "false"), 0));
+            List<*StmtNode> rp;
+            List_init<*StmtNode>(&rp, 4);
+            *ExprNode r = al_hoist(c, e.b, &rp);
+            List_push<*StmtNode>(&rp, al_if(r, al_set_true(tn), null));
+            if (str_eq(e.sval, "&&") == 1) {
+                List_push<*StmtNode>(pre, al_if(e.a, al_block(&rp), null));
+            }
+            else {
+                List_push<*StmtNode>(pre, al_if(e.a, al_set_true(tn), al_block(&rp)));
+            }
+            return mk_ident(tn);
+        }
+        if (al_is_assign_op(e.sval) == 1) {
+            int raw = al_expr_has_await(e.b);
+            al_place(c, e.a, pre, raw);
+            if (raw == 1) {
+                e.b = al_hoist(c, e.b, pre);
+            }
+            return e;
+        }
+    }
+    if (k == EK_TERNARY && (al_expr_has_await(e.b) == 1 || al_expr_has_await(List_get<*ExprNode>(&e.kids, 0)) == 1)) {
+        string t = al_type_of(c, e);
+        if (t[0] == 0) {
+            al_error_at(c, e.line, e.col, "an 'await' in a '?:' arm needs the expression's type, which is not known here; use an 'if' statement");
+        }
+        if (al_expr_has_await(e.a) == 1) {
+            e.a = al_hoist(c, e.a, pre);
+        }
+        string tn = al_fresh(c, "__tn_t");
+        List_push<*StmtNode>(pre, mk_vardecl(tn, t, null, 0));
+        List<*StmtNode> tp;
+        List_init<*StmtNode>(&tp, 4);
+        *ExprNode ta = e.b;
+        if (al_expr_has_await(ta) == 1) {
+            ta = al_hoist(c, ta, &tp);
+        }
+        List_push<*StmtNode>(&tp, al_assign(mk_ident(tn), ta));
+        List<*StmtNode> ep;
+        List_init<*StmtNode>(&ep, 4);
+        *ExprNode ea = List_get<*ExprNode>(&e.kids, 0);
+        if (al_expr_has_await(ea) == 1) {
+            ea = al_hoist(c, ea, &ep);
+        }
+        List_push<*StmtNode>(&ep, al_assign(mk_ident(tn), ea));
+        List_push<*StmtNode>(pre, al_if(e.a, al_block(&tp), al_block(&ep)));
+        return mk_ident(tn);
+    }
+    if (k == EK_INCDEC) {
+        al_place(c, e.a, pre, 0);
+        return e;
+    }
+    if (k == EK_UNARY && str_eq(e.sval, "&") == 1 && al_has_opfn(e) == 0) {
+        al_place(c, e.a, pre, 0);
+        return e;
+    }
+    // Any other node: its operands in evaluation order. Those before the last one that
+    // awaits are held when they have an effect; those after it run after it.
+    List<int> sl;
+    List_init<int>(&sl, 4);
+    al_slots(e, &sl);
+    int last = 0 - 1;
+    int i = 0;
+    while (i < List_len<int>(&sl)) {
+        if (al_expr_has_await(al_slot_get(e, List_get<int>(&sl, i))) == 1) {
+            last = i;
+        }
+        i = i + 1;
+    }
+    i = 0;
+    while (i < last) {
+        int s0 = List_get<int>(&sl, i);
+        al_slot_set(e, s0, al_rval(c, al_slot_get(e, s0), pre));
+        i = i + 1;
+    }
+    if (last >= 0) {
+        int s1 = List_get<int>(&sl, last);
+        al_slot_set(e, s1, al_hoist(c, al_slot_get(e, s1), pre));
+    }
+    return e;
+}
+
+*StmtNode al_with_pre(List<*StmtNode>* pre, *StmtNode s) {
+    if (List_len<*StmtNode>(pre) == 0) {
+        return s;
+    }
+    List_push<*StmtNode>(pre, s);
+    return al_block(pre);
+}
+
+// `if (c) {} else break;`: leave the enclosing loop when `c` is false.
+*StmtNode al_break_unless(*ExprNode cnd) {
+    *StmtNode br = ast_new_stmt();
+    br.kind = SK_BREAK;
+    List<*StmtNode> e;
+    List_init<*StmtNode>(&e, 1);
+    List<*StmtNode> b;
+    List_init<*StmtNode>(&b, 1);
+    List_push<*StmtNode>(&b, br);
+    return al_if(cnd, al_block(&e), al_block(&b));
+}
+
+// `if (first) { first = false; } else { <else_items> }`
+*StmtNode al_first_pass(string first, List<*StmtNode>* else_items) {
+    List<*StmtNode> tb;
+    List_init<*StmtNode>(&tb, 1);
+    List_push<*StmtNode>(&tb, al_assign(mk_ident(first), mk_lit(LIT_BOOL, "false")));
+    return al_if(mk_ident(first), al_block(&tb), al_block(else_items));
+}
+
+void al_desugar_items(*AlCtx c, List<*StmtNode>* inp, List<*StmtNode>* out) {
+    int i = 0;
+    while (i < List_len<*StmtNode>(inp)) {
+        *StmtNode s = List_get<*StmtNode>(inp, i);
+        i = i + 1;
+        if (s.kind == SK_VARDECL) {
+            if (s.expr != null && al_expr_has_await(s.expr) == 1) {
+                if (s.expr.kind == EK_AWAIT) {
+                    if (al_expr_has_await(s.expr.a) == 1) {
+                        s.expr.aty = al_hoist_await_type(c, s.expr);
+                        s.expr.a = al_hoist(c, s.expr.a, out);
+                    }
+                } else {
+                    s.expr = al_hoist(c, s.expr, out);
+                }
+            }
+            List_push<*StmtNode>(out, s);
+        } else {
+            List_push<*StmtNode>(out, al_desugar_stmt(c, s));
+        }
+    }
+}

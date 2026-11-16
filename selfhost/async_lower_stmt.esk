@@ -1,0 +1,599 @@
+// async_lower_stmt.esk: lowering statements into states (part of async_lower.esk, imported in order)
+
+// The frame field holding the future of `let x = await E` (s), named and added the first
+// time it is asked for: when the locals are scanned, so it follows x as in the C++ frame.
+string al_await_field(*AlCtx c, *StmtNode s) {
+    int i = 0;
+    while (i < List_len<*ExprNode>(&c.aw_nodes)) {
+        if (List_get<*ExprNode>(&c.aw_nodes, i) == s.expr) {
+            return List_get<string>(&c.aw_fields, i);
+        }
+        i = i + 1;
+    }
+    int idx = c.awcount;
+    c.awcount = idx + 1;
+    string awf = fresh_name(str_concat("__aw", int_to_str(idx)), c.used);
+    // The future's value type, as the C++ transform uses it; when it cannot be
+    // resolved, the declared type of the let variable (`let x: T = await E`).
+    string Ti = al_await_type_or(c.prog, c.curfn, s.expr.a);
+    if (Ti[0] == 0 && s.expr.aty != null) {   // sema's (or the hoist's) type
+        Ti = s.expr.aty;
+    }
+    if (Ti[0] == 0) {
+        Ti = s.type;
+    }
+    if (Ti == null || Ti[0] == 0) {
+        Ti = "int";
+    }
+    let af: Param;
+    af.name = awf;
+    af.ty = str_concat("*Future<", str_concat(Ti, ">"));
+    List_push<Param>(&c.fields, af);
+    List_push<*ExprNode>(&c.aw_nodes, s.expr);
+    List_push<string>(&c.aw_fields, awf);
+    List_push<string>(&c.aw_types, Ti);
+    return awf;
+}
+
+int al_await_index(*AlCtx c, *ExprNode aw) {
+    int i = 0;
+    while (i < List_len<*ExprNode>(&c.aw_nodes)) {
+        if (List_get<*ExprNode>(&c.aw_nodes, i) == aw) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Lower a top-level item (a decl or stmt) at state `cur`; returns the continuation state.
+int al_lower_item(*AlCtx c, *StmtNode s, int cur) {
+    if (s.kind == SK_VARDECL) {
+        if (s.expr == null) {
+            al_push(c, cur, al_init_field(c, s));
+            return cur;
+        }
+        if (s.expr.kind == EK_AWAIT) {
+            string awf = al_await_field(c, s);
+            string Ti = List_get<string>(&c.aw_types, al_await_index(c, s.expr));
+            *ExprNode callE = s.expr.a;
+            al_rewrite(callE, &c.vars);
+            al_push(c, cur, al_assign(al_fr(awf), callE));
+            int next = al_newst(c);
+            List<*ExprNode> pa;
+            List_init<*ExprNode>(&pa, 2);
+            List_push<*ExprNode>(&pa, al_fr(awf));
+            List_push<*ExprNode>(&pa, al_waker(c.resumeN, next));
+            *ExprNode poll = al_tcall(str_concat("Future_poll<", str_concat(Ti, ">")), &pa);
+            List<*StmtNode> pk;
+            List_init<*StmtNode>(&pk, 2);
+            List_push<*StmtNode>(&pk, al_assign(al_fr(al_fawt), mk_cast("*FutureHdr", al_fr(awf))));
+            List_push<*StmtNode>(&pk, al_return(null));
+            al_push(c, cur, al_if(mk_bin("==", poll, al_int(0)), al_block(&pk), null));
+            al_goto(c, cur, next);
+            // Dropped while parked here: the pending defers and finally blocks run.
+            int pending = 0;
+            int pf = 0;
+            while (pf < List_len<List<*StmtNode>>(&c.dfr)) {
+                List<*StmtNode> pfr = List_get<List<*StmtNode>>(&c.dfr, pf);
+                if (List_len<*StmtNode>(&pfr) > 0) {
+                    pending = 1;
+                }
+                pf = pf + 1;
+            }
+            if (pending == 1 && c.cancel == 0) {
+                List_push<int>(&c.ds_state, cur);
+                let dsn: AlSnap;
+                al_snap_fill(&dsn, &c.dfr, List_len<List<*StmtNode>>(&c.dfr));
+                List_push<AlSnap>(&c.ds_snap, dsn);
+            }
+            al_push(c, next, al_assign(al_fr(al_fawt), mk_cast("*FutureHdr", al_int(0))));
+            al_push(c, next, al_assign(al_fr(s.name), al_member(al_fr(awf), "value")));
+            *ExprNode fw = ast_new_expr();                // the waker's env (C++: free_closure too)
+            fw.kind = EK_FREECLOSURE;
+            fw.a = al_member(al_fr(awf), "waker");
+            al_push(c, next, al_exprstmt(fw));
+            List<*ExprNode> fa;
+            List_init<*ExprNode>(&fa, 1);
+            List_push<*ExprNode>(&fa, al_fr(awf));
+            al_push(c, next, al_exprstmt(al_tcall(str_concat("Future_free<", str_concat(Ti, ">")), &fa)));
+            return next;
+        }
+        al_push(c, cur, al_init_field(c, s));
+        return cur;
+    }
+    return al_lower_stmt(c, s, cur);
+}
+
+int al_lower_seq(*AlCtx c, List<*StmtNode>* items, int entry) {
+    int cur = entry;
+    List<*StmtNode> frame;
+    List_init<*StmtNode>(&frame, 2);
+    List_push<List<*StmtNode>>(&c.dfr, frame);     // this split block's defers
+    int top = List_len<List<*StmtNode>>(&c.dfr) - 1;
+    int i = 0;
+    while (i < List_len<*StmtNode>(items)) {
+        if (cur == 0 - 1) {             // rest unreachable
+            break;
+        }
+        *StmtNode it = List_get<*StmtNode>(items, i);
+        i = i + 1;
+        if (it.kind == SK_DEFER) {
+            if (it.is_err == 0) {
+                List<*StmtNode> fr = List_get<List<*StmtNode>>(&c.dfr, top);
+                if (al_stmt_has_await_deep(it.s1) == 1) {
+                    List_push<*StmtNode>(&fr, it.s1);
+                }
+                else {
+                    List_push<*StmtNode>(&fr, al_rewrite_plain(c, it.s1));
+                }
+                List_set<List<*StmtNode>>(&c.dfr, top, fr);
+                // In a split try a state's pending defers are fixed: begin a new one.
+                int creg = List_get<int>(&c.st_region, cur);
+                if (creg != 0 - 1) {
+                    int n = al_newst_in(c, creg, List_len<List<*StmtNode>>(&c.dfr));
+                    al_goto(c, cur, n);
+                    cur = n;
+                }
+            }
+            continue;
+        }
+        cur = al_lower_item(c, it, cur);
+    }
+    List<*StmtNode> topfr = List_get<List<*StmtNode>>(&c.dfr, top);
+    int had = 0;
+    if (List_len<*StmtNode>(&topfr) > 0) {
+        had = 1;
+    }
+    if (cur != 0 - 1) {   // fall-through exit
+        cur = al_run_frames(c, cur, top);
+    }
+    List_remove<List<*StmtNode>>(&c.dfr, top);
+    if (cur != 0 - 1 && had == 1) {
+        int creg = List_get<int>(&c.st_region, cur);
+        if (creg != 0 - 1) {
+            int n = al_newst_in(c, creg, List_len<List<*StmtNode>>(&c.dfr));
+            al_goto(c, cur, n);
+            cur = n;
+        }
+    }
+    return cur;
+}
+
+// Lower a statement that may contain an await into the state graph.
+int al_lower_stmt(*AlCtx c, *StmtNode s, int cur) {
+    if (s.kind == SK_RETURN) {
+        *ExprNode v = s.expr;
+        if (v == null) {
+            v = al_int(0);
+        }
+        al_rewrite(v, &c.vars);
+        al_push(c, cur, al_assign(al_member(al_fr(al_fret), "value"), v));
+        al_emit_exit(c, cur, 0, 0, 1);
+        return 0 - 1;
+    }
+    if (s.kind == SK_BREAK) {
+        al_emit_exit(c, cur, List_get<int>(&c.brk_dd, List_len<int>(&c.brk_dd) - 1), List_get<int>(&c.brk, List_len<int>(&c.brk) - 1), 0);
+        return 0 - 1;
+    }
+    if (s.kind == SK_CONTINUE) {
+        al_emit_exit(c, cur, List_get<int>(&c.cont_dd, List_len<int>(&c.cont_dd) - 1), List_get<int>(&c.cont, List_len<int>(&c.cont) - 1), 0);
+        return 0 - 1;
+    }
+    // No await, no escaping break/continue and (in a split try, or under a cleanup that
+    // awaits) no `return`, whose exit must leave the try's region or run the cleanup in
+    // states → emit verbatim in this state.
+    int in_region = 0;
+    if (List_get<int>(&c.st_region, cur) != 0 - 1) {
+        in_region = 1;
+    }
+    if (al_frames_await(&c.dfr, 0, List_len<List<*StmtNode>>(&c.dfr)) == 1) {
+        in_region = 1;
+    }
+    if (al_stmt_has_await_deep(s) == 0 && al_loop_escapes(s) == 0 && (in_region == 0 || al_has_return(s) == 0)) {
+        al_push(c, cur, al_rewrite_plain(c, s));
+        if (al_terminates(s) == 1) {
+            return 0 - 1;
+        }
+        return cur;
+    }
+    if (s.kind == SK_IF) {
+        al_rewrite(s.expr, &c.vars);
+        int thenE = al_newst(c);
+        int elseE = al_newst(c);
+        int join = al_newst(c);
+        al_push(c, cur, al_dispatch2(s.expr, thenE, elseE));
+        int te = al_lower_stmt(c, s.s1, thenE);
+        int ee = elseE;
+        if (s.s2 != null) {
+            ee = al_lower_stmt(c, s.s2, elseE);
+        }
+        if (te != 0 - 1) {
+            al_goto(c, te, join);
+        }
+        if (ee != 0 - 1) {
+            al_goto(c, ee, join);
+        }
+        if (te == 0 - 1 && ee == 0 - 1) {
+            return 0 - 1;
+        }
+        return join;
+    }
+    if (s.kind == SK_WHILE) {
+        al_rewrite(s.expr, &c.vars);
+        int header = al_newst(c);
+        int bodyE = al_newst(c);
+        int after = al_newst(c);
+        al_goto(c, cur, header);
+        al_push(c, header, al_dispatch2(s.expr, bodyE, after));
+        al_enter_loop(c, after, header);
+        int be = al_lower_stmt(c, s.s1, bodyE);
+        al_leave_loop(c);
+        if (be != 0 - 1) {
+            al_goto(c, be, header);
+        }
+        return after;
+    }
+    if (s.kind == SK_DOWHILE) {
+        // do body while (cond): body first, then test(cond) → body | after. The test is
+        // its own state so `continue` re-tests the condition (C semantics).
+        al_rewrite(s.expr, &c.vars);
+        int bodyE = al_newst(c);
+        int test = al_newst(c);
+        int after = al_newst(c);
+        al_goto(c, cur, bodyE);
+        al_push(c, test, al_dispatch2(s.expr, bodyE, after));
+        al_enter_loop(c, after, test);
+        int be = al_lower_stmt(c, s.s1, bodyE);
+        al_leave_loop(c);
+        if (be != 0 - 1) {
+            al_goto(c, be, test);
+        }
+        return after;
+    }
+    if (s.kind == SK_FOR) {
+        if (s.s1 != null) {                                                  // init
+            if (al_stmt_has_await_deep(s.s1) == 1) {                         // a range bound that awaits
+                cur = al_lower_stmt(c, s.s1, cur);
+                if (cur == 0 - 1) {
+                    return 0 - 1;
+                }
+            } else {
+                al_push(c, cur, al_rewrite_plain(c, s.s1));
+            }
+        }
+        int header = al_newst(c);
+        int bodyE = al_newst(c);
+        int step = al_newst(c);
+        int after = al_newst(c);
+        al_goto(c, cur, header);
+        if (s.expr != null) {
+            al_rewrite(s.expr, &c.vars);
+            al_push(c, header, al_dispatch2(s.expr, bodyE, after));
+        } else {
+            al_goto(c, header, bodyE);
+        }
+        if (s.expr2 != null) {
+            al_rewrite(s.expr2, &c.vars);
+            al_push(c, step, al_exprstmt(s.expr2));
+        }
+        al_goto(c, step, header);
+        al_enter_loop(c, after, step);
+        int be = al_lower_stmt(c, s.s2, bodyE);
+        al_leave_loop(c);
+        if (be != 0 - 1) {
+            al_goto(c, be, step);
+        }
+        return after;
+    }
+    if (s.kind == SK_SWITCH) {
+        // Dispatch on the subject in `cur` (if subj==Vk → st=entry[k], else default), then
+        // each case is a state with C-style fall-through; break → join.
+        al_rewrite(s.expr, &c.vars);
+        int nc = List_len<*StmtNode>(&s.items);
+        List<int> entry;
+        List_init<int>(&entry, nc);
+        int k = 0;
+        while (k < nc) {
+            List_push<int>(&entry, al_newst(c));
+            k = k + 1;
+        }
+        int join = al_newst(c);
+        int dflt = join;
+        k = 0;
+        while (k < nc) {
+            if (List_get<*StmtNode>(&s.items, k).expr == null) {
+                dflt = List_get<int>(&entry, k);
+            }
+            k = k + 1;
+        }
+        // Build the dispatch chain bottom-up: ...else { st = dflt }
+        *StmtNode chain = al_assign(al_fr(al_fst), al_int(dflt));
+        k = nc - 1;
+        while (k >= 0) {
+            *StmtNode cs = List_get<*StmtNode>(&s.items, k);
+            if (cs.expr != null) {
+                al_rewrite(cs.expr, &c.vars);
+                List<*StmtNode> tb;
+                List_init<*StmtNode>(&tb, 1);
+                List_push<*StmtNode>(&tb, al_assign(al_fr(al_fst), al_int(List_get<int>(&entry, k))));
+                List<*StmtNode> eb;
+                List_init<*StmtNode>(&eb, 1);
+                List_push<*StmtNode>(&eb, chain);
+                chain = al_if(mk_bin("==", s.expr, cs.expr), al_block(&tb), al_block(&eb));
+            }
+            k = k - 1;
+        }
+        al_push(c, cur, chain);
+        List_push<int>(&c.brk, join);
+        List_push<int>(&c.brk_dd, List_len<List<*StmtNode>>(&c.dfr));
+        k = 0;
+        while (k < nc) {
+            *StmtNode cs = List_get<*StmtNode>(&s.items, k);
+            int e = al_lower_seq(c, &cs.items, List_get<int>(&entry, k));
+            if (e != 0 - 1) {                            // fall through to the next case (or join)
+                if (k + 1 < nc) {
+                    al_goto(c, e, List_get<int>(&entry, k + 1));
+                } else {
+                    al_goto(c, e, join);
+                }
+            }
+            k = k + 1;
+        }
+        List_remove<int>(&c.brk, List_len<int>(&c.brk) - 1);
+        List_remove<int>(&c.brk_dd, List_len<int>(&c.brk_dd) - 1);
+        return join;
+    }
+    if (s.kind == SK_MATCH) {
+        return al_lower_match(c, s, cur);
+    }
+    if (s.kind == SK_TRY) {
+        return al_lower_try(c, s, cur);
+    }
+    if (s.kind == SK_BLOCK) {
+        return al_lower_seq(c, &s.items, cur);
+    }
+    al_error_at(c, s.line, s.col, "'await' is not supported inside this statement");
+    return cur;
+}
+
+// An arm label `V(a, b)` → "V" with `binds` = [a, b]; `*paren` = it has a payload list.
+string al_arm_split(string lb, List<string>* binds, int* paren) {
+    int n = cstr_len(lb);
+    int i = 0;
+    while (i < n && (int)lb[i] != 40) {
+        i = i + 1;
+    }
+    string v = al_substr(lb, 0, i);
+    *paren = 0;
+    if (i >= n) {
+        return v;
+    }
+    *paren = 1;
+    i = i + 1;
+    while (i < n) {
+        while (i < n && ((int)lb[i] == 32 || (int)lb[i] == 44)) {
+            i = i + 1;
+        }
+        int st = i;
+        while (i < n && (int)lb[i] != 44 && (int)lb[i] != 41 && (int)lb[i] != 32) {
+            i = i + 1;
+        }
+        if (i > st) {
+            List_push<string>(binds, al_substr(lb, st, i));
+        }
+        if (i < n && (int)lb[i] == 41) {
+            i = n;
+        }
+    }
+    return v;
+}
+
+// `a;b;c` → [a, b, c] (a null or empty string → []).
+// The `ch`-separated parts of `s` (none when `s` is empty).
+void al_split_ch(string s, int ch, List<string>* out) {
+    if (s == null) {
+        return;
+    }
+    int n = cstr_len(s);
+    if (n == 0) {
+        return;
+    }
+    int st = 0;
+    int i = 0;
+    while (i <= n) {
+        if (i == n || (int)s[i] == ch) {
+            List_push<string>(out, al_substr(s, st, i));
+            st = i + 1;
+        }
+        i = i + 1;
+    }
+}
+
+void al_split_semi(string s, List<string>* out) {
+    al_split_ch(s, 59, out);
+}
+
+int al_is_idc(int c) {
+    if ((c >= 97 && c <= 122) || (c >= 65 && c <= 90) || (c >= 48 && c <= 57) || c == 95) {
+        return 1;
+    }
+    return 0;
+}
+
+// `t` with each subtree spelled `from` (an occurrence not joined to an identifier on
+// either side) spelled `to`.
+string al_replace_type(string t, string from, string to) {
+    int n = cstr_len(t);
+    int m = cstr_len(from);
+    if (m == 0) {
+        return t;
+    }
+    string out = "";
+    int st = 0;
+    int i = 0;
+    while (i + m <= n) {
+        int hit = 1;
+        int j = 0;
+        while (j < m) {
+            if (t[i + j] != from[j]) {
+                hit = 0;
+                break;
+            }
+            j = j + 1;
+        }
+        if (hit == 1 && i > 0 && al_is_idc((int)t[i - 1]) == 1 && al_is_idc((int)from[0]) == 1) {
+            hit = 0;
+        }
+        if (hit == 1 && i + m < n && al_is_idc((int)t[i + m]) == 1 && al_is_idc((int)from[m - 1]) == 1) {
+            hit = 0;
+        }
+        if (hit == 1) {
+            out = str_concat(str_concat(out, al_substr(t, st, i)), to);
+            i = i + m;
+            st = i;
+        } else {
+            i = i + 1;
+        }
+    }
+    return str_concat(out, al_substr(t, st, n));
+}
+
+int al_popcount(int m) {
+    int c = 0;
+    while (m > 0) {
+        c = c + (m & 1);
+        m = m >> 1;
+    }
+    return c;
+}
+
+// A type in generic function `c.curfn`, in terms of its type parameters, from its value
+// in each checked instance (`recs`, from sema_inst_rec; `part` >= 0 picks that
+// ';'-separated part of each record's type): a spelling S that al_subst turns into the
+// type of every instance. Candidates put a type parameter in place of each subtree
+// spelled as its argument (every subset of the parameters, most first), as the C++
+// generalizeType does. "" when none fits.
+string al_generalize(*AlCtx c, string recs, int part) {
+    List<TypeParam>* tps = &c.curfn.type_params;
+    int n = List_len<TypeParam>(tps);
+    List<string> lines;
+    List_init<string>(&lines, 4);
+    al_split_ch(recs, 10, &lines);
+    int nr = List_len<string>(&lines);
+    if (nr > 0 && cstr_len(List_get<string>(&lines, nr - 1)) == 0) {   // after the last '\n'
+        nr = nr - 1;
+    }
+    if (nr == 0) {
+        return "";
+    }
+    List<List<string>> args;
+    List_init<List<string>>(&args, nr);
+    List<string> tys;
+    List_init<string>(&tys, nr);
+    int r = 0;
+    while (r < nr) {
+        string ln = List_get<string>(&lines, r);
+        int f = 0;
+        while (ln[f] != 0 && (int)ln[f] != 12) {
+            f = f + 1;
+        }
+        if (ln[f] == 0) {
+            return "";
+        }
+        List<string> as;
+        List_init<string>(&as, 2);
+        al_split_ch(al_substr(ln, 0, f), 9, &as);
+        if (List_len<string>(&as) != n) {
+            return "";
+        }
+        string t = al_substr(ln, f + 1, cstr_len(ln));
+        if (part >= 0) {
+            List<string> ps;
+            List_init<string>(&ps, 2);
+            al_split_semi(t, &ps);
+            if (part >= List_len<string>(&ps)) {
+                return "";
+            }
+            t = List_get<string>(&ps, part);
+        }
+        if (t[0] == 0 || str_eq(t, "unknown") == 1 || str_eq(t, "null") == 1 || str_eq(t, "void") == 1) {
+            return "";
+        }
+        List_push<List<string>>(&args, as);
+        List_push<string>(&tys, t);
+        r = r + 1;
+    }
+    List<string> a0 = List_get<List<string>>(&args, 0);
+    int pc = n;
+    while (pc >= 0) {
+        int m = 0;
+        while (m < (1 << n)) {
+            if (al_popcount(m) == pc) {
+                string cand = List_get<string>(&tys, 0);
+                int i = 0;
+                while (i < n) {
+                    if (((m >> i) & 1) == 1) {
+                        cand = al_replace_type(cand, List_get<string>(&a0, i), List_get<TypeParam>(tps, i).name);
+                    }
+                    i = i + 1;
+                }
+                int ok = 1;
+                r = 0;
+                while (r < nr) {
+                    List<string> ar = List_get<List<string>>(&args, r);
+                    if (str_eq(al_subst(cand, tps, &ar), List_get<string>(&tys, r)) == 0) {
+                        ok = 0;
+                        break;
+                    }
+                    r = r + 1;
+                }
+                if (ok == 1) {
+                    return cand;
+                }
+            }
+            m = m + 1;
+        }
+        pc = pc - 1;
+    }
+    return "";
+}
+
+// A catch label `Type name` → its type / its variable (`_`, a catch-all: "" / "").
+string al_catch_type(string lb) {
+    if (str_eq(lb, "_") == 1) {
+        return "";
+    }
+    int n = cstr_len(lb);
+    int i = n;
+    while (i > 0 && (int)lb[i - 1] != 32) {
+        i = i - 1;
+    }
+    if (i == 0) {
+        return lb;
+    }
+    return al_substr(lb, 0, i - 1);
+}
+
+string al_catch_var(string lb) {
+    int n = cstr_len(lb);
+    int i = n;
+    while (i > 0 && (int)lb[i - 1] != 32) {
+        i = i - 1;
+    }
+    if (i == 0) {
+        return "";
+    }
+    return al_substr(lb, i, n);
+}
+
+void al_add_var(*AlCtx c, string nm, string ty) {
+    if (al_in(&c.vars, nm) == 1) {
+        return;
+    }
+    List_push<string>(&c.vars, nm);
+    let f: Param;
+    f.name = nm;
+    f.ty = ty;
+    List_push<Param>(&c.fields, f);
+}

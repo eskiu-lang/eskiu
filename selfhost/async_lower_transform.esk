@@ -1,0 +1,593 @@
+// async_lower_transform.esk: the transform: helpers and frame fields (part of async_lower.esk, imported in order)
+
+// ── The transform ─────────────────────────────────────────────────────────────
+// A state's pending defer frames: `flat` holds every frame's statements in order and
+// frame f is flat[offs[f] .. offs[f + 1]).
+struct AlSnap {
+    List<*StmtNode> flat;
+    List<int> offs;
+}
+
+// Shared state-graph context, threaded by pointer through the recursive lowering.
+struct AlCtx {
+    *Program prog;
+    string resumeN;
+    List<string> vars;             // frame variable names (locals → fr.<name>)
+    List<Param> fields;            // frame fields (per-await __awI appended during lowering)
+    List<List<*StmtNode>> states;  // one statement list per state
+    List<int> brk;                 // break-target states (innermost last)
+    List<int> cont;                // continue-target states
+    // `defer` in a state-split block: the block no longer exists as a real scope, so its
+    // defer bodies are kept here, one frame per split block (innermost last), and emitted
+    // LIFO at each exit: fall-through (the block's frame), `return` (every frame),
+    // `break`/`continue` (frames above the target's depth, parallel to brk/cont). errdefer
+    // only runs on a `?` error exit, which async lowering never produces. A body without
+    // an await is kept rewritten (al_rewrite_plain); one that awaits is kept as written and
+    // lowered into states at each exit (al_run_frames).
+    List<List<*StmtNode>> dfr;
+    List<int> brk_dd;
+    List<int> cont_dd;
+    int awcount;                   // await counter → __aw0, __aw1, …
+    List<*ExprNode> aw_nodes;      // each `let x = await E` (its await) and its future's field,
+    List<string> aw_fields;        // named when the locals are scanned (as the C++ awIdx)
+    List<string> aw_types;         // ... and its value type
+    int tmpn;                      // desugar temp counter → __awt0, …
+    int forinseq;                  // for-in index names → __forin_i_0, … (the C++ forinSeq)
+    int inittmp;                   // a hoisted local's initializer temporaries → __zero_t0, __init_t1, … (the C++ initTmp)
+    *DeclNode curfn;                  // the async function being lowered (for iterable type lookup)
+    List<string>* used;            // every name in the function: synthesized names avoid them
+    // A `try` split into states (mirrors the C++ Region): the states of its body form one
+    // region and those of its handlers another. Each state of a region is wrapped at the
+    // end in the region's handlers, innermost first. rg_start is the defer depth of the
+    // try (its finally frame sits there), rg_base the depth where the region's frames begin.
+    List<int> rg_parent;
+    List<int> rg_start;
+    List<int> rg_base;
+    List<*StmtNode> rg_fin;        // the try's finally (rewritten), or null
+    List<int> ci_region;           // the body regions' catch clauses: region, type, variable, state
+    List<string> ci_type;
+    List<string> ci_var;
+    List<string> ci_txt;           // frame field holding the clause's exception_text() ("" if unused)
+    List<int> ci_state;
+    int cur_region;                // the region new states belong to (-1: none)
+    List<int> st_region;           // each state's region (parallel to states)
+    List<AlSnap> st_snap;          // each state's pending defer frames
+    // Each await a future can be dropped at, with the defer frames pending there: a
+    // cancelled future runs them once, from its on_drop.
+    List<int> ds_state;
+    List<AlSnap> ds_snap;
+    List<int> drop_from;           // parked state -> its cleanup state
+    List<int> drop_to;
+    List<int> drop_det;            // 1: that cleanup awaits, so it runs detached
+    // Lowering the cleanup a cancelled future runs (nobody can drop the frame again, so its
+    // awaits record no drop sites), and that flag for each state.
+    int cancel;
+    List<int> st_cancel;
+    List<int> exc_reg;             // region -> the frame field holding its captured exception
+    List<string> exc_name;
+    string errname;                // the async function's name, for diagnostics
+}
+
+int al_lower_seq(*AlCtx c, List<*StmtNode>* items, int entry);
+int al_lower_stmt(*AlCtx c, *StmtNode s, int cur);
+int al_stmt_has_await_deep(*StmtNode s);
+*StmtNode al_rewrite_plain(*AlCtx c, *StmtNode s);
+*StmtNode al_desugar_stmt(*AlCtx c, *StmtNode s);
+void al_desugar_items(*AlCtx c, List<*StmtNode>* inp, List<*StmtNode>* out);
+*ExprNode al_call_on(*ExprNode callee, List<*ExprNode>* args);
+*ExprNode al_waker_noop();
+*ExprNode al_ondrop(*AlCtx c);
+int al_expr_has_await(*ExprNode e);
+void al_error_at(*AlCtx c, int line, int col, string msg);
+int al_lower_match(*AlCtx c, *StmtNode m, int cur);
+int al_lower_try(*AlCtx c, *StmtNode t, int cur);
+*ExprNode al_first_await_e(*ExprNode e);
+*ExprNode al_any_await_s(*StmtNode s);
+
+// A new state in `region`, whose pending defer frames are the first `depth` frames.
+// The first `depth` frames of `frs` as a snapshot.
+void al_snap_fill(AlSnap* snap, List<List<*StmtNode>>* frs, int depth) {
+    List_init<*StmtNode>(&snap.flat, 4);
+    List_init<int>(&snap.offs, 4);
+    int nf = List_len<List<*StmtNode>>(frs);
+    if (depth < nf) {
+        nf = depth;
+    }
+    int f = 0;
+    while (f < nf) {
+        List_push<int>(&snap.offs, List_len<*StmtNode>(&snap.flat));
+        List<*StmtNode> fr = List_get<List<*StmtNode>>(frs, f);
+        int k = 0;
+        while (k < List_len<*StmtNode>(&fr)) {
+            List_push<*StmtNode>(&snap.flat, List_get<*StmtNode>(&fr, k));
+            k = k + 1;
+        }
+        f = f + 1;
+    }
+    List_push<int>(&snap.offs, List_len<*StmtNode>(&snap.flat));
+}
+
+// The frames of a snapshot, as a new frame stack.
+void al_snap_frames(List<List<*StmtNode>>* out, AlSnap* snap) {
+    List_init<List<*StmtNode>>(out, 4);
+    int f = 0;
+    while (f + 1 < List_len<int>(&snap.offs)) {
+        List<*StmtNode> fr;
+        List_init<*StmtNode>(&fr, 2);
+        int q = List_get<int>(&snap.offs, f);
+        while (q < List_get<int>(&snap.offs, f + 1)) {
+            List_push<*StmtNode>(&fr, List_get<*StmtNode>(&snap.flat, q));
+            q = q + 1;
+        }
+        List_push<List<*StmtNode>>(out, fr);
+        f = f + 1;
+    }
+}
+
+// A copy of the first `nf` frames of `src`, the last one cut to `last` entries (-1: all).
+void al_frames_copy(List<List<*StmtNode>>* out, List<List<*StmtNode>>* src, int nf, int last) {
+    List_init<List<*StmtNode>>(out, nf + 1);
+    int f = 0;
+    while (f < nf && f < List_len<List<*StmtNode>>(src)) {
+        List<*StmtNode> from = List_get<List<*StmtNode>>(src, f);
+        int n = List_len<*StmtNode>(&from);
+        if (f == nf - 1 && last >= 0 && last < n) {
+            n = last;
+        }
+        List<*StmtNode> fr;
+        List_init<*StmtNode>(&fr, n + 1);
+        int k = 0;
+        while (k < n) {
+            List_push<*StmtNode>(&fr, List_get<*StmtNode>(&from, k));
+            k = k + 1;
+        }
+        List_push<List<*StmtNode>>(out, fr);
+        f = f + 1;
+    }
+}
+
+// Does a cleanup in frames [from, to) await?
+int al_frames_await(List<List<*StmtNode>>* frs, int from, int to) {
+    int f = from;
+    while (f < to && f < List_len<List<*StmtNode>>(frs)) {
+        List<*StmtNode> fr = List_get<List<*StmtNode>>(frs, f);
+        int k = 0;
+        while (k < List_len<*StmtNode>(&fr)) {
+            if (al_stmt_has_await_deep(List_get<*StmtNode>(&fr, k)) == 1) {
+                return 1;
+            }
+            k = k + 1;
+        }
+        f = f + 1;
+    }
+    return 0;
+}
+
+int al_newst_in(*AlCtx c, int region, int depth) {
+    List<*StmtNode> s;
+    List_init<*StmtNode>(&s, 8);
+    List_push<List<*StmtNode>>(&c.states, s);
+    List_push<int>(&c.st_region, region);
+    List_push<int>(&c.st_cancel, c.cancel);
+    let snap: AlSnap;
+    al_snap_fill(&snap, &c.dfr, depth);
+    List_push<AlSnap>(&c.st_snap, snap);
+    return List_len<List<*StmtNode>>(&c.states) - 1;
+}
+
+int al_newst(*AlCtx c) {
+    return al_newst_in(c, c.cur_region, List_len<List<*StmtNode>>(&c.dfr));
+}
+
+// Append to states[st] (List_get copies the inner List, so write it back).
+void al_push(*AlCtx c, int st, *StmtNode s) {
+    List<*StmtNode> body = List_get<List<*StmtNode>>(&c.states, st);
+    List_push<*StmtNode>(&body, s);
+    List_set<List<*StmtNode>>(&c.states, st, body);
+}
+
+void al_goto(*AlCtx c, int st, int target) {
+    al_push(c, st, al_assign(al_fr(al_fst), al_int(target)));
+}
+
+// A two-way state dispatch: `if (cond) fr.st = thenE; else fr.st = elseE;` as one stmt.
+// Shared by the if/while/for lowerings, whose only difference is the target states.
+*StmtNode al_dispatch2(*ExprNode cond, int thenE, int elseE) {
+    List<*StmtNode> tb;
+    List_init<*StmtNode>(&tb, 1);
+    List_push<*StmtNode>(&tb, al_assign(al_fr(al_fst), al_int(thenE)));
+    List<*StmtNode> eb;
+    List_init<*StmtNode>(&eb, 1);
+    List_push<*StmtNode>(&eb, al_assign(al_fr(al_fst), al_int(elseE)));
+    return al_if(cond, al_block(&tb), al_block(&eb));
+}
+
+// Enter/leave a loop for break/continue lowering: push (pop) this loop's break and
+// continue target states, kept in sync on the two parallel stacks.
+void al_enter_loop(*AlCtx c, int brk, int cont) {
+    List_push<int>(&c.brk, brk);
+    List_push<int>(&c.cont, cont);
+    int dd = List_len<List<*StmtNode>>(&c.dfr);
+    List_push<int>(&c.brk_dd, dd);
+    List_push<int>(&c.cont_dd, dd);
+}
+
+void al_leave_loop(*AlCtx c) {
+    List_remove<int>(&c.brk, List_len<int>(&c.brk) - 1);
+    List_remove<int>(&c.cont, List_len<int>(&c.cont) - 1);
+    List_remove<int>(&c.brk_dd, List_len<int>(&c.brk_dd) - 1);
+    List_remove<int>(&c.cont_dd, List_len<int>(&c.cont_dd) - 1);
+}
+
+// Append the pending split-block defer bodies of frames >= downTo to `out`, LIFO.
+void al_emit_defers(*AlCtx c, List<*StmtNode>* out, int downTo) {
+    if (al_frames_await(&c.dfr, downTo, List_len<List<*StmtNode>>(&c.dfr)) == 1) {
+        al_error_at(c, 0, 0, "internal error: an awaiting cleanup emitted in place");
+    }
+    int f = List_len<List<*StmtNode>>(&c.dfr) - 1;
+    while (f >= downTo) {
+        List<*StmtNode> fr = List_get<List<*StmtNode>>(&c.dfr, f);
+        int k = List_len<*StmtNode>(&fr) - 1;
+        while (k >= 0) {
+            List_push<*StmtNode>(out, List_get<*StmtNode>(&fr, k));
+            k = k - 1;
+        }
+        f = f - 1;
+    }
+}
+
+// Releases the exceptions captured for an awaiting cleanup that never rethrew them (filled
+// in once every capture is known), run when the frame is finished.
+*StmtNode al_exc_free = null;
+// Publish the completion (the value is already in fr.ret.value), then return.
+void al_publish(List<*StmtNode>* out) {
+    if (al_exc_free != null) {
+        List_push<*StmtNode>(out, al_exc_free);
+    }
+    List<*ExprNode> sa;
+    List_init<*ExprNode>(&sa, 2);
+    List_push<*ExprNode>(&sa, mk_un("&", al_member(al_fr(al_fret), "state")));
+    List_push<*ExprNode>(&sa, al_int(2));
+    *ExprNode swap = al_call("atomic_swap", &sa);
+    List<*StmtNode> wk;
+    List_init<*StmtNode>(&wk, 1);
+    List<*ExprNode> wa;
+    List_init<*ExprNode>(&wa, 1);
+    List_push<*StmtNode>(&wk, al_exprstmt(al_call_on(al_member(al_fr(al_fret), "waker"), &wa)));
+    List_push<*StmtNode>(out, al_if(mk_bin("==", swap, al_int(1)), al_block(&wk), null));
+    List_push<*StmtNode>(out, al_return(null));
+}
+
+// The completion sequence (fr.ret.value = v; if(atomic_swap(&fr.ret.state,2)==1) fr.ret.waker(); return;)
+void al_completion_items(*AlCtx c, *ExprNode v, List<*StmtNode>* out) {
+    List_push<*StmtNode>(out, al_assign(al_member(al_fr(al_fret), "value"), v));
+    al_emit_defers(c, out, 0);                       // pending defers, before publishing
+    al_publish(out);
+}
+
+// Run the pending defer frames above `downTo`, innermost first, from state `st0`. A frame
+// below a region's base runs in a state of the enclosing region (so an exception a finally
+// throws is not caught by its own try's handlers), and a cleanup that awaits is lowered into
+// states of its own, with the cleanups under it still pending. Returns the state where
+// control continues (-1: never). Mirrors the C++ runFrames.
+int al_run_frames(*AlCtx c, int st0, int downTo) {
+    int st = st0;
+    int reg = List_get<int>(&c.st_region, st);
+    int f = List_len<List<*StmtNode>>(&c.dfr) - 1;
+    while (f >= downTo) {
+        while (reg != 0 - 1 && f < List_get<int>(&c.rg_base, reg)) {
+            int p = List_get<int>(&c.rg_parent, reg);
+            int s2 = al_newst_in(c, p, f);
+            al_goto(c, st, s2);
+            st = s2;
+            reg = p;
+        }
+        List<List<*StmtNode>> saved = c.dfr;
+        List<*StmtNode> fr = List_get<List<*StmtNode>>(&saved, f);
+        int k = List_len<*StmtNode>(&fr) - 1;
+        while (k >= 0) {
+            *StmtNode b = List_get<*StmtNode>(&fr, k);
+            if (al_stmt_has_await_deep(b) == 0) {
+                al_push(c, st, b);
+            }
+            else {
+                int sreg = c.cur_region;
+                List<List<*StmtNode>> cut;
+                al_frames_copy(&cut, &saved, f + 1, k);
+                c.dfr = cut;
+                c.cur_region = reg;
+                int n = al_newst(c);
+                al_goto(c, st, n);
+                int e = al_lower_stmt(c, b, n);
+                c.dfr = saved;
+                c.cur_region = sreg;
+                if (e == 0 - 1) {
+                    return 0 - 1;
+                }
+                st = e;
+            }
+            k = k - 1;
+        }
+        f = f - 1;
+    }
+    return st;
+}
+
+// Leave state `st` for the enclosing defer depth `downTo`: run the pending defer frames
+// above it (al_run_frames), then jump to `target`, or (`complete`) publish the completion
+// outside every region (mirrors the C++ emitExit).
+void al_emit_exit(*AlCtx c, int st0, int downTo, int target, int complete) {
+    int st = al_run_frames(c, st0, downTo);
+    if (st == 0 - 1) {
+        return;
+    }
+    if (complete == 0) {
+        al_goto(c, st, target);
+        return;
+    }
+    int reg = List_get<int>(&c.st_region, st);
+    while (reg != 0 - 1) {
+        int p = List_get<int>(&c.rg_parent, reg);
+        int s2 = al_newst_in(c, p, downTo);
+        al_goto(c, st, s2);
+        st = s2;
+        reg = p;
+    }
+    List<*StmtNode> items;
+    List_init<*StmtNode>(&items, 3);
+    al_publish(&items);
+    int i = 0;
+    while (i < List_len<*StmtNode>(&items)) {
+        al_push(c, st, List_get<*StmtNode>(&items, i));
+        i = i + 1;
+    }
+}
+
+void al_complete(*AlCtx c, int st, *ExprNode v) {
+    List<*StmtNode> items;
+    List_init<*StmtNode>(&items, 3);
+    al_completion_items(c, v, &items);
+    int i = 0;
+    while (i < List_len<*StmtNode>(&items)) {
+        al_push(c, st, List_get<*StmtNode>(&items, i));
+        i = i + 1;
+    }
+}
+
+*StmtNode al_complete_block(*AlCtx c, *ExprNode v) {
+    List<*StmtNode> items;
+    List_init<*StmtNode>(&items, 3);
+    al_completion_items(c, v, &items);
+    return al_block(&items);
+}
+
+// Does control definitely leave this statement (return on every path)?
+int al_terminates(*StmtNode s) {
+    if (s == null) {
+        return 0;
+    }
+    if (s.kind == SK_RETURN || s.kind == SK_THROW) {
+        return 1;
+    }
+    if (s.kind == SK_BLOCK) {
+        int i = 0;
+        while (i < List_len<*StmtNode>(&s.items)) {
+            if (al_terminates(List_get<*StmtNode>(&s.items, i)) == 1) {
+                return 1;
+            }
+            i = i + 1;
+        }
+        return 0;
+    }
+    if (s.kind == SK_IF) {
+        return s.s2 != null && al_terminates(s.s1) == 1 && al_terminates(s.s2) == 1;
+    }
+    return 0;
+}
+
+// A break/continue binding to an ENCLOSING loop (not shadowed by a nested loop; a switch
+// captures only `break`)? With `cont_only`, only a `continue` counts.
+int al_escapes_in(*StmtNode s, int cont_only) {
+    if (s == null) {
+        return 0;
+    }
+    if (s.kind == SK_CONTINUE) {
+        return 1;
+    }
+    if (s.kind == SK_BREAK) {
+        return 1 - cont_only;
+    }
+    int co = cont_only;
+    if (s.kind == SK_SWITCH) {
+        co = 1;
+    }
+    if (s.kind == SK_IF || s.kind == SK_TRY) {
+        if (al_escapes_in(s.s1, co) == 1 || al_escapes_in(s.s2, co) == 1) {
+            return 1;
+        }
+    }
+    if (s.kind == SK_ARM || s.kind == SK_CATCH) {
+        return al_escapes_in(s.s1, co);
+    }
+    if (s.kind == SK_BLOCK || s.kind == SK_SWITCH || s.kind == SK_CASE || s.kind == SK_MATCH || s.kind == SK_TRY) {
+        int i = 0;
+        while (i < List_len<*StmtNode>(&s.items)) {
+            if (al_escapes_in(List_get<*StmtNode>(&s.items, i), co) == 1) {
+                return 1;
+            }
+            i = i + 1;
+        }
+    }
+    return 0;
+}
+
+int al_loop_escapes(*StmtNode s) {
+    return al_escapes_in(s, 0);
+}
+
+// Does a statement contain a `return` (a lambda is an expression: not descended)?
+int al_has_return(*StmtNode s) {
+    if (s == null) {
+        return 0;
+    }
+    if (s.kind == SK_RETURN) {
+        return 1;
+    }
+    if (s.kind == SK_IF || s.kind == SK_WHILE || s.kind == SK_DOWHILE || s.kind == SK_FORIN
+        || s.kind == SK_ARM || s.kind == SK_CATCH || s.kind == SK_TRY) {
+        if (al_has_return(s.s1) == 1) {
+            return 1;
+        }
+    }
+    if (s.kind == SK_IF || s.kind == SK_FOR || s.kind == SK_TRY) {
+        if (al_has_return(s.s2) == 1) {
+            return 1;
+        }
+    }
+    if (s.kind == SK_BLOCK || s.kind == SK_SWITCH || s.kind == SK_CASE || s.kind == SK_MATCH || s.kind == SK_TRY) {
+        int i = 0;
+        while (i < List_len<*StmtNode>(&s.items)) {
+            if (al_has_return(List_get<*StmtNode>(&s.items, i)) == 1) {
+                return 1;
+            }
+            i = i + 1;
+        }
+    }
+    return 0;
+}
+
+// `let x = E` of a hoisted local: `fr.x = E`. An array literal `{...}` is only a
+// variable initializer, so it fills a temporary that is then copied to the field.
+*StmtNode al_init_field(*AlCtx c, *StmtNode vd) {
+    // `T x;` resets its field to zero at each declaration (a loop iteration), as a local
+    // does: a fresh local of the type (zeroed by codegen) is copied in (as the C++ initField).
+    if (vd.expr == null) {
+        string zn = fresh_name(str_concat("__zero_t", int_to_str(c.inittmp)), c.used);
+        c.inittmp = c.inittmp + 1;
+        List<*StmtNode> zb;
+        List_init<*StmtNode>(&zb, 2);
+        List_push<*StmtNode>(&zb, mk_vardecl(zn, vd.type, null, 0));
+        List_push<*StmtNode>(&zb, al_assign(al_fr(vd.name), mk_ident(zn)));
+        return al_block(&zb);
+    }
+    al_rewrite(vd.expr, &c.vars);
+    if (vd.expr.kind != EK_ARRAYLIT) {
+        return al_assign(al_fr(vd.name), vd.expr);
+    }
+    string tn = fresh_name(str_concat("__init_t", int_to_str(c.inittmp)), c.used);
+    c.inittmp = c.inittmp + 1;
+    List<*StmtNode> blk;
+    List_init<*StmtNode>(&blk, 2);
+    List_push<*StmtNode>(&blk, mk_vardecl(tn, vd.type, vd.expr, 0));
+    List_push<*StmtNode>(&blk, al_assign(al_fr(vd.name), mk_ident(tn)));
+    return al_block(&blk);
+}
+
+// Rewrite a NO-await statement for inclusion in a state (locals→fr, return→completion).
+*StmtNode al_rewrite_plain(*AlCtx c, *StmtNode s) {
+    if (s == null) {
+        return s;
+    }
+    if (s.kind == SK_BLOCK) {
+        List<*StmtNode> out;
+        List_init<*StmtNode>(&out, 8);
+        int i = 0;
+        while (i < List_len<*StmtNode>(&s.items)) {
+            *StmtNode it = List_get<*StmtNode>(&s.items, i);
+            i = i + 1;
+            if (it.kind == SK_VARDECL) {
+                List_push<*StmtNode>(&out, al_init_field(c, it));
+            } else {
+                List_push<*StmtNode>(&out, al_rewrite_plain(c, it));
+            }
+        }
+        return al_block(&out);
+    }
+    if (s.kind == SK_TRY || s.kind == SK_MATCH) {
+        // try: s1 body, items = catch clauses (s1 each), s2 finally. match: expr subject,
+        // items = arms (s1 each). Rewritten in place.
+        // Catches (arms), body, then finally, as the C++.
+        al_rewrite(s.expr, &c.vars);
+        int k = 0;
+        while (k < List_len<*StmtNode>(&s.items)) {
+            *StmtNode cl = List_get<*StmtNode>(&s.items, k);
+            k = k + 1;
+            cl.s1 = al_rewrite_plain(c, cl.s1);
+        }
+        s.s1 = al_rewrite_plain(c, s.s1);
+        s.s2 = al_rewrite_plain(c, s.s2);
+        return s;
+    }
+    if (s.kind == SK_RETURN) {
+        *ExprNode v = s.expr;
+        if (v == null) {
+            v = al_int(0);
+        }
+        al_rewrite(v, &c.vars);
+        return al_complete_block(c, v);
+    }
+    if (s.kind == SK_EXPR) {
+        al_rewrite(s.expr, &c.vars);
+        return s;
+    }
+    // An asm operand naming a local reads or writes its frame field.
+    if (s.kind == SK_ASM) {
+        int ak = 0;
+        while (ak < List_len<*StmtNode>(&s.items)) {
+            al_rewrite(List_get<*StmtNode>(&s.items, ak).expr, &c.vars);
+            ak = ak + 1;
+        }
+        return s;
+    }
+    if (s.kind == SK_IF) {
+        al_rewrite(s.expr, &c.vars);
+        return al_if(s.expr, al_rewrite_plain(c, s.s1), al_rewrite_plain(c, s.s2));
+    }
+    if (s.kind == SK_WHILE) {
+        al_rewrite(s.expr, &c.vars);
+        return al_while(s.expr, al_rewrite_plain(c, s.s1));
+    }
+    if (s.kind == SK_DOWHILE) {
+        al_rewrite(s.expr, &c.vars);
+        return al_dowhile(al_rewrite_plain(c, s.s1), s.expr);
+    }
+    if (s.kind == SK_DEFER) {
+        return al_defer(al_rewrite_plain(c, s.s1), s.is_err);
+    }
+    if (s.kind == SK_THROW) {
+        al_rewrite(s.expr, &c.vars);
+        return s;
+    }
+    if (s.kind == SK_FOR) {
+        *StmtNode in2 = al_rewrite_plain(c, s.s1);
+        al_rewrite(s.expr, &c.vars);
+        al_rewrite(s.expr2, &c.vars);
+        return al_for(in2, s.expr, s.expr2, al_rewrite_plain(c, s.s2));
+    }
+    if (s.kind == SK_SWITCH) {
+        al_rewrite(s.expr, &c.vars);
+        List<*StmtNode> ncases;
+        List_init<*StmtNode>(&ncases, 4);
+        int k = 0;
+        while (k < List_len<*StmtNode>(&s.items)) {
+            *StmtNode cs = List_get<*StmtNode>(&s.items, k);
+            k = k + 1;
+            al_rewrite(cs.expr, &c.vars);
+            List<*StmtNode> nb;
+            List_init<*StmtNode>(&nb, 4);
+            int j = 0;
+            while (j < List_len<*StmtNode>(&cs.items)) {
+                *StmtNode ci = List_get<*StmtNode>(&cs.items, j);
+                j = j + 1;
+                if (ci.kind == SK_VARDECL) {           // a case's declaration (C scoping)
+                    List_push<*StmtNode>(&nb, al_init_field(c, ci));
+                } else {
+                    List_push<*StmtNode>(&nb, al_rewrite_plain(c, ci));
+                }
+            }
+            List_push<*StmtNode>(&ncases, al_case(cs.expr, &nb));
+        }
+        return al_switch(s.expr, &ncases);
+    }
+    return s;     // break/continue/etc.
+}

@@ -1,0 +1,578 @@
+// async_lower_types.esk: resolving the awaited and frame-field types (part of async_lower.esk, imported in order)
+
+// ── Resolve the awaited inner type Ti: `await produce()` where produce returns
+//    `Future<int>*` → Ti = "int". Looks the callee up in the program. ───────────
+string al_inner_of_future(string ty) {        // "Future<int>*" / "*Future<int>" → "int"
+    int i = 0;
+    int n = 0;
+    while (ty[n] != 0) {
+        n = n + 1;
+    }
+    while (i < n && (int)ty[i] != 60) {   // to '<'
+        i = i + 1;
+    }
+    if (i >= n) {
+        return "int";
+    }
+    int start = i + 1;
+    int depth = 1;
+    i = start;
+    while (i < n && depth > 0) {
+        int c = (int)ty[i];
+        if (c == 60) {
+            depth = depth + 1;
+        }
+        else if (c == 62) {
+            depth = depth - 1;
+            if (depth == 0) {
+                break;
+            }
+        }
+        i = i + 1;
+    }
+    *uint8 buf = alloc<uint8>(i - start + 1);
+    int k = 0;
+    while (k < i - start) {
+        buf[k] = (uint8)ty[start + k];
+        k = k + 1;
+    }
+    buf[i - start] = 0;
+    return (string)buf;
+}
+
+// `t` with each identifier run equal to a type parameter in `tps` replaced by the
+// matching entry of `args` ("*List<T>" with T=int -> "*List<int>").
+string al_subst(string t, List<TypeParam>* tps, List<string>* args) {
+    if (List_len<TypeParam>(tps) == 0) {
+        return t;
+    }
+    int n = 0;
+    while (t[n] != 0) {
+        n = n + 1;
+    }
+    string out = "";
+    int i = 0;
+    while (i < n) {
+        int c = (int)t[i];
+        if ((c >= 97 && c <= 122) || (c >= 65 && c <= 90) || c == 95) {
+            int s0 = i;
+            while (i < n) {
+                int d = (int)t[i];
+                if ((d >= 97 && d <= 122) || (d >= 65 && d <= 90) || (d >= 48 && d <= 57) || d == 95) {
+                    i = i + 1;
+                } else {
+                    break;
+                }
+            }
+            string id = al_substr(t, s0, i);
+            int k = 0;
+            int hit = 0 - 1;
+            while (k < List_len<TypeParam>(tps) && k < List_len<string>(args)) {
+                if (str_eq(List_get<TypeParam>(tps, k).name, id) == 1) {
+                    hit = k;
+                }
+                k = k + 1;
+            }
+            if (hit >= 0) {
+                out = str_concat(out, List_get<string>(args, hit));
+            } else {
+                out = str_concat(out, id);
+            }
+        } else {
+            out = str_concat(out, al_substr(t, i, i + 1));
+            i = i + 1;
+        }
+    }
+    return out;
+}
+
+*DeclNode al_find_fn(*Program prog, string name) {
+    int i = 0;
+    int n = List_len<*DeclNode>(&prog.decls);
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        if (d.kind == DK_FUNCTION && str_eq(d.name, name) == 1) {
+            return d;
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+string al_var_type(*DeclNode curfn, string name);
+*DeclNode al_find_struct(*Program prog, string name);
+string al_deref(string t);
+string al_call_rettype(*Program prog, *DeclNode curfn, *ExprNode e, int* is_async);
+
+// The (source-form) type of expression `e` inside `curfn`, as far as this pass can tell
+// without the type checker: literals, locals/params/globals, casts, `&`/`*`, fields, and
+// calls. "" when unknown.
+string al_expr_type(*Program prog, *DeclNode curfn, *ExprNode e) {
+    if (e == null) {
+        return "";
+    }
+    int k = e.kind;
+    if (k == EK_LITERAL) {
+        if (e.lit_kind == LIT_INT) {
+            return "int";
+        }
+        if (e.lit_kind == LIT_FLOAT) {
+            return "double";
+        }
+        if (e.lit_kind == LIT_STRING) {
+            return "string";
+        }
+        if (e.lit_kind == LIT_CHAR) {
+            return "char";
+        }
+        if (e.lit_kind == LIT_BOOL) {
+            return "bool";
+        }
+        return "";
+    }
+    if (k == EK_IDENT) {
+        string t = al_var_type(curfn, e.sval);
+        if (t[0] != 0) {
+            return t;
+        }
+        int i = 0;
+        int n = List_len<*DeclNode>(&prog.decls);
+        while (i < n) {
+            *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+            if (d.kind == DK_VARDECL && str_eq(d.name, e.sval) == 1) {
+                return d.ret_type;
+            }
+            i = i + 1;
+        }
+        return "";
+    }
+    if (k == EK_CAST) {
+        return e.sval;
+    }
+    if (k == EK_AWAIT) {
+        return al_await_type_or(prog, curfn, e.a);
+    }
+    if (k == EK_TERNARY) {
+        string tt = al_expr_type(prog, curfn, e.b);
+        if (tt[0] != 0) {
+            return tt;
+        }
+        return al_expr_type(prog, curfn, List_get<*ExprNode>(&e.kids, 0));
+    }
+    if (k == EK_BINARY) {
+        string op = e.sval;
+        if (str_eq(op, "==") == 1 || str_eq(op, "!=") == 1 || str_eq(op, "<") == 1 || str_eq(op, ">") == 1
+            || str_eq(op, "<=") == 1 || str_eq(op, ">=") == 1 || str_eq(op, "&&") == 1 || str_eq(op, "||") == 1) {
+            return "bool";
+        }
+        string lt = al_expr_type(prog, curfn, e.a);
+        if (lt[0] != 0) {
+            return lt;
+        }
+        return al_expr_type(prog, curfn, e.b);
+    }
+    if (k == EK_UNARY && str_eq(e.sval, "&") == 1) {
+        string t = al_expr_type(prog, curfn, e.a);
+        if (t[0] == 0) {
+            return "";
+        }
+        return str_concat("*", t);
+    }
+    if (k == EK_UNARY && str_eq(e.sval, "*") == 1) {
+        string t = al_expr_type(prog, curfn, e.a);
+        if (t[0] == 0) {
+            return "";
+        }
+        return al_deref(t);
+    }
+    if (k == EK_MEMBER) {
+        string bt = al_expr_type(prog, curfn, e.a);
+        if (bt[0] == 0) {
+            return "";
+        }
+        string sn = al_deref(bt);
+        List<string> targs;
+        List_init<string>(&targs, 2);
+        ast_targs(sn, &targs);
+        int lt = 0;
+        while (sn[lt] != 0 && (int)sn[lt] != 60) {
+            lt = lt + 1;
+        }
+        *DeclNode sd = al_find_struct(prog, al_substr(sn, 0, lt));
+        if (sd == null) {
+            return "";
+        }
+        int i = 0;
+        while (i < List_len<Param>(&sd.params)) {
+            Param f = List_get<Param>(&sd.params, i);
+            if (str_eq(f.name, e.sval) == 1) {
+                return al_subst(f.ty, &sd.type_params, &targs);
+            }
+            i = i + 1;
+        }
+        return "";
+    }
+    if (k == EK_CALL || k == EK_TEMPLATECALL) {
+        int isa = 0;
+        string rt = al_call_rettype(prog, curfn, e, &isa);
+        if (rt[0] == 0) {
+            return "";
+        }
+        if (isa == 1) {
+            if (str_eq(rt, "void") == 1) {
+                rt = "uint8";
+            }
+            return str_concat("*Future<", str_concat(rt, ">"));
+        }
+        return rt;
+    }
+    return "";
+}
+
+// Bind the type parameters of generic `d` by unifying its parameter types (from index
+// `p0`) against the argument types of `args` (from index `a0`); `pre` holds bindings
+// already known (or "" per parameter).
+void al_infer_targs(*Program prog, *DeclNode curfn, *DeclNode d, List<*ExprNode>* args, int p0, int a0, List<string>* out) {
+    int ti = 0;
+    while (ti < List_len<TypeParam>(&d.type_params)) {
+        string tp = List_get<TypeParam>(&d.type_params, ti).name;
+        // Structural parameters first; by-value `T a` deductions meet at their common
+        // integer type (as sema decides).
+        int pass = 0;
+        while (pass < 2 && List_get<string>(out, ti)[0] == 0) {
+            int pi = p0;
+            int ai = a0;
+            while (pi < List_len<Param>(&d.params) && ai < List_len<*ExprNode>(args)) {
+                int bare = 0;
+                if (ast_streq(ast_unify_canon(List_get<Param>(&d.params, pi).ty), tp) == 1) {
+                    bare = 1;
+                }
+                string at = "";
+                if (bare == pass) {
+                    at = al_expr_type(prog, curfn, List_get<*ExprNode>(args, ai));
+                }
+                if (at[0] != 0 && ast_streq(at, "null") == 0) {
+                    string b = ast_unify_tparam(List_get<Param>(&d.params, pi).ty, at, tp);
+                    string cur = List_get<string>(out, ti);
+                    if (b[0] != 0 && cur[0] == 0) {
+                        List_set<string>(out, ti, b);
+                        if (pass == 0) {
+                            break;
+                        }
+                    }
+                    else if (b[0] != 0 && pass == 1 && ast_streq(cur, b) == 0) {
+                        string common = ast_range_var_type(cur, b);
+                        if (common[0] != 0) {
+                            List_set<string>(out, ti, common);
+                        }
+                    }
+                }
+                pi = pi + 1;
+                ai = ai + 1;
+            }
+            pass = pass + 1;
+        }
+        ti = ti + 1;
+    }
+}
+
+// The declared return type (type parameters substituted) of the function a call `e`
+// targets: a named function (generic ones infer their type arguments from the call's
+// arguments), an explicit `name<args>(...)`, or a method call `recv.m(...)` (an inline
+// method of the receiver's struct, `S_m`, or a generic free `S_m<T..>`). `*is_async`
+// tells whether that function is `async` (its call then yields `*Future<ret>`). "" when
+// the target is not found.
+string al_call_rettype(*Program prog, *DeclNode curfn, *ExprNode e, int* is_async) {
+    *is_async = 0;
+    if (e.kind == EK_TEMPLATECALL) {
+        string sp = e.sval;
+        int lt = 0;
+        while (sp[lt] != 0 && (int)sp[lt] != 60) {
+            lt = lt + 1;
+        }
+        *DeclNode d = al_find_fn(prog, al_substr(sp, 0, lt));
+        if (d == null) {
+            return "";
+        }
+        List<string> targs;
+        List_init<string>(&targs, 2);
+        ast_targs(sp, &targs);
+        *is_async = d.is_async;
+        return al_subst(d.ret_type, &d.type_params, &targs);
+    }
+    if (e.kind != EK_CALL || e.a == null) {
+        return "";
+    }
+    if (e.a.kind == EK_IDENT) {
+        *DeclNode d = al_find_fn(prog, e.a.sval);
+        if (d == null) {
+            return "";
+        }
+        *is_async = d.is_async;
+        if (List_len<TypeParam>(&d.type_params) == 0) {
+            return d.ret_type;
+        }
+        List<string> targs;
+        List_init<string>(&targs, 2);
+        int ti = 0;
+        while (ti < List_len<TypeParam>(&d.type_params)) {
+            List_push<string>(&targs, "");
+            ti = ti + 1;
+        }
+        al_infer_targs(prog, curfn, d, &e.kids, 0, 0, &targs);
+        return al_subst(d.ret_type, &d.type_params, &targs);
+    }
+    if (e.a.kind == EK_MEMBER) {
+        string rt = al_expr_type(prog, curfn, e.a.a);
+        if (rt[0] == 0) {
+            return "";
+        }
+        string sn = al_deref(rt);
+        string m = e.a.sval;
+        int lt = 0;
+        while (sn[lt] != 0 && (int)sn[lt] != 60) {
+            lt = lt + 1;
+        }
+        string base = al_substr(sn, 0, lt);
+        List<string> sargs;
+        List_init<string>(&sargs, 2);
+        ast_targs(sn, &sargs);
+        *DeclNode sd = al_find_struct(prog, base);
+        if (sd != null) {
+            int mi = 0;
+            while (mi < List_len<*DeclNode>(&sd.methods)) {
+                *DeclNode md = List_get<*DeclNode>(&sd.methods, mi);
+                if (str_eq(md.name, m) == 1) {
+                    *is_async = md.is_async;
+                    return al_subst(md.ret_type, &sd.type_params, &sargs);
+                }
+                mi = mi + 1;
+            }
+        }
+        *DeclNode d = al_find_fn(prog, str_concat(base, str_concat("_", m)));
+        if (d == null) {
+            return "";
+        }
+        *is_async = d.is_async;
+        if (List_len<TypeParam>(&d.type_params) == 0) {
+            return d.ret_type;
+        }
+        List<string> targs;
+        List_init<string>(&targs, 2);
+        int ti = 0;
+        while (ti < List_len<TypeParam>(&d.type_params)) {
+            List_push<string>(&targs, "");
+            ti = ti + 1;
+        }
+        if (List_len<Param>(&d.params) > 0) {
+            string selfp = List_get<Param>(&d.params, 0).ty;
+            string recv = sn;
+            if ((int)selfp[0] == 42) {
+                recv = str_concat("*", sn);
+            }
+            ti = 0;
+            while (ti < List_len<TypeParam>(&d.type_params)) {
+                List_set<string>(&targs, ti, ast_unify_tparam(selfp, recv, List_get<TypeParam>(&d.type_params, ti).name));
+                ti = ti + 1;
+            }
+        }
+        al_infer_targs(prog, curfn, d, &e.kids, 1, 0, &targs);
+        return al_subst(d.ret_type, &d.type_params, &targs);
+    }
+    return "";
+}
+
+// The awaited value type of `await E` (source form, so inside a generic async function it
+// is spelled with the type parameters): the inner `T` of E's `*Future<T>` type, where E
+// is a call (an `async` callee yields its declared return type), a future variable, or a
+// future field. "" when it cannot be resolved.
+string al_await_type_or(*Program prog, *DeclNode curfn, *ExprNode awaited) {
+    if (awaited == null) {
+        return "";
+    }
+    if (awaited.kind == EK_CALL || awaited.kind == EK_TEMPLATECALL) {
+        int isa = 0;
+        string rt = al_call_rettype(prog, curfn, awaited, &isa);
+        if (rt[0] != 0) {
+            if (isa == 1) {
+                if (str_eq(rt, "void") == 1) {
+                    return "uint8";
+                }
+                return rt;
+            }
+            return al_inner_of_future(rt);
+        }
+        return "";
+    }
+    string t = al_expr_type(prog, curfn, awaited);
+    if (t[0] != 0) {
+        return al_inner_of_future(t);
+    }
+    return "";
+}
+
+// As al_await_type_or, defaulting to "int".
+string al_await_type(*Program prog, *DeclNode curfn, *ExprNode awaited) {
+    string t = al_await_type_or(prog, curfn, awaited);
+    if (t[0] == 0) {
+        return "int";
+    }
+    return t;
+}
+
+// Declared type of a variable name (a param or a body local) in statement subtree `s`.
+string al_find_vartype(*StmtNode s, string name) {
+    if (s == null) {
+        return "";
+    }
+    if (s.kind == SK_VARDECL && str_eq(s.name, name) == 1) {
+        return s.type;
+    }
+    if (s.kind == SK_IF || s.kind == SK_WHILE || s.kind == SK_FOR || s.kind == SK_FORIN
+        || s.kind == SK_DOWHILE || s.kind == SK_DEFER || s.kind == SK_ARM || s.kind == SK_CATCH || s.kind == SK_TRY) {
+        string t = al_find_vartype(s.s1, name);
+        if (t[0] != 0) {
+            return t;
+        }
+    }
+    if (s.kind == SK_IF || s.kind == SK_FOR || s.kind == SK_TRY) {
+        string t = al_find_vartype(s.s2, name);
+        if (t[0] != 0) {
+            return t;
+        }
+    }
+    if (s.kind == SK_BLOCK || s.kind == SK_SWITCH || s.kind == SK_CASE || s.kind == SK_MATCH || s.kind == SK_TRY) {
+        int i = 0;
+        while (i < List_len<*StmtNode>(&s.items)) {
+            string t = al_find_vartype(List_get<*StmtNode>(&s.items, i), name);
+            if (t[0] != 0) {
+                return t;
+            }
+            i = i + 1;
+        }
+    }
+    return "";
+}
+
+string al_var_type(*DeclNode curfn, string name) {
+    int i = 0;
+    while (i < List_len<Param>(&curfn.params)) {
+        Param p = List_get<Param>(&curfn.params, i);
+        if (str_eq(p.name, name) == 1) {
+            return p.ty;
+        }
+        i = i + 1;
+    }
+    return al_find_vartype(curfn.body, name);
+}
+
+// Strip a leading/trailing '*' from a type (pointee), e.g. "*int" / "int*" → "int".
+string al_deref(string t) {
+    int n = 0;
+    while (t[n] != 0) {
+        n = n + 1;
+    }
+    if (n > 0 && (int)t[n - 1] == 42) {
+        *uint8 b = alloc<uint8>(n);
+        int k = 0;
+        while (k<n-1) {
+            b[k] = (uint8)t[k];
+            k = k+1;
+        }
+        b[n-1] = 0;
+        return (string)b;
+    }
+    if ((int)t[0] == 42) {
+        *uint8 b = alloc<uint8>(n);
+        int k = 1;
+        while (k<n) {
+            b[k-1] = (uint8)t[k];
+            k = k+1;
+        }
+        b[n-1] = 0;
+        return (string)b;
+    }
+    return t;
+}
+
+// Find a struct decl by name in the program (for list-like for-in: its `data` field type).
+*DeclNode al_find_struct(*Program prog, string name) {
+    int i = 0;
+    while (i < List_len<*DeclNode>(&prog.decls)) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        if (d.kind == DK_STRUCT && str_eq(d.name, name) == 1) {
+            return d;
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+// For a generic container instantiation like "List<double>", resolve the element
+// type of its `data` field (`*T`) by substituting the type argument for the
+// template's type parameter. Returns "" when `sn` is not a resolvable generic.
+// Without this, an async `for (v in xs)` over a `List<T>` (T != int) defaulted the
+// element type to `int` and miscompiled the loop body.
+string al_generic_data_elem(*Program prog, string sn) {
+    int lt = 0;   // find '<'
+    while (sn[lt] != 0 && (int)sn[lt] != 60) {
+        lt = lt + 1;
+    }
+    if (sn[lt] == 0) {                                        // not generic
+        return "";
+    }
+    string base = al_substr(sn, 0, lt);
+    List<string> args;
+    List_init<string>(&args, 2);
+    int i = lt + 1;
+    int start = i;
+    int depth = 1;
+    while (sn[i] != 0 && depth > 0) {
+        int ch = (int)sn[i];
+        if (ch == 60 || ch == 40) {             // '<' or '(' (nested generic / fn params)
+            depth = depth + 1;
+        }
+        else if (ch == 41) {   // ')'
+            if (depth > 0) {
+                depth = depth - 1;
+            }
+        }
+        else if (ch == 62 && (i == 0 || (int)sn[i - 1] != 45)) {      // '>' closing a generic, NOT the "->" arrow
+            depth = depth - 1;
+            if (depth == 0) {
+                List_push<string>(&args, al_substr(sn, start, i));
+            }
+        }
+        else if (ch == 44 && depth == 1) {
+            List_push<string>(&args, al_substr(sn, start, i));
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    *DeclNode sd = al_find_struct(prog, base);
+    if (sd == null) {
+        return "";
+    }
+    string dft = "";
+    int k = 0;
+    while (k < List_len<Param>(&sd.params)) {
+        Param p = List_get<Param>(&sd.params, k);
+        if (str_eq(p.name, "data") == 1) {
+            dft = p.ty;
+        }
+        k = k + 1;
+    }
+    if (dft[0] == 0) {
+        return "";
+    }
+    string elem = al_deref(dft);                                           // "*T" -> "T"
+    int tpi = 0;
+    while (tpi < List_len<TypeParam>(&sd.type_params)) {
+        TypeParam tp = List_get<TypeParam>(&sd.type_params, tpi);
+        if (str_eq(tp.name, elem) == 1 && tpi < List_len<string>(&args)) {
+            return List_get<string>(&args, tpi);
+        }
+        tpi = tpi + 1;
+    }
+    return elem;                                                           // concrete data element
+}
