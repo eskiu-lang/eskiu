@@ -1,0 +1,509 @@
+// sema_assign_init.esk: struct and array initializers and constraints (part of sema_assign.esk, imported in order)
+
+// Is `ft` mentioning a type parameter of `d` (so its concrete type is unknown here)?
+int sema_mentions_tparam(*DeclNode d, string ft) {
+    int i = 0;
+    int n = List_len<TypeParam>(&d.type_params);
+    while (i < n) {
+        string tp = List_get<TypeParam>(&d.type_params, i).name;
+        if (sema_streq(sema_struct_of_type(ft), tp) == 1) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Struct literal `S{...}`: too many positional values, a repeated or unknown named field,
+// and field value types (mirrors the C++ visit(StructInitExpr)).
+void sema_check_struct_init(Sema* s, *ExprNode e) {
+    *DeclNode d = sema_find_struct(s, sema_base_name(e.sval));
+    if (d == null) {
+        return;
+    }
+    List<string> targs;
+    List_init<string>(&targs, 2);
+    sema_parse_targs(e.sval, &targs);
+    int nf = List_len<Param>(&d.params);
+    int n = List_len<*ExprNode>(&e.kids);
+    let seen: StrTab;                      // a set: the fields named so far
+    // A literal is either positional or named (mirrors the C++ StructInitExpr check).
+    int named0 = 0;
+    int mixed = 0;
+    int mi = 0;
+    while (mi < n) {
+        int isnamed = 0;
+        if (mi < List_len<string>(&e.names)) {
+            if (List_get<string>(&e.names, mi)[0] != 0) {
+                isnamed = 1;
+            }
+        }
+        if (mi == 0) {
+            named0 = isnamed;
+        } else if (isnamed != named0) {
+            mixed = 1;
+        }
+        mi = mi + 1;
+    }
+    if (mixed == 1) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: cannot mix positional and named field initializers in a '%s' literal\n", s.filename, s.line, s.col, e.sval);
+    }
+    // A union's members overlap: its literal initializes exactly one of them (C).
+    if (d.kind == DK_UNION && n > 1) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: a union literal initializes one member ('%s' literal has %d)\n", s.filename, s.line, s.col, e.sval, n);
+    }
+    int i = 0;
+    int sil = s.line;
+    int sic = s.col;
+    while (i < n) {
+        *ExprNode v = List_get<*ExprNode>(&e.kids, i);
+        // Each field's diagnostics point at its value (as the C++ checker).
+        s.line = sil;
+        s.col = sic;
+        if (v != null && v.line > 0) {
+            s.line = v.line;
+            s.col = v.col;
+        }
+        string nm = "";
+        if (i < List_len<string>(&e.names)) {
+            nm = List_get<string>(&e.names, i);
+        }
+        string ft = "";
+        string shown = nm;
+        if (nm[0] != 0) {
+            int fi = sema_field_index(d, nm);
+            if (fi >= 0) {
+                ft = List_get<Param>(&d.params, fi).ty;
+            }
+            if (ft[0] == 0) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: struct '%s' has no field '%s'\n", s.filename, s.line, s.col, e.sval, nm);
+            } else if (StrTab_has(&seen, nm) == 1) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: field '%s' is initialized more than once in '%s' literal\n", s.filename, s.line, s.col, nm, e.sval);
+            } else {
+                StrTab_set(&seen, nm, 1);
+            }
+        } else if (i < nf) {
+            Param p = List_get<Param>(&d.params, i);
+            ft = p.ty;
+            shown = p.name;
+        } else if (i == nf) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: too many initializers for struct '%s' (it has %d field(s), got %d)\n", s.filename, s.line, s.col, e.sval, nf, n);
+        }
+        if (ft[0] != 0) {
+            string cft = sema_subst_tparam(d, &targs, ft);
+            // A field type built from a type parameter (`*X`, `X[2]`) takes the literal's
+            // type arguments too.
+            if (List_len<TypeParam>(&d.type_params) > 0 && List_len<string>(&targs) == List_len<TypeParam>(&d.type_params)) {
+                cft = sema_subst_params(ft, &d.type_params, &targs);
+            }
+            if (cft[0] != 0 && sema_mentions_tparam(d, cft) == 0) {
+                sema_report_assign(s, sema_cat(sema_cat("field '", shown), "'"), sema_assign_err(s, cft, v));
+            }
+        }
+        i = i + 1;
+    }
+    s.line = sil;
+    s.col = sic;
+}
+
+// Recursively check an array literal against a (possibly multi-dimensional) array type:
+// too many elements for a numeric dimension is an error; a short list zero-fills (C-style).
+// Is `e` a compile-time constant initializer codegen can fold? Mirrors the C++ isConstInit:
+// a literal / sizeof, a numeric unary/cast of one, or an array/struct literal of constants.
+// A bare identifier is excluded (it could be a runtime local codegen would silently zero).
+// Is `e` a compile-time constant initializer (C semantics) the constant folder emits?
+// A literal, `sizeof`, an enum member, a global `const`, the address of a global, a
+// non-capturing lambda, and unary/binary/ternary/cast combinations of those, or an
+// array/struct literal of constants. A call or a non-const variable read is not
+// constant. Used for global and `static` initializers (mirrors TypeChecker::isConstInit).
+int sema_is_enum_member(Sema* s, string name) {
+    return NameIdx_first(&s.evars_ix, name) >= 0;
+}
+
+int sema_is_const_init(Sema* s, *ExprNode e) {
+    if (e == null) {
+        return 1;
+    }
+    if (e.kind == EK_LITERAL) {
+        return 1;
+    }
+    if (e.kind == EK_SIZEOF) {
+        return 1;
+    }
+    if (e.kind == EK_LAMBDA) {
+        return 1;
+    }
+    if (e.kind == EK_IDENT) {
+        int i = sema_sym_index(s, e.sval);
+        if (i >= 0) {
+            Sym sy = List_get<Sym>(&s.syms, i);
+            if (sy.depth == 0 && sy.is_const == 1) {
+                return 1;
+            }
+            if (sy.depth > 0) {
+                return sema_is_enum_member(s, e.sval);
+            }
+        }
+        if (sema_find_fn(s, e.sval) >= 0) {   // a function name: a constant closure
+            return 1;
+        }
+        return sema_is_enum_member(s, e.sval);
+    }
+    if (e.kind == EK_UNARY) {
+        if (sema_streq(e.sval, "&") == 1) {
+            if (e.a == null || e.a.kind != EK_IDENT) {
+                return 0;
+            }
+            if (sema_find_fn(s, e.a.sval) >= 0) {
+                return 0;
+            }
+            if (sema_sym_depth(s, e.a.sval) == 0) {
+                return 1;
+            }
+            return 0;
+        }
+        if (sema_streq(e.sval, "-") == 1 || sema_streq(e.sval, "~") == 1 || sema_streq(e.sval, "!") == 1
+            || sema_streq(e.sval, "+") == 1) {
+            return sema_is_const_init(s, e.a);
+        }
+        return 0;
+    }
+    if (e.kind == EK_BINARY) {
+        string op = e.sval;
+        if (sema_streq(op, "=") == 1) {
+            return 0;
+        }
+        int n0 = 0;
+        while (op[n0] != 0) {
+            n0 = n0 + 1;
+        }
+        if (n0 >= 2 && (int)op[n0 - 1] == 61 && sema_streq(op, "==") == 0 && sema_streq(op, "!=") == 0
+            && sema_streq(op, "<=") == 0 && sema_streq(op, ">=") == 0) {   // compound assign
+            return 0;
+        }
+        if (sema_is_const_init(s, e.a) == 0) {
+            return 0;
+        }
+        return sema_is_const_init(s, e.b);
+    }
+    if (e.kind == EK_TERNARY) {
+        if (sema_is_const_init(s, e.a) == 0 || sema_is_const_init(s, e.b) == 0) {
+            return 0;
+        }
+        return sema_is_const_init(s, List_get<*ExprNode>(&e.kids, 0));
+    }
+    if (e.kind == EK_CAST) {
+        return sema_is_const_init(s, e.a);
+    }
+    if (e.kind == EK_ARRAYLIT || e.kind == EK_STRUCTINIT) {
+        int i = 0;
+        int n = List_len<*ExprNode>(&e.kids);
+        while (i < n) {
+            if (sema_is_const_init(s, List_get<*ExprNode>(&e.kids, i)) == 0) {
+                return 0;
+            }
+            i = i + 1;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+void sema_check_arr_init(Sema* s, string arrT0, *ExprNode a) {
+    string arrT = arrT0;
+    if (sema_is_arr_ty(arrT) == 0) {
+        // Through a type alias (`type A3 = int[3]`) the target is the array; anything else
+        // is not an array: `int x = {1, 2};` (mirrors the C++ VarDecl check).
+        string ac = sema_canon(s, arrT);
+        if (sema_is_arr_ty(ac) == 0) {
+            if (sema_judgeable(s, ac) == 1) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: an array literal '{...}' can only initialize an array type, not '%s'\n",
+                        s.filename, s.line, s.col, arrT0);
+            }
+            return;
+        }
+        arrT = ac;
+    }
+    string dim = sema_arr_count(arrT);
+    if (sema_all_digits(dim) == 1) {
+        int cnt = List_len<*ExprNode>(&a.kids);
+        if ((int64)cnt > sema_parse_int(dim)) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: array literal has %d elements but '%s' holds %s\n", s.filename, s.line, s.col, cnt, arrT, dim);
+        }
+    }
+    string elemT = sema_arr_elem(arrT);
+    int i = 0;
+    int n = List_len<*ExprNode>(&a.kids);
+    while (i < n) {
+        *ExprNode el = List_get<*ExprNode>(&a.kids, i);
+        if (el.kind == EK_ARRAYLIT) {                   // nested rows: each element is itself an array literal
+            sema_check_arr_init(s, elemT, el);
+        } else if (sema_is_arr_ty(elemT) == 0) {                                        // each element converts to the element type
+            string aerr = sema_assign_err(s, elemT, el);
+            if (aerr[0] != 0) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: array element: %s\n", s.filename, s.line, s.col, aerr);
+            }
+        }
+        i = i + 1;
+    }
+}
+
+int sema_has_star(string t) {
+    int i = 0;
+    while (t[i] != 0) {   // 42 = '*'
+        if ((int)t[i] == 42) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Pointer-to-const: spelling starts with "const " and is a pointer (e.g. "const int*").
+int sema_pointee_const(string t) {
+    if (t[0] != 99 || t[1] != 111 || t[2] != 110 || t[3] != 115
+        || t[4] != 116 || t[5] != 32) {     // not "const "
+        return 0;
+    }
+    return sema_has_star(t);
+}
+
+// An integer-literal spelling that denotes zero (only sign chars and '0' digits).
+int sema_lit_is_zero(string v) {
+    int i = 0;
+    if (v[0] == 0) {
+        return 0;
+    }
+    while (v[i] != 0) {
+        int c = (int)v[i];
+        if (c != 48 && c != 43 && c != 45) {   // not '0' / '+' / '-'
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+int sema_is_assign(string op) {
+    if (sema_streq(op, "=") == 1) {
+        return 1;
+    }
+    if (sema_streq(op, "+=") == 1 || sema_streq(op, "-=") == 1 || sema_streq(op, "*=") == 1
+        || sema_streq(op, "/=") == 1 || sema_streq(op, "%=") == 1) {
+        return 1;
+    }
+    return 0;
+}
+
+// Is the assignment target a read-only location? A const binding, a field/element reached
+// through one (a const struct's members are read-only), or storage reached through a
+// pointer to const (`r.x`, `r[i]`, `*r` with `r: const T*`).
+int sema_is_readonly_lvalue(Sema* s, *ExprNode e) {
+    if (e == null) {
+        return 0;
+    }
+    if (e.kind == EK_IDENT) {
+        return sema_sym_const(s, e.sval);
+    }
+    if (e.kind == EK_MEMBER || e.kind == EK_INDEX) {
+        string bt = sema_strip_nullable(sema_infer_type(s, e.a));
+        string bc = sema_canon(s, bt);
+        if ((int)bc[0] == 42) {
+            return sema_pointee_const(bt);
+        }
+        return sema_is_readonly_lvalue(s, e.a);
+    }
+    // `*p` writes through a pointer — read-only when p points to const.
+    if (e.kind == EK_UNARY && sema_streq(e.sval, "*") == 1) {
+        return sema_pointee_const(sema_infer_type(s, e.a));
+    }
+    return 0;
+}
+
+// Owned substring s[a, b) with leading/trailing spaces trimmed.
+string sema_trim_sub(string s, int a, int b) {
+    while (a < b && (int)s[a] == 32) {
+        a = a + 1;
+    }
+    while (b > a && (int)s[b - 1] == 32) {
+        b = b - 1;
+    }
+    int len = b - a;
+    *uint8 buf = alloc<uint8>(len + 1);
+    int i = 0;
+    while (i < len) {
+        buf[i] = (uint8)s[a + i];
+        i = i + 1;
+    }
+    buf[len] = 0;
+    return (string)buf;
+}
+
+*DeclNode sema_find_fndecl(Sema* s, string name) {
+    int i = NameIdx_first(&s.fndecls_ix, name);
+    if (i < 0) {
+        return null;
+    }
+    return List_get<*DeclNode>(&s.fndecls, i);
+}
+
+// Is `name` a C function: declared `extern` and not also defined by the program?
+int sema_is_c_extern(Sema* s, string name) {
+    int ext = 0;
+    int i = NameIdx_first(&s.fndecls_ix, name);
+    while (i >= 0) {
+        *DeclNode d = List_get<*DeclNode>(&s.fndecls, i);
+        if (d.kind == DK_EXTERN) {
+            ext = 1;
+        }
+        if (d.kind == DK_FUNCTION && d.body != null) {
+            return 0;
+        }
+        i = NameIdx_next(&s.fndecls_ix, i);
+    }
+    return ext;
+}
+
+// Is `t` a fn type, through type aliases?
+int sema_is_fn_type_alias(Sema* s, string t) {
+    string ft = sema_strip_const(t);
+    int hops = 0;
+    while (hops < 16) {
+        if (sema_is_fn_type(ft) == 1) {
+            return 1;
+        }
+        *DeclNode ad = sema_find_tdecl(s, ft);
+        if (ad == null || ad.kind != DK_TYPEALIAS) {
+            return 0;
+        }
+        ft = sema_strip_const(ad.ret_type);
+        hops = hops + 1;
+    }
+    return 0;
+}
+
+*DeclNode sema_find_iface(Sema* s, string name) {
+    int i = 0;
+    int n = List_len<*DeclNode>(&s.ifaces);
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&s.ifaces, i);
+        if (sema_streq(d.name, name) == 1) {
+            return d;
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+int sema_is_scalar_prim(string c) {
+    if (sema_streq(c, "int") == 1 || sema_streq(c, "int8") == 1 || sema_streq(c, "int16") == 1
+        || sema_streq(c, "int32") == 1 || sema_streq(c, "int64") == 1 || sema_streq(c, "uint") == 1
+        || sema_streq(c, "uint8") == 1 || sema_streq(c, "uint16") == 1 || sema_streq(c, "uint32") == 1
+        || sema_streq(c, "uint64") == 1 || sema_streq(c, "char") == 1 || sema_streq(c, "bool") == 1
+        || sema_streq(c, "float") == 1 || sema_streq(c, "double") == 1) {
+        return 1;
+    }
+    return 0;
+}
+
+// Bounded generics: each constrained type parameter's argument (`targs`, parallel to
+// `tps`) must satisfy its interface constraints, structurally (mirrors the C++
+// checkConstraints). Returns 1 when all hold.
+int sema_check_constraints(Sema* s, List<TypeParam>* tps, List<string>* targs) {
+    int ok = 1;
+    int t = 0;
+    while (t < List_len<TypeParam>(tps) && t < List_len<string>(targs)) {
+        TypeParam tp = List_get<TypeParam>(tps, t);
+        string concrete = sema_isub(s, List_get<string>(targs, t));
+        string bare = sema_canon(s, concrete);
+        while ((int)bare[0] == 42) {
+            bare = sema_sub_str(bare, 1, sema_slen(bare));
+        }
+        string full = bare;
+        bare = sema_base_name(bare);
+        int ci = 0;
+        if (sema_in_list(&s.tparams, bare) == 1) {   // still abstract
+            ci = List_len<string>(&tp.constraints);
+        }
+        while (ci < List_len<string>(&tp.constraints)) {
+            string ic = List_get<string>(&tp.constraints, ci);
+            *DeclNode iface = sema_find_iface(s, ic);
+            if (iface == null) {
+                s.had_error = 1;
+                ok = 0;
+                dprintf(2, "error: %s:%d:%d: unknown constraint interface '%s'\n", s.filename, s.line, s.col, ic);
+            } else {
+                string why = sema_iface_mismatch_full(s, bare, full, iface);
+                if (why[0] != 0) {
+                    s.had_error = 1;
+                    ok = 0;
+                    dprintf(2, "error: %s:%d:%d: type '%s' does not satisfy constraint '%s' (required by a bounded type parameter): %s\n",
+                           s.filename, s.line, s.col, concrete, ic, why);
+                }
+            }
+            ci = ci + 1;
+        }
+        t = t + 1;
+    }
+    return ok;
+}
+
+// Extract the type arguments of a template-call spelling ("pick<int>" → ["int"],
+// "Map<string, int>" → ["string","int"]), tracking nesting and trimming spaces.
+void sema_parse_targs(string sval, List<string>* out) {
+    int i = 0;
+    while (sval[i] != 0 && (int)sval[i] != 60) {                  // find '<'
+        if ((int)sval[i] == 91) {
+            i = sema_dim_close(sval, i);
+            if (sval[i] == 0) {
+                return;
+            }
+        }
+        i = i + 1;
+    }
+    if (sval[i] == 0) {
+        return;
+    }
+    i = i + 1;
+    int depth = 0;
+    int start = i;
+    while (sval[i] != 0) {
+        int c = (int)sval[i];
+        if (c == 91) {
+            i = sema_dim_close(sval, i);
+            if (sval[i] == 0) {
+                break;
+            }
+        }
+        else if (c == 60 || c == 40) {        // '<' or '(' (nested generic / fn params)
+            depth = depth + 1;
+        }
+        else if (c == 41) {   // ')'
+            if (depth > 0) {
+                depth = depth - 1;
+            }
+        }
+        else if (c == 62 && (i == 0 || (int)sval[i - 1] != 45)) {   // '>' closing a generic, NOT the "->" arrow
+            if (depth == 0) {
+                break;
+            }
+            depth = depth - 1;
+        }
+        else if (c == 44 && depth == 0) {
+            List_push<string>(out, sema_trim_sub(sval, start, i));
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    if (i > start) {
+        List_push<string>(out, sema_trim_sub(sval, start, i));
+    }
+}

@@ -1,0 +1,525 @@
+// sema_assign_iface.esk: type mismatches, interfaces and lambda signatures (part of sema_assign.esk, imported in order)
+
+// Two type spellings that are both primitive and differ (a certain mismatch). Anything
+// else (structs, pointers, aliases) is not compared, to stay conservative.
+int sema_prim_differs(string a0, string b0) {
+    string a = sema_strip_const(a0);
+    string b = sema_strip_const(b0);
+    int ap = sema_is_numeric_ty(a);
+    if (sema_streq(a, "void") == 1 || sema_streq(a, "string") == 1) {
+        ap = 1;
+    }
+    int bp = sema_is_numeric_ty(b);
+    if (sema_streq(b, "void") == 1 || sema_streq(b, "string") == 1) {
+        bp = 1;
+    }
+    if (ap == 1 && bp == 1 && sema_streq(a, b) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+// Is type spelling `t` the interface's own name (its Self type)?
+int sema_is_self_ty(string t, *DeclNode iface) {
+    return sema_streq(sema_struct_of_type(t), iface.name);
+}
+
+// Do two spellings name different types (compared only when both are understood)?
+int sema_types_differ(Sema* s, string a, string b) {
+    string ca = sema_canon(s, a);
+    string cb = sema_canon(s, b);
+    if (sema_judgeable(s, ca) == 0 || sema_judgeable(s, cb) == 0) {
+        return 0;
+    }
+    if (sema_streq(ca, cb) == 1) {
+        return 0;
+    }
+    return 1;
+}
+
+// An implementation's type `a` against the interface's `b`: the C++ compares the
+// normalized spellings, so a concrete `a` must match a `b` the checker cannot judge (an
+// undeclared `Self`) literally. An unresolved `a` (a generic's `T`) is not judged.
+int sema_iface_types_differ(Sema* s, string a, string b) {
+    string ca = sema_canon(s, a);
+    string cb = sema_canon(s, b);
+    if (sema_judgeable(s, ca) == 0 || sema_judgeable(s, cb) == 1) {
+        return sema_types_differ(s, a, b);
+    }
+    if (sema_streq(ca, cb) == 1) {
+        return 0;
+    }
+    return 1;
+}
+
+// Does type `sn` implement every method of `iface` with a matching signature (arity,
+// return and parameter types; a type naming the interface itself is its Self type)?
+// A struct implements a method inline or as a free `Type_method`; a scalar primitive
+// through a free function named like the method whose first parameter is it. "" when
+// satisfied, else the reason. Mirrors the C++ interfaceMismatch.
+string sema_iface_mismatch_full(Sema* s, string sn, string full, *DeclNode iface);
+string sema_iface_mismatch(Sema* s, string sn, *DeclNode iface) {
+    return sema_iface_mismatch_full(s, sn, sn, iface);
+}
+
+// `full` is the type as written (`Ctr<int>`), `sn` its base name: a generic instance
+// may implement a method as a free function named after the instance (`Ctr_int_next`).
+string sema_iface_mismatch_full(Sema* s, string sn, string full, *DeclNode iface) {
+    *DeclNode sd = sema_find_struct(s, sn);
+    int i = 0;
+    int n = List_len<*DeclNode>(&iface.methods);
+    while (i < n) {
+        *DeclNode m = List_get<*DeclNode>(&iface.methods, i);
+        *DeclNode impl = null;
+        int skip = 0;
+        if (sd != null) {
+            int j = 0;
+            int mn = List_len<*DeclNode>(&sd.methods);
+            while (j < mn) {
+                *DeclNode c = List_get<*DeclNode>(&sd.methods, j);
+                if (sema_streq(c.name, m.name) == 1) {
+                    impl = c;
+                }
+                j = j + 1;
+            }
+        }
+        if (impl == null) {
+            impl = sema_find_fndecl(s, sema_cat(sema_cat(sn, "_"), m.name));
+            skip = 1;
+        }
+        if (impl == null && sema_has_lt(full) == 1) {
+            impl = sema_find_fndecl(s, sema_cat(sema_cat(sema_flat_name(full), "_"), m.name));
+            skip = 1;
+        }
+        if (impl == null && sema_is_scalar_prim(sn) == 1) {
+            *DeclNode ff = sema_find_fndecl(s, m.name);
+            if (ff != null && List_len<Param>(&ff.params) > 0
+                && sema_streq(sema_struct_of_type(List_get<Param>(&ff.params, 0).ty), sn) == 1) {
+                impl = ff;
+            }
+        }
+        if (impl == null) {
+            return sema_cat(sema_cat("missing method '", m.name), "'");
+        }
+        sema_note_call(s, impl.name);      // -Wall: used through the interface's vtable
+        int want = List_len<Param>(&m.params);
+        int got = List_len<Param>(&impl.params) - skip;
+        if (got != want) {
+            uint8[96] buf;
+            sprintf((string)&buf[0], "' takes %d parameter(s), the interface requires %d", got, want);
+            return sema_cat(sema_cat("method '", m.name), (string)&buf[0]);
+        }
+        if (sema_is_self_ty(m.ret_type, iface) == 0 && sema_iface_types_differ(s, impl.ret_type, m.ret_type) == 1) {
+            return sema_cat(sema_cat(sema_cat(sema_cat(sema_cat(sema_cat("method '", m.name), "' returns '"), impl.ret_type),
+                            "', the interface requires '"), m.ret_type), "'");
+        }
+        int k = 0;
+        while (k < want) {
+            string wt = List_get<Param>(&m.params, k).ty;
+            string gt = List_get<Param>(&impl.params, k + skip).ty;
+            int selfp = sema_is_self_ty(wt, iface);
+            // A Self parameter is the implementing type (or the interface itself).
+            int self_bad = 0;
+            if (selfp == 1) {
+                string gb = sema_struct_of_type(gt);
+                string gc = sema_struct_of_type(sema_canon(s, gt));
+                string sb = sema_base_name(sn);
+                if (sema_streq(gb, iface.name) == 0 && sema_streq(gb, sb) == 0 && sema_streq(gc, sb) == 0
+                    && sema_streq(sema_base_name(gb), sb) == 0) {
+                    self_bad = 1;
+                }
+            }
+            if (self_bad == 1 || (selfp == 0 && sema_iface_types_differ(s, gt, wt) == 1)) {
+                uint8[32] nb;
+                sprintf((string)&nb[0], "%d", k + 1);
+                return sema_cat(sema_cat(sema_cat(sema_cat(sema_cat(sema_cat(sema_cat(sema_cat("method '", m.name), "' parameter "),
+                                (string)&nb[0]), " is '"), gt), "', the interface requires '"), wt), "'");
+            }
+            k = k + 1;
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+// Parameter types of a fn-type spelling "fn(A,B)->R" into `out` (nesting-aware).
+void sema_fn_params(string t, List<string>* out) {
+    if (sema_is_fn_type(t) == 0) {
+        return;
+    }
+    int i = 3;
+    int depth = 0;
+    int start = 3;
+    while (t[i] != 0) {
+        int c = (int)t[i];
+        if (c == 91) {   // an array dimension
+            i = sema_dim_close(t, i);
+            if (t[i] == 0) {
+                return;
+            }
+        }
+        else if (c == 40 || c == 60) {                  // ( <
+            depth = depth + 1;
+        }
+        else if (c == 62 && (int)t[i - 1] == 45) {}                         // "->" arrow
+        else if (c == 41 || c == 62 || c == 93) {                            // ) > ]
+            if (depth == 0) {
+                if (i > start) {
+                    List_push<string>(out, sema_trim_sub(t, start, i));
+                }
+                return;
+            }
+            depth = depth - 1;
+        } else if (c == 44 && depth == 0) {
+            List_push<string>(out, sema_trim_sub(t, start, i));
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+}
+
+// The arguments of `e` from index `from` on pass through `...`: each must have a value
+// (a `void` call has none).
+void sema_check_variadic_extras(Sema* s, *ExprNode e, int from) {
+    int i = from;
+    while (i < List_len<*ExprNode>(&e.kids)) {
+        if (sema_streq(sema_canon(s, sema_infer_type(s, List_get<*ExprNode>(&e.kids, i))), "void") == 1) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: argument %d has type 'void' (a void call has no value)\n", s.filename, s.line, s.col, i + 1);
+        }
+        i = i + 1;
+    }
+}
+
+// -Wformat (mirrors the C++ checkFormatCall): the classes a printf conversion takes after
+// C's default promotions: 1 int, 2 64-bit integer, 3 double, 4 string, 5 pointer, 6 other.
+int sema_fmt_class(Sema* s, *ExprNode a) {
+    if (a != null && a.kind == EK_LITERAL && a.lit_kind == LIT_NULL) {
+        return 5;
+    }
+    string t = sema_canon(s, sema_infer_type(s, a));
+    if ((int)t[0] == 63) {
+        t = sema_sub_str(t, 1, sema_slen(t));
+    }
+    if (sema_streq(t, "bool") == 1 || sema_streq(t, "char") == 1 || sema_streq(t, "int8") == 1 || sema_streq(t, "uint8") == 1
+        || sema_streq(t, "int16") == 1 || sema_streq(t, "uint16") == 1 || sema_streq(t, "int") == 1 || sema_streq(t, "int32") == 1
+        || sema_streq(t, "uint") == 1 || sema_streq(t, "uint32") == 1) {
+        return 1;
+    }
+    if (sema_is_enum(s, sema_struct_of_type(t)) == 1 && sema_has_star(t) == 0) {
+        return 1;
+    }
+    if (sema_streq(t, "int64") == 1 || sema_streq(t, "uint64") == 1) {
+        return 2;
+    }
+    if (sema_streq(t, "float") == 1 || sema_streq(t, "double") == 1) {
+        return 3;
+    }
+    if (sema_streq(t, "string") == 1) {
+        return 4;
+    }
+    if (sema_c_ptr(t) == 1) {
+        if (sema_is_byte_ptr(t) == 1) {
+            return 4;
+        }
+        return 5;
+    }
+    return 6;
+}
+
+// The format argument's index among a printf-style function's arguments, or -1.
+int sema_fmt_index(string fname) {
+    if (sema_streq(fname, "printf") == 1 || sema_streq(fname, "log_trace") == 1 || sema_streq(fname, "log_debug") == 1
+        || sema_streq(fname, "log_info") == 1 || sema_streq(fname, "log_warn") == 1 || sema_streq(fname, "log_error") == 1) {
+        return 0;
+    }
+    if (sema_streq(fname, "fprintf") == 1 || sema_streq(fname, "dprintf") == 1 || sema_streq(fname, "sprintf") == 1
+        || sema_streq(fname, "String_format") == 1 || sema_streq(fname, "String_appendf") == 1 || sema_streq(fname, "log_at") == 1) {
+        return 1;
+    }
+    if (sema_streq(fname, "snprintf") == 1) {
+        return 2;
+    }
+    return -1;
+}
+
+int sema_fmt_need(Sema* s, *ExprNode e, int next, int cls, string conv, int shift) {
+    int argc = List_len<*ExprNode>(&e.kids);
+    if (next >= argc) {
+        return next + 1;
+    }
+    *ExprNode a = List_get<*ExprNode>(&e.kids, next);
+    int got = sema_fmt_class(s, a);
+    if (got == cls || (cls == 5 && got == 4)) {
+        return next + 1;
+    }
+    string at = sema_canon(s, sema_infer_type(s, a));
+    if (sema_streq(at, "unknown") == 1 || sema_streq(at, "void") == 1 || at[0] == 0) {
+        return next + 1;
+    }
+    string what = "an int";
+    if (cls == 2) {
+        what = "a 64-bit integer";
+    }
+    if (cls == 3) {
+        what = "a double";
+    }
+    if (cls == 4) {
+        what = "a string";
+    }
+    if (cls == 5) {
+        what = "a pointer";
+    }
+    sema_warn(s, "format", e.line, e.col,
+              sema_cat(sema_cat(sema_cat(sema_cat(sema_cat(sema_cat(sema_cat(sema_cat("format '", conv), "' expects "), what), ", but argument "),
+                       sema_i64_text((int64)(next + 1 + shift))), " has type '"), sema_type_shown(sema_infer_type(s, a))), "'"));
+    return next + 1;
+}
+
+// A type as diagnostics show it: no `struct:` tags.
+string sema_type_shown(string t) {
+    let out: String;
+    String_init(&out, 16);
+    int i = 0;
+    int n = sema_slen(t);
+    while (i < n) {
+        if (i + 7 <= n && sema_streq(sema_sub_str(t, i, i + 7), "struct:") == 1) {
+            i = i + 7;
+            continue;
+        }
+        String_push(&out, (char)t[i]);
+        i = i + 1;
+    }
+    return (string)String_cstr(&out);
+}
+
+int sema_fmt_is(int c, string set) {
+    int i = 0;
+    while (set[i] != 0) {
+        if ((int)set[i] == c) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+void sema_check_format(Sema* s, *ExprNode e, string fname, int shift) {
+    int fi = sema_fmt_index(fname);
+    if (fi < 0) {
+        return;
+    }
+    fi = fi - shift;
+    int argc = List_len<*ExprNode>(&e.kids);
+    if (fi < 0 || fi >= argc) {
+        return;
+    }
+    *ExprNode lit = List_get<*ExprNode>(&e.kids, fi);
+    if (lit == null || lit.kind != EK_LITERAL || lit.lit_kind != LIT_STRING) {
+        return;
+    }
+    string f = lit.sval;
+    int n = lit.slen;
+    int next = fi + 1;
+    int i = 0;
+    while (i < n) {
+        if ((int)f[i] != 37) {
+            i = i + 1;
+            continue;
+        }
+        int st = i;
+        i = i + 1;
+        if (i < n && (int)f[i] == 37) {
+            i = i + 1;
+            continue;
+        }
+        while (i < n && sema_fmt_is((int)f[i], "-+ #0'") == 1) {
+            i = i + 1;
+        }
+        if (i < n && (int)f[i] == 42) {
+            next = sema_fmt_need(s, e, next, 1, "*", shift);
+            i = i + 1;
+        }
+        else {
+            while (i < n && (int)f[i] >= 48 && (int)f[i] <= 57) {
+                i = i + 1;
+            }
+        }
+        if (i < n && (int)f[i] == 46) {
+            i = i + 1;
+            if (i < n && (int)f[i] == 42) {
+                next = sema_fmt_need(s, e, next, 1, ".*", shift);
+                i = i + 1;
+            }
+            else {
+                while (i < n && (int)f[i] >= 48 && (int)f[i] <= 57) {
+                    i = i + 1;
+                }
+            }
+        }
+        int ls = i;
+        while (i < n && sema_fmt_is((int)f[i], "hlLqjzt") == 1) {
+            i = i + 1;
+        }
+        string len = sema_sub_str(f, ls, i);
+        if (i >= n) {
+            sema_warn(s, "format", e.line, e.col,
+                      sema_cat(sema_cat("incomplete conversion '", sema_sub_str(f, st, n)), "' at the end of the format string"));
+            i = n + 1;
+            continue;
+        }
+        int c = (int)f[i];
+        string conv = sema_sub_str(f, st, i + 1);
+        int wide = 0;
+        if (sema_streq(len, "ll") == 1 || sema_streq(len, "j") == 1 || sema_streq(len, "z") == 1
+            || sema_streq(len, "t") == 1 || sema_streq(len, "q") == 1) {
+            wide = 1;
+        }
+        if (sema_streq(len, "l") == 1 && s.msbf == 0) {
+            wide = 1;
+        }
+        if (sema_fmt_is(c, "diouxXc") == 1) {
+            int cls = 1;
+            if (c != 99 && wide == 1) {
+                cls = 2;
+            }
+            next = sema_fmt_need(s, e, next, cls, conv, shift);
+        } else if (sema_fmt_is(c, "fFeEgGaA") == 1) {
+            next = sema_fmt_need(s, e, next, 3, conv, shift);
+        }
+        else if (c == 115) {
+            next = sema_fmt_need(s, e, next, 4, conv, shift);
+        }
+        else if (c == 112 || c == 110) {
+            next = sema_fmt_need(s, e, next, 5, conv, shift);
+        }
+        else {
+            sema_warn(s, "format", e.line, e.col, sema_cat(sema_cat("unknown conversion '", conv), "' in the format string"));
+            return;
+        }
+        i = i + 1;
+    }
+    if (next > argc) {
+        sema_warn(s, "format", e.line, e.col,
+                  sema_cat(sema_cat(sema_cat(sema_cat("the format string needs ", sema_i64_text((int64)(next - fi - 1))), " argument(s), but "),
+                           sema_i64_text((int64)(argc - fi - 1))), " are given"));
+    } else if (next < argc) {
+        sema_warn(s, "format", e.line, e.col,
+                  sema_cat(sema_cat(sema_cat(sema_cat("the format string uses ", sema_i64_text((int64)(next - fi - 1))), " argument(s), but "),
+                           sema_i64_text((int64)(argc - fi - 1))), " are given"));
+    }
+}
+
+// Check a call's arguments (`e.kids`) against parameter types `pts` (a trailing "..."
+// means variadic): count, then conservative per-argument assignability.
+void sema_check_call_args(Sema* s, *ExprNode e, string what, List<string>* pts) {
+    int np = List_len<string>(pts);
+    int variadic = 0;
+    if (np > 0 && sema_streq(List_get<string>(pts, np - 1), "...") == 1) {
+        variadic = 1;
+        np = np - 1;
+    }
+    int argc = List_len<*ExprNode>(&e.kids);
+    if ((variadic == 1 && argc < np) || (variadic == 0 && argc != np)) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: %s expects %d argument(s), got %d\n", s.filename, s.line, s.col, what, np, argc);
+        return;
+    }
+    int i = 0;
+    while (i < np) {
+        string perr = sema_assign_err(s, List_get<string>(pts, i), List_get<*ExprNode>(&e.kids, i));
+        if (perr[0] != 0) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: argument %d type mismatch: expected %s, got %s (%s)\n", s.filename, s.line, s.col, i + 1,
+                   List_get<string>(pts, i), sema_infer_type(s, List_get<*ExprNode>(&e.kids, i)), perr);
+        }
+        i = i + 1;
+    }
+    if (variadic == 1) {
+        sema_check_variadic_extras(s, e, np);
+    }
+}
+
+// Index of the '(' opening a lambda signature's parameter list "R(T1 a, T2 b)" (the
+// last top-level group, so a fn-typed return `fn(int)->int(int x)` is skipped), or -1.
+int sema_lambda_open(string sig) {
+    int n = sema_slen(sig);
+    if (n == 0 || (int)sig[n - 1] != 41) {
+        return -1;
+    }
+    int depth = 0;
+    int i = n - 1;
+    while (i >= 0) {
+        int c = (int)sig[i];
+        if (c == 41) {
+            depth = depth + 1;
+        }
+        else if (c == 40) {
+            depth = depth - 1;
+            if (depth == 0) {
+                return i;
+            }
+        }
+        i = i - 1;
+    }
+    return -1;
+}
+
+// Return type of a lambda signature spelling "R(T1 a, T2 b)".
+string sema_lambda_ret(string sig) {
+    int i = sema_lambda_open(sig);
+    if (i <= 0) {
+        return "";
+    }
+    return sema_trim_sub(sig, 0, i);
+}
+
+// Parameter types (into `types`) and names (into `names`) of a lambda signature spelling.
+void sema_lambda_sig(string sig, List<string>* types, List<string>* names) {
+    int i = sema_lambda_open(sig);
+    if (i < 0) {
+        return;
+    }
+    int close = sema_slen(sig) - 1;
+    int depth = 0;
+    int start = i + 1;
+    int j = i + 1;
+    while (j <= close) {
+        int c = (int)sig[j];
+        if (c == 91) {
+            j = sema_dim_close(sig, j);
+            if (j > close) {
+                j = close;
+            }
+            c = (int)sig[j];
+        }
+        else if (c == 40 || c == 60) {
+            depth = depth + 1;
+        }
+        else if ((c == 41 && j < close) || (c == 62 && (int)sig[j - 1] != 45)) {
+            depth = depth - 1;
+        }
+        if ((c == 44 && depth == 0) || j == close) {
+            string one = sema_trim_sub(sig, start, j);
+            int sp = 0;
+            int k = 0;
+            while (one[k] != 0) {
+                if ((int)one[k] == 32) {
+                    sp = k;
+                }
+                k = k + 1;
+            }
+            if (one[0] != 0) {
+                if (sp > 0) {
+                    List_push<string>(types, sema_trim_sub(one, 0, sp));
+                    List_push<string>(names, sema_trim_sub(one, sp + 1, sema_slen(one)));
+                } else {
+                    List_push<string>(types, one);
+                    List_push<string>(names, "");
+                }
+            }
+            start = j + 1;
+        }
+        j = j + 1;
+    }
+}
