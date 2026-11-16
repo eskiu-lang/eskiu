@@ -30,6 +30,7 @@ public:
         : exprTypes(exprTypes), instanceArgs(instanceArgs), instanceExprTypes(instanceExprTypes) {}
     void run(Program* program);
 private:
+    friend class AsyncLowering;   // lowers one function (async_lower.h)
     const std::map<Expr*, std::string>* exprTypes;
     const InstanceArgs* instanceArgs;
     const std::map<Expr*, InstanceTypes>* instanceExprTypes;

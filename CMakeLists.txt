@@ -80,6 +80,12 @@ set(SOURCES
     sema/typecheck_assign.cpp
     sema/c_header.cpp
     sema/async_transform.cpp
+    sema/async_lower_util.cpp
+    sema/async_lower_setup.cpp
+    sema/async_lower_desugar.cpp
+    sema/async_lower_states.cpp
+    sema/async_lower_stmt.cpp
+    sema/async_lower_frame.cpp
     codegen/codegen_module.cpp
     codegen/codegen_type.cpp
     codegen/codegen_scope.cpp
