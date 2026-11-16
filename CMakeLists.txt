@@ -87,6 +87,8 @@ set(SOURCES
     codegen/codegen_unary.cpp
     codegen/codegen_member.cpp
     codegen/codegen_call.cpp
+    codegen/codegen_call_expr.cpp
+    codegen/codegen_template_call.cpp
     codegen/codegen_closure.cpp
     codegen/codegen_adt.cpp
     codegen/codegen_cabi.cpp
