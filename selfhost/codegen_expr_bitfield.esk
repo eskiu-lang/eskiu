@@ -1,0 +1,565 @@
+// codegen_expr_bitfield.esk: bitfield reads and writes, zero fills and loop frames (part of codegen_expr.esk, imported in order)
+
+// A bitfield value in its storage type, converted to the type it is read as.
+CgVal cg_bf_promote(Codegen* g, CgVal v, CgBF slot) {
+    if (cg_streq(cg_bf_read_ety(g, slot), "int") == 0) {
+        return v;
+    }
+    if (cg_streq(v.ty, "i32") == 0) {
+        string t = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, t);
+        cg_emit(g, " = trunc ");
+        cg_emit(g, v.ty);
+        cg_emit(g, " ");
+        cg_emit(g, v.op);
+        cg_emit(g, " to i32\n");
+        v.op = t;
+        v.ty = "i32";
+    }
+    v.ety = "int";
+    return v;
+}
+
+CgVal cg_bf_read(Codegen* g, string baseptr, string sname, CgBF slot) {
+    return cg_bf_promote(g, cg_bf_load(g, cg_bf_wordptr(g, baseptr, sname, slot), slot), slot);
+}
+
+void cg_bf_write(Codegen* g, string baseptr, string sname, CgBF slot, string rhsop) {
+    cg_bf_store(g, cg_bf_wordptr(g, baseptr, sname, slot), slot, rhsop);
+}
+
+// An aggregate larger than this is zeroed by cg_zero_fill rather than by storing its
+// zeroinitializer (clang expands that store element by element).
+int cg_ll_big(Codegen* g, string llty) {
+    return cg_ll_size_of(g, llty) > 4096 ? 1 : 0;
+}
+
+// Zero the `llty` storage at `slot` in one operation: llvm.memset, or a byte loop when
+// freestanding (no C library to call). The size is the type's, computed by LLVM.
+void cg_zero_fill(Codegen* g, string slot, string llty) {
+    cg_zero_bytes(g, slot, cg_cat("ptrtoint (ptr getelementptr (", cg_cat(llty, ", ptr null, i32 1) to i64)")));
+}
+
+// Zero `sz` (an i64 operand) bytes at `slot`, the same two ways as cg_zero_fill.
+void cg_zero_bytes(Codegen* g, string slot, string sz) {
+    if (g.freestanding == 0) {
+        cg_ensure_extern(g, "llvm.memset.p0.i64", "declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)\n");
+        cg_emit(g, "  call void @llvm.memset.p0.i64(ptr ");
+        cg_emit(g, slot);
+        cg_emit(g, ", i8 0, i64 ");
+        cg_emit(g, sz);
+        cg_emit(g, ", i1 false)\n");
+        return;
+    }
+    string ctr = cg_entry_alloca(g, "i64");
+    string head = cg_lbl(g);
+    string body = cg_lbl(g);
+    string done = cg_lbl(g);
+    cg_emit(g, "  store i64 0, ptr ");
+    cg_emit(g, ctr);
+    cg_emit(g, "\n");
+    cg_br(g, head);
+    cg_label(g, head);
+    string iv = cg_tmp(g);
+    string cmp = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, iv);
+    cg_emit(g, " = load i64, ptr ");
+    cg_emit(g, ctr);
+    cg_emit(g, "\n");
+    cg_emit(g, "  ");
+    cg_emit(g, cmp);
+    cg_emit(g, " = icmp ult i64 ");
+    cg_emit(g, iv);
+    cg_emit(g, ", ");
+    cg_emit(g, sz);
+    cg_emit(g, "\n");
+    cg_emit(g, "  br i1 ");
+    cg_emit(g, cmp);
+    cg_emit(g, ", label %");
+    cg_emit(g, body);
+    cg_emit(g, ", label %");
+    cg_emit(g, done);
+    cg_emit(g, "\n");
+    g.terminated = 1;
+    cg_label(g, body);
+    string bp = cg_tmp(g);
+    string nx = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, bp);
+    cg_emit(g, " = getelementptr i8, ptr ");
+    cg_emit(g, slot);
+    cg_emit(g, ", i64 ");
+    cg_emit(g, iv);
+    cg_emit(g, "\n");
+    cg_emit(g, "  store i8 0, ptr ");
+    cg_emit(g, bp);
+    cg_emit(g, "\n");
+    cg_emit(g, "  ");
+    cg_emit(g, nx);
+    cg_emit(g, " = add i64 ");
+    cg_emit(g, iv);
+    cg_emit(g, ", 1\n");
+    cg_emit(g, "  store i64 ");
+    cg_emit(g, nx);
+    cg_emit(g, ", ptr ");
+    cg_emit(g, ctr);
+    cg_emit(g, "\n");
+    cg_br(g, head);
+    cg_label(g, done);
+}
+
+void cg_struct_init(Codegen* g, string slot, string sname0, *ExprNode e0) {
+    *ExprNode e = cg_with_defaults(g, e0);             // omitted fields take their defaults
+    string sname = cg_dealias(g, sname0);                // `Alias{...}` of a struct alias fills the struct
+    CgStruct s = cg_find_struct(g, sname);
+    // Fields the literal omits are zero (C aggregate-initializer semantics), not whatever
+    // the stack slot held: store the zero value first, then the given fields.
+    string sty = cg_cat("%", s.name);
+    if (cg_ll_big(g, sty) == 1) {
+        cg_zero_fill(g, slot, sty);
+    }
+    else {
+        cg_emit(g, "  store ");
+        cg_emit(g, sty);
+        cg_emit(g, " zeroinitializer, ptr ");
+        cg_emit(g, slot);
+        cg_emit(g, "\n");
+    }
+    int n = List_len<*ExprNode>(&e.kids);
+    int i = 0;
+    while (i < n) {
+        string fname = List_get<string>(&e.names, i);
+        int idx = i;                                    // positional by default
+        if (fname[0] != 0) {
+            idx = cg_field_idx(&s, fname);
+        }
+        string fety = "";
+        if (idx >= 0 && idx < List_len<string>(&s.fetys)) {
+            fety = List_get<string>(&s.fetys, idx);
+        }
+        string actual = fname;
+        if (actual[0] == 0 && idx >= 0 && idx < List_len<string>(&s.fnames)) {
+            actual = List_get<string>(&s.fnames, idx);
+        }
+        *ExprNode fex = List_get<*ExprNode>(&e.kids, i);
+        CgBF bfslot = cg_bf(g, sname, actual);
+        if (fex.kind == EK_ARRAYLIT) {                  // an array field's `{...}` fills it in place
+            string ap = slot;
+            if (bfslot.boffs >= 0) {
+                ap = cg_bf_wordptr(g, slot, s.name, bfslot);
+            }
+            else if (cg_is_union(g, s.name) == 0) {
+                int aidx = idx;
+                if (bfslot.fidx >= 0) {
+                    aidx = bfslot.fidx;
+                }
+                ap = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, ap);
+                cg_emit(g, " = getelementptr inbounds %");
+                cg_emit(g, s.name);
+                cg_emit(g, ", ptr ");
+                cg_emit(g, slot);
+                cg_emit(g, ", i32 0, i32 ");
+                cg_emit(g, cg_itoa(aidx));
+                cg_emit(g, "\n");
+            }
+            cg_array_init(g, ap, fety, fex, 0);         // the struct is already zero
+            i = i + 1;
+            continue;
+        }
+        CgVal val = cg_expr(g, fex);
+        if (bfslot.bw > 0) {                            // a bitfield member of this literal
+            cg_bf_write(g, slot, s.name, bfslot, cg_coerce(g, val, bfslot.sty));
+            i = i + 1;
+            continue;
+        }
+        int gepidx = idx;   // normal field in a bf struct
+        if (bfslot.fidx >= 0) {
+            gepidx = bfslot.fidx;
+        }
+        string fp = "";
+        if (bfslot.boffs >= 0) {
+            fp = cg_bf_wordptr(g, slot, s.name, bfslot);
+        }
+        else if (cg_is_union(g, s.name) == 1) {   // a union's members start at offset 0
+            fp = slot;
+        }
+        else {
+            fp = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, fp);
+            cg_emit(g, " = getelementptr inbounds %");
+            cg_emit(g, s.name);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, slot);
+            cg_emit(g, ", i32 0, i32 ");
+            cg_emit(g, cg_itoa(gepidx));
+            cg_emit(g, "\n");
+        }
+        string flty = cg_lltype(g, fety);
+        string fop = cg_coerce(g, val, flty);   // hoist: cg_coerce emits its own instr — must not interleave the store line
+        if (cg_is_iface(g, cg_dealias(g, fety)) == 1) {
+            fop = cg_iface_conv(g, fety, val, fex);
+        }
+        cg_emit(g, "  store ");
+        cg_emit(g, flty);
+        cg_emit(g, " ");
+        cg_emit(g, fop);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, fp);
+        cg_emit(g, "\n");
+        i = i + 1;
+    }
+}
+
+// Evaluate a condition to an i1 operand (compare-to-zero if it isn't already i1).
+CgVal cg_cond_val(Codegen* g, CgVal c);
+CgVal cg_cond(Codegen* g, *ExprNode e) {
+    return cg_cond_val(g, cg_expr(g, e));
+}
+
+// The truth value (i1) of an already evaluated operand.
+CgVal cg_cond_val(Codegen* g, CgVal c0) {
+    CgVal c = cg_iface_data(g, c0);
+    if (cg_streq(c.ty, "i1") == 1) {
+        return c;
+    }
+    string t = cg_tmp(g);
+    if (cg_is_float(c.ty) == 1) {                          // float truthiness: une 0.0 (NaN is true)
+        cg_emit(g, "  ");
+        cg_emit(g, t);
+        cg_emit(g, " = fcmp une ");
+        cg_emit(g, c.ty);
+        cg_emit(g, " ");
+        cg_emit(g, c.op);
+        cg_emit(g, ", 0.0\n");
+        let rf: CgVal;
+        rf.op = t;
+        rf.ty = "i1";
+        return rf;
+    }
+    string zero = "0";
+    if (cg_streq(c.ty, "ptr") == 1) {   // pointer truthiness vs null
+        zero = "null";
+    }
+    cg_emit(g, "  ");
+    cg_emit(g, t);
+    cg_emit(g, " = icmp ne ");
+    cg_emit(g, c.ty);
+    cg_emit(g, " ");
+    cg_emit(g, c.op);
+    cg_emit(g, ", ");
+    cg_emit(g, zero);
+    cg_emit(g, "\n");
+    let r: CgVal;
+    r.op = t;
+    r.ty = "i1";
+    return r;
+}
+
+// An interface value `{data, vtable}` as its data pointer (null when the value is empty);
+// any other value unchanged.
+CgVal cg_iface_data(Codegen* g, CgVal c) {
+    if (cg_streq(c.ty, "%iface_fat") == 0) {
+        return c;
+    }
+    string t = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, t);
+    cg_emit(g, " = extractvalue %iface_fat ");
+    cg_emit(g, c.op);
+    cg_emit(g, ", 0\n");
+    let r: CgVal;
+    r.op = t;
+    r.ty = "ptr";
+    r.ety = "*void";
+    return r;
+}
+
+// The static type name of a thrown value, used for catch-clause strcmp matching.
+string cg_throw_typename(Codegen* g, *ExprNode e) {
+    if (e != null && e.kind == EK_LITERAL) {
+        if (e.lit_kind == LIT_STRING) {
+            return "string";
+        }
+        if (e.lit_kind == LIT_INT) {
+            return "int";
+        }
+        if (e.lit_kind == LIT_BOOL) {
+            return "bool";
+        }
+        if (e.lit_kind == LIT_CHAR) {
+            return "char";
+        }
+    }
+    string t = cg_etype(g, e);
+    if (t[0] == 0) {
+        return "unknown";
+    }
+    return t;
+}
+
+// The name a thrown value's type is matched by (a catch clause strcmp's it): the
+// spelling under the active substitution, dealiased, without the `struct:` tag, a
+// template instance mangled (`Box<int>` -> `Box_int`), and `int32` spelled `int`.
+string cg_ex_typename(Codegen* g, string t) {
+    t = cg_strip_nullable(t);
+    t = cg_apply_sub(g, t);
+    t = cg_dealias(g, t);
+    int n = 0;
+    while (t[n] != 0) {
+        n = n + 1;
+    }
+    *uint8 buf = alloc<uint8>(n + 1);
+    int o = 0;
+    int i = 0;
+    int angle = 0;
+    while (i < n) {
+        if (i + 7 <= n && cg_streq(cg_sub_str(t, i, i + 7), "struct:") == 1) {
+            i = i + 7;
+            continue;
+        }
+        if ((int)t[i] == 60) {
+            angle = 1;
+        }
+        buf[o] = (uint8)t[i];
+        o = o + 1;
+        i = i + 1;
+    }
+    buf[o] = 0;
+    string r = (string)buf;
+    if (angle == 1) {
+        r = cg_mangle(r);
+    }
+    if (cg_streq(r, "int32") == 1) {
+        return "int";
+    }
+    if (cg_streq(r, "uint32") == 1) {
+        return "uint";
+    }
+    if (r[0] == 0) {
+        return "unknown";
+    }
+    return r;
+}
+
+// Map an LLVM scalar type back to its Eskiu type name, for naming a thrown
+// value whose Eskiu type could not be resolved structurally (e.g. `throw c + 1`,
+// where the binary result carries only its LLVM type). "" if no clean mapping.
+string cg_llty_eskiu_name(string llty) {
+    if (cg_streq(llty, "i1") == 1) {
+        return "bool";
+    }
+    if (cg_streq(llty, "i8") == 1) {
+        return "char";
+    }
+    if (cg_streq(llty, "i16") == 1) {
+        return "int16";
+    }
+    if (cg_streq(llty, "i32") == 1) {
+        return "int";
+    }
+    if (cg_streq(llty, "i64") == 1) {
+        return "int64";
+    }
+    if (cg_streq(llty, "float") == 1) {
+        return "float";
+    }
+    if (cg_streq(llty, "double") == 1) {
+        return "double";
+    }
+    return "";
+}
+
+// The C++ EH personality for the target: mingw's SEH one on Windows, else Itanium's
+// (C++ CodeGen::ehPersonalityName).
+string cg_eh_pers(Codegen* g) {
+    if (g.wintgt == 1) {
+        return "__gxx_personality_seh0";
+    }
+    return "__gxx_personality_v0";
+}
+
+// Does a statement subtree contain a `try`? (→ the function needs an EH personality.)
+// Kind-aware: only recurses into the nested-statement fields each kind populates (an
+// unset field is null, not a real subtree, so reading it would be wrong). Doesn't descend
+// into expressions.
+int cg_has_try_s(*StmtNode s) {
+    if (s == null) {
+        return 0;
+    }
+    if (s.kind == SK_TRY) {
+        return 1;
+    }
+    if (s.kind == SK_BLOCK || s.kind == SK_SWITCH || s.kind == SK_CASE
+        || s.kind == SK_MATCH) {
+        int i = 0;
+        int n = List_len<*StmtNode>(&s.items);
+        while (i < n) {
+            if (cg_has_try_s(List_get<*StmtNode>(&s.items, i)) == 1) {
+                return 1;
+            }
+            i = i + 1;
+        }
+    }
+    if (s.kind == SK_IF || s.kind == SK_WHILE || s.kind == SK_FOR || s.kind == SK_FORIN
+        || s.kind == SK_ARM || s.kind == SK_CATCH || s.kind == SK_DEFER) {
+        if (cg_has_try_s(s.s1) == 1) {
+            return 1;
+        }
+    }
+    if (s.kind == SK_IF || s.kind == SK_FOR) {
+        if (cg_has_try_s(s.s2) == 1) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int cg_has_extext_e(*ExprNode e) {
+    if (e == null || e.kind == EK_LAMBDA) {
+        return 0;
+    }
+    if (e.kind == EK_CALL && e.a != null && e.a.kind == EK_IDENT
+        && ((cg_streq(e.a.sval, "exception_text") == 1 && List_len<*ExprNode>(&e.kids) == 0)
+            || (cg_streq(e.a.sval, "__exception_text_into") == 1 && List_len<*ExprNode>(&e.kids) == 1))) {
+        return 1;
+    }
+    if (cg_has_extext_e(e.a) == 1 || cg_has_extext_e(e.b) == 1) {
+        return 1;
+    }
+    int i = 0;
+    int n = List_len<*ExprNode>(&e.kids);
+    while (i < n) {
+        if (cg_has_extext_e(List_get<*ExprNode>(&e.kids, i)) == 1) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+int cg_has_extext_s(*StmtNode s) {
+    if (s == null) {
+        return 0;
+    }
+    int k = s.kind;
+    if (k == SK_TRY) {
+        return cg_has_extext_s(s.s1) == 1 || cg_has_extext_s(s.s2) == 1 ? 1 : 0;
+    }
+    if (k == SK_VARDECL || k == SK_RETURN || k == SK_THROW || k == SK_EXPR || k == SK_THREADJOIN
+        || k == SK_ASMOUTPUT || k == SK_ASMINPUT) {
+        return cg_has_extext_e(s.expr);
+    }
+    if (k == SK_IF) {
+        return cg_has_extext_e(s.expr) == 1 || cg_has_extext_s(s.s1) == 1 || cg_has_extext_s(s.s2) == 1 ? 1 : 0;
+    }
+    if (k == SK_WHILE || k == SK_DOWHILE || k == SK_FORIN) {
+        return cg_has_extext_e(s.expr) == 1 || cg_has_extext_s(s.s1) == 1 ? 1 : 0;
+    }
+    if (k == SK_FOR) {
+        return cg_has_extext_s(s.s1) == 1 || cg_has_extext_e(s.expr) == 1 || cg_has_extext_e(s.expr2) == 1 || cg_has_extext_s(s.s2) == 1 ? 1 : 0;
+    }
+    if (k == SK_BLOCK || k == SK_SWITCH || k == SK_CASE || k == SK_MATCH || k == SK_ASM) {
+        if (cg_has_extext_e(s.expr) == 1) {
+            return 1;
+        }
+        int i = 0;
+        int n = List_len<*StmtNode>(&s.items);
+        while (i < n) {
+            if (cg_has_extext_s(List_get<*StmtNode>(&s.items, i)) == 1) {
+                return 1;
+            }
+            i = i + 1;
+        }
+        return 0;
+    }
+    if (k == SK_ARM || k == SK_CATCH || k == SK_DEFER) {
+        return cg_has_extext_s(s.s1);
+    }
+    return 0;
+}
+
+// Emit a (possibly nested) array-literal initializer into `slot` of type `arrType`.
+// `int[2][3] a = {{1,2,3},{4,5,6}}` recurses one dimension per `{...}` level; a short
+// list zero-fills the rest. `do_zero` clears the whole aggregate once at the top level.
+void cg_array_init(Codegen* g, string slot, string arrType0, *ExprNode lit, int do_zero) {
+    string arrType = cg_dealias(g, arrType0);   // `type A3 = int[3]; A3 a = {...}`
+    string ty = cg_lltype(g, arrType);
+    string elemStr = cg_array_elem(arrType);
+    string elemLl = cg_lltype(g, elemStr);
+    int elemIsArr = cg_is_array(elemStr);
+    if (do_zero == 1 && cg_ll_big(g, ty) == 1) {
+        cg_zero_fill(g, slot, ty);
+    }
+    else if (do_zero == 1) {
+        cg_emit(g, "  store ");
+        cg_emit(g, ty);
+        cg_emit(g, " zeroinitializer, ptr ");
+        cg_emit(g, slot);
+        cg_emit(g, "\n");
+    }
+    int i = 0;
+    int n = List_len<*ExprNode>(&lit.kids);
+    while (i < n) {
+        *ExprNode el = List_get<*ExprNode>(&lit.kids, i);
+        string gp = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, gp);
+        cg_emit(g, " = getelementptr ");
+        cg_emit(g, ty);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, slot);
+        cg_emit(g, ", i32 0, i32 ");
+        cg_emit(g, cg_itoa(i));
+        cg_emit(g, "\n");
+        if (elemIsArr == 1 && el.kind == EK_ARRAYLIT) {
+            cg_array_init(g, gp, elemStr, el, 0);       // outer zeroinit already covers this row
+        } else {
+            CgVal ev = cg_expr(g, el);
+            string eop = cg_coerce(g, ev, elemLl);
+            if (cg_is_iface(g, cg_dealias(g, elemStr)) == 1) {   // box `&s`
+                eop = cg_iface_conv(g, elemStr, ev, el);
+            }
+            cg_emit(g, "  store ");
+            cg_emit(g, elemLl);
+            cg_emit(g, " ");
+            cg_emit(g, eop);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, gp);
+            cg_emit(g, "\n");
+        }
+        i = i + 1;
+    }
+}
+
+// Enter/leave a loop: push (or pop) this loop's continue target, break target, and the
+// cleanup-stack depth at entry, keeping the three parallel lists in sync. `break` and
+// `continue` read the innermost (last) entry.
+void cg_loop_push(Codegen* g, string cont, string end, string label) {
+    List_push<string>(&g.loop_cont, cont);
+    List_push<string>(&g.loop_end, end);
+    List_push<int>(&g.loop_cldepth, List_len<*StmtNode>(&g.cleanups));
+    // Mirror onto the loops-only stack for labeled break/continue.
+    string lbl = label;
+    if (lbl == null) {
+        lbl = "";
+    }
+    List_push<string>(&g.loop_lbls, lbl);
+    List_push<string>(&g.loop_lbl_end, end);
+    List_push<string>(&g.loop_lbl_cont, cont);
+    List_push<int>(&g.loop_lbl_cld, List_len<*StmtNode>(&g.cleanups));
+}
+
+void cg_loop_pop(Codegen* g) {
+    List_remove<string>(&g.loop_cont, List_len<string>(&g.loop_cont) - 1);
+    List_remove<string>(&g.loop_end, List_len<string>(&g.loop_end) - 1);
+    List_remove<int>(&g.loop_cldepth, List_len<int>(&g.loop_cldepth) - 1);
+    List_remove<string>(&g.loop_lbls, List_len<string>(&g.loop_lbls) - 1);
+    List_remove<string>(&g.loop_lbl_end, List_len<string>(&g.loop_lbl_end) - 1);
+    List_remove<string>(&g.loop_lbl_cont, List_len<string>(&g.loop_lbl_cont) - 1);
+    List_remove<int>(&g.loop_lbl_cld, List_len<int>(&g.loop_lbl_cld) - 1);
+}

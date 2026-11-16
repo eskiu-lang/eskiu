@@ -1,0 +1,549 @@
+// codegen_expr_generic.esk: monomorphized calls, type-argument inference and bitfield stores (part of codegen_expr.esk, imported in order)
+
+// Emit a call to an already-monomorphized function `@mangled` with e's args (coerced to
+// its declared param types). Shared by explicit template calls and inferred generic calls.
+CgVal cg_call_mangled(Codegen* g, string mangled, *ExprNode e) {
+    let v: CgVal;
+    v.ety = "";
+    CgFn f = cg_find_fn(g, mangled);
+    string args = "";
+    int i = 0;
+    int n = List_len<*ExprNode>(&e.kids);
+    while (i < n) {
+        *ExprNode ax = List_get<*ExprNode>(&e.kids, i);
+        CgVal a = cg_expr(g, ax);
+        string pty = cg_pty(&f, i);
+        string pety = cg_pety(&f, i);
+        string aop = a.op;
+        string aty = a.ty;
+        // An interface parameter (`Sh y`, or `T x` with T = Sh) boxes a struct pointer.
+        if (pety[0] != 0 && cg_is_iface(g, cg_dealias(g, pety)) == 1) {
+            aop = cg_iface_conv(g, pety, a, ax);
+            aty = "%iface_fat";
+        }
+        else if (pty[0] != 0) {
+            aop = cg_coerce(g, a, pty);
+            aty = pty;
+        }
+        else if (f.variadic == 1 && cg_streq(a.ty, "float") == 1) {   // vararg promotion
+            aop = cg_coerce(g, a, "double");
+            aty = "double";
+        }
+        else if (f.variadic == 1 && cg_int_w(a.ty) > 0 && cg_int_w(a.ty) < 32) {
+            aop = cg_coerce(g, a, "i32");
+            aty = "i32";
+        }
+        if (args[0] != 0) {
+            args = cg_cat(args, ", ");
+        }
+        args = cg_cat(args, cg_cat(aty, cg_cat(" ", aop)));
+        i = i + 1;
+    }
+    int isvoid = cg_streq(f.retty, "void");
+    // A variadic callee needs the explicit function type: `call i32 (i32, ...) @f_int`.
+    string callty = f.retty;
+    if (f.variadic == 1) {
+        callty = cg_cat(f.retty, cg_cat(" (", cg_cat(cg_va(f.fixedtypes), ")")));
+    }
+    string t = cg_emit_callish(g, callty, cg_cat("@", mangled), args, isvoid);
+    if (isvoid == 1) {
+        v.op = "";
+        v.ty = "void";
+        return v;
+    }
+    v.op = t;
+    v.ty = f.retty;
+    v.ety = f.rety;
+    return v;
+}
+
+// Whole-token index of `tok` in `s` (delimited by non-identifier chars), or -1.
+int cg_tok_index(string s, string tok) {
+    int n = 0;
+    while (s[n] != 0) {
+        n = n + 1;
+    }
+    int m = 0;
+    while (tok[m] != 0) {
+        m = m + 1;
+    }
+    int i = 0;
+    while (i + m <= n) {
+        int eq = 1;
+        int k = 0;
+        while (k < m) {
+            if (s[i + k] != tok[k]) {
+                eq = 0;
+            }
+            k = k + 1;
+        }
+        if (eq == 1) {
+            int beforeOk = 1;
+            if (i > 0) {
+                int b = (int)s[i - 1];
+                if ((b >= 97 && b <= 122) || (b >= 65 && b <= 90) || (b >= 48 && b <= 57) || b == 95) {
+                    beforeOk = 0;
+                }
+            }
+            int afterOk = 1;
+            int af = (int)s[i + m];
+            if ((af >= 97 && af <= 122) || (af >= 65 && af <= 90) || (af >= 48 && af <= 57) || af == 95) {
+                afterOk = 0;
+            }
+            if (beforeOk == 1 && afterOk == 1) {
+                return i;
+            }
+        }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+// Infer one type-param binding by unifying a param pattern (e.g. "Chan<T>*") against a
+// concrete arg type ("Chan<int>*"): the pattern is prefix + Tp + suffix, so the binding is
+// the middle of the arg once prefix/suffix are stripped. "" if it doesn't fit.
+// Canonical pointer form: trailing '*'/spaces moved to the front ("Box<T>*" → "*Box<T>"),
+// so a declared param (trailing-star) and a cg_etype result (leading-star) compare equal.
+string cg_norm_ptr(string t) {
+    int b = 0;
+    while (t[b] != 0) {
+        b = b + 1;
+    }
+    int stars = 0;
+    while (b > 0 && ((int)t[b - 1] == 42 || (int)t[b - 1] == 32)) {
+        if ((int)t[b - 1] == 42) {
+            stars = stars + 1;
+        }
+        b = b - 1;
+    }
+    int a = 0;
+    while ((int)t[a] == 42) {
+        stars = stars + 1;
+        a = a + 1;
+    }
+    string core = cg_sub_str(t, a, b);
+    String r;
+    String_init(&r, b - a + stars);
+    int i = 0;
+    while (i < stars) {
+        String_push(&r, '*');
+        i = i + 1;
+    }
+    String_append(&r, core);
+    return (string)String_cstr(&r);
+}
+
+string cg_infer_one(string pat0, string tp, string arg0) {
+    string pattern = cg_norm_ptr(pat0);
+    string arg = cg_norm_ptr(arg0);
+    int pos = cg_tok_index(pattern, tp);
+    if (pos < 0) {
+        return "";
+    }
+    int pn = 0;
+    while (pattern[pn] != 0) {
+        pn = pn + 1;
+    }
+    int tn = 0;
+    while (tp[tn] != 0) {
+        tn = tn + 1;
+    }
+    int an = 0;
+    while (arg[an] != 0) {
+        an = an + 1;
+    }
+    string prefix = cg_sub_str(pattern, 0, pos);
+    string suffix = cg_sub_str(pattern, pos + tn, pn);
+    int pl = pos;
+    int sl = pn - (pos + tn);
+    if (an < pl + sl) {
+        return "";
+    }
+    int k = 0;   // prefix matches
+    while (k < pl) {
+        if (arg[k] != prefix[k]) {
+            return "";
+        }
+        k = k + 1;
+    }
+    k = 0;  // suffix matches
+    while (k < sl) {
+        if (arg[an - sl + k] != suffix[k]) {
+            return "";
+        }
+        k = k + 1;
+    }
+    return cg_sub_str(arg, pl, an - sl);
+}
+
+// The binding of `tp` from a param pattern against an argument type: structural
+// unification over nested type args first (`Pair<A, B>` binds A and B), then the
+// prefix/suffix match for other shapes (e.g. a fn type `fn(*K)->uint64`).
+string cg_infer_bind(string pat, string tp, string arg) {
+    string b = ast_unify_tparam(pat, arg, tp);
+    if (b[0] != 0) {
+        return b;
+    }
+    return cg_infer_one(pat, tp, arg);
+}
+
+// Build `name<arg0, arg1, …>` for a generic fn called without explicit type args, inferring
+// each type param from the first parameter whose pattern mentions it. "" if any is unsolved.
+string cg_infer_generic(Codegen* g, *DeclNode gd, *ExprNode e) {
+    String sp;
+    String_init(&sp, 16);
+    String_append(&sp, gd.name);
+    String_append(&sp, "<");
+    int ti = 0;
+    int ntp = List_len<TypeParam>(&gd.type_params);
+    while (ti < ntp) {
+        string tp = List_get<TypeParam>(&gd.type_params, ti).name;
+        // Structural parameters bind first; by-value `T a` deductions meet at their common
+        // integer type (as sema decides: `maxof(1, big)` is `maxof<int64>`).
+        string binding = "";
+        int pi = 0;
+        int np = List_len<Param>(&gd.params);
+        while (pi < np && binding[0] == 0) {
+            if (pi < List_len<*ExprNode>(&e.kids) && cg_streq(ast_unify_canon(List_get<Param>(&gd.params, pi).ty), tp) == 0) {
+                string argty = cg_etype(g, List_get<*ExprNode>(&e.kids, pi));
+                if (argty[0] != 0) {
+                    binding = cg_infer_bind(List_get<Param>(&gd.params, pi).ty, tp, argty);
+                }
+            }
+            pi = pi + 1;
+        }
+        int bystruct = 0;
+        if (binding[0] != 0) {
+            bystruct = 1;
+        }
+        pi = 0;
+        while (bystruct == 0 && pi < np && pi < List_len<*ExprNode>(&e.kids)) {
+            if (cg_streq(ast_unify_canon(List_get<Param>(&gd.params, pi).ty), tp) == 1) {
+                string argty = cg_etype(g, List_get<*ExprNode>(&e.kids, pi));
+                if (argty[0] != 0 && cg_streq(argty, "null") == 0) {
+                    string b = cg_infer_bind(List_get<Param>(&gd.params, pi).ty, tp, argty);
+                    if (b[0] != 0) {
+                        if (binding[0] == 0) {
+                            binding = b;
+                        }
+                        else if (cg_streq(binding, b) == 0) {
+                            string common = ast_range_var_type(binding, b);
+                            if (common[0] != 0) {
+                                binding = common;
+                            }
+                        }
+                    }
+                }
+            }
+            pi = pi + 1;
+        }
+        if (binding[0] == 0) {              // couldn't infer this param
+            return "";
+        }
+        if (ti > 0) {
+            String_append(&sp, ", ");
+        }
+        String_append(&sp, binding);
+        ti = ti + 1;
+    }
+    String_append(&sp, ">");
+    return (string)String_cstr(&sp);
+}
+
+// The address (a ptr) of the struct that a member expression `ea` denotes, plus its struct
+// type name (via out_sname). Mirrors the base resolution in cg_lval's EK_MEMBER.
+string cg_member_baseptr(Codegen* g, *ExprNode ea, *string out_sname) {
+    string bet = cg_etype(g, ea);
+    if (cg_is_ptr_ty(bet) == 1) {
+        out_sname[0] = cg_strip_ptr(bet);
+        return cg_safe_nonnull(g, cg_expr(g, ea).op);
+    }
+    CgVal lv = cg_lval(g, ea);
+    if (lv.op[0] != 0) {
+        out_sname[0] = bet;
+        if (lv.ety[0] != 0) {
+            out_sname[0] = lv.ety;
+        }
+        return lv.op;
+    }
+    CgVal val = cg_expr(g, ea);                       // rvalue → materialize
+    if (val.ety[0] != 0) {
+        out_sname[0] = val.ety;
+    } else {
+        out_sname[0] = bet;
+    }
+    string slot = cg_entry_alloca(g, val.ty);
+    cg_emit(g, "  store ");
+    cg_emit(g, val.ty);
+    cg_emit(g, " ");
+    cg_emit(g, val.op);
+    cg_emit(g, ", ptr ");
+    cg_emit(g, slot);
+    cg_emit(g, "\n");
+    return slot;
+}
+
+// `v` truncated to `w` bits, as the signed decimal LLVM expects for an iw constant.
+string cg_iconst(uint64 v, int w) {
+    let top: uint64 = 1;
+    if (w < 64) {
+        let m: uint64 = top << w;
+        v = v & (m - 1);
+        if (v >= m / 2) {
+            return cg_cat("-", cg_u64toa(m - v));
+        }
+        return cg_u64toa(v);
+    }
+    let sgn: uint64 = top << 63;
+    if (v >= sgn) {
+        let z: uint64 = 0;
+        return cg_cat("-", cg_u64toa(z - v));
+    }
+    return cg_u64toa(v);
+}
+
+// (1<<bw)-1 as a uint64 (all ones when bw >= 64).
+uint64 cg_bf_mask(int bw) {
+    let one: uint64 = 1;
+    if (bw >= 64) {
+        let z: uint64 = 0;
+        return z - one;
+    }
+    return (one << bw) - one;
+}
+
+// Address of a bitfield's storage word inside the struct at `baseptr`.
+// Also the address of a normal field of a bitfield-layout struct: by byte offset under the
+// C layout, else the struct element.
+string cg_bf_wordptr(Codegen* g, string baseptr, string sname, CgBF slot) {
+    string wa = cg_tmp(g);
+    if (slot.boffs >= 0) {
+        cg_emit(g, "  ");
+        cg_emit(g, wa);
+        cg_emit(g, " = getelementptr inbounds i8, ptr ");
+        cg_emit(g, baseptr);
+        cg_emit(g, ", i64 ");
+        cg_emit(g, cg_itoa(slot.boffs));
+        cg_emit(g, "\n");
+        return wa;
+    }
+    cg_emit(g, "  ");
+    cg_emit(g, wa);
+    cg_emit(g, " = getelementptr inbounds %");
+    cg_emit(g, sname);
+    cg_emit(g, ", ptr ");
+    cg_emit(g, baseptr);
+    cg_emit(g, ", i32 0, i32 ");
+    cg_emit(g, cg_itoa(slot.fidx));
+    cg_emit(g, "\n");
+    return wa;
+}
+
+// Read a bitfield from its word: load, shift down, mask, and sign-extend if signed. The
+// value is in the storage type (like the C++ codegen) and carries the field's Eskiu type.
+// ` align N` for a word access that needs one ("" = natural).
+string cg_bf_al(CgBF slot) {
+    if (slot.aal > 0) {
+        return cg_cat(", align ", cg_itoa(slot.aal));
+    }
+    return "";
+}
+
+// A mask constant printed for an integer of `w` bits (wider than 64: unsigned decimal).
+string cg_bf_const(uint64 v, int w) {
+    if (w > 64) {
+        return cg_u64toa(v);
+    }
+    return cg_iconst(v, w);
+}
+
+// Convert integer `op` of type `from` to `to` (zext or trunc; no-op when equal).
+string cg_bf_resize(Codegen* g, string op, string from, string to) {
+    int fw = cg_int_w(from);
+    int tw = cg_int_w(to);
+    if (fw == tw) {
+        return op;
+    }
+    string t = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, t);
+    cg_emit(g, " = ");
+    if (fw > tw) {
+        cg_emit(g, "trunc ");
+    } else {
+        cg_emit(g, "zext ");
+    }
+    cg_emit(g, from);
+    cg_emit(g, " ");
+    cg_emit(g, op);
+    cg_emit(g, " to ");
+    cg_emit(g, to);
+    cg_emit(g, "\n");
+    return t;
+}
+
+// Read a bitfield from its word: load (as the access type), shift down, mask, and
+// sign-extend if signed. The value is in the storage type (like the C++ codegen) and
+// carries the field's Eskiu type.
+CgVal cg_bf_load(Codegen* g, string wa, CgBF slot) {
+    let v: CgVal;
+    v.ety = slot.fety;
+    string st = slot.sty;
+    int W = cg_int_w(st);
+    string at = slot.aty;
+    string w = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, w);
+    cg_emit(g, " = load ");
+    cg_emit(g, g.bf_vol);
+    cg_emit(g, at);
+    cg_emit(g, ", ptr ");
+    cg_emit(g, wa);
+    cg_emit(g, cg_bf_al(slot));
+    cg_emit(g, "\n");
+    string sh = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, sh);
+    cg_emit(g, " = lshr ");
+    cg_emit(g, at);
+    cg_emit(g, " ");
+    cg_emit(g, w);
+    cg_emit(g, ", ");
+    cg_emit(g, cg_itoa(slot.boff));
+    cg_emit(g, "\n");
+    string shs = cg_bf_resize(g, sh, at, st);
+    string m = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, m);
+    cg_emit(g, " = and ");
+    cg_emit(g, st);
+    cg_emit(g, " ");
+    cg_emit(g, shs);
+    cg_emit(g, ", ");
+    cg_emit(g, cg_iconst(cg_bf_mask(slot.bw), W));
+    cg_emit(g, "\n");
+    v.ty = st;
+    if (slot.sgn == 1 && slot.bw < W) {               // sign-extend from bw bits
+        string s1 = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, s1);
+        cg_emit(g, " = shl ");
+        cg_emit(g, st);
+        cg_emit(g, " ");
+        cg_emit(g, m);
+        cg_emit(g, ", ");
+        cg_emit(g, cg_itoa(W - slot.bw));
+        cg_emit(g, "\n");
+        string s2 = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, s2);
+        cg_emit(g, " = ashr ");
+        cg_emit(g, st);
+        cg_emit(g, " ");
+        cg_emit(g, s1);
+        cg_emit(g, ", ");
+        cg_emit(g, cg_itoa(W - slot.bw));
+        cg_emit(g, "\n");
+        v.op = s2;
+        return v;
+    }
+    v.op = m;
+    return v;
+}
+
+// Write a bitfield into its word: load (as the access type), clear the field's bits, OR
+// in the masked/shifted value. `rhsop` is already in the storage type (slot.sty).
+void cg_bf_store(Codegen* g, string wa, CgBF slot, string rhsop) {
+    string st = slot.sty;
+    int W = cg_int_w(st);
+    string at = slot.aty;
+    int AW = cg_int_w(at);
+    uint64 mask = cg_bf_mask(slot.bw);
+    string w = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, w);
+    cg_emit(g, " = load ");
+    cg_emit(g, g.bf_vol);
+    cg_emit(g, at);
+    cg_emit(g, ", ptr ");
+    cg_emit(g, wa);
+    cg_emit(g, cg_bf_al(slot));
+    cg_emit(g, "\n");
+    string fm = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, fm);
+    cg_emit(g, " = shl ");
+    cg_emit(g, at);
+    cg_emit(g, " ");
+    cg_emit(g, cg_bf_const(mask, AW));
+    cg_emit(g, ", ");
+    cg_emit(g, cg_itoa(slot.boff));
+    cg_emit(g, "\n");
+    string nfm = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, nfm);
+    cg_emit(g, " = xor ");
+    cg_emit(g, at);
+    cg_emit(g, " ");
+    cg_emit(g, fm);
+    cg_emit(g, ", -1\n");
+    string c = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, c);
+    cg_emit(g, " = and ");
+    cg_emit(g, at);
+    cg_emit(g, " ");
+    cg_emit(g, w);
+    cg_emit(g, ", ");
+    cg_emit(g, nfm);
+    cg_emit(g, "\n");
+    string vm = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, vm);
+    cg_emit(g, " = and ");
+    cg_emit(g, st);
+    cg_emit(g, " ");
+    cg_emit(g, rhsop);
+    cg_emit(g, ", ");
+    cg_emit(g, cg_iconst(mask, W));
+    cg_emit(g, "\n");
+    string vma = cg_bf_resize(g, vm, st, at);
+    string shv = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, shv);
+    cg_emit(g, " = shl ");
+    cg_emit(g, at);
+    cg_emit(g, " ");
+    cg_emit(g, vma);
+    cg_emit(g, ", ");
+    cg_emit(g, cg_itoa(slot.boff));
+    cg_emit(g, "\n");
+    string nw = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, nw);
+    cg_emit(g, " = or ");
+    cg_emit(g, at);
+    cg_emit(g, " ");
+    cg_emit(g, c);
+    cg_emit(g, ", ");
+    cg_emit(g, shv);
+    cg_emit(g, "\n");
+    cg_emit(g, "  store ");
+    cg_emit(g, g.bf_vol);
+    cg_emit(g, at);
+    cg_emit(g, " ");
+    cg_emit(g, nw);
+    cg_emit(g, ", ptr ");
+    cg_emit(g, wa);
+    cg_emit(g, cg_bf_al(slot));
+    cg_emit(g, "\n");
+}
+
+// The type a bitfield is read as: `int` when all its values fit an int (C promotion),
+// else its declared type (mirrors CodeGen::bitfieldReadEskiu).
+string cg_bf_read_ety(Codegen* g, CgBF slot) {
+    if (cg_streq(ast_bf_read_type(cg_dealias(g, slot.fety), slot.bw), "int") == 1) {
+        return "int";
+    }
+    return slot.fety;
+}

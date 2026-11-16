@@ -1,0 +1,1698 @@
+// codegen_expr_walk.esk: the expression walk (cg_expr_i) (part of codegen_expr.esk, imported in order)
+
+CgVal cg_expr_i(Codegen* g, *ExprNode e) {
+    let v: CgVal;
+    v.ety = "";
+    if (e == null) {
+        v.op = "0";
+        v.ty = "i32";
+        return v;
+    }
+
+    if (e.kind == EK_LITERAL) {
+        if (e.lit_kind == LIT_STRING) {
+            v.op = cg_string_global_n(g, e.sval, e.slen);
+            v.ty = "ptr";
+            return v;
+        }
+        // Literals carry their Eskiu type too, so an operation mixing one with an unsigned
+        // operand gets C's conversions (`1 - u` is unsigned; a char literal is unsigned).
+        if (e.lit_kind == LIT_CHAR) {
+            v.op = cg_itoa((int)(uint8)e.sval[0]);
+            v.ty = "i8";
+            v.ety = "char";
+            return v;
+        }
+        v.op = e.sval;
+        if (e.lit_kind == LIT_BOOL) {
+            v.ty = "i1";
+            v.ety = "bool";
+        }
+        else if (e.lit_kind == LIT_NULL) {
+            v.op = "null";
+            v.ty = "ptr";
+        }
+        else if (e.lit_kind == LIT_FLOAT) {   // float literal defaults to double
+            v.op = cg_double_lit(e.sval);
+            v.ty = "double";
+            v.ety = "double";
+        }
+        else {                            // integer literal: normalize base, i64 if it won't fit signed i32
+            int neg = 0;
+            if (e.sval[0] == 45) {
+                neg = 1;
+            }
+            let mag: uint64 = cg_int_lit_mag(e.sval);
+            string dec = cg_u64toa(mag);
+            if (neg == 1) {
+                v.op = cg_cat("-", dec);
+            } else {
+                v.op = dec;
+            }
+            v.ty = "i32";
+            v.ety = "int";
+            let lim: uint64 = 2147483647;                 // INT32_MAX; INT32_MIN is one larger in magnitude
+            if (neg == 1) {
+                lim = 2147483648;
+            }
+            if (mag > lim) {
+                v.ty = "i64";
+                v.ety = "int64";
+            }
+            if (neg == 0 && mag > (uint64)9223372036854775807) {
+                v.ety = "uint64";
+            }
+        }
+        return v;
+    }
+
+    if (e.kind == EK_IDENT) {
+        CgLocal l = cg_find_local(g, e.sval);
+        if (l.slot[0] != 0) {
+            string t = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, t);
+            cg_emit(g, " = load ");
+            cg_emit(g, cg_vol(g, e));
+            cg_emit(g, l.ty);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, l.slot);
+            cg_emit(g, "\n");
+            v.op = t;
+            v.ty = l.ty;
+            v.ety = l.ety;
+            return v;
+        }
+        string ev = cg_enum_val(g, e.sval);            // a plain-enum constant?
+        if (ev[0] != 0) {
+            v.op = ev;
+            v.ty = "i32";
+            v.ety = "int";
+            return v;
+        }
+        CgLocal gv = cg_find_global(g, e.sval);        // a global variable?
+        if (gv.slot[0] != 0) {
+            string t = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, t);
+            cg_emit(g, " = load ");
+            cg_emit(g, cg_vol(g, e));
+            cg_emit(g, gv.ty);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, gv.slot);
+            cg_emit(g, "\n");
+            v.op = t;
+            v.ty = gv.ty;
+            v.ety = gv.ety;
+            return v;
+        }
+        CgVariant var = cg_find_variant(g, e.sval);    // a payload-less ADT variant (e.g. None)?
+        if (var.ename[0] != 0) {
+            return cg_build_variant(g, var, null);
+        }
+        if (cg_is_fn(g, e.sval) == 1) {                // a top-level function used as a value
+            v.op = cg_cat("@", e.sval);   // raw fn ptr; → closure via cg_coerce
+            v.ty = "ptr";
+            v.ety = "";
+            return v;
+        }
+        v.op = e.sval;         // fallback
+        v.ty = "i32";
+        return v;
+    }
+
+    if (e.kind == EK_INCDEC) {                          // ++x / x++ / --x / x--
+        int L0 = cg_strlen(e.sval);
+        if (e.a != null && e.a.kind == EK_MEMBER) {     // a bitfield: masked read-modify-write
+            string bet = cg_etype(g, e.a.a);
+            string bsn = bet;
+            if (cg_is_ptr_ty(bet) == 1) {
+                bsn = cg_strip_ptr(bet);
+            }
+            CgBF bslot = cg_bf(g, bsn, e.a.sval);
+            if (bslot.bw > 0) {
+                string bsn2 = "";
+                string bbase = cg_member_baseptr(g, e.a.a, &bsn2);
+                string wa = cg_bf_wordptr(g, bbase, bsn2, bslot);
+                g.bf_vol = cg_vol(g, e.a);
+                CgVal bold = cg_bf_load(g, wa, bslot);
+                string bnw = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, bnw);
+                cg_emit(g, " = ");
+                if ((int)e.sval[L0 - 1] == 45) {
+                    cg_emit(g, "sub ");
+                } else {
+                    cg_emit(g, "add ");
+                }
+                cg_emit(g, bslot.sty);
+                cg_emit(g, " ");
+                cg_emit(g, bold.op);
+                cg_emit(g, ", 1\n");
+                cg_bf_store(g, wa, bslot, bnw);
+                if ((int)e.sval[1] == 114) {                  // prefix: the stored (wrapped) value
+                    CgVal bnv = cg_bf_promote(g, cg_bf_load(g, wa, bslot), bslot);
+                    g.bf_vol = "";
+                    return bnv;
+                }
+                g.bf_vol = "";
+                return bold;                              // postfix: the declared type, unpromoted (as clang)
+            }
+        }
+        CgVal lv = cg_lval(g, e.a);
+        string ety = lv.ety;
+        string llty = cg_lltype(g, ety);
+        string old = cg_tmp(g);
+        string ivol = cg_vol(g, e.a);
+        cg_emit(g, "  ");
+        cg_emit(g, old);
+        cg_emit(g, " = load ");
+        cg_emit(g, ivol);
+        cg_emit(g, llty);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, lv.op);
+        cg_emit(g, "\n");
+        int L = cg_strlen(e.sval);
+        int dec = 0;   // last char '-'
+        if ((int)e.sval[L - 1] == 45) {
+            dec = 1;
+        }
+        int pre = 0;      // "pre..." (index 1 is 'r')
+        if ((int)e.sval[1] == 114) {
+            pre = 1;
+        }
+        string nw = cg_tmp(g);
+        if (cg_is_ptr_ty(ety) == 1 || cg_streq(llty, "ptr") == 1) {   // pointer / string: step one element
+            string ellt = "i8";                         // a string (char pointer) or *void steps a byte
+            if (cg_is_ptr_ty(ety) == 1) {
+                ellt = cg_lltype(g, cg_strip_ptr(ety));
+            }
+            if (cg_streq(ellt, "void") == 1) {
+                ellt = "i8";
+            }
+            cg_emit(g, "  ");
+            cg_emit(g, nw);
+            cg_emit(g, " = getelementptr ");
+            cg_emit(g, ellt);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, old);
+            cg_emit(g, ", i64 ");
+            if (dec == 1) {
+                cg_emit(g, "-1");
+            } else {
+                cg_emit(g, "1");
+            }
+            cg_emit(g, "\n");
+        } else {
+            cg_emit(g, "  ");
+            cg_emit(g, nw);
+            cg_emit(g, " = ");
+            if (dec == 1) {
+                cg_emit(g, "sub ");
+            } else {
+                cg_emit(g, "add ");
+            }
+            cg_emit(g, llty);
+            cg_emit(g, " ");
+            cg_emit(g, old);
+            cg_emit(g, ", 1\n");
+        }
+        cg_emit(g, "  store ");
+        cg_emit(g, ivol);
+        cg_emit(g, llty);
+        cg_emit(g, " ");
+        cg_emit(g, nw);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, lv.op);
+        cg_emit(g, "\n");
+        if (pre == 1) {
+            v.op = nw;
+        } else {
+            v.op = old;
+        }
+        v.ty = llty;
+        v.ety = ety;
+        return v;
+    }
+
+    if (e.kind == EK_MEMBER) {                          // a bitfield member read masks/shifts
+        string bet = cg_etype(g, e.a);
+        string sn = bet;
+        if (cg_is_ptr_ty(bet) == 1) {
+            sn = cg_strip_ptr(bet);
+        }
+        CgBF slot = cg_bf(g, sn, e.sval);
+        if (slot.bw > 0) {
+            string sn2 = "";
+            string baseptr = cg_member_baseptr(g, e.a, &sn2);
+            g.bf_vol = cg_vol(g, e);
+            CgVal bv = cg_bf_read(g, baseptr, sn2, slot);
+            g.bf_vol = "";
+            return bv;
+        }
+    }
+    // Slice construction: base[lo..hi] → a fat pointer { &base[lo], hi - lo }.
+    if (e.kind == EK_INDEX && List_len<*ExprNode>(&e.kids) > 0) {
+        string lo = cg_coerce(g, cg_expr(g, e.b), "i64");
+        string hi = cg_coerce(g, cg_expr(g, List_get<*ExprNode>(&e.kids, 0)), "i64");
+        string data = cg_slice_elem_addr(g, e.a, lo, hi, "i64");
+        string len = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, len);
+        cg_emit(g, " = sub i64 ");
+        cg_emit(g, hi);
+        cg_emit(g, ", ");
+        cg_emit(g, lo);
+        cg_emit(g, "\n");
+        string s0 = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, s0);
+        cg_emit(g, " = insertvalue { ptr, i64 } undef, ptr ");
+        cg_emit(g, data);
+        cg_emit(g, ", 0\n");
+        string s1 = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, s1);
+        cg_emit(g, " = insertvalue { ptr, i64 } ");
+        cg_emit(g, s0);
+        cg_emit(g, ", i64 ");
+        cg_emit(g, len);
+        cg_emit(g, ", 1\n");
+        v.op = s1;
+        v.ty = "{ ptr, i64 }";
+        v.ety = cg_etype(g, e);
+        return v;
+    }
+    // Slice `.len` → the fat pointer's length field (i64).
+    if (e.kind == EK_MEMBER && cg_streq(e.sval, "len") == 1 && cg_is_slice(cg_etype(g, e.a)) == 1) {
+        CgVal fat = cg_expr(g, e.a);
+        string t = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, t);
+        cg_emit(g, " = extractvalue { ptr, i64 } ");
+        cg_emit(g, fat.op);
+        cg_emit(g, ", 1\n");
+        v.op = t;
+        v.ty = "i64";
+        v.ety = "int64";
+        return v;
+    }
+    if (e.kind == EK_INDEX && List_len<*ExprNode>(&e.kids) == 0) {   // overloaded subscript `base[i]`
+        string iopn = cg_op_resolve(g, "[]", cg_etype(g, e.a), cg_etype(g, e.b));
+        if (iopn[0] != 0) {
+            return cg_op_call(g, iopn, e.a, e.b);
+        }
+    }
+    if (e.kind == EK_MEMBER || e.kind == EK_INDEX) {    // field/element read: GEP + load
+        CgVal lv = cg_lval(g, e);
+        string llty = cg_lltype(g, lv.ety);
+        string t = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, t);
+        cg_emit(g, " = load ");
+        cg_emit(g, cg_vol(g, e));
+        cg_emit(g, llty);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, lv.op);
+        cg_emit(g, "\n");
+        v.op = t;
+        v.ty = llty;
+        v.ety = lv.ety;
+        return v;
+    }
+
+    if (e.kind == EK_UNARY) {
+        if (cg_streq(e.sval, "&") == 1) {               // address-of
+            // (an rvalue operand is only a synthesized receiver, `mk().get(0)` as
+            // `List_get(&mk(), 0)`: it is held in a temporary)
+            CgVal lv = cg_addr(g, e.a);
+            v.op = lv.op;
+            v.ty = "ptr";
+            v.ety = cg_cat("*", lv.ety);
+            return v;
+        }
+        if (cg_streq(e.sval, "*") == 1) {               // deref (rvalue)
+            CgVal p = cg_expr(g, e.a);
+            string ety = cg_deref_ty(cg_etype(g, e.a));
+            string llty = cg_lltype(g, ety);
+            string t = cg_tmp(g);
+            string pnn = cg_safe_nonnull(g, p.op);
+            cg_emit(g, "  ");
+            cg_emit(g, t);
+            cg_emit(g, " = load ");
+            cg_emit(g, cg_vol(g, e));
+            cg_emit(g, llty);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, pnn);
+            cg_emit(g, "\n");
+            v.op = t;
+            v.ty = llty;
+            v.ety = ety;
+            return v;
+        }
+        if (cg_streq(e.sval, "-") == 1 || cg_streq(e.sval, "!") == 1 || cg_streq(e.sval, "~") == 1) {
+            return cg_unary_chain(g, e);
+        }
+        return cg_expr(g, e.a);
+    }
+
+    if (e.kind == EK_BINARY) {
+        if (cg_streq(e.sval, "=") == 1) {              // assignment
+            int is_bf = 0;
+            if (e.a != null && e.a.kind == EK_MEMBER) {
+                string bet0 = cg_etype(g, e.a.a);
+                string sn0 = bet0;
+                if (cg_is_ptr_ty(bet0) == 1) {
+                    sn0 = cg_strip_ptr(bet0);
+                }
+                if (cg_bf(g, sn0, e.a.sval).bw > 0) {
+                    is_bf = 1;
+                }
+            }
+            // `lv op= v` (parsed as `lv = lv op v` sharing the lvalue node) where evaluating
+            // `lv` has side effects (`a[f()] += 1`, `a[i++] += 1`): compute its address ONCE
+            // into a temporary pointer, then run the ordinary `*p = *p op v` (mirrors
+            // CodeGen::emitCompoundAssign), so overloads/coercions/--safe checks still apply.
+            if (e.b != null && e.b.kind == EK_BINARY && e.b.a == e.a && cg_is_pure(e.a) == 0) {
+                string ctmp = cg_cat("__cmpd", cg_itoa(g.lam_seq));
+                g.lam_seq = g.lam_seq + 1;
+                string cslot = cg_entry_alloca(g, "ptr");
+                int clmark = List_len<CgLocal>(&g.locals);
+                if (cg_vol(g, e.a)[0] != 0) {
+                    List_push<string>(&g.vols, ctmp);
+                }
+                *ExprNode cder = alloc<ExprNode>(1);
+                cder.kind = EK_UNARY;
+                cder.sval = "*";
+                cder.a = cgb_ident(ctmp);
+                *ExprNode ctarget = cder;
+                if (is_bf == 1) {
+                    // A bitfield has no address of its own: evaluate the struct's address
+                    // once instead, and read-modify-write `(*p).field`.
+                    string bbt = cg_etype(g, e.a.a);
+                    string bop = "";
+                    string bety = bbt;
+                    if (cg_is_ptr_ty(bbt) == 1) {
+                        bop = cg_expr(g, e.a.a).op;
+                    }
+                    else {
+                        bop = cg_addr(g, e.a.a).op;
+                        bety = cg_cat("*", bbt);
+                    }
+                    cg_emit(g, "  store ptr ");
+                    cg_emit(g, bop);
+                    cg_emit(g, ", ptr ");
+                    cg_emit(g, cslot);
+                    cg_emit(g, "\n");
+                    cg_add_local(g, ctmp, cslot, "ptr", bety);
+                    ctarget = cgb_member(cder, e.a.sval);
+                } else {
+                    CgVal clv = cg_lval(g, e.a);
+                    string clety = clv.ety;
+                    if (clety[0] == 0) {
+                        clety = cg_etype(g, e.a);
+                    }
+                    cg_emit(g, "  store ptr ");
+                    cg_emit(g, clv.op);
+                    cg_emit(g, ", ptr ");
+                    cg_emit(g, cslot);
+                    cg_emit(g, "\n");
+                    cg_add_local(g, ctmp, cslot, "ptr", cg_cat("*", clety));
+                }
+                CgVal crv = cg_expr(g, cgb_bin("=", ctarget, cgb_bin(e.b.sval, ctarget, e.b.b)));
+                cg_locals_trunc(g, clmark);
+                return crv;
+            }
+            // Assignment to a bitfield member → read-modify-write the storage word.
+            if (e.a != null && e.a.kind == EK_MEMBER) {
+                string bet = cg_etype(g, e.a.a);
+                string sn = bet;
+                if (cg_is_ptr_ty(bet) == 1) {
+                    sn = cg_strip_ptr(bet);
+                }
+                CgBF slot = cg_bf(g, sn, e.a.sval);
+                if (slot.bw > 0) {
+                    string sn2 = "";
+                    string baseptr = cg_member_baseptr(g, e.a.a, &sn2);   // target first
+                    CgVal rv = cg_expr(g, e.b);
+                    string rop = cg_coerce(g, rv, slot.sty);
+                    g.bf_vol = cg_vol(g, e.a);
+                    cg_bf_write(g, baseptr, sn2, slot, rop);
+                    g.bf_vol = "";
+                    return rv;
+                }
+            }
+            // Evaluation order (mirrors CodeGen::emitAssignment): the target's address
+            // first, then the right-hand side, then the store.
+            if (e.a != null && e.a.kind == EK_IDENT && cg_find_local(g, e.a.sval).slot[0] != 0) {
+                cg_hint_iface(g, e.b, cg_find_local(g, e.a.sval).ety);
+                CgVal rhs = cg_expr(g, e.b);
+                CgLocal l = cg_find_local(g, e.a.sval);
+                string rop = cg_coerce(g, rhs, l.ty);   // coerce RHS to the variable's type
+                if (cg_is_iface(g, l.ety) == 1) {
+                    rop = cg_iface_conv(g, l.ety, rhs, e.b);
+                }
+                cg_emit(g, "  store ");
+                cg_emit(g, cg_vol(g, e.a));
+                cg_emit(g, l.ty);
+                cg_emit(g, " ");
+                cg_emit(g, rop);
+                cg_emit(g, ", ptr ");
+                cg_emit(g, l.slot);
+                cg_emit(g, "\n");
+                // The assignment's value is the stored (converted) one: `l = s = 200` with
+                // an int8 `s` gives `l` -56, not 200.
+                v.op = rop;
+                v.ty = l.ty;
+                v.ety = l.ety;
+                return v;
+            }
+            CgVal lv = cg_lval(g, e.a);                 // member / deref / index lvalue
+            cg_hint_iface(g, e.b, lv.ety);
+            CgVal rhs = cg_expr(g, e.b);
+            string lty = cg_lltype(g, lv.ety);
+            string rop = cg_coerce(g, rhs, lty);        // coerce RHS to the field/element type
+            if (cg_is_iface(g, cg_dealias(g, lv.ety)) == 1) {
+                rop = cg_iface_conv(g, lv.ety, rhs, e.b);
+            }
+            cg_emit(g, "  store ");
+            cg_emit(g, cg_vol(g, e.a));
+            cg_emit(g, lty);
+            cg_emit(g, " ");
+            cg_emit(g, rop);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, lv.op);
+            cg_emit(g, "\n");
+            v.op = rop;
+            v.ty = lty;
+            v.ety = lv.ety;
+            return v;
+        }
+        // Open the type stamps for the outermost binary expression (an expression declares
+        // no local and function bodies are emitted from queues, so they hold until it is done).
+        int bopen = 0;
+        if (g.bactive == 0) {
+            g.mstamp = g.mstamp + 1;
+            g.bactive = g.mstamp;
+            bopen = 1;
+        }
+        CgVal bv = cg_binary_chain(g, e);
+        if (bopen == 1) {
+            g.bactive = 0;
+        }
+        return bv;
+    }
+
+    if (e.kind == EK_CALL) {
+        // Atomic intrinsics → LLVM atomic instructions (cell is *int, values i32).
+        if (e.a != null && e.a.kind == EK_IDENT && cg_is_atomic(g, e.a.sval) == 1) {
+            return cg_emit_atomic(g, e.a.sval, e);
+        }
+        if (e.dbg_builtin == 1) {
+            return cg_emit_dbg(g, e);
+        }
+        // Variadic access: va_start(ap)/va_end(ap) → the llvm.va_{start,end} intrinsic on the
+        // va_list's address (its alloca). `ap` is a local va_list.
+        if (e.a != null && e.a.kind == EK_IDENT
+            && (cg_streq(e.a.sval, "va_start") == 1 || cg_streq(e.a.sval, "va_end") == 1)) {
+            string ap = cg_lval(g, List_get<*ExprNode>(&e.kids, 0)).op;
+            string intr = "llvm.va_start.p0";
+            if (cg_streq(e.a.sval, "va_end") == 1) {
+                intr = "llvm.va_end.p0";
+            }
+            cg_ensure_extern(g, intr, cg_cat(cg_cat("declare void @", intr), "(ptr)\n"));
+            cg_emit(g, "  call void @");
+            cg_emit(g, intr);
+            cg_emit(g, "(ptr ");
+            cg_emit(g, ap);
+            cg_emit(g, ")\n");
+            v.op = "";
+            v.ty = "void";
+            return v;
+        }
+        // `__exception_text_into(buf)`, from the async lowering only: the text copied (512
+        // bytes with its NUL) into a frame field that outlives the handler's stack.
+        if (e.a != null && e.a.kind == EK_IDENT && cg_streq(e.a.sval, "__exception_text_into") == 1
+            && List_len<*ExprNode>(&e.kids) == 1 && List_len<string>(&g.catch_text) > 0) {
+            string dst = cg_expr(g, List_get<*ExprNode>(&e.kids, 0)).op;
+            string tslot = List_get<string>(&g.catch_text, List_len<string>(&g.catch_text) - 1);
+            string src = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, src);
+            cg_emit(g, " = load ptr, ptr ");
+            cg_emit(g, tslot);
+            cg_emit(g, "\n");
+            // llvm.memcpy is declared with the exception runtime, which a catch implies.
+            cg_emit(g, "  call void @llvm.memcpy.p0.p0.i64(ptr ");
+            cg_emit(g, dst);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, src);
+            cg_emit(g, ", i64 512, i1 false)\n");
+            v.op = "";
+            v.ty = "void";
+            return v;
+        }
+        // The builtin, unless the program defines a function or variable of that name.
+        if (e.a != null && e.a.kind == EK_IDENT && cg_streq(e.a.sval, "exception_text") == 1
+            && List_len<*ExprNode>(&e.kids) == 0 && List_len<string>(&g.catch_text) > 0
+            && cg_find_local(g, "exception_text").slot[0] == 0 && cg_is_fn(g, "exception_text") == 0) {
+            string tslot = List_get<string>(&g.catch_text, List_len<string>(&g.catch_text) - 1);
+            string tx = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, tx);
+            cg_emit(g, " = load ptr, ptr ");
+            cg_emit(g, tslot);
+            cg_emit(g, "\n");
+            v.op = tx;
+            v.ty = "ptr";
+            v.ety = "string";
+            return v;
+        }
+        // An ADT variant constructor `Circle(4)` parses as a call with a bare-ident callee;
+        // a local or global of that name shadows the variant.
+        if (e.a != null && e.a.kind == EK_IDENT && cg_find_local(g, e.a.sval).slot[0] == 0
+            && cg_find_global(g, e.a.sval).slot[0] == 0) {
+            // A bare generic variant (`Some(v)`, in a generic body too): each type parameter
+            // is the type of the argument whose payload slot is that parameter (C++
+            // visit(CallExpr)), so every instance builds its own enum instance.
+            CgVariant gvar = cg_find_gvariant(g, e.a.sval);
+            *DeclNode gen = null;
+            if (gvar.ename[0] != 0) {
+                gen = cg_find_genum(g, gvar.ename);
+            }
+            if (gen != null) {
+                String sp;
+                String_init(&sp, 16);
+                String_append(&sp, gvar.ename);
+                String_append(&sp, "<");
+                int ti = 0;
+                int found = 0;
+                while (ti < List_len<TypeParam>(&gen.type_params)) {
+                    string tp = List_get<TypeParam>(&gen.type_params, ti).name;
+                    string at = "int";
+                    int pi = 0;
+                    while (pi < List_len<string>(&gvar.ptys) && pi < List_len<*ExprNode>(&e.kids)) {
+                        if (cg_streq(List_get<string>(&gvar.ptys, pi), tp) == 1) {
+                            at = cg_apply_sub(g, cg_etype(g, List_get<*ExprNode>(&e.kids, pi)));
+                            found = 1;
+                            break;
+                        }
+                        pi = pi + 1;
+                    }
+                    if (ti > 0) {
+                        String_append(&sp, ", ");
+                    }
+                    String_append(&sp, at);
+                    ti = ti + 1;
+                }
+                String_append(&sp, ">");
+                if (found == 1) {
+                    string menum = cg_ensure_enum_inst(g, (string)String_cstr(&sp));
+                    CgVariant cv = cg_find_variant_in(g, e.a.sval, menum);
+                    if (cv.ename[0] != 0) {
+                        return cg_build_variant(g, cv, e);
+                    }
+                }
+            }
+            CgVariant var = cg_find_variant(g, e.a.sval);
+            if (var.ename[0] != 0) {
+                return cg_build_variant(g, var, e);
+            }
+        }
+        // Indirect call through a closure value: the callee is a local/param of fn type
+        // (a `%closure` fat pointer). Extract { fn, env } and call fn(env, args...).
+        if (e.a != null && e.a.kind == EK_IDENT) {
+            CgLocal lf = cg_find_local(g, e.a.sval);
+            if (lf.slot[0] != 0 && cg_is_fnty(lf.ety) == 1) {
+                string cval = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, cval);
+                cg_emit(g, " = load %closure, ptr ");
+                cg_emit(g, lf.slot);
+                cg_emit(g, "\n");
+                return cg_indirect_call(g, cval, lf.ety, e);
+            }
+        }
+        // Same, but the callee is a GLOBAL variable of fn type (`let f: fn(int)->int = ...`
+        // at module scope, then `f(x)`): load the %closure from the global's address.
+        if (e.a != null && e.a.kind == EK_IDENT) {
+            CgLocal gf = cg_find_global(g, e.a.sval);
+            if (gf.slot[0] != 0 && cg_is_fnty(gf.ety) == 1) {
+                string cval = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, cval);
+                cg_emit(g, " = load %closure, ptr ");
+                cg_emit(g, gf.slot);
+                cg_emit(g, "\n");
+                return cg_indirect_call(g, cval, gf.ety, e);
+            }
+        }
+        // A call through a closure-typed FIELD (e.g. `fr.ret.waker()`): not a method.
+        if (e.a != null && e.a.kind == EK_MEMBER && cg_is_fnty(cg_etype(g, e.a)) == 1) {
+            CgVal cv = cg_expr(g, e.a);                 // load the %closure field value
+            return cg_indirect_call(g, cv.op, cg_etype(g, e.a), e);
+        }
+        // Any other callee expression yielding a closure (a call returning a fn value,
+        // `pick(0)(3, 4)`, or an indexed/derefed closure): evaluate it, then call through it.
+        if (e.a != null && e.a.kind != EK_IDENT && e.a.kind != EK_MEMBER) {
+            string cft = cg_etype(g, e.a);
+            if (cg_is_fnty(cft) == 1) {
+                CgVal cv = cg_expr(g, e.a);
+                return cg_indirect_call(g, cg_coerce(g, cv, "%closure"), cft, e);
+            }
+        }
+        // A generic free function called WITHOUT explicit type args (`chan_recv(ch)`):
+        // infer `chan_recv<int>` from the argument types, then instantiate + call.
+        if (e.a != null && e.a.kind == EK_IDENT) {
+            *DeclNode gd = cg_find_gfn(g, e.a.sval);
+            if (gd != null) {
+                string spelling = cg_infer_generic(g, gd, e);
+                if (spelling[0] != 0) {
+                    return cg_call_mangled(g, cg_ensure_fn_inst(g, spelling), e);
+                }
+                dprintf(2, "error: cannot infer the type arguments of generic function '%s' from the call; write them explicitly, e.g. %s<...>(...)\n", gd.name, gd.name);
+                exit(1);
+            }
+        }
+        // A method call whose receiver is an interface value → dynamic vtable dispatch.
+        // The receiver's *value* is the fat pointer {data, vtable}.
+        if (e.a != null && e.a.kind == EK_MEMBER && cg_is_iface(g, cg_etype(g, e.a.a)) == 1) {
+            string ifn = cg_etype(g, e.a.a);
+            string fatop = cg_expr(g, e.a.a).op;
+            return cg_dispatch_iface(g, ifn, fatop, e.a.sval, e);
+        }
+        // Through a pointer to an interface value (`*I pi; pi.f()`): load the fat value.
+        if (e.a != null && e.a.kind == EK_MEMBER) {
+            string rty = cg_etype(g, e.a.a);
+            if (cg_is_ptr_ty(rty) == 1 && cg_is_iface(g, cg_dealias(g, cg_deref_ty(rty))) == 1) {
+                string ifn2 = cg_dealias(g, cg_deref_ty(rty));
+                string pop = cg_expr(g, e.a.a).op;
+                string fv = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, fv);
+                cg_emit(g, " = load %iface_fat, ptr ");
+                cg_emit(g, pop);
+                cg_emit(g, "\n");
+                return cg_dispatch_iface(g, ifn2, fv, e.a.sval, e);
+            }
+        }
+        // `l.push(x)` on a generic struct instance whose `List_push<T>` is a generic free
+        // function: emit it as that (type-inferred) call.
+        *ExprNode gmc = cg_generic_method_call(g, e);
+        if (gmc != null) {
+            return cg_expr(g, gmc);
+        }
+        // Resolve the callee. A bare ident is a free function; a MemberExpr is a method
+        // call `recv.m(...)` → `Struct_m(self, ...)` with `self` a pointer to the receiver.
+        string fname = "";
+        string args = "";
+        int pbase = 0;                                  // 1 when an implicit self precedes args
+        if (e.a != null && e.a.kind == EK_MEMBER) {
+            string recv_ety = cg_etype(g, e.a.a);
+            string sname = recv_ety;
+            if (cg_is_ptr_ty(recv_ety) == 1) {
+                sname = cg_strip_ptr(recv_ety);
+            }
+            // A primitive receiver satisfying a constraint via a free function: `a.cmp(b)`
+            // where `a: int` lowers to `cmp(a, b)` (receiver passed BY VALUE as arg 0). The
+            // struct-method path would index a non-existent struct's fields and crash.
+            if (cg_is_struct(g, sname) == 0 && cg_is_adt(g, sname) == 0 && cg_is_fn(g, e.a.sval) == 1) {
+                fname = e.a.sval;
+                CgVal selfv = cg_expr(g, e.a.a);
+                args = cg_cat(cg_cat(selfv.ty, " "), selfv.op);   // receiver by value
+                pbase = 1;
+            } else {
+                string sptr = "";
+                if (cg_is_ptr_ty(recv_ety) == 1) {
+                    sptr = cg_expr(g, e.a.a).op;
+                }
+                else {
+                    sptr = cg_addr(g, e.a.a).op;
+                }
+                fname = cg_method_fn(g, sname, e.a.sval);
+                args = cg_cat("ptr ", sptr);                // self is the first argument
+                pbase = 1;
+            }
+        } else if (e.a != null && e.a.kind == EK_IDENT) {
+            fname = e.a.sval;
+        }
+        CgFn f = cg_find_fn(g, fname);
+        if (pbase == 0 && List_len<CgCabi>(&g.cabis) > 0) {
+            CgCabi cab = cg_find_cabi(g, fname);
+            if (cab.name[0] != 0) {                     // a C-ABI-lowered extern
+                List<CgVal> cargs;
+                List_init<CgVal>(&cargs, 4);
+                int ci = 0;
+                while (ci < List_len<*ExprNode>(&e.kids)) {
+                    CgVal a = cg_call_arg(g, &f, ci, List_get<*ExprNode>(&e.kids, ci));
+                    string cpty = cg_pty(&f, ci);
+                    let ca: CgVal;
+                    ca.op = a.op;
+                    ca.ty = a.ty;
+                    ca.ety = a.ety;
+                    if (cpty[0] != 0) {
+                        ca.op = cg_coerce(g, a, cpty);
+                        ca.ty = cpty;
+                    }
+                    else if (cg_streq(a.ty, "float") == 1) {
+                        ca.op = cg_coerce(g, a, "double");
+                        ca.ty = "double";
+                    }
+                    else if (cg_int_w(a.ty) > 0 && cg_int_w(a.ty) < 32) {
+                        ca.op = cg_coerce(g, a, "i32");
+                        ca.ty = "i32";
+                    }
+                    List_push<CgVal>(&cargs, ca);
+                    ci = ci + 1;
+                }
+                return cg_widen_cret(g, &f, cg_cabi_call(g, &cab, &f, &cargs));
+            }
+        }
+        // Evaluate the declared args (left to right), coercing each to the callee's
+        // declared parameter type (so e.g. an i32 count widens to an `int64` parameter).
+        int i = 0;
+        int n = List_len<*ExprNode>(&e.kids);
+        while (i < n) {
+            *ExprNode ax = List_get<*ExprNode>(&e.kids, i);
+            CgVal a = cg_call_arg(g, &f, i + pbase, ax);
+            string pety = cg_pety(&f, i + pbase);
+            // Param expects an interface but we have a struct pointer → box it as a fat pointer.
+            if (pety[0] != 0 && cg_is_iface(g, cg_dealias(g, pety)) == 1) {
+                string boxed = cg_iface_conv(g, pety, a, ax);
+                if (args[0] != 0) {
+                    args = cg_cat(args, ", ");
+                }
+                args = cg_cat(args, cg_cat("%iface_fat ", boxed));
+                i = i + 1;
+            } else {
+                string pty = cg_pty(&f, i + pbase);
+                string aop = a.op;
+                string aty = a.ty;
+                if (pty[0] != 0) {
+                    aop = cg_coerce(g, a, pty);
+                    aty = pty;
+                }
+                else if (cg_streq(a.ty, "float") == 1) {     // C vararg promotion: float → double
+                    aop = cg_coerce(g, a, "double");
+                    aty = "double";
+                }
+                else if (cg_int_w(a.ty) > 0 && cg_int_w(a.ty) < 32) {   // C default arg promotion: small int → i32 (signedness-aware)
+                    aop = cg_coerce(g, a, "i32");
+                    aty = "i32";
+                }
+                if (args[0] != 0) {
+                    args = cg_cat(args, ", ");
+                }
+                args = cg_cat(args, cg_cat(aty, cg_cat(" ", aop)));
+                i = i + 1;
+            }
+        }
+        // A variadic callee needs the explicit function type: `call i32 (ptr, ...) @printf`.
+        string callty = f.retty;
+        if (f.variadic == 1) {
+            callty = cg_cat(f.retty, cg_cat(" (", cg_cat(cg_va(f.fixedtypes), ")")));
+        }
+        int isvoid = cg_streq(f.retty, "void");
+        string t = cg_emit_callish(g, callty, cg_cat("@", fname), args, isvoid);
+        if (isvoid == 1) {
+            v.op = "";
+            v.ty = "void";
+            return v;
+        }
+        v.op = t;
+        v.ty = f.retty;
+        v.ety = f.rety;
+        return cg_widen_cret(g, &f, v);
+    }
+
+    if (e.kind == EK_TEMPLATECALL) {
+        // Variadic access: va_arg<T>(ap) → the LLVM `va_arg` instruction reading the next
+        // argument of type T from the va_list's address.
+        if (cg_streq(cg_gen_base(e.sval), "va_arg") == 1) {
+            List<string> ta;
+            List_init<string>(&ta, 1);
+            cg_gen_args(e.sval, &ta);
+            string ety = cg_apply_sub(g, List_get<string>(&ta, 0));
+            string llty = cg_lltype(g, ety);
+            string ap = cg_lval(g, List_get<*ExprNode>(&e.kids, 0)).op;
+            v.op = cg_va_arg(g, ap, llty);
+            v.ty = llty;
+            v.ety = ety;
+            return v;
+        }
+        // A generic ADT variant constructor: `Some<int>(42)` / `None<int>()`. Resolve the
+        // concrete enum from the variant's generic enum + the explicit type args, ensure the
+        // instance, then build the value through its concrete (substituted) variant.
+        string vb = cg_gen_base(e.sval);
+        CgVariant gvar = cg_find_gvariant(g, vb);
+        if (gvar.ename[0] != 0) {
+            List<string> targs;
+            List_init<string>(&targs, 4);
+            cg_gen_args(e.sval, &targs);
+            String sp;
+            String_init(&sp, 16);
+            String_append(&sp, gvar.ename);
+            String_append(&sp, "<");
+            int ti = 0;
+            while (ti < List_len<string>(&targs)) {
+                if (ti > 0) {
+                    String_append(&sp, ", ");
+                }
+                String_append(&sp, List_get<string>(&targs, ti));
+                ti = ti + 1;
+            }
+            String_append(&sp, ">");
+            string menum = cg_ensure_enum_inst(g, (string)String_cstr(&sp));
+            CgVariant cv = cg_find_variant_in(g, vb, menum);
+            return cg_build_variant(g, cv, e);
+        }
+        string mangled = cg_ensure_fn_inst(g, e.sval);     // "id<int>" -> "id_int" (queued)
+        return cg_call_mangled(g, mangled, e);
+    }
+
+    if (e.kind == EK_SIZEOF) {
+        // sizeof(T) without hardcoded sizes: ptrtoint of `gep T, null, 1`.
+        string llty = cg_lltype(g, cg_sizeof_operand(g, e));   // applies the active sub
+        string g1 = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, g1);
+        cg_emit(g, " = getelementptr ");
+        cg_emit(g, llty);
+        cg_emit(g, ", ptr null, i32 1\n");
+        string t = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, t);
+        cg_emit(g, " = ptrtoint ptr ");
+        cg_emit(g, g1);
+        cg_emit(g, " to i64\n");
+        v.op = t;
+        v.ty = "i64";
+        v.ety = "int64";
+        return v;
+    }
+
+    if (e.kind == EK_CAST) {
+        string dstety = cg_apply_sub(g, e.sval);
+        if (cg_streq(dstety, "void") == 1) {   // `(void)e`: evaluate for side effects, discard
+            cg_expr(g, e.a);
+            v.op = "";
+            v.ty = "void";
+            return v;
+        }
+        string dll = cg_lltype(g, dstety);
+        // A top-level function cast to a pointer is the raw address C calls: through its
+        // C-ABI thunk when it takes or returns a struct by value.
+        if (cg_streq(dll, "ptr") == 1 && e.a != null && e.a.kind == EK_IDENT
+            && cg_find_local(g, e.a.sval).slot[0] == 0 && cg_find_global(g, e.a.sval).slot[0] == 0
+            && cg_is_fn(g, e.a.sval) == 1) {
+            v.op = cg_cabi_callback(g, e.a.sval);
+            v.ty = "ptr";
+            v.ety = dstety;
+            return v;
+        }
+        CgVal src = cg_expr(g, e.a);
+        // float → unsigned int saturates to the unsigned range (cg_coerce saturates to the
+        // signed one: (uint32)3e9 would be 2147483647 instead of 3e9).
+        if (cg_is_float(src.ty) == 1 && cg_int_w(dll) > 1 && cg_is_unsigned(dstety) == 1) {
+            string t = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, t);
+            cg_emit(g, " = ");
+            cg_emit_fp_sat(g, 1, src.ty, src.op, dll);
+            cg_emit(g, "\n");
+            v.op = t;
+            v.ty = dll;
+            v.ety = dstety;
+            return v;
+        }
+        v.op = cg_coerce(g, src, dll);    // int/float/ptr conversions (sitofp/fptosi/…)
+        v.ty = dll;
+        v.ety = dstety;
+        return v;
+    }
+
+    if (e.kind == EK_TERNARY) {
+        int topen = cg_tern_begin(g, e);
+        // `cond ? then : else` — branch and evaluate exactly one arm into a result slot,
+        // each arm coerced to the common type (mirrors the short-circuit && lowering).
+        // A chain of ternaries in else position is emitted with a loop: each link's else
+        // arm is the next link, whose value is stored into the link's slot on the way out.
+        List<*ExprNode> chain;
+        List_init<*ExprNode>(&chain, 4);
+        List<string> etys;
+        List_init<string>(&etys, 4);
+        cg_ternary_etys(g, e, &chain, &etys);
+        int k = List_len<*ExprNode>(&chain);
+        string forced = "";                             // bound for an interface: box every arm
+        if (g.tern_node == e) {
+            forced = g.tern_iface;
+            g.tern_node = null;
+            int fi = 0;
+            while (fi < k) {
+                List_set<string>(&etys, fi, forced);
+                fi = fi + 1;
+            }
+        }
+        List<string> rtys;
+        List_init<string>(&rtys, k);
+        List<string> ress;
+        List_init<string>(&ress, k);
+        List<string> lends;
+        List_init<string>(&lends, k);
+        int i = 0;
+        while (i < k) {
+            *ExprNode n = List_get<*ExprNode>(&chain, i);
+            string rty = cg_lltype(g, List_get<string>(&etys, i));
+            string res = "";                               // void arms (a statement): no slot
+            if (cg_streq(rty, "void") == 0) {
+                res = cg_entry_alloca(g, rty);
+            }
+            CgVal c = cg_cond(g, n.a);
+            string lthen = cg_lbl(g);
+            string lelse = cg_lbl(g);
+            string lend = cg_lbl(g);
+            cg_emit(g, "  br i1 ");
+            cg_emit(g, c.op);
+            cg_emit(g, ", label %");
+            cg_emit(g, lthen);
+            cg_emit(g, ", label %");
+            cg_emit(g, lelse);
+            cg_emit(g, "\n");
+            g.terminated = 1;
+            cg_label(g, lthen);
+            if (forced[0] != 0) {
+                cg_hint_iface(g, n.b, forced);
+            }
+            CgVal tv = cg_expr(g, n.b);
+            if (res[0] != 0) {
+                string top = cg_coerce(g, tv, rty);
+                if (cg_is_iface(g, cg_dealias(g, List_get<string>(&etys, i))) == 1) {
+                    top = cg_iface_conv(g, List_get<string>(&etys, i), tv, n.b);
+                }
+                cg_emit(g, "  store ");
+                cg_emit(g, rty);
+                cg_emit(g, " ");
+                cg_emit(g, top);
+                cg_emit(g, ", ptr ");
+                cg_emit(g, res);
+                cg_emit(g, "\n");
+            }
+            cg_br(g, lend);
+            cg_label(g, lelse);
+            List_push<string>(&rtys, rty);
+            List_push<string>(&ress, res);
+            List_push<string>(&lends, lend);
+            i = i + 1;
+        }
+        *ExprNode last = List_get<*ExprNode>(&chain, k - 1);
+        CgVal ev = cg_expr(g, List_get<*ExprNode>(&last.kids, 0));
+        i = k - 1;
+        while (i >= 0) {
+            string rty = List_get<string>(&rtys, i);
+            string res = List_get<string>(&ress, i);
+            string lend = List_get<string>(&lends, i);
+            if (res[0] == 0) {                             // void: nothing to merge
+                cg_br(g, lend);
+                cg_label(g, lend);
+                ev.op = "";
+                ev.ty = "void";
+                ev.ety = "void";
+                i = i - 1;
+                continue;
+            }
+            string eop = cg_coerce(g, ev, rty);
+            if (cg_is_iface(g, cg_dealias(g, List_get<string>(&etys, i))) == 1) {
+                *ExprNode ex = List_get<*ExprNode>(&last.kids, 0);
+                if (i < k - 1) {
+                    ex = List_get<*ExprNode>(&chain, i + 1);
+                }
+                eop = cg_iface_conv(g, List_get<string>(&etys, i), ev, ex);
+            }
+            cg_emit(g, "  store ");
+            cg_emit(g, rty);
+            cg_emit(g, " ");
+            cg_emit(g, eop);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, res);
+            cg_emit(g, "\n");
+            cg_br(g, lend);
+            cg_label(g, lend);
+            string t = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, t);
+            cg_emit(g, " = load ");
+            cg_emit(g, rty);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, res);
+            cg_emit(g, "\n");
+            ev.op = t;
+            ev.ty = rty;
+            ev.ety = List_get<string>(&etys, i);
+            i = i - 1;
+        }
+        List_free<*ExprNode>(&chain);
+        List_free<string>(&etys);
+        List_free<string>(&rtys);
+        List_free<string>(&ress);
+        List_free<string>(&lends);
+        if (topen == 1) {
+            g.tactive = 0;
+        }
+        v.op = ev.op;
+        v.ty = ev.ty;
+        v.ety = ev.ety;
+        return v;
+    }
+
+    if (e.kind == EK_QUESTION) {
+        // `expr?` — if expr is an Err Result (`.ok == 0`), return it whole from the enclosing
+        // function; otherwise the expression yields the unwrapped `.value` field.
+        CgVal r = cg_expr(g, e.a);
+        string llty = r.ty;
+        string sname = llty;
+        if ((int)llty[0] == 37) {
+            int ll = 0;
+            while (llty[ll] != 0) {
+                ll = ll + 1;
+            }
+            sname = cg_sub_str(llty, 1, ll);
+        }
+        CgStruct s = cg_find_struct(g, sname);
+        int okIdx = cg_field_idx(&s, "ok");
+        int valIdx = cg_field_idx(&s, "value");
+        string okllty = cg_lltype(g, List_get<string>(&s.fetys, okIdx));
+        string valety = List_get<string>(&s.fetys, valIdx);
+        string valllty = cg_lltype(g, valety);
+        string tmp = cg_entry_alloca(g, llty);
+        cg_emit(g, "  store ");
+        cg_emit(g, llty);
+        cg_emit(g, " ");
+        cg_emit(g, r.op);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, tmp);
+        cg_emit(g, "\n");
+        string okp = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, okp);
+        cg_emit(g, " = getelementptr ");
+        cg_emit(g, llty);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, tmp);
+        cg_emit(g, ", i32 0, i32 ");
+        cg_emit(g, cg_itoa(okIdx));
+        cg_emit(g, "\n");
+        string okv = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, okv);
+        cg_emit(g, " = load ");
+        cg_emit(g, okllty);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, okp);
+        cg_emit(g, "\n");
+        string iserr = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, iserr);
+        cg_emit(g, " = icmp eq ");
+        cg_emit(g, okllty);
+        cg_emit(g, " ");
+        cg_emit(g, okv);
+        cg_emit(g, ", 0\n");
+        string errl = cg_lbl(g);
+        string contl = cg_lbl(g);
+        cg_emit(g, "  br i1 ");
+        cg_emit(g, iserr);
+        cg_emit(g, ", label %");
+        cg_emit(g, errl);
+        cg_emit(g, ", label %");
+        cg_emit(g, contl);
+        cg_emit(g, "\n");
+        g.terminated = 1;
+        cg_label(g, errl);                               // propagate the Err out of the function
+        string whole = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, whole);
+        cg_emit(g, " = load ");
+        cg_emit(g, llty);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, tmp);
+        cg_emit(g, "\n");
+        // A Result of another success type with the same error type: a fresh one (zeroed)
+        // gets the `ok` flag and the error (mirrors the C++).
+        if (cg_streq(g.cur_ret, llty) == 0 && (int)g.cur_ret[0] == 37) {
+            int rl = 0;
+            while (g.cur_ret[rl] != 0) {
+                rl = rl + 1;
+            }
+            CgStruct rs = cg_find_struct(g, cg_sub_str(g.cur_ret, 1, rl));
+            if (rs.name[0] != 0) {
+                string out = cg_entry_alloca(g, g.cur_ret);
+                cg_emit(g, "  store ");
+                cg_emit(g, g.cur_ret);
+                cg_emit(g, " zeroinitializer, ptr ");
+                cg_emit(g, out);
+                cg_emit(g, "\n");
+                int fi = 0;
+                while (fi < List_len<string>(&s.fnames)) {
+                    string fnm = List_get<string>(&s.fnames, fi);
+                    int ri = cg_field_idx(&rs, fnm);
+                    if ((cg_streq(fnm, "ok") == 1 || cg_streq(fnm, "error") == 1) && ri >= 0) {
+                        string fty = cg_lltype(g, List_get<string>(&s.fetys, fi));
+                        string src = cg_tmp(g);
+                        cg_emit(g, "  ");
+                        cg_emit(g, src);
+                        cg_emit(g, " = getelementptr ");
+                        cg_emit(g, llty);
+                        cg_emit(g, ", ptr ");
+                        cg_emit(g, tmp);
+                        cg_emit(g, ", i32 0, i32 ");
+                        cg_emit(g, cg_itoa(fi));
+                        cg_emit(g, "\n");
+                        string fv = cg_tmp(g);
+                        cg_emit(g, "  ");
+                        cg_emit(g, fv);
+                        cg_emit(g, " = load ");
+                        cg_emit(g, fty);
+                        cg_emit(g, ", ptr ");
+                        cg_emit(g, src);
+                        cg_emit(g, "\n");
+                        string dst = cg_tmp(g);
+                        cg_emit(g, "  ");
+                        cg_emit(g, dst);
+                        cg_emit(g, " = getelementptr ");
+                        cg_emit(g, g.cur_ret);
+                        cg_emit(g, ", ptr ");
+                        cg_emit(g, out);
+                        cg_emit(g, ", i32 0, i32 ");
+                        cg_emit(g, cg_itoa(ri));
+                        cg_emit(g, "\n");
+                        cg_emit(g, "  store ");
+                        cg_emit(g, fty);
+                        cg_emit(g, " ");
+                        cg_emit(g, fv);
+                        cg_emit(g, ", ptr ");
+                        cg_emit(g, dst);
+                        cg_emit(g, "\n");
+                    }
+                    fi = fi + 1;
+                }
+                whole = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, whole);
+                cg_emit(g, " = load ");
+                cg_emit(g, g.cur_ret);
+                cg_emit(g, ", ptr ");
+                cg_emit(g, out);
+                cg_emit(g, "\n");
+            }
+        }
+        cg_run_cleanups(g, 0, 1);                        // ? error exit: defers + errdefers
+        cg_emit(g, "  ret ");
+        cg_emit(g, g.cur_ret);
+        cg_emit(g, " ");
+        cg_emit(g, whole);
+        cg_emit(g, "\n");
+        g.terminated = 1;
+        cg_label(g, contl);                              // success: unwrap .value
+        string valp = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, valp);
+        cg_emit(g, " = getelementptr ");
+        cg_emit(g, llty);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, tmp);
+        cg_emit(g, ", i32 0, i32 ");
+        cg_emit(g, cg_itoa(valIdx));
+        cg_emit(g, "\n");
+        string val = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, val);
+        cg_emit(g, " = load ");
+        cg_emit(g, valllty);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, valp);
+        cg_emit(g, "\n");
+        v.op = val;
+        v.ty = valllty;
+        v.ety = valety;
+        return v;
+    }
+
+    if (e.kind == EK_ALLOCWITH) {
+        // alloc_with(&a, T, n) → (*T) <AllocType>_alloc(&a, n * sizeof(T)). The allocator's
+        // static struct type names the alloc method; the result is a `*T`.
+        string elemty = cg_apply_sub(g, e.sval);
+        CgVal av = cg_expr(g, e.a);                       // allocator pointer
+        string at = cg_strip_ptr(cg_etype(g, e.a));       // allocator struct name
+        string fname = cg_cat(at, "_alloc");
+        if (cg_has_targs(cg_apply_sub(g, at)) == 1) {     // a generic instance: its inline method or `G_int_alloc`
+            string ml = cg_ensure_method_inst(g, at, "alloc");
+            if (ml[0] != 0) {
+                fname = ml;
+            }
+            else {
+                fname = cg_cat(cg_ensure_struct_inst(g, cg_apply_sub(g, at)), "_alloc");
+            }
+        }
+        CgFn f = cg_find_fn(g, fname);
+        CgVal cnt = cg_expr(g, e.b);
+        string n64 = cg_coerce(g, cnt, "i64");
+        // n * sizeof(T) as a signed 64-bit size: a count that overflows it, or is negative,
+        // (or a size too wide for a narrower size parameter) yields null instead of a
+        // wrapped, too-small allocation. Mirrors the C++ visit(AllocWithExpr).
+        cg_ensure_extern(g, "llvm.smul.with.overflow.i64", "declare { i64, i1 } @llvm.smul.with.overflow.i64(i64, i64)\n");
+        string prod = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, prod);
+        cg_emit(g, " = call { i64, i1 } @llvm.smul.with.overflow.i64(i64 ");
+        cg_emit(g, n64);
+        cg_emit(g, ", i64 ");
+        cg_emit(g, cg_itoa(cg_size(g, elemty)));
+        cg_emit(g, ")\n");
+        string total = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, total);
+        cg_emit(g, " = extractvalue { i64, i1 } ");
+        cg_emit(g, prod);
+        cg_emit(g, ", 0\n");
+        string ovf = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, ovf);
+        cg_emit(g, " = extractvalue { i64, i1 } ");
+        cg_emit(g, prod);
+        cg_emit(g, ", 1\n");
+        string neg = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, neg);
+        cg_emit(g, " = icmp slt i64 ");
+        cg_emit(g, total);
+        cg_emit(g, ", 0\n");
+        string bad = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, bad);
+        cg_emit(g, " = or i1 ");
+        cg_emit(g, ovf);
+        cg_emit(g, ", ");
+        cg_emit(g, neg);
+        cg_emit(g, "\n");
+        string p1 = cg_pty(&f, 1);
+        string targ = total;
+        string targty = "i64";
+        if (p1[0] != 0 && cg_streq(p1, "i64") == 0) {
+            int pw = cg_int_w(p1);
+            if (pw > 1 && pw < 64) {
+                string wide = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, wide);
+                cg_emit(g, " = icmp sgt i64 ");
+                cg_emit(g, total);
+                cg_emit(g, ", ");
+                cg_emit(g, cg_i64toa(((int64)1 << (int64)(pw - 1)) - (int64)1));
+                cg_emit(g, "\n");
+                string bad2 = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, bad2);
+                cg_emit(g, " = or i1 ");
+                cg_emit(g, bad);
+                cg_emit(g, ", ");
+                cg_emit(g, wide);
+                cg_emit(g, "\n");
+                bad = bad2;
+            }
+        }
+        if (p1[0] != 0) {
+            let tv: CgVal;
+            tv.op = total;
+            tv.ty = "i64";
+            tv.ety = "int64";
+            targ = cg_coerce(g, tv, p1);
+            targty = p1;
+        }
+        string lcall = cg_lbl(g);
+        string lfail = cg_lbl(g);
+        string ldone = cg_lbl(g);
+        cg_emit(g, "  br i1 ");
+        cg_emit(g, bad);
+        cg_emit(g, ", label %");
+        cg_emit(g, lfail);
+        cg_emit(g, ", label %");
+        cg_emit(g, lcall);
+        cg_emit(g, "\n");
+        g.terminated = 1;
+        cg_label(g, lcall);
+        string r = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, r);
+        cg_emit(g, " = call ");
+        cg_emit(g, f.retty);
+        cg_emit(g, " @");
+        cg_emit(g, fname);
+        cg_emit(g, "(ptr ");
+        cg_emit(g, av.op);
+        cg_emit(g, ", ");
+        cg_emit(g, targty);
+        cg_emit(g, " ");
+        cg_emit(g, targ);
+        cg_emit(g, ")\n");
+        // A non-null block is zeroed, as alloc<T> returns zeroed memory whatever the
+        // allocator (a reset Bump or a reused Pool block holds old bytes).
+        string lzero = cg_lbl(g);
+        string isnull = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, isnull);
+        cg_emit(g, " = icmp eq ptr ");
+        cg_emit(g, r);
+        cg_emit(g, ", null\n");
+        cg_emit(g, "  br i1 ");
+        cg_emit(g, isnull);
+        cg_emit(g, ", label %");
+        cg_emit(g, ldone);
+        cg_emit(g, ", label %");
+        cg_emit(g, lzero);
+        cg_emit(g, "\n");
+        g.terminated = 1;
+        cg_label(g, lzero);
+        cg_zero_bytes(g, r, total);
+        string lzend = g.cur_lbl;
+        cg_br(g, ldone);
+        cg_label(g, lfail);
+        cg_br(g, ldone);
+        cg_label(g, ldone);
+        string res = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, res);
+        cg_emit(g, " = phi ptr [ ");
+        cg_emit(g, r);
+        cg_emit(g, ", %");
+        cg_emit(g, lcall);
+        cg_emit(g, " ], [ ");
+        cg_emit(g, r);
+        cg_emit(g, ", %");
+        cg_emit(g, lzend);
+        cg_emit(g, " ], [ null, %");
+        cg_emit(g, lfail);
+        cg_emit(g, " ]\n");
+        v.op = res;
+        v.ty = "ptr";
+        v.ety = cg_cat("*", elemty);
+        return v;
+    }
+
+    if (e.kind == EK_THREADCREATE) {
+        // thread_create(worker) → pthread_create(&tid, null, fn, env); returns the tid.
+        CgVal fat = cg_expr(g, e.a);                      // %closure {fn, env}
+        string fatop = cg_coerce(g, fat, "%closure");     // decay a bare fn arg to {@__fnptr, null}
+        string fnp = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, fnp);
+        cg_emit(g, " = extractvalue %closure ");
+        cg_emit(g, fatop);
+        cg_emit(g, ", 0\n");
+        string env = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, env);
+        cg_emit(g, " = extractvalue %closure ");
+        cg_emit(g, fatop);
+        cg_emit(g, ", 1\n");
+        string tid = cg_entry_alloca(g, "ptr");
+        cg_ensure_extern(g, "pthread_create", "declare i32 @pthread_create(ptr, ptr, ptr, ptr)\n");
+        g.uses_threads = 1;
+        // A lambda written in the call has no other owner, so the thread owns it: start it
+        // through a trampoline that frees its env once the body returns. A closure value
+        // stays its owner's (the same closure may start several threads). Mirrors C++.
+        if (e.a != null && e.a.kind == EK_LAMBDA) {
+            g.uses_heap_env = 1;                          // declares malloc (as for a heap env)
+            cg_ensure_extern(g, "free", "declare void @free(ptr)\n");
+            if (cg_seen_inst(g, "fn:__eskiu_thread_owned") == 0) {
+                cg_push_inst(g, "fn:__eskiu_thread_owned");
+                String_append(&g.globals, "define internal ptr @__eskiu_thread_owned(ptr %pack) {\nentry:\n");
+                String_append(&g.globals, "  %fn = load ptr, ptr %pack\n");
+                String_append(&g.globals, "  %envp = getelementptr { ptr, ptr }, ptr %pack, i32 0, i32 1\n");
+                String_append(&g.globals, "  %env = load ptr, ptr %envp\n");
+                String_append(&g.globals, "  call void @free(ptr %pack)\n");
+                String_append(&g.globals, "  call void %fn(ptr %env)\n");
+                String_append(&g.globals, "  call void @free(ptr %env)\n");
+                String_append(&g.globals, "  ret ptr null\n}\n");
+            }
+            string pack = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, pack);
+            cg_emit(g, cg_cat(" = call ptr @malloc(", cg_cat(cg_size_ty(g), " ")));
+            cg_emit(g, cg_itoa(2 * g.ptrsz));
+            cg_emit(g, ")\n");
+            cg_emit(g, "  store ptr ");
+            cg_emit(g, fnp);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, pack);
+            cg_emit(g, "\n");
+            string pe = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, pe);
+            cg_emit(g, " = getelementptr { ptr, ptr }, ptr ");
+            cg_emit(g, pack);
+            cg_emit(g, ", i32 0, i32 1\n");
+            cg_emit(g, "  store ptr ");
+            cg_emit(g, env);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, pe);
+            cg_emit(g, "\n");
+            fnp = "@__eskiu_thread_owned";
+            env = pack;
+        }
+        cg_emit(g, "  call i32 @pthread_create(ptr ");
+        cg_emit(g, tid);
+        cg_emit(g, ", ptr null, ptr ");
+        cg_emit(g, fnp);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, env);
+        cg_emit(g, ")\n");
+        string h = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, h);
+        cg_emit(g, " = load ptr, ptr ");
+        cg_emit(g, tid);
+        cg_emit(g, "\n");
+        v.op = h;
+        v.ty = "ptr";
+        v.ety = "*void";
+        return v;
+    }
+
+    if (e.kind == EK_FREECLOSURE) {
+        // free_closure(f) → free the closure's heap env (slot 1); free(null) is a safe no-op.
+        CgVal fat = cg_expr(g, e.a);
+        string fatop = cg_coerce(g, fat, "%closure");     // a bare fn decays to {@__fnptr, null} (env null)
+        string env = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, env);
+        cg_emit(g, " = extractvalue %closure ");
+        cg_emit(g, fatop);
+        cg_emit(g, ", 1\n");
+        string hf = cg_heap_free(g);
+        cg_ensure_extern(g, hf, cg_cat(cg_cat("declare void @", hf), "(ptr)\n"));
+        cg_emit(g, "  call void @");
+        cg_emit(g, hf);
+        cg_emit(g, "(ptr ");
+        cg_emit(g, env);
+        cg_emit(g, ")\n");
+        v.op = "";
+        v.ty = "void";
+        return v;
+    }
+
+    if (e.kind == EK_ARRAYLIT) {
+        // Only a variable initializer takes `{...}` (cg_array_init / cg_global_init); as a
+        // value anywhere else (a struct-literal field, an argument) it is an error, as in C++.
+        dprintf(2, "error: an array literal '{...}' is only valid as a variable initializer\n");
+        exit(1);
+    }
+    if (e.kind == EK_STRUCTINIT) {
+        // A struct literal `P{ … }` used as an rvalue (e.g. `x = P{…}`): materialize into a
+        // temp, fill its fields, and load the struct value. (Var-decls fill in place.)
+        string sname = e.sval;
+        string llty = cg_lltype(g, sname);
+        string slot = cg_entry_alloca(g, llty);
+        cg_struct_init(g, slot, sname, e);
+        string r = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, r);
+        cg_emit(g, " = load ");
+        cg_emit(g, llty);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, slot);
+        cg_emit(g, "\n");
+        v.op = r;
+        v.ty = llty;
+        v.ety = sname;
+        return v;
+    }
+
+    if (e.kind == EK_LAMBDA) {
+        // Free-variable analysis: capture the enclosing locals the body references (not its
+        // own params). The env is on the stack when sema proved the closure does not outlive
+        // the call, else on the heap. Build a fat pointer { @lambdaN, env } and queue the body
+        // for emission.
+        string lname = cg_cat("__lambda", cg_itoa(g.lam_seq));
+        g.lam_seq = g.lam_seq + 1;
+        List<string> pp;
+        List_init<string>(&pp, 4);
+        cg_paren_list(e.sval, &pp);
+        List<string> ids;
+        List_init<string>(&ids, 16);
+        cg_collect_idents_s(e.stmt, &ids);
+        List<string> capn;
+        List_init<string>(&capn, 4);
+        List<string> capt;
+        List_init<string>(&capt, 4);
+        List<CgLocal> statics;
+        List_init<CgLocal>(&statics, 1);
+        int ii = 0;
+        while (ii < List_len<string>(&ids)) {
+            string nm = List_get<string>(&ids, ii);
+            ii = ii + 1;
+            if (cg_in_strlist(&capn, nm) == 1) {      // already captured
+                continue;
+            }
+            int isparam = 0;
+            int pj = 0;
+            while (pj < List_len<string>(&pp)) {
+                if (cg_streq(cg_last_word(List_get<string>(&pp, pj)), nm) == 1) {
+                    isparam = 1;
+                }
+                pj = pj + 1;
+            }
+            if (isparam == 1) {
+                continue;
+            }
+            CgLocal l = cg_find_local(g, nm);
+            // A `static` local has static storage (its slot is a global, "@…"): the body
+            // refers to that one cell, like a global, instead of capturing a copy.
+            if (l.slot[0] == 64) {
+                List_push<CgLocal>(&statics, l);
+                continue;
+            }
+            if (l.slot[0] != 0) {
+                List_push<string>(&capn, nm);
+                List_push<string>(&capt, l.ety);
+            }
+        }
+        let lam: CgLambda;
+        lam.name = lname;
+        lam.node = e;
+        lam.capn = capn;
+        lam.capt = capt;
+        lam.statics = statics;
+        lam.sub = cg_copy_sub(&g.cursub);   // freeze the generic substitution for deferred emission
+        // Return type: the fn-type from the assignment context wins over the written one
+        // (e.g. a lambda written `int(int x)` assigned to `fn(int)->float` returns float).
+        if (g.lam_expret[0] != 0) {
+            lam.rety = g.lam_expret;
+        } else {
+            lam.rety = cg_arm_var(e.sval);
+        }
+        List_push<CgLambda>(&g.lambdas, lam);
+
+        string env = "null";
+        int nc = List_len<string>(&capn);
+        if (nc > 0) {
+            string envty = cg_env_lltype(g, &capt);
+            if (e.stack_env == 1) {
+                // Sema proved the closure does not outlive this call (an argument to a
+                // non-escaping param, or a local that is only called): the env is a stack slot.
+                env = cg_entry_alloca(g, envty);
+            } else {
+                // Heap-allocate the env: the closure may escape (be stored/returned and called
+                // after this frame returns, e.g. an event-loop callback), so the env must outlive
+                // the frame. Its owner frees it with free_closure (an async frame frees its
+                // closure locals itself).
+                g.uses_heap_env = 1;
+                string szg = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, szg);
+                cg_emit(g, " = getelementptr ");
+                cg_emit(g, envty);
+                cg_emit(g, ", ptr null, i32 1\n");
+                string szi = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, szi);
+                cg_emit(g, " = ptrtoint ptr ");
+                cg_emit(g, szg);
+                cg_emit(g, cg_cat(" to ", cg_cat(cg_heap_size_ty(g), "\n")));
+                env = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, env);
+                cg_emit(g, " = call ptr @");
+                cg_emit(g, cg_heap_alloc(g));
+                cg_emit(g, cg_cat("(", cg_cat(cg_heap_size_ty(g), " ")));
+                cg_emit(g, szi);
+                cg_emit(g, ")\n");
+            }
+            int j = 0;
+            while (j < nc) {
+                CgLocal l = cg_find_local(g, List_get<string>(&capn, j));
+                string ld = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, ld);
+                cg_emit(g, " = load ");
+                cg_emit(g, l.ty);
+                cg_emit(g, ", ptr ");
+                cg_emit(g, l.slot);
+                cg_emit(g, "\n");
+                string fp = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, fp);
+                cg_emit(g, " = getelementptr ");
+                cg_emit(g, envty);
+                cg_emit(g, ", ptr ");
+                cg_emit(g, env);
+                cg_emit(g, ", i32 0, i32 ");
+                cg_emit(g, cg_itoa(j));
+                cg_emit(g, "\n");
+                cg_emit(g, "  store ");
+                cg_emit(g, l.ty);
+                cg_emit(g, " ");
+                cg_emit(g, ld);
+                cg_emit(g, ", ptr ");
+                cg_emit(g, fp);
+                cg_emit(g, "\n");
+                j = j + 1;
+            }
+        }
+        string c = cg_entry_alloca(g, "%closure");
+        string c0 = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, c0);
+        cg_emit(g, " = getelementptr %closure, ptr ");
+        cg_emit(g, c);
+        cg_emit(g, ", i32 0, i32 0\n");
+        cg_emit(g, "  store ptr @");
+        cg_emit(g, lname);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, c0);
+        cg_emit(g, "\n");
+        string c1 = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, c1);
+        cg_emit(g, " = getelementptr %closure, ptr ");
+        cg_emit(g, c);
+        cg_emit(g, ", i32 0, i32 1\n");
+        cg_emit(g, "  store ptr ");
+        cg_emit(g, env);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, c1);
+        cg_emit(g, "\n");
+        string r = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, r);
+        cg_emit(g, " = load %closure, ptr ");
+        cg_emit(g, c);
+        cg_emit(g, "\n");
+        v.op = r;
+        v.ty = "%closure";
+        v.ety = "";
+        return v;
+    }
+
+    v.op = "0";
+    v.ty = "i32";
+    return v;
+}

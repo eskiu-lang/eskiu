@@ -1,0 +1,560 @@
+// codegen_expr_calls.esk: variants, atomics, indirect and interface calls (part of codegen_expr.esk, imported in order)
+
+// Construct an ADT enum value: alloca the `{ i32, [N x i64] }` tagged union, zero it
+// (the payload area past this variant's fields holds no garbage), store the
+// variant tag, then write each payload field by viewing the storage as the variant's
+// field struct. `call` is the EK_CALL node carrying the argument exprs (null for a
+// payload-less variant like `None`). Returns the loaded value (by value, like a struct).
+CgVal cg_build_variant(Codegen* g, CgVariant var, *ExprNode call) {
+    let v: CgVal;
+    v.ety = "";
+    string llty = cg_cat("%", var.ename);
+    string slot = cg_entry_alloca(g, llty);
+    if (cg_ll_big(g, llty) == 1) {
+        cg_zero_fill(g, slot, llty);
+    }
+    else {
+        cg_emit(g, "  store ");
+        cg_emit(g, llty);
+        cg_emit(g, " zeroinitializer, ptr ");
+        cg_emit(g, slot);
+        cg_emit(g, "\n");
+    }
+    string tp = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, tp);
+    cg_emit(g, " = getelementptr ");
+    cg_emit(g, llty);
+    cg_emit(g, ", ptr ");
+    cg_emit(g, slot);
+    cg_emit(g, ", i32 0, i32 0\n");
+    cg_emit(g, "  store i32 ");
+    cg_emit(g, cg_itoa(var.tag));
+    cg_emit(g, ", ptr ");
+    cg_emit(g, tp);
+    cg_emit(g, "\n");
+    int np = List_len<string>(&var.ptys);
+    if (np > 0 && call != null) {
+        string pstruct = cg_payload_lltype(g, &var);   // "{ i32, i32 }"
+        string pp = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, pp);
+        cg_emit(g, " = getelementptr ");
+        cg_emit(g, llty);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, slot);
+        cg_emit(g, ", i32 0, i32 1\n");
+        int i = 0;
+        while (i < np && i < List_len<*ExprNode>(&call.kids)) {
+            *ExprNode kx = List_get<*ExprNode>(&call.kids, i);
+            CgVal a = cg_expr(g, kx);
+            string pety = List_get<string>(&var.ptys, i);
+            string fty = cg_lltype(g, pety);
+            string aop = "";
+            if (cg_is_iface(g, cg_dealias(g, pety)) == 1) {   // box `&s`
+                aop = cg_iface_conv(g, pety, a, kx);
+            }
+            else {
+                aop = cg_coerce(g, a, fty);
+            }
+            string fp = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, fp);
+            cg_emit(g, " = getelementptr ");
+            cg_emit(g, pstruct);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, pp);
+            cg_emit(g, ", i32 0, i32 ");
+            cg_emit(g, cg_itoa(i));
+            cg_emit(g, "\n");
+            cg_emit(g, "  store ");
+            cg_emit(g, fty);
+            cg_emit(g, " ");
+            cg_emit(g, aop);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, fp);
+            cg_emit(g, "\n");
+            i = i + 1;
+        }
+    }
+    string r = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, r);
+    cg_emit(g, " = load ");
+    cg_emit(g, llty);
+    cg_emit(g, ", ptr ");
+    cg_emit(g, slot);
+    cg_emit(g, "\n");
+    v.op = r;
+    v.ty = llty;
+    v.ety = var.ename;
+    return v;
+}
+
+// A call to a declared atomic intrinsic (an ordinary function of the same name is not).
+int cg_is_atomic(Codegen* g, string nm) {
+    return ast_atomic_op(nm)[0] != 0 && cg_seen_inst(g, cg_cat("intrinsic:", nm)) == 1;
+}
+
+// Lower an atomic intrinsic to the matching LLVM atomic instruction (mirrors the C++
+// lowerIntrinsicCall): the cell is i32, i64 or ptr by the name's suffix; load acquire,
+// store release, the rest acq_rel (a failed cas acquire), fence seq_cst.
+CgVal cg_emit_atomic(Codegen* g, string nm, *ExprNode e) {
+    let v: CgVal;
+    v.ety = "";
+    string op = ast_atomic_op(nm);
+    if (cg_streq(op, "fence") == 1) {
+        cg_emit(g, "  fence seq_cst\n");
+        v.op = "";
+        v.ty = "void";
+        return v;
+    }
+    int k = ast_atomic_kind(nm);
+    // Orderings: acquire / release / acq_rel, or monotonic for a `_relaxed` name.
+    string o_ld = " acquire";
+    string o_st = " release";
+    string o_rmw = " acq_rel";
+    string o_fail = " acquire";
+    if (ast_atomic_relaxed(nm) == 1) {
+        o_ld = " monotonic";
+        o_st = " monotonic";
+        o_rmw = " monotonic";
+        o_fail = " monotonic";
+    }
+    string ty = "i32";
+    string al = "4";
+    if (k == 1) {
+        ty = "i64";
+        al = cg_itoa(g.i64al);
+    }
+    if (k == 2) {
+        ty = "ptr";
+        al = cg_itoa(g.ptrsz);
+    }
+    string cell = cg_expr(g, List_get<*ExprNode>(&e.kids, 0)).op;
+    if (cg_streq(op, "load") == 1) {
+        string t = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, t);
+        cg_emit(g, " = load atomic ");
+        cg_emit(g, ty);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, cell);
+        cg_emit(g, o_ld);
+        cg_emit(g, ", align ");
+        cg_emit(g, al);
+        cg_emit(g, "\n");
+        v.op = t;
+        v.ty = ty;
+        return v;
+    }
+    string a1 = cg_coerce(g, cg_expr(g, List_get<*ExprNode>(&e.kids, 1)), ty);
+    if (cg_streq(op, "store") == 1) {
+        cg_emit(g, "  store atomic ");
+        cg_emit(g, ty);
+        cg_emit(g, " ");
+        cg_emit(g, a1);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, cell);
+        cg_emit(g, o_st);
+        cg_emit(g, ", align ");
+        cg_emit(g, al);
+        cg_emit(g, "\n");
+        v.op = "";
+        v.ty = "void";
+        return v;
+    }
+    if (cg_streq(op, "cas") == 1) {
+        string des = cg_coerce(g, cg_expr(g, List_get<*ExprNode>(&e.kids, 2)), ty);
+        string p = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, p);
+        cg_emit(g, " = cmpxchg ptr ");
+        cg_emit(g, cell);
+        cg_emit(g, ", ");
+        cg_emit(g, ty);
+        cg_emit(g, " ");
+        cg_emit(g, a1);
+        cg_emit(g, ", ");
+        cg_emit(g, ty);
+        cg_emit(g, " ");
+        cg_emit(g, des);
+        cg_emit(g, o_rmw);
+        cg_emit(g, o_fail);
+        cg_emit(g, ", align ");
+        cg_emit(g, al);
+        cg_emit(g, "\n");
+        string t = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, t);
+        cg_emit(g, " = extractvalue { ");
+        cg_emit(g, ty);
+        cg_emit(g, ", i1 } ");
+        cg_emit(g, p);
+        cg_emit(g, ", 1\n");
+        v.op = t;
+        v.ty = "i1";
+        return v;
+    }
+    string rmw = "xchg";
+    if (cg_streq(op, "fetch_add") == 1) {
+        rmw = "add";
+    }
+    if (cg_streq(op, "fetch_sub") == 1) {
+        rmw = "sub";
+    }
+    if (cg_streq(op, "fetch_and") == 1) {
+        rmw = "and";
+    }
+    if (cg_streq(op, "fetch_or") == 1) {
+        rmw = "or";
+    }
+    if (cg_streq(op, "fetch_xor") == 1) {
+        rmw = "xor";
+    }
+    string t = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, t);
+    cg_emit(g, " = atomicrmw ");
+    cg_emit(g, rmw);
+    cg_emit(g, " ptr ");
+    cg_emit(g, cell);
+    cg_emit(g, ", ");
+    cg_emit(g, ty);
+    cg_emit(g, " ");
+    cg_emit(g, a1);
+    cg_emit(g, o_rmw);
+    cg_emit(g, ", align ");
+    cg_emit(g, al);
+    cg_emit(g, "\n");
+    v.op = t;
+    v.ty = ty;
+    return v;
+}
+
+// Call a closure value `cval` (a loaded %closure) of fn-type `fnty`: extract { fn, env }
+// and call fn(env, args...). Shared by ident-of-fn-type and closure-typed-field callees.
+CgVal cg_indirect_call(Codegen* g, string cval, string fnty, *ExprNode e) {
+    let v: CgVal;
+    v.ety = "";
+    string fp = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, fp);
+    cg_emit(g, " = extractvalue %closure ");
+    cg_emit(g, cval);
+    cg_emit(g, ", 0\n");
+    string ep = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, ep);
+    cg_emit(g, " = extractvalue %closure ");
+    cg_emit(g, cval);
+    cg_emit(g, ", 1\n");
+    List<string> fpt;
+    List_init<string>(&fpt, 4);
+    cg_paren_list(fnty, &fpt);
+    string rt = cg_lltype(g, cg_fnty_ret(fnty));
+    string cargs = cg_cat("ptr ", ep);                  // env is the first argument
+    int i = 0;
+    int nn = List_len<*ExprNode>(&e.kids);
+    while (i < nn) {
+        *ExprNode iax = List_get<*ExprNode>(&e.kids, i);
+        CgVal a = cg_expr(g, iax);
+        string aop = a.op;
+        string aty = a.ty;
+        if (i < List_len<string>(&fpt)) {
+            string pety = List_get<string>(&fpt, i);
+            string pty = cg_lltype(g, pety);
+            aop = cg_coerce(g, a, pty);
+            aty = pty;
+            if (cg_is_iface(g, cg_dealias(g, pety)) == 1) {   // box `&s`
+                aop = cg_iface_conv(g, pety, a, iax);
+            }
+        }
+        cargs = cg_cat(cargs, cg_cat(", ", cg_cat(aty, cg_cat(" ", aop))));
+        i = i + 1;
+    }
+    int isvoidc = cg_streq(rt, "void");
+    string t = cg_emit_callish(g, rt, fp, cargs, isvoidc);
+    if (isvoidc == 1) {
+        v.op = "";
+        v.ty = "void";
+        return v;
+    }
+    v.op = t;
+    v.ty = rt;
+    v.ety = cg_fnty_ret(fnty);
+    return v;
+}
+
+// Box a struct pointer `dataop` (of struct `structName`) as interface `ifaceName`: the fat
+// pointer value {data, vtable} (an interface value is this struct, by value, like a closure).
+// The per-(interface,struct) vtable global is emitted once, holding the struct's
+// implementation of each interface method in declaration order.
+// The function implementing interface method `mi` of `f` for struct `sname`: `S_m`, or for
+// a generic instance (`Box<int>`) its inline method or a generic free `S_m<T..>(S<T..>* self,
+// ...)` instantiated for it (type params bound from the receiver, then the interface's
+// parameter types). Mirrors the C++ boxAsInterface.
+string cg_iface_slot_fn(Codegen* g, CgIface* f, int mi, string sname) {
+    string method = List_get<string>(&f.mnames, mi);
+    if (cg_has_targs(sname) == 0) {
+        return cg_cat(cg_cat(sname, "_"), method);
+    }
+    string gm = cg_ensure_method_inst(g, sname, method);
+    if (gm[0] != 0) {
+        return gm;
+    }
+    string base = cg_gen_base(sname);
+    *DeclNode gd = cg_find_gfn(g, cg_cat(cg_cat(base, "_"), method));
+    if (gd == null || List_len<Param>(&gd.params) == 0) {
+        return cg_cat(cg_cat(cg_mangle(sname), "_"), method);
+    }
+    string selfty = List_get<Param>(&gd.params, 0).ty;
+    List<string> sargs;
+    List_init<string>(&sargs, 2);
+    cg_gen_args(cg_strip_ptr(selfty), &sargs);
+    List<string> rargs;
+    List_init<string>(&rargs, 2);
+    cg_gen_args(sname, &rargs);
+    List<string> ipts = List_get<List<string>>(&f.mparams, mi);
+    String sp;
+    String_init(&sp, 16);
+    String_append(&sp, gd.name);
+    String_append(&sp, "<");
+    int ti = 0;
+    int ntp = List_len<TypeParam>(&gd.type_params);
+    while (ti < ntp) {
+        string tp = List_get<TypeParam>(&gd.type_params, ti).name;
+        string binding = "";
+        int k = 0;
+        while (binding[0] == 0 && k < List_len<string>(&sargs) && k < List_len<string>(&rargs)) {
+            if (cg_streq(List_get<string>(&sargs, k), tp) == 1) {
+                binding = List_get<string>(&rargs, k);
+            }
+            k = k + 1;
+        }
+        int pi = 1;
+        int np = List_len<Param>(&gd.params);
+        while (binding[0] == 0 && pi < np && pi - 1 < List_len<string>(&ipts)) {
+            binding = cg_infer_bind(List_get<Param>(&gd.params, pi).ty, tp, List_get<string>(&ipts, pi - 1));
+            pi = pi + 1;
+        }
+        if (ti > 0) {
+            String_append(&sp, ", ");
+        }
+        String_append(&sp, binding);
+        ti = ti + 1;
+    }
+    String_append(&sp, ">");
+    return cg_ensure_fn_inst(g, (string)String_cstr(&sp));
+}
+
+string cg_iface_vtable(Codegen* g, string ifaceName, string structName);   // fwd
+string cg_box_iface(Codegen* g, string ifaceName, string structName, string dataop) {
+    string vtg = cg_iface_vtable(g, ifaceName, structName);
+    string f1 = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, f1);
+    cg_emit(g, " = insertvalue %iface_fat undef, ptr ");
+    cg_emit(g, dataop);
+    cg_emit(g, ", 0\n");
+    string f2 = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, f2);
+    cg_emit(g, " = insertvalue %iface_fat ");
+    cg_emit(g, f1);
+    cg_emit(g, ", ptr ");
+    cg_emit(g, vtg);
+    cg_emit(g, ", 1\n");
+    return f2;
+}
+
+// The vtable global of `structName` as an `ifaceName` (emitted once), e.g. `@Sh_vtable_Sq`.
+string cg_iface_vtable(Codegen* g, string ifaceName, string structName) {
+    CgIface f = cg_find_iface(g, ifaceName);
+    string vtg = cg_cat("@", cg_cat(ifaceName, cg_cat("_vtable_", cg_mangle(structName))));
+    string key = cg_cat("vt:", cg_cat(ifaceName, cg_cat("_", structName)));
+    if (cg_seen_inst(g, key) == 0) {
+        cg_push_inst(g, key);
+        // Resolve every slot first: instantiating one may itself append to g.globals.
+        List<string> slots;
+        List_init<string>(&slots, 4);
+        int mi = 0;
+        int mn = List_len<string>(&f.mnames);
+        while (mi < mn) {
+            List_push<string>(&slots, cg_iface_slot_fn(g, &f, mi, structName));
+            mi = mi + 1;
+        }
+        String_append(&g.globals, vtg);
+        String_append(&g.globals, " = private constant %");
+        String_append(&g.globals, ifaceName);
+        String_append(&g.globals, "_vtable { ");
+        mi = 0;
+        while (mi < mn) {
+            if (mi > 0) {
+                String_append(&g.globals, ", ");
+            }
+            String_append(&g.globals, "ptr @");
+            String_append(&g.globals, List_get<string>(&slots, mi));
+            mi = mi + 1;
+        }
+        String_append(&g.globals, " }\n");
+    }
+    return vtg;
+}
+
+// Constant initializer text of a global / static of Eskiu type `ety` (cg_global_init on
+// its LLVM type). An interface value is `null` (the empty fat value) or a boxed
+// `&global`: `{ ptr @g, ptr @I_vtable_S }`.
+string cg_global_init_ty(Codegen* g, *ExprNode e, string ety) {
+    string t = cg_dealias(g, ety);
+    // An array of interface values: each element is boxed like a scalar one.
+    string inner = t;
+    while (cg_is_array(inner) == 1) {
+        inner = cg_dealias(g, cg_array_elem(inner));
+    }
+    if (e != null && e.kind == EK_ARRAYLIT && cg_is_array(t) == 1 && cg_is_iface(g, inner) == 1) {
+        string elemEty = cg_array_elem(t);
+        string elemLl = cg_lltype(g, elemEty);
+        int cnt = 0;
+        string lt = cg_lltype(g, t);
+        int ci = 1;
+        while ((int)lt[ci] >= 48 && (int)lt[ci] <= 57) {
+            cnt = cnt * 10 + ((int)lt[ci] - 48);
+            ci = ci + 1;
+        }
+        let out: String;
+        String_init(&out, 64);
+        String_push(&out, '[');
+        int k = 0;
+        while (k < cnt) {
+            if (k > 0) {
+                String_append(&out, ", ");
+            }
+            String_append(&out, elemLl);
+            String_push(&out, ' ');
+            if (k < List_len<*ExprNode>(&e.kids)) {
+                String_append(&out, cg_global_init_ty(g, List_get<*ExprNode>(&e.kids, k), elemEty));
+            }
+            else {
+                String_append(&out, "zeroinitializer");
+            }
+            k = k + 1;
+        }
+        String_push(&out, ']');
+        return (string)String_cstr(&out);
+    }
+    if (e != null && cg_is_iface(g, t) == 1) {
+        if (e.kind == EK_LITERAL && e.lit_kind == LIT_NULL) {
+            return "zeroinitializer";
+        }
+        if (e.kind == EK_UNARY && cg_streq(e.sval, "&") == 1 && e.a != null && e.a.kind == EK_IDENT) {
+            CgLocal gl = cg_find_global(g, e.a.sval);
+            if (gl.slot[0] != 0 && cg_is_struct(g, cg_dealias(g, gl.ety)) == 1) {
+                string vtg = cg_iface_vtable(g, t, cg_dealias(g, gl.ety));
+                return cg_cat("{ ptr ", cg_cat(gl.slot, cg_cat(", ptr ", cg_cat(vtg, " }"))));
+            }
+        }
+        dprintf(2, "error: an interface global's initializer must be null or the address of a global struct\n");
+        exit(1);
+    }
+    return cg_global_init(g, e, cg_lltype(g, ety));
+}
+
+// The operand for value `a` (from expression `ax`) stored into a slot of Eskiu type `tety`:
+// when the slot is an interface and `a` is not already that interface, box the struct
+// pointer (`null` → the empty fat value). Otherwise `a.op` unchanged. Mirrors evalForType.
+string cg_iface_conv(Codegen* g, string tety, CgVal a, *ExprNode ax) {
+    string t = cg_dealias(g, tety);
+    if (cg_is_iface(g, t) == 0) {
+        return a.op;
+    }
+    if (cg_streq(cg_dealias(g, a.ety), t) == 1) {
+        return a.op;
+    }
+    if (ax != null && ax.kind == EK_LITERAL && ax.lit_kind == LIT_NULL) {
+        return "zeroinitializer";
+    }
+    if (cg_streq(a.ty, "%iface_fat") == 1) {
+        return a.op;
+    }
+    string sety = a.ety;
+    if (sety[0] == 0) {
+        sety = cg_etype(g, ax);
+    }
+    return cg_box_iface(g, t, cg_strip_ptr(sety), a.op);
+}
+
+// Dynamic dispatch `recv.method(...)` where `recv` is an interface value (a fat pointer
+// `fatop`): load the data + vtable from the fat pointer, load the method's fn pointer from
+// its vtable slot, and call it with `data` as the implicit first argument.
+CgVal cg_dispatch_iface(Codegen* g, string ifaceName, string fatop, string method, *ExprNode e) {
+    let v: CgVal;
+    v.ety = "";
+    CgIface f = cg_find_iface(g, ifaceName);
+    int idx = cg_iface_midx(&f, method);
+    string data = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, data);
+    cg_emit(g, " = extractvalue %iface_fat ");
+    cg_emit(g, fatop);
+    cg_emit(g, ", 0\n");
+    string vt = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, vt);
+    cg_emit(g, " = extractvalue %iface_fat ");
+    cg_emit(g, fatop);
+    cg_emit(g, ", 1\n");
+    string fg = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, fg);
+    cg_emit(g, " = getelementptr %");
+    cg_emit(g, ifaceName);
+    cg_emit(g, "_vtable, ptr ");
+    cg_emit(g, vt);
+    cg_emit(g, ", i32 0, i32 ");
+    cg_emit(g, cg_itoa(idx));
+    cg_emit(g, "\n");
+    string fnp = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, fnp);
+    cg_emit(g, " = load ptr, ptr ");
+    cg_emit(g, fg);
+    cg_emit(g, "\n");
+    string rety = List_get<string>(&f.mrets, idx);
+    string rt = cg_lltype(g, rety);
+    string args = cg_cat("ptr ", data);                 // self/data is the first argument
+    List<string> ptys = List_get<List<string>>(&f.mparams, idx);
+    int i = 0;
+    int nn = List_len<*ExprNode>(&e.kids);
+    while (i < nn) {
+        *ExprNode dax = List_get<*ExprNode>(&e.kids, i);
+        CgVal a = cg_expr(g, dax);
+        string aop = a.op;
+        string aty = a.ty;
+        if (i < List_len<string>(&ptys)) {              // coerce to the method's param type
+            string dpety = List_get<string>(&ptys, i);
+            string pty = cg_lltype(g, dpety);
+            if (cg_is_iface(g, cg_dealias(g, dpety)) == 1) {
+                aop = cg_iface_conv(g, dpety, a, dax);
+                aty = pty;
+            }
+            else if (pty[0] != 0) {
+                aop = cg_coerce(g, a, pty);
+                aty = pty;
+            }
+        }
+        args = cg_cat(args, cg_cat(", ", cg_cat(aty, cg_cat(" ", aop))));
+        i = i + 1;
+    }
+    int isvoid = cg_streq(rt, "void");
+    string t = cg_emit_callish(g, rt, fnp, args, isvoid);
+    if (isvoid == 1) {
+        v.op = "";
+        v.ty = "void";
+        return v;
+    }
+    v.op = t;
+    v.ty = rt;
+    v.ety = rety;
+    return v;
+}
