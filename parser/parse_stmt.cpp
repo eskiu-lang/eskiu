@@ -206,6 +206,7 @@ bool Parser::declarationRuledOut() const {
         if (r == AngleScan::Unknown) return false;
         if (r == AngleScan::NotTypes || split) return true;
     }
+    if (levels > 0 && at(i) == TokenType::CONST) ++i;
     while (at(i) == TokenType::STAR) {
         ++i; ++levels;
         if (at(i) == TokenType::CONST) ++i;

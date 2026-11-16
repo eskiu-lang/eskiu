@@ -361,6 +361,7 @@ void Parser::parseTypeInto(std::string& out) {
     }
     if (nullable) out += "?";
     if (baseIsConst) out += "const ";
+    size_t leadPos = out.size();
     out += leading;
     if (isPrimitiveTypeToken(typeToken.type)) {
         advance();
@@ -383,6 +384,17 @@ void Parser::parseTypeInto(std::string& out) {
         }
     } else {
         fail("Expected type, got " + tokenTypeToString(peek().type));
+    }
+
+    // `*T const`: the outermost of the leading pointers is const, the same type as
+    // `T* const`, so it takes that spelling (`T*const`).
+    if (!leading.empty() && check(TokenType::CONST)) {
+        if (nullable || leading.find('?') != std::string::npos)
+            fail("A const pointer with a nullable level is not supported");
+        advance();
+        out.erase(leadPos, leading.size());
+        out += std::string(leading.size() - 1, '*');
+        out += "*const";
     }
 
     // Handle trailing pointers (C-style: i32*). A `const` right after a star
