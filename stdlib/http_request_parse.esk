@@ -1,0 +1,338 @@
+// http_request_parse.esk: parsing requests and the response builder (part of http.esk, imported in order)
+
+// Parse the request in buf[0..len) into self (its fields are cleared first).
+// *need is set to the total byte count the request needs once its head and
+// Content-Length are known (else 0), so a reader can wait for that much
+// before calling again. Returns 0 when the request is complete, -1 when more
+// bytes are needed (the head has no blank line yet, or the body is short), or
+// the error status (400, 413, 501, 505; see _http_body_framing). Bytes past
+// the end of the request are ignored.
+int _http_request_parse(HttpRequest* self, *uint8 buf, int len, int64 max_body, *int64 need) {
+    *need = 0;
+    _http_request_clear(self);
+    const int hend = _http_idx_header_end(buf, len);
+    if (hend < 0) {
+        return -1;
+    }
+    int64 clen = 0;
+    const int framing = _http_request_head(self, buf, hend, max_body, &clen);
+    if (framing > 1) {
+        return framing;
+    }
+    if (framing == 1) {
+        let out: HttpChunkOut;
+        out.data = null;
+        out.len = 0;
+        out.cap = 0;
+        int64 bpos = hend;
+        const int st = http_chunked_step(buf, len, &bpos, &out, max_body);
+        if (st == 1) {
+            for (i in 0..out.len) {
+                self.body.push((char)out.data[i]);
+            }
+        }
+        if (out.data != null) {
+            free(out.data);
+        }
+        if (st == 1) {
+            return 0;
+        }
+        if (st == 0) {
+            return -1;
+        }
+        return st == -2 ? 413 : 400;
+    }
+    *need = (int64)hend + clen;
+    if ((int64)len < *need) {
+        return -1;
+    }
+    for (int64 i = 0; i < clen; i++) {
+        self.body.push((char)buf[hend + i]);
+    }
+    return 0;
+}
+
+// Parse the request in buf[0..len) into self, framed by RFC 9112 like
+// http_recv: returns 0 when it is complete, -1 when more bytes are needed
+// (the head has no blank line yet, a body is shorter than its Content-Length
+// or a chunked body has no last chunk), or the HTTP error status: 400 for a
+// malformed request (a method that is not a token, an empty path, a line
+// break that is not CRLF, a malformed field line, a missing, repeated or
+// invalid Host, an invalid or conflicting Content-Length, Transfer-Encoding
+// with Content-Length, a malformed chunked body), 413 for a body above
+// `max_body`, 501 for a transfer coding other than chunked, 505 for an HTTP
+// major version other than 1. The body is exactly the Content-Length bytes or
+// the decoded chunks.
+int HttpRequest_parse_status(HttpRequest* self, *uint8 buf, int len, int64 max_body) {
+    int64 need = 0;
+    return _http_request_parse(self, buf, len, max_body, &need);
+}
+
+// Parse a raw request from `buf` (len bytes): 1 if it holds one complete,
+// well-formed request (HttpRequest_parse_status returns 0), else 0 (a
+// malformed request, or one cut short).
+int HttpRequest_parse(HttpRequest* self, *uint8 buf, int len) {
+    return HttpRequest_parse_status(self, buf, len, len) == 0 ? 1 : 0;
+}
+
+// Drop trailing optional whitespace (SP / HTAB, plus a stray CR) from a header
+// value just copied into `out` (RFC 9110 §5.5: OWS around a field value is not
+// part of it).
+void _http_trim_ows_tail(String* out) {
+    while (out.len > 0) {
+        const char c = out.data[out.len - 1];
+        if (c != ' ' && c != '\t' && c != '\r') {
+            return;
+        }
+        out.data[--out.len] = 0;
+    }
+}
+
+char _http_lc(char c) {
+    return (c >= 'A' && c <= 'Z') ? (char)((int)c + 32) : c;
+}
+
+// Find header `name` (case-insensitive) in a "Key: Value\n" block and copy its
+// value into `out` (cleared first) without surrounding whitespace. 1 = hit.
+int _http_header_lookup(String* headers, string name, String* out) {
+    out.clear();
+    const int n = headers.len;
+    int i = 0;
+    while (i < n) {
+        // Compare the line's key against `name`.
+        int j = 0;
+        bool matched = true;
+        for (; name[j] != 0; j++) {
+            if (i + j >= n || _http_lc(headers.data[i + j]) != _http_lc(name[j])) {
+                matched = false;
+                break;
+            }
+        }
+        if (matched && i + j < n && headers.data[i + j] == ':') {
+            int k = i + j + 1;
+            while (k < n && (headers.data[k] == ' ' || headers.data[k] == '\t')) {   // leading OWS
+                k++;
+            }
+            for (; k < n && headers.data[k] != '\n'; k++) {
+                out.push(headers.data[k]);
+            }
+            _http_trim_ows_tail(out);
+            return 1;
+        }
+        // Skip to the start of the next line.
+        while (i < n && headers.data[i] != '\n') {
+            i++;
+        }
+        i++;
+    }
+    return 0;
+}
+
+// Look up a header by name (case-insensitive). On success copies the value into
+// `out` (cleared first), without surrounding whitespace, and returns 1;
+// otherwise returns 0.
+int HttpRequest_header(HttpRequest* self, string name, String* out) {
+    return _http_header_lookup(&self.headers, name, out);
+}
+
+// ── Response (builder) ───────────────────────────────────────────────────────
+
+struct HttpResponse {
+    int status;
+    String headers;   // accumulated "Key: Value\r\n"
+    String body;
+}
+
+void HttpResponse_init(HttpResponse* self, int status) {
+    self.status = status;
+    self.headers.init(128);
+    self.body.init(128);
+}
+
+void HttpResponse_free(HttpResponse* self) {
+    self.headers.free();
+    self.body.free();
+}
+
+// 1 if `key` is a field name (one or more tchar) and `val` a field value with
+// no CR or LF, so the pair is one header line when written out.
+int _http_field_ok(string key, string val) {
+    if (key[0] == 0) {
+        return 0;
+    }
+    for (int i = 0; key[i] != 0; i++) {
+        if (_http_is_tchar((uint8)key[i]) == 0) {
+            return 0;
+        }
+    }
+    for (int i = 0; val[i] != 0; i++) {
+        if (_http_is_crlf_byte((uint8)val[i]) == 1) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+// Add the header `key: val`. Returns 1, or 0 (and adds nothing) when `key` is
+// not a token or `val` holds a CR or LF: such a pair would split into a
+// second, injected header line (_http_field_ok). A Content-Length set here is
+// not sent when the response gets the automatic one.
+int HttpResponse_header(HttpResponse* self, string key, string val) {
+    if (_http_field_ok(key, val) == 0) {
+        return 0;
+    }
+    self.headers.append(key);
+    self.headers.append(": ");
+    self.headers.append(val);
+    self.headers.append("\r\n");
+    return 1;
+}
+
+void HttpResponse_set_body(HttpResponse* self, string s) {
+    self.body.clear();
+    self.body.append(s);
+}
+
+void HttpResponse_body_append(HttpResponse* self, string s) {
+    self.body.append(s);
+}
+
+// Reason phrase for the common status codes; any other code gets the generic
+// phrase of its class ("" outside 100..599).
+string _http_reason(int s) {
+    switch (s) {
+        case 200: return "OK";
+        case 201: return "Created";
+        case 204: return "No Content";
+        case 206: return "Partial Content";
+        case 301: return "Moved Permanently";
+        case 302: return "Found";
+        case 304: return "Not Modified";
+        case 400: return "Bad Request";
+        case 401: return "Unauthorized";
+        case 403: return "Forbidden";
+        case 404: return "Not Found";
+        case 405: return "Method Not Allowed";
+        case 408: return "Request Timeout";
+        case 409: return "Conflict";
+        case 413: return "Payload Too Large";
+        case 422: return "Unprocessable Entity";
+        case 429: return "Too Many Requests";
+        case 431: return "Request Header Fields Too Large";
+        case 500: return "Internal Server Error";
+        case 501: return "Not Implemented";
+        case 502: return "Bad Gateway";
+        case 503: return "Service Unavailable";
+        case 504: return "Gateway Timeout";
+        case 505: return "HTTP Version Not Supported";
+    }
+    if (s >= 100 && s < 200) {
+        return "Informational";
+    }
+    if (s >= 200 && s < 300) {
+        return "Success";
+    }
+    if (s >= 300 && s < 400) {
+        return "Redirection";
+    }
+    if (s >= 400 && s < 500) {
+        return "Client Error";
+    }
+    if (s >= 500 && s < 600) {
+        return "Server Error";
+    }
+    return "";
+}
+
+// Append `v` in decimal to `out`. Takes int64 so a Content-Length above 2 GiB is
+// written in full (String_from_int is int-only).
+void _http_append_int(String* out, int64 v) {
+    if (v < 0) {
+        out.push('-');
+    }
+    char[20] digits;
+    int n = 0;
+    uint64 u = v < 0 ? (uint64)0 - (uint64)v : (uint64)v;
+    do {
+        digits[n++] = (char)('0' + (int)(u % 10));
+        u /= 10;
+    } while (u != 0);
+    while (n > 0) {
+        out.push(digits[--n]);
+    }
+}
+
+// 1 if a response with this status has no content and so no body and no
+// Content-Length (RFC 9110 §8.6, §15.2, §15.3.5, §15.4.5: 1xx, 204 and 304;
+// a 304 Content-Length would describe the selected representation, which
+// the handler's body need not be).
+int _http_status_no_content(int status) {
+    return (status >= 100 && status < 200) || status == 204 || status == 304 ? 1 : 0;
+}
+
+// Serialize the full HTTP/1.1 response (status line, headers, auto
+// Content-Length, blank line, body) into `out`. A 1xx, 204 or 304 response
+// gets no Content-Length and no body.
+void HttpResponse_render(HttpResponse* self, String* out) {
+    _http_render(self, out, false);
+}
+
+// Serialize the response to a HEAD request into `out`: as HttpResponse_render,
+// with the Content-Length of the body a GET would get, but no body (RFC 9110
+// §9.3.2).
+void HttpResponse_render_head(HttpResponse* self, String* out) {
+    _http_render(self, out, true);
+}
+
+// 1 if the header line s[from..to) is named `name` (case-insensitive).
+int _http_line_named(String* s, int64 from, int64 to, string name) {
+    int64 j = 0;
+    for (; name[j] != 0; j++) {
+        if (from + j >= to || _http_lc(s.data[from + j]) != _http_lc(name[j])) {
+            return 0;
+        }
+    }
+    return from + j < to && s.data[from + j] == ':' ? 1 : 0;
+}
+
+void _http_render(HttpResponse* self, String* out, bool head) {
+    out.append("HTTP/1.1 ");
+    _http_append_int(out, self.status);
+    out.push(' ');
+    out.append(_http_reason(self.status));
+    out.append("\r\n");
+    const int nocontent = _http_status_no_content(self.status);
+    // The handler's lines, less a Content-Length when the automatic one is sent
+    // (two would be a conflicting length, RFC 9112 §6.3).
+    const int64 n = self.headers.len;
+    int64 i = 0;
+    while (i < n) {
+        int64 e = i;
+        while (e < n && self.headers.data[e] != '\n') {
+            e++;
+        }
+        if (e < n) {
+            e++;
+        }
+        if (nocontent == 1 || _http_line_named(&self.headers, i, e, "content-length") == 0) {
+            for (k in i..e) {
+                out.push(self.headers.data[k]);
+            }
+        }
+        i = e;
+    }
+    if (nocontent == 1) {
+        out.append("\r\n");
+        return;
+    }
+    out.append("Content-Length: ");
+    _http_append_int(out, self.body.len);
+    out.append("\r\n\r\n");
+    if (head) {
+        return;
+    }
+    // All body.len bytes: the body may hold a NUL, which cstr() would cut at.
+    for (i in 0..self.body.len) {
+        out.push(self.body.data[i]);
+    }
+}

@@ -1,0 +1,342 @@
+// http_worker.esk: the worker pool and serving connections (part of http.esk, imported in order)
+
+// ── Worker pool ──────────────────────────────────────────────────────────────
+
+// Limits of the http_serve / http_serve_async servers: a request head
+// longer than HTTP_SERVE_MAX_HEAD bytes is answered 400, a body longer than
+// HttpLimits.max_body (HTTP_SERVE_MAX_BODY by default) 413.
+const int HTTP_SERVE_MAX_HEAD = 65536;
+const int HTTP_SERVE_MAX_BODY = 1048576;
+
+// Timeouts and connection limits of every stdlib server (http_serve, <http_async>,
+// <http2_server>, <tls>), in milliseconds; 0 turns one off. A client that sends
+// nothing, trickles its bytes or stops reading is disconnected once one runs out:
+//   header_ms  the whole request head (HTTP/1.1), or the HTTP/2 preface and first
+//              SETTINGS (and each header block), must arrive within this;
+//   body_ms    a request body must arrive within this once its head is in (an
+//              HTTP/2 stream: the whole request from its first HEADERS);
+//   idle_ms    an HTTP/2 connection with no open stream is closed (GOAWAY
+//              NO_ERROR) after this long; frames such as PING do not extend it;
+//   write_ms   an answer (or an HTTP/2 stream's response data) must be taken by
+//              the client within this;
+//   write_total_ms an HTTP/2 stream's whole response must be sent within this
+//              from when it is ready, however the peer paces its window updates
+//              (write_ms counts from the last data sent); past it the stream is
+//              reset (CANCEL) and its buffered response freed, the connection
+//              stays open;
+//   max_open   the async servers hold at most this many connections at once; one
+//              accepted past it is closed at once (so idle peers cannot use up
+//              every file descriptor);
+//   max_body   a request body (Content-Length or decoded chunks, HTTP/1.1 and
+//              HTTP/2) longer than this many bytes is answered 413 (default
+//              HTTP_SERVE_MAX_BODY, 1 MiB); a server taking uploads raises it.
+// A request cut by header_ms or body_ms after some of it arrived is answered 408
+// before the connection closes (HTTP/1.1); nothing is sent to a peer that sent
+// nothing. The HTTP/1.1 servers answer one request per connection, so they have
+// no idle wait between requests.
+const int64 HTTP_HEADER_TIMEOUT_MS = 10000;
+const int64 HTTP_BODY_TIMEOUT_MS = 60000;
+const int64 HTTP_IDLE_TIMEOUT_MS = 60000;
+const int64 HTTP_WRITE_TIMEOUT_MS = 30000;
+const int64 HTTP_WRITE_TOTAL_MS = 300000;
+const int HTTP_MAX_OPEN_CONNS = 1024;
+
+struct HttpLimits {
+    int64 header_ms;
+    int64 body_ms;
+    int64 idle_ms;
+    int64 write_ms;
+    int max_open;
+    int64 write_total_ms;
+    int64 max_body;
+}
+
+// Set `self` to the defaults above; change the fields after, then pass it to a
+// *_with server (http_serve_with, http_serve_async_with, http2_serve_async_with,
+// http2_tls_serve_async_with, http2_tls_serve_conn_with).
+void HttpLimits_init(HttpLimits* self) {
+    self.header_ms = HTTP_HEADER_TIMEOUT_MS;
+    self.body_ms = HTTP_BODY_TIMEOUT_MS;
+    self.idle_ms = HTTP_IDLE_TIMEOUT_MS;
+    self.write_ms = HTTP_WRITE_TIMEOUT_MS;
+    self.max_open = HTTP_MAX_OPEN_CONNS;
+    self.write_total_ms = HTTP_WRITE_TOTAL_MS;
+    self.max_body = HTTP_SERVE_MAX_BODY;
+}
+
+// The default limits, by value.
+HttpLimits http_limits() {
+    let l: HttpLimits;
+    l.init();
+    return l;
+}
+
+// The bytes of one request as a server reads them from a connection.
+struct HttpConnBuf {
+    *uint8 data;
+    int len;
+    int cap;
+    int64 need;     // bytes the request needs in total, once known (else 0)
+    int hend;     // just past the head's blank line, once found (else 0)
+    int scan;     // bytes already searched for the blank line
+    int chunked;  // 1 if the body is chunked
+    int trailer;  // chunked decoder state (see _http_chunked_run)
+    int64 bpos;     // chunked: where the undecoded input starts
+    int64 tbytes;   // chunked: trailer bytes consumed
+    HttpChunkOut out;   // chunked: the body decoded so far
+    int64 max_body;     // the body cap (HttpLimits.max_body)
+}
+
+void HttpConnBuf_init(HttpConnBuf* self) {
+    self.cap = 8192;
+    self.data = alloc<uint8>(self.cap);
+    self.len = 0;
+    self.need = 0;
+    self.hend = 0;
+    self.scan = 0;
+    self.chunked = 0;
+    self.trailer = 0;
+    self.bpos = 0;
+    self.tbytes = 0;
+    self.out.data = null;
+    self.out.len = 0;
+    self.out.cap = 0;
+    self.max_body = HTTP_SERVE_MAX_BODY;
+}
+
+void HttpConnBuf_free(HttpConnBuf* self) {
+    if (self.data != null) {
+        free(self.data);
+        self.data = null;
+    }
+    if (self.out.data != null) {
+        free(self.out.data);
+        self.out.data = null;
+    }
+}
+
+// After more bytes were added to b.len: -1 if the request is still incomplete
+// (the buffer then has room for the next read at b.data + b.len, cap - len
+// bytes), 0 when `req` holds the complete request, or the status to answer
+// (400, 413, 501, 505, as HttpRequest_parse_status; 400 also for a head
+// longer than HTTP_SERVE_MAX_HEAD). A request split over any number of reads
+// is parsed once its bytes are all in. The work is incremental: the head is
+// searched and parsed once, and a chunked body is decoded as it arrives, so
+// each call only looks at the new bytes (a request fed in small pieces used
+// to be reparsed from the start every time, quadratic in its size).
+int HttpConnBuf_feed(HttpConnBuf* b, HttpRequest* req) {
+    if (b.hend == 0) {
+        const int h = _http_idx_header_end_from(b.data, b.scan > 3 ? b.scan - 3 : 0, b.len);
+        b.scan = b.len;
+        if (h < 0) {
+            if (b.len > HTTP_SERVE_MAX_HEAD) {
+                return 400;
+            }
+        } else {
+            b.hend = h;
+            _http_request_clear(req);
+            int64 clen = 0;
+            const int framing = _http_request_head(req, b.data, h, b.max_body, &clen);
+            if (framing > 1) {
+                return framing;
+            }
+            if (framing == 1) {
+                b.chunked = 1;
+                b.bpos = h;
+            }
+            else {
+                b.need = (int64)h + clen;
+            }
+        }
+    }
+    if (b.hend > 0) {
+        if (b.chunked == 1) {
+            // Decoded input is dropped, so tiny chunks (many framing bytes
+            // per body byte) do not run into the buffer limit below.
+            int64 n = b.len;
+            const int st = _http_chunked_feed(b.data, &n, &b.bpos, b.hend, &b.out, b.max_body, &b.trailer, &b.tbytes);
+            b.len = (int)n;
+            if (st == 1) {
+                for (i in 0..b.out.len) {
+                    req.body.push((char)b.out.data[i]);
+                }
+                return 0;
+            }
+            if (st < 0) {
+                return st == -2 ? 413 : 400;
+            }
+        } else if ((int64)b.len >= b.need) {
+            for (int64 i = b.hend; i < b.need; i++) {
+                req.body.push((char)b.data[i]);
+            }
+            return 0;
+        }
+    }
+    if (b.len < b.cap) {
+        return -1;
+    }
+    // A Content-Length request needs at most HEAD + max_body bytes; a chunked
+    // one holds its head and one unfinished chunk (at most max_body) or line.
+    // The buffer is an int-sized allocation, so the bound stops below 2 GiB.
+    int64 limit = (int64)HTTP_SERVE_MAX_HEAD + 2 * b.max_body;
+    if (limit > (int64)2147483647) {
+        limit = (int64)2147483647;
+    }
+    if ((int64)b.cap >= limit) {
+        return 413;
+    }
+    int64 nc = (int64)b.cap * 2;
+    if (nc < b.need) {
+        nc = b.need;
+    }
+    if (nc > limit) {
+        nc = limit;
+    }
+    b.data = http_buf_grow(b.data, b.len, (int)nc);
+    b.cap = (int)nc;
+    return -1;
+}
+
+// The answer to a request read by a server, rendered into `out`: `st` is
+// HttpConnBuf_feed's result, 0 to call `handler` (a HEAD request gets no
+// body), else the error status answered without calling it.
+void _http_conn_render(HttpRequest* req, int st, fn(HttpRequest*, HttpResponse*)->void handler, String* out) {
+    let res: HttpResponse;
+    res.init(200);
+    if (st == 0) {
+        handler(req, &res);
+    }
+    else {                   // malformed: the handler never sees it
+        res.status = st;
+    }
+    if (st == 0 && req.method.eq_cstr("HEAD") == 1) {
+        res.render_head(out);
+    }
+    else {
+        res.render(out);
+    }
+    res.free();
+}
+
+// Answer a request read by a server over the blocking socket `c` (see
+// _http_conn_render). The whole answer must be taken within `write_ms` from the
+// first byte: SO_SNDTIMEO is set to what is left of that deadline before each
+// send, so a peer that reads slowly cannot stretch it.
+void _http_conn_answer(int c, HttpRequest* req, int st, fn(HttpRequest*, HttpResponse*)->void handler, int64 write_ms) {
+    let out: String;
+    out.init(256);
+    _http_conn_render(req, st, handler, &out);
+    const int64 dl = net_deadline(write_ms);
+    int64 off = 0;
+    while (off < (int64)out.len) {
+        int64 left = 0;
+        if (dl != 0) {
+            left = dl - time_monotonic_ms();
+            if (left <= 0) {
+                break;
+            }
+        }
+        net_set_send_timeout(c, left);
+        const int64 sent = net_send(c, out.cstr() + off, (int64)out.len - off);
+        if (sent < 0 && dl != 0 && net_would_block() == 1) {   // SO_SNDTIMEO ran out: the check above decides
+            continue;
+        }
+        if (sent <= 0) {
+            break;
+        }
+        off += sent;
+    }
+    out.free();
+}
+
+// Read one request from the blocking socket `c` into `b` / `req` under the
+// limits: HttpConnBuf_feed's result, -2 if the peer closed or timed out before
+// sending anything, or 408 if the head (header_ms) or the body (body_ms) did not
+// arrive in time. SO_RCVTIMEO is set to what is left of the deadline before each
+// recv, so trickled bytes cannot stretch it.
+int _http_conn_read(int c, HttpConnBuf* b, HttpRequest* req, HttpLimits* lim) {
+    const int64 head_dl = net_deadline(lim.header_ms);
+    int64 body_dl = 0;
+    bool body_armed = false;
+    while (true) {
+        if (b.hend > 0 && !body_armed) {
+            body_dl = net_deadline(lim.body_ms);
+            body_armed = true;
+        }
+        const int64 dl = b.hend > 0 ? body_dl : head_dl;
+        int64 left = 0;
+        if (dl != 0) {
+            left = dl - time_monotonic_ms();
+            if (left <= 0) {
+                return b.len == 0 ? -2 : 408;
+            }
+        }
+        net_set_recv_timeout(c, left);
+        const int64 got = net_recv(c, b.data + b.len, b.cap - b.len);
+        if (got < 0 && dl != 0 && net_would_block() == 1) {   // SO_RCVTIMEO ran out: the check above decides
+            continue;
+        }
+        if (got <= 0) {   // closed: nothing sent, or a cut request
+            return b.len == 0 ? -2 : 400;
+        }
+        b.len += (int)got;
+        const int st = b.feed(req);
+        if (st != -1) {
+            return st;
+        }
+    }
+    return -1;
+}
+
+// A handler reads the request and fills the response.
+//
+// Accept-and-serve loop for one worker. Each connection is read until its
+// request is complete (or known to be bad, or out of time: see HttpLimits),
+// parsed, handed to `handler`, and answered (the whole answer must be taken
+// within lim.write_ms). Runs forever.
+void http_worker_loop_with(int fd, fn(HttpRequest*, HttpResponse*)->void handler, HttpLimits lim) {
+    while (true) {
+        const int c = net_accept(fd);
+        if (c < 0) {
+            continue;
+        }
+        let b: HttpConnBuf;
+        b.init();
+        b.max_body = lim.max_body;
+        let req: HttpRequest;
+        req.init();
+        const int st = _http_conn_read(c, &b, &req, &lim);
+        if (st != -2) {
+            _http_conn_answer(c, &req, st, handler, lim.write_ms);
+        }
+        net_close(c);
+        req.free();
+        b.free();
+    }
+}
+
+void http_worker_loop(int fd, fn(HttpRequest*, HttpResponse*)->void handler) {
+    http_worker_loop_with(fd, handler, http_limits());
+}
+
+// Listen on `port` and serve with `nworkers` threads (the calling thread is one
+// of them, so it blocks here) under the default HttpLimits. Returns immediately
+// only if the bind fails.
+void http_serve(int port, int nworkers, escaping fn(HttpRequest*, HttpResponse*)->void handler) {
+    http_serve_with(port, nworkers, handler, http_limits());
+}
+
+// http_serve with the timeouts in `lim` (max_open does not apply: the workers
+// are the bound).
+void http_serve_with(int port, int nworkers, escaping fn(HttpRequest*, HttpResponse*)->void handler, HttpLimits lim) {
+    const int fd = net_tcp_listen((uint16)port);
+    if (fd < 0) {
+        return;
+    }
+    // Each worker's closure is written in the call, so its thread owns (and frees) it.
+    for (int spawned = 1; spawned < nworkers; spawned++)
+        thread_create(void() {
+        http_worker_loop_with(fd, handler, lim);
+    });
+    http_worker_loop_with(fd, handler, lim);
+}
