@@ -1,0 +1,465 @@
+// codegen_ops_resolve.esk: operator overload resolution and operand types (part of codegen_ops.esk, imported in order)
+
+string cg_op_try(Codegen* g, string op, string a, string b) {
+    let tys: List<string>;
+    List_init<string>(&tys, 2);
+    List_push<string>(&tys, a);
+    List_push<string>(&tys, b);
+    return cg_op_lookup(g, op, &tys);
+}
+
+// Resolve a binary/index `op` over operand types to its overload fn name, or "": an exact
+// mangled-name match first, then a numeric operand converted to the standard numeric
+// parameter spellings, as the C++ resolver's assignability does (test operator_coerce).
+string cg_op_resolve(Codegen* g, string op, string ta, string tb) {
+    if (ta[0] == 0 || tb[0] == 0) {
+        return "";
+    }
+    string r = cg_op_try(g, op, ta, tb);              // exact operand types
+    if (r[0] != 0) {
+        return r;
+    }
+    // Numeric coercion (mirrors the C++ resolver's assignability): a numeric operand may
+    // match an operator declared with another numeric param type, so `V3 * 2.0` (double)
+    // finds `operator *(V3, float)`. Try the standard numeric param spellings.
+    if (cg_is_num_ty(g, tb) == 1) {
+        r = cg_op_try(g, op, ta, "double");
+        if (r[0] != 0) {
+            return r;
+        }
+        r = cg_op_try(g, op, ta, "float");
+        if (r[0] != 0) {
+            return r;
+        }
+        r = cg_op_try(g, op, ta, "int");
+        if (r[0] != 0) {
+            return r;
+        }
+        r = cg_op_try(g, op, ta, "int64");
+        if (r[0] != 0) {
+            return r;
+        }
+    }
+    if (cg_is_num_ty(g, ta) == 1) {
+        r = cg_op_try(g, op, "double", tb);
+        if (r[0] != 0) {
+            return r;
+        }
+        r = cg_op_try(g, op, "float", tb);
+        if (r[0] != 0) {
+            return r;
+        }
+        r = cg_op_try(g, op, "int", tb);
+        if (r[0] != 0) {
+            return r;
+        }
+        r = cg_op_try(g, op, "int64", tb);
+        if (r[0] != 0) {
+            return r;
+        }
+    }
+    return "";
+}
+
+string cg_op_resolve1(Codegen* g, string op, string ta) {
+    if (ta[0] == 0) {
+        return "";
+    }
+    let tys: List<string>;
+    List_init<string>(&tys, 1);
+    List_push<string>(&tys, ta);
+    return cg_op_lookup(g, op, &tys);
+}
+
+// Emit a call to a resolved operator function with 1 or 2 operand exprs (a2 null = unary),
+// reusing the normal EK_CALL lowering (arg coercion + struct-by-value ABI).
+CgVal cg_op_call(Codegen* g, string fnname, *ExprNode a1, *ExprNode a2) {
+    *ExprNode c = alloc<ExprNode>(1);
+    c.kind = EK_CALL;
+    c.a = cgb_ident(fnname);
+    List_init<*ExprNode>(&c.kids, 2);
+    List_push<*ExprNode>(&c.kids, a1);
+    if (a2 != null) {
+        List_push<*ExprNode>(&c.kids, a2);
+    }
+    return cg_expr(g, c);
+}
+
+// Is `t` an integer / numeric Eskiu type (a plain enum counts as int)? Mirrors the C++
+// type checker's isIntType / isNumericType.
+int cg_is_int_ety(Codegen* g, string t) {
+    if (NameIdx_first(&g.enum_ix, t) >= 0) {
+        return 1;
+    }
+    return cg_streq(t, "int") == 1 || cg_streq(t, "int8") == 1 || cg_streq(t, "int16") == 1
+        || cg_streq(t, "int32") == 1 || cg_streq(t, "int64") == 1 || cg_streq(t, "uint") == 1
+        || cg_streq(t, "uint8") == 1 || cg_streq(t, "uint16") == 1 || cg_streq(t, "uint32") == 1
+        || cg_streq(t, "uint64") == 1 || cg_streq(t, "char") == 1 || cg_streq(t, "bool") == 1;
+}
+
+int cg_is_num_ety(Codegen* g, string t) {
+    if (cg_streq(t, "float") == 1 || cg_streq(t, "double") == 1) {
+        return 1;
+    }
+    return cg_is_int_ety(g, t);
+}
+
+int cg_is_ptr_ety(string t) {
+    return cg_is_ptr_ty(t) == 1 || cg_streq(t, "string") == 1;
+}
+
+// The integer width an Eskiu type ranks at for promotion: 64/32, 16 for any narrower
+// integer (it promotes to int), 0 for a non-integer.
+int cg_rank_w(Codegen* g, string t) {
+    if (cg_streq(t, "int64") == 1 || cg_streq(t, "uint64") == 1) {
+        return 64;
+    }
+    if (cg_streq(t, "int") == 1 || cg_streq(t, "int32") == 1 || cg_streq(t, "uint") == 1
+        || cg_streq(t, "uint32") == 1) {
+        return 32;
+    }
+    if (cg_is_int_ety(g, t) == 1) {
+        return 16;
+    }
+    return 0;
+}
+
+// The common type of two numeric operands. Mirrors the C++ TypeChecker::promoteType
+// exactly (including its rank order), so signedness and width decisions agree.
+string cg_promote(Codegen* g, string a, string b) {
+    if (NameIdx_first(&g.enum_ix, a) >= 0) {
+        a = "int";
+    }
+    if (NameIdx_first(&g.enum_ix, b) >= 0) {
+        b = "int";
+    }
+    if (cg_streq(a, b) == 1) {
+        return a;
+    }
+    if (cg_streq(a, "double") == 1 || cg_streq(b, "double") == 1) {
+        return "double";
+    }
+    if (cg_streq(a, "float") == 1 || cg_streq(b, "float") == 1) {
+        return "float";
+    }
+    // C's usual arithmetic conversions once an operand is int-sized or wider (a narrow
+    // operand counts as int): signed/unsigned is unsigned unless the signed type is wider.
+    int wa = cg_rank_w(g, a);
+    int wb = cg_rank_w(g, b);
+    if (wa > 0 && wb > 0 && (wa >= 32 || wb >= 32)) {
+        int ua = 0;
+        if (wa >= 32 && cg_is_unsigned(a) == 1) {
+            ua = 1;
+        }
+        int ub = 0;
+        if (wb >= 32 && cg_is_unsigned(b) == 1) {
+            ub = 1;
+        }
+        if (wa < 32) {
+            wa = 32;
+        }
+        if (wb < 32) {
+            wb = 32;
+        }
+        int w = wa;
+        int u = ua;
+        if (ua == ub) {
+            if (wb > wa) {
+                w = wb;
+            }
+        }
+        else {
+            int wu = wa;
+            int ws = wb;
+            if (ub == 1) {
+                wu = wb;
+                ws = wa;
+            }
+            if (wu >= ws) {
+                w = wu;
+                u = 1;
+            } else {
+                w = ws;
+                u = 0;
+            }
+        }
+        if (w == 64) {
+            if (u == 1) {
+                return "uint64";
+            }
+            return "int64";
+        }
+        if (u == 1) {
+            return "uint32";
+        }
+        return "int32";
+    }
+    if (cg_streq(a, "int64") == 1 || cg_streq(b, "int64") == 1) {
+        return "int64";
+    }
+    if (cg_streq(a, "uint64") == 1 || cg_streq(b, "uint64") == 1) {
+        return "uint64";
+    }
+    if (cg_streq(a, "int32") == 1 || cg_streq(b, "int32") == 1) {
+        return "int32";
+    }
+    if (cg_streq(a, "uint32") == 1 || cg_streq(b, "uint32") == 1) {
+        return "uint32";
+    }
+    if (cg_streq(a, "int16") == 1 || cg_streq(b, "int16") == 1) {
+        return "int16";
+    }
+    if (cg_streq(a, "uint16") == 1 || cg_streq(b, "uint16") == 1) {
+        return "uint16";
+    }
+    return a;
+}
+
+// The type of a built-in binary operator over operand types (l, r), "" if unknown.
+// Mirrors the C++ TypeChecker::inferBinaryExprType.
+string cg_binary_ety(Codegen* g, string op, string l, string r) {
+    string cmp = cg_cmp_pred(op);
+    if (cg_streq(op, "&&") == 1 || cg_streq(op, "||") == 1 || cmp[0] != 0) {
+        return "bool";
+    }
+    l = cg_strip_nullable(l);
+    r = cg_strip_nullable(r);
+    if (l[0] == 0 || r[0] == 0) {
+        return "";
+    }
+    if (cg_streq(op, "-") == 1 && cg_is_ptr_ety(l) == 1 && cg_is_ptr_ety(r) == 1) {
+        return "int64";
+    }
+    if (cg_streq(op, "+") == 1 || cg_streq(op, "-") == 1) {
+        if (cg_is_ptr_ety(l) == 1 && cg_is_int_ety(g, r) == 1) {
+            return l;
+        }
+        if (cg_streq(op, "+") == 1 && cg_is_ptr_ety(r) == 1 && cg_is_int_ety(g, l) == 1) {
+            return r;
+        }
+    }
+    // C integer promotion: a narrower-than-int operand is an int; a shift has the
+    // (promoted) type of its left operand alone.
+    if (cg_rank_w(g, l) == 16) {
+        l = "int";
+    }
+    if (cg_rank_w(g, r) == 16) {
+        r = "int";
+    }
+    if ((cg_streq(op, "<<") == 1 || cg_streq(op, ">>") == 1) && cg_is_int_ety(g, l) == 1) {
+        return l;
+    }
+    if (cg_is_num_ety(g, l) == 1 && cg_is_num_ety(g, r) == 1) {
+        return cg_promote(g, l, r);
+    }
+    return "";
+}
+
+// The fn-type spelling of a lambda: `int(int x, double y)` → "fn(int,double)->int".
+string cg_lambda_ety(*ExprNode e) {
+    List<string> pp;
+    List_init<string>(&pp, 4);
+    cg_paren_list(e.sval, &pp);
+    String s;
+    String_init(&s, 32);
+    String_append(&s, "fn(");
+    int i = 0;
+    while (i < List_len<string>(&pp)) {
+        if (i > 0) {
+            String_append(&s, ",");
+        }
+        String_append(&s, cg_drop_last_word(List_get<string>(&pp, i)));
+        i = i + 1;
+    }
+    String_append(&s, ")->");
+    String_append(&s, cg_arm_var(e.sval));
+    return (string)String_cstr(&s);
+}
+
+// The return type of a generic function called without explicit type args, from the type
+// args inferred off its arguments ("" if they can't be inferred). No instantiation.
+string cg_infer_generic_ret(Codegen* g, *DeclNode gd, *ExprNode e) {
+    string spelling = cg_infer_generic(g, gd, e);
+    if (spelling[0] == 0) {
+        return "";
+    }
+    spelling = cg_apply_sub(g, spelling);
+    List<string> args;
+    List_init<string>(&args, 4);
+    cg_gen_args(spelling, &args);
+    List<CgSub> oldsub = cg_push_sub(g, gd, &args);
+    string rt = cg_apply_sub(g, gd.ret_type);
+    g.cursub = oldsub;
+    return rt;
+}
+
+// A ternary arm's type: an integer literal that does not fit `int` is 64-bit (C: the
+// first of int, long, unsigned long that holds it), so `c ? x : 10000000000` is an int64.
+string cg_lit_arm_etype(Codegen* g, *ExprNode e) {
+    if (e != null && e.kind == EK_LITERAL && e.lit_kind == LIT_INT) {
+        uint64 m = cg_int_lit_mag(e.sval);
+        if (e.sval[0] != 45 && m > (uint64)9223372036854775807) {   // -2^63 is an int64
+            return "uint64";
+        }
+        if (e.sval[0] == 45) {
+            if (m > (uint64)2147483648) {
+                return "int64";
+            }
+        }
+        else if (m > (uint64)2147483647) {
+            return "int64";
+        }
+        return "int";
+    }
+    // A named top-level function as an arm is a function value: its `fn(...)->R` type,
+    // so the arm decays to a closure (`k > 0 ? inc : dbl`), as in the C++ type checker.
+    if (e != null && e.kind == EK_IDENT && cg_find_local(g, e.sval).slot[0] == 0
+        && cg_find_global(g, e.sval).slot[0] == 0 && NameIdx_first(&g.topfns_ix, e.sval) >= 0) {
+        CgFn f = cg_find_fn(g, e.sval);
+        string ft = "fn(";
+        int i = 0;
+        while (i < List_len<string>(&f.petys)) {
+            if (i > 0) {
+                ft = cg_cat(ft, ", ");
+            }
+            ft = cg_cat(ft, List_get<string>(&f.petys, i));
+            i = i + 1;
+        }
+        return cg_cat(ft, cg_cat(")->", f.rety));
+    }
+    return cg_etype(g, e);
+}
+
+// The common type of a ternary's two arm types (C++ rule).
+string cg_arm_common(Codegen* g, string tt, string et) {
+    if (cg_streq(tt, et) == 1) {
+        return tt;
+    }
+    if (tt[0] == 0) {
+        return et;
+    }
+    if (et[0] == 0) {
+        return tt;
+    }
+    // A struct-pointer arm meets an interface arm as the interface.
+    if (cg_is_iface(g, cg_dealias(g, et)) == 1 && cg_is_iface(g, cg_dealias(g, tt)) == 0) {
+        return et;
+    }
+    if (cg_is_num_ety(g, tt) == 1 && cg_is_num_ety(g, et) == 1) {
+        // Two different numeric types: C's usual arithmetic conversions (narrow arms meet as int).
+        if (cg_rank_w(g, tt) == 16) {
+            tt = "int";
+        }
+        if (cg_rank_w(g, et) == 16) {
+            et = "int";
+        }
+        return cg_promote(g, tt, et);
+    }
+    return tt;
+}
+
+void cg_ternary_etys(Codegen* g, *ExprNode e, List<*ExprNode>* chain, List<string>* etys);
+
+// Stamp every `?:` reachable from `e` through `?:` operands with its type, bottom-up, so
+// a nested ternary is typed once instead of once per enclosing level.
+void cg_tern_stamp(Codegen* g, *ExprNode e) {
+    *ExprNode n = e;
+    while (true) {
+        if (n.a != null && n.a.kind == EK_TERNARY) {
+            cg_tern_stamp(g, n.a);
+        }
+        if (n.b != null && n.b.kind == EK_TERNARY) {
+            cg_tern_stamp(g, n.b);
+        }
+        *ExprNode els = List_get<*ExprNode>(&n.kids, 0);
+        if (els == null || els.kind != EK_TERNARY) {
+            break;
+        }
+        n = els;
+    }
+    List<*ExprNode> chain;
+    List_init<*ExprNode>(&chain, 4);
+    List<string> etys;
+    List_init<string>(&etys, 4);
+    cg_ternary_etys(g, e, &chain, &etys);
+    int i = 0;
+    while (i < List_len<*ExprNode>(&chain)) {
+        *ExprNode c = List_get<*ExprNode>(&chain, i);
+        c.cg_ety = List_get<string>(&etys, i);
+        c.cg_stamp = g.tactive;
+        i = i + 1;
+    }
+    List_free<*ExprNode>(&chain);
+    List_free<string>(&etys);
+}
+
+// Open a stamp for the outermost `?:` being emitted (an expression declares no local and
+// function bodies are emitted from queues, so the types hold until it is done). Returns 1
+// when this call opened it (the caller closes it with g.tactive = 0).
+int cg_tern_begin(Codegen* g, *ExprNode e) {
+    if (g.tactive != 0) {
+        return 0;
+    }
+    g.mstamp = g.mstamp + 1;
+    g.tactive = g.mstamp;
+    cg_tern_stamp(g, e);
+    return 1;
+}
+
+// A ternary whose else arm is itself a ternary (`c1 ? a : c2 ? b : ...`) nests as deep
+// as the chain is long. Fills `chain` with its links (outermost first) and `etys` with
+// each link's type, computed once, bottom-up, instead of once per link.
+void cg_ternary_etys(Codegen* g, *ExprNode e, List<*ExprNode>* chain, List<string>* etys) {
+    List<string> tts;
+    List_init<string>(&tts, 4);
+    *ExprNode n = e;
+    while (true) {
+        List_push<*ExprNode>(chain, n);
+        List_push<string>(&tts, cg_lit_arm_etype(g, n.b));
+        *ExprNode els = List_get<*ExprNode>(&n.kids, 0);
+        if (els == null || els.kind != EK_TERNARY) {
+            break;
+        }
+        n = els;
+    }
+    int k = List_len<*ExprNode>(chain);
+    int i = 0;
+    while (i < k) {
+        List_push<string>(etys, "");
+        i = i + 1;
+    }
+    *ExprNode last = List_get<*ExprNode>(chain, k - 1);
+    string et = cg_lit_arm_etype(g, List_get<*ExprNode>(&last.kids, 0));
+    i = k - 1;
+    while (i >= 0) {
+        et = cg_arm_common(g, List_get<string>(&tts, i), et);
+        List_set<string>(etys, i, et);
+        i = i - 1;
+    }
+    List_free<string>(&tts);
+}
+
+// The type of prefix operator `e` over an operand of type `at`.
+string cg_unary_ety(Codegen* g, *ExprNode e, string at) {
+    if (cg_streq(e.sval, "*") == 1) {
+        return cg_deref_ty(at);
+    }
+    if (cg_streq(e.sval, "&") == 1) {
+        return cg_cat("*", at);
+    }
+    string uop = e.sval;
+    if (cg_streq(uop, "-") == 1) {
+        uop = "u-";
+    }
+    string uopn = cg_op_resolve1(g, uop, at);
+    if (uopn[0] != 0) {
+        return cg_find_fn(g, uopn).rety;
+    }
+    if (cg_streq(e.sval, "!") == 1) {
+        return "bool";
+    }
+    if ((cg_streq(e.sval, "-") == 1 || cg_streq(e.sval, "~") == 1) && cg_rank_w(g, at) == 16) {
+        return "int";
+    }
+    return at;
+}

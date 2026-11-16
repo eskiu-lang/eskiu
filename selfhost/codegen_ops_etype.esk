@@ -1,0 +1,489 @@
+// codegen_ops_etype.esk: generic method calls and expression types (cg_etype) (part of codegen_ops.esk, imported in order)
+
+// The Eskiu type of an expression ("" if unknown). Mirrors the type the C++ type checker
+// assigns, so struct member access, pointer depth, and common/promoted types agree.
+// `x.m(args)` where x is an instance `S<A..>` of a generic struct (or enum) with no inline method
+// `m` but a generic free function `S_m<T..>` taking it first (the `Type_method`
+// convention, e.g. `List_push<T>(List<T>* self, T item)`): the equivalent explicit call
+// `S_m<A..>(&x, args)` (`S_m<A..>(x, args)` for a pointer receiver). A type parameter
+// named by the self parameter's type arguments takes the receiver's argument at that
+// position; any other one is inferred from the arguments. null when `e` is not such a call.
+*ExprNode cg_generic_method_call(Codegen* g, *ExprNode e) {
+    if (e == null || e.a == null || e.a.kind != EK_MEMBER) {
+        return null;
+    }
+    string recv = cg_apply_sub(g, cg_etype(g, e.a.a));
+    int rptr = cg_is_ptr_ty(recv);
+    string sname = recv;
+    if (rptr == 1) {
+        sname = cg_strip_ptr(recv);
+    }
+    if (cg_has_targs(sname) == 0) {
+        return null;
+    }
+    string base = cg_gen_base(sname);
+    *DeclNode sd = cg_find_gstruct(g, base);
+    if (sd == null && cg_find_genum(g, base) == null) {
+        return null;
+    }
+    int mi = 0;
+    while (sd != null && mi < List_len<*DeclNode>(&sd.methods)) {
+        if (cg_streq(List_get<*DeclNode>(&sd.methods, mi).name, e.a.sval) == 1) {
+            return null;
+        }
+        mi = mi + 1;
+    }
+    *DeclNode gd = cg_find_gfn(g, cg_cat(cg_cat(base, "_"), e.a.sval));
+    if (gd == null || List_len<Param>(&gd.params) == 0) {
+        return null;
+    }
+    string selfty = List_get<Param>(&gd.params, 0).ty;
+    List<string> sargs;
+    List_init<string>(&sargs, 2);
+    cg_gen_args(cg_strip_ptr(selfty), &sargs);
+    List<string> rargs;
+    List_init<string>(&rargs, 2);
+    cg_gen_args(sname, &rargs);
+    String sp;
+    String_init(&sp, 16);
+    String_append(&sp, gd.name);
+    String_append(&sp, "<");
+    int ti = 0;
+    int ntp = List_len<TypeParam>(&gd.type_params);
+    while (ti < ntp) {
+        string tp = List_get<TypeParam>(&gd.type_params, ti).name;
+        string binding = "";
+        int k = 0;
+        while (binding[0] == 0 && k < List_len<string>(&sargs) && k < List_len<string>(&rargs)) {
+            if (cg_streq(List_get<string>(&sargs, k), tp) == 1) {
+                binding = List_get<string>(&rargs, k);
+            }
+            k = k + 1;
+        }
+        int pi = 1;
+        int np = List_len<Param>(&gd.params);
+        while (binding[0] == 0 && pi < np && pi - 1 < List_len<*ExprNode>(&e.kids)) {
+            string argty = cg_etype(g, List_get<*ExprNode>(&e.kids, pi - 1));
+            if (argty[0] != 0) {
+                binding = cg_infer_bind(List_get<Param>(&gd.params, pi).ty, tp, argty);
+            }
+            pi = pi + 1;
+        }
+        if (binding[0] == 0) {
+            return null;
+        }
+        if (ti > 0) {
+            String_append(&sp, ", ");
+        }
+        String_append(&sp, binding);
+        ti = ti + 1;
+    }
+    String_append(&sp, ">");
+    int sptr = cg_is_ptr_ty(selfty);
+    *ExprNode r = e.a.a;
+    if (sptr != rptr) {
+        *ExprNode u = alloc<ExprNode>(1);
+        u.kind = EK_UNARY;
+        u.a = r;
+        u.line = e.line;
+        u.col = e.col;
+        if (sptr == 1) {
+            u.sval = "&";
+        } else {
+            u.sval = "*";
+        }
+        r = u;
+    }
+    *ExprNode c = alloc<ExprNode>(1);
+    c.kind = EK_TEMPLATECALL;
+    c.sval = (string)String_cstr(&sp);
+    c.line = e.line;
+    c.col = e.col;
+    List_init<*ExprNode>(&c.kids, List_len<*ExprNode>(&e.kids) + 1);
+    List_push<*ExprNode>(&c.kids, r);
+    int ki = 0;
+    while (ki < List_len<*ExprNode>(&e.kids)) {
+        List_push<*ExprNode>(&c.kids, List_get<*ExprNode>(&e.kids, ki));
+        ki = ki + 1;
+    }
+    return c;
+}
+
+// The return type of a generic free-function call spelled `name<args>` (the instance's
+// substituted return type; the instance itself need not be emitted yet).
+string cg_generic_call_ret(Codegen* g, string spelling) {
+    *DeclNode gd = cg_find_gfn(g, cg_gen_base(spelling));
+    if (gd == null) {
+        return "";
+    }
+    List<string> args;
+    List_init<string>(&args, 4);
+    cg_gen_args(spelling, &args);
+    List<CgSub> oldsub = cg_push_sub(g, gd, &args);
+    string rt = cg_apply_sub(g, gd.ret_type);
+    g.cursub = oldsub;
+    return rt;
+}
+
+// The type of a `for (i in A..B)` bound: a bare integer literal by its value (the
+// first of int, int64, uint64 that holds it, as sema types it), else its expression type.
+string cg_range_bound_type(Codegen* g, *ExprNode e) {
+    if (e != null && e.kind == EK_LITERAL && e.lit_kind == LIT_INT) {
+        return ast_range_lit_type(e.sval);
+    }
+    return cg_dealias(g, cg_strip_lead_const(cg_etype(g, e)));
+}
+
+string cg_etype_raw(Codegen* g, *ExprNode e);
+string cg_etype(Codegen* g, *ExprNode e);
+
+// The type of member `field` of a value of type `bet` ("" when unknown; a narrow bitfield
+// reads as int).
+string cg_member_ety(Codegen* g, string bet, string field) {
+    string sname = bet;
+    if (cg_is_ptr_ty(bet) == 1) {
+        sname = cg_strip_ptr(bet);
+    }
+    CgStruct s = cg_find_struct(g, sname);
+    int idx = cg_field_idx(&s, field);
+    if (idx >= 0) {
+        CgBF bslot = cg_bf(g, sname, field);
+        if (bslot.bw > 0) {
+            return cg_bf_read_ety(g, bslot);
+        }
+        return List_get<string>(&s.fetys, idx);
+    }
+    return "";
+}
+
+// Emitting a member chain `a.b.c...` asks for the type of every base at every level,
+// which is quadratic in the chain's length. So the outermost member of a chain types the
+// whole chain once, innermost first, and stamps each member node with its type; the
+// stamps hold while that chain is emitted (no local is declared inside an expression).
+// Returns 1 when this call opened the stamp (the caller closes it with g.mactive = 0).
+int cg_chain_begin(Codegen* g, *ExprNode e) {
+    if (g.mactive != 0 || e == null || e.kind != EK_MEMBER) {
+        return 0;
+    }
+    List<*ExprNode> chain;
+    List_init<*ExprNode>(&chain, 4);
+    *ExprNode base = e;
+    while (base != null && base.kind == EK_MEMBER) {
+        List_push<*ExprNode>(&chain, base);
+        base = base.a;
+    }
+    string t = cg_etype(g, base);
+    g.mstamp = g.mstamp + 1;
+    int i = List_len<*ExprNode>(&chain) - 1;
+    while (i >= 0) {
+        *ExprNode m = List_get<*ExprNode>(&chain, i);
+        string raw = cg_member_ety(g, t, m.sval);
+        if (raw[0] != 0) {   // an unknown type is recomputed
+            m.cg_ety = raw;
+            m.cg_stamp = g.mstamp;
+        }
+        t = cg_dealias(g, raw);
+        i = i - 1;
+    }
+    List_free<*ExprNode>(&chain);
+    g.mactive = g.mstamp;
+    return 1;
+}
+
+// The Eskiu type of an expression, never spelled as a type alias: every shape check
+// (pointer, array, slice, fn value, interface) sees the alias target (mirrors the C++
+// getExprEskiuTypeRaw).
+string cg_etype(Codegen* g, *ExprNode e) {
+    return cg_dealias(g, cg_etype_raw(g, e));
+}
+
+string cg_etype_raw(Codegen* g, *ExprNode e) {
+    if (e == null) {
+        return "";
+    }
+    if (e.kind == EK_LITERAL) {
+        if (e.lit_kind == LIT_INT) {   // int, int64 or uint64 by value
+            return cg_lit_arm_etype(g, e);
+        }
+        if (e.lit_kind == LIT_FLOAT) {
+            return "double";
+        }
+        if (e.lit_kind == LIT_BOOL) {
+            return "bool";
+        }
+        if (e.lit_kind == LIT_CHAR) {
+            return "char";
+        }
+        if (e.lit_kind == LIT_STRING) {
+            return "string";
+        }
+        return "";
+    }
+    if (e.kind == EK_IDENT) {
+        CgLocal l = cg_find_local(g, e.sval);
+        if (l.slot[0] != 0) {
+            return l.ety;
+        }
+        CgLocal gl = cg_find_global(g, e.sval);
+        if (gl.slot[0] != 0) {
+            return gl.ety;
+        }
+        string ev = cg_enum_val(g, e.sval);                // a plain-enum / folded const-int constant
+        if (ev[0] != 0) {
+            return "int";
+        }
+        CgVariant var = cg_find_variant(g, e.sval);        // a payload-less ADT variant (`None`)
+        if (var.ename[0] != 0) {
+            return var.ename;
+        }
+        return "";
+    }
+    if (e.kind == EK_MEMBER) {
+        if (g.mactive != 0 && e.cg_stamp == g.mactive) {
+            return e.cg_ety;
+        }
+        return cg_member_ety(g, cg_etype(g, e.a), e.sval);
+    }
+    if (e.kind == EK_INDEX) {
+        string bet = cg_etype(g, e.a);
+        string elem = "";
+        if (cg_streq(bet, "string") == 1) {
+            elem = "char";
+        }
+        else if (cg_is_slice(bet) == 1) {
+            elem = cg_array_elem(bet);
+        }
+        else if (cg_is_array(bet) == 1) {
+            elem = cg_array_elem(bet);
+        }
+        else if (cg_is_ptr_ty(bet) == 1) {
+            elem = cg_deref_ty(bet);
+        }
+        else {
+            if (List_len<*ExprNode>(&e.kids) == 0) {       // overloaded subscript `base[i]`
+                string opn = cg_op_resolve(g, "[]", bet, cg_etype(g, e.b));
+                if (opn[0] != 0) {
+                    return cg_find_fn(g, opn).rety;
+                }
+            }
+            return "";
+        }
+        // `base[lo..hi]` (kids has the hi bound) is a slice of the element type.
+        if (List_len<*ExprNode>(&e.kids) > 0) {
+            return cg_cat(elem, "[]");
+        }
+        return elem;
+    }
+    if (e.kind == EK_UNARY) {
+        // A chain of prefix operators (`- - x`, `!!p`, `**pp`) is typed along its operand
+        // spine with a loop, each operand's type computed once.
+        List<*ExprNode> spine;
+        List_init<*ExprNode>(&spine, 4);
+        *ExprNode u = e;
+        while (u != null && u.kind == EK_UNARY) {
+            List_push<*ExprNode>(&spine, u);
+            u = u.a;
+        }
+        string ut = cg_etype(g, u);
+        int i = List_len<*ExprNode>(&spine) - 1;
+        while (i >= 0) {
+            ut = cg_unary_ety(g, List_get<*ExprNode>(&spine, i), ut);
+            i = i - 1;
+        }
+        List_free<*ExprNode>(&spine);
+        return ut;
+    }
+    if (e.kind == EK_BINARY) {
+        if (cg_streq(e.sval, "=") == 1) {   // assignment yields the target's type
+            return cg_etype(g, e.a);
+        }
+        // A left-leaning chain (`a + b + c ...`) is typed along its left spine with a loop:
+        // the leftmost operand, then each operator bottom-up over the running type.
+        // While a binary expression is emitted (g.bactive), each node's type is stamped on
+        // it once known, so an operand nested on the right (`a + (a + (...))`) is typed
+        // once instead of once per enclosing level.
+        if (g.bactive != 0 && e.cg_stamp == g.bactive) {
+            return e.cg_ety;
+        }
+        List<*ExprNode> spine;
+        List_init<*ExprNode>(&spine, 8);
+        *ExprNode b = e;
+        while (b != null && b.kind == EK_BINARY && cg_streq(b.sval, "=") == 0) {
+            List_push<*ExprNode>(&spine, b);
+            b = b.a;
+        }
+        string lt = cg_etype(g, b);
+        int i = List_len<*ExprNode>(&spine) - 1;
+        while (i >= 0) {
+            *ExprNode n = List_get<*ExprNode>(&spine, i);
+            string rt = cg_etype(g, n.b);
+            string bopn = cg_op_resolve(g, n.sval, lt, rt);   // overloaded binary → its ret type
+            if (bopn[0] != 0) {
+                lt = cg_find_fn(g, bopn).rety;
+            }
+            else {
+                lt = cg_binary_ety(g, n.sval, lt, rt);
+            }
+            if (g.bactive != 0 && lt[0] != 0) {   // an unknown type is recomputed
+                n.cg_ety = lt;
+                n.cg_stamp = g.bactive;
+            }
+            i = i - 1;
+        }
+        List_free<*ExprNode>(&spine);
+        return lt;
+    }
+    if (e.kind == EK_TEMPLATECALL) {
+        List<string> ta;
+        List_init<string>(&ta, 2);
+        cg_gen_args(e.sval, &ta);
+        string vb = cg_gen_base(e.sval);
+        if (cg_streq(vb, "va_arg") == 1 && List_len<string>(&ta) > 0) {
+            return cg_apply_sub(g, List_get<string>(&ta, 0));
+        }
+        CgVariant gvar = cg_find_gvariant(g, vb);          // generic variant ctor `Some<int>(…)`
+        if (gvar.ename[0] != 0) {
+            String sp;
+            String_init(&sp, 16);
+            String_append(&sp, gvar.ename);
+            String_append(&sp, "<");
+            int ti = 0;
+            while (ti < List_len<string>(&ta)) {
+                if (ti > 0) {
+                    String_append(&sp, ", ");
+                }
+                String_append(&sp, List_get<string>(&ta, ti));
+                ti = ti + 1;
+            }
+            String_append(&sp, ">");
+            return cg_ensure_enum_inst(g, (string)String_cstr(&sp));
+        }
+        string trt = cg_find_fn(g, cg_mangle(cg_apply_sub(g, e.sval))).rety;
+        // Not instantiated yet (an argument typed for inference, `spawn(task<int>(3))`):
+        // the template's substituted return type.
+        if (trt[0] == 0) {
+            trt = cg_generic_call_ret(g, cg_apply_sub(g, e.sval));
+        }
+        return trt;
+    }
+    if (e.kind == EK_CALL) {
+        if (e.a != null && e.a.kind == EK_MEMBER) {
+            string cft = cg_etype(g, e.a);                 // a closure-typed field: `fr.waker()`
+            if (cg_is_fnty(cft) == 1) {
+                return cg_fnty_ret(cft);
+            }
+            string recv = cg_etype(g, e.a.a);
+            if (cg_is_iface(g, recv) == 1) {               // interface dispatch → the method's ret
+                CgIface f = cg_find_iface(g, recv);
+                int mi = cg_iface_midx(&f, e.a.sval);
+                if (mi >= 0) {
+                    return List_get<string>(&f.mrets, mi);
+                }
+                return "";
+            }
+            *ExprNode gmc = cg_generic_method_call(g, e);   // `l.push(x)` → `List_push<T>(&l, x)`
+            if (gmc != null) {
+                return cg_generic_call_ret(g, gmc.sval);
+            }
+            string sname = cg_strip_ptr(recv);            // method call → Struct_method
+            string mname = cg_method_fn(g, sname, e.a.sval);
+            if (cg_is_fn(g, mname) == 0 && cg_is_struct(g, sname) == 0 && cg_is_fn(g, e.a.sval) == 1) {
+                return cg_find_fn(g, e.a.sval).rety;       // primitive receiver → free fn `m(recv, …)`
+            }
+            return cg_find_fn(g, mname).rety;
+        }
+        if (e.a != null && e.a.kind == EK_IDENT) {
+            CgLocal lf = cg_find_local(g, e.a.sval);
+            if (lf.slot[0] == 0) {
+                lf = cg_find_global(g, e.a.sval);
+            }
+            if (lf.slot[0] != 0 && cg_is_fnty(lf.ety) == 1) {   // closure call
+                return cg_fnty_ret(lf.ety);
+            }
+            if (cg_streq(e.a.sval, "va_start") == 1 || cg_streq(e.a.sval, "va_end") == 1) {
+                return "void";
+            }
+            if (cg_streq(e.a.sval, "exception_text") == 1 && List_len<*ExprNode>(&e.kids) == 0 && lf.slot[0] == 0
+                && cg_is_fn(g, "exception_text") == 0) {
+                return "string";
+            }
+            if (cg_streq(e.a.sval, "__exception_text_into") == 1) {
+                return "void";
+            }
+            if (e.dbg_builtin == 1) {
+                return cg_etype(g, List_get<*ExprNode>(&e.kids, 0));
+            }
+            CgVariant var = cg_find_variant(g, e.a.sval);  // ADT variant constructor `Circle(4)`
+            if (var.ename[0] != 0) {
+                return var.ename;
+            }
+            *DeclNode gd = cg_find_gfn(g, e.a.sval);        // generic fn, type args inferred
+            if (gd != null) {
+                return cg_infer_generic_ret(g, gd, e);
+            }
+            return cg_find_fn(g, e.a.sval).rety;
+        }
+        string ct = cg_etype(g, e.a);                      // any other callee yielding a closure
+        if (cg_is_fnty(ct) == 1) {
+            return cg_fnty_ret(ct);
+        }
+        return "";
+    }
+    if (e.kind == EK_CAST) {
+        return cg_apply_sub(g, e.sval);
+    }
+    if (e.kind == EK_TERNARY) {                        // common type of the two arms (C++ rule)
+        if (g.tactive != 0 && e.cg_stamp == g.tactive) {
+            return e.cg_ety;
+        }
+        List<*ExprNode> chain;
+        List_init<*ExprNode>(&chain, 4);
+        List<string> etys;
+        List_init<string>(&etys, 4);
+        cg_ternary_etys(g, e, &chain, &etys);
+        string tty = List_get<string>(&etys, 0);
+        List_free<*ExprNode>(&chain);
+        List_free<string>(&etys);
+        return tty;
+    }
+    if (e.kind == EK_STRUCTINIT) {
+        return cg_apply_sub(g, e.sval);
+    }
+    if (e.kind == EK_SIZEOF) {
+        return "int64";
+    }
+    if (e.kind == EK_INCDEC) {
+        // `b.f++` of a bitfield: the old value in its declared type (as clang).
+        if ((int)e.sval[1] != 114 && e.a != null && e.a.kind == EK_MEMBER) {
+            string ibt = cg_etype(g, e.a.a);
+            string isn = ibt;
+            if (cg_is_ptr_ty(ibt) == 1) {
+                isn = cg_strip_ptr(ibt);
+            }
+            CgBF islot = cg_bf(g, isn, e.a.sval);
+            if (islot.bw > 0) {
+                return islot.fety;
+            }
+        }
+        return cg_etype(g, e.a);
+    }
+    if (e.kind == EK_LAMBDA) {
+        return cg_lambda_ety(e);
+    }
+    if (e.kind == EK_ALLOCWITH) {
+        return cg_cat("*", cg_apply_sub(g, e.sval));
+    }
+    if (e.kind == EK_THREADCREATE) {
+        return "*void";
+    }
+    if (e.kind == EK_QUESTION) {                       // `r?` → the Result's `.value` type
+        string rs = cg_etype(g, e.a);
+        CgStruct s = cg_find_struct(g, rs);
+        int vi = cg_field_idx(&s, "value");
+        if (vi >= 0) {
+            return List_get<string>(&s.fetys, vi);
+        }
+        return "";
+    }
+    return "";
+}
