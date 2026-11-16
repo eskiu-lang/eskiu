@@ -1,0 +1,358 @@
+// eir_ir_inst.esk: instructions (part of eir_ir.esk, imported in order)
+
+// --- instructions ---
+
+enum EOpc {
+    EO_ALLOCA, EO_LOAD, EO_STORE, EO_GEP, EO_FIELDPTR, EO_OFFSETPTR,
+    EO_ADD, EO_SUB, EO_MUL, EO_SDIV, EO_UDIV, EO_SREM, EO_UREM,
+    EO_FADD, EO_FSUB, EO_FMUL, EO_FDIV, EO_NEG,
+    EO_AND, EO_OR, EO_XOR, EO_SHL, EO_LSHR, EO_ASHR, EO_NOT,
+    EO_ICMP, EO_FCMP,
+    EO_TRUNC, EO_ZEXT, EO_SEXT, EO_FPTRUNC, EO_FPEXT, EO_FPTOSI, EO_SITOFP, EO_BITCAST, EO_PTRTOINT, EO_INTTOPTR,
+    EO_BR, EO_BRCOND, EO_SWITCH, EO_RET, EO_UNREACHABLE,
+    EO_CALL, EO_CALLINDIRECT, EO_MAKEIFACE, EO_MAKECLOSURE, EO_MAKESLICE, EO_EXTRACTFAT,
+    EO_THROW, EO_INVOKE, EO_LANDINGPAD, EO_PUSHHANDLER, EO_POPHANDLER,
+    EO_INLINEASM
+}
+
+enum EICond { EIC_EQ, EIC_NE, EIC_SLT, EIC_SLE, EIC_SGT, EIC_SGE, EIC_ULT, EIC_ULE, EIC_UGT, EIC_UGE }
+enum EFCond { EFC_OEQ, EFC_ONE, EFC_OLT, EFC_OLE, EFC_OGT, EFC_OGE }
+
+string ei_icond_str(int c) {
+    if (c == EIC_NE) { return "ne"; }
+    if (c == EIC_SLT) { return "slt"; }
+    if (c == EIC_SLE) { return "sle"; }
+    if (c == EIC_SGT) { return "sgt"; }
+    if (c == EIC_SGE) { return "sge"; }
+    if (c == EIC_ULT) { return "ult"; }
+    if (c == EIC_ULE) { return "ule"; }
+    if (c == EIC_UGT) { return "ugt"; }
+    if (c == EIC_UGE) { return "uge"; }
+    return "eq";
+}
+
+string ei_fcond_str(int c) {
+    if (c == EFC_ONE) { return "one"; }
+    if (c == EFC_OLT) { return "olt"; }
+    if (c == EFC_OLE) { return "ole"; }
+    if (c == EFC_OGT) { return "ogt"; }
+    if (c == EFC_OGE) { return "oge"; }
+    return "oeq";
+}
+
+struct EInst {
+    int op;
+    string res;
+    *ETy ty;
+    List<EOp> ops;
+    int icmp;
+    int fcmp;
+    int vol;
+    string asm_str;
+    string asm_cons;
+    List<string> clobbers;
+    List<int64> case_vals;
+    List<string> case_lbls;
+    string dflt;
+}
+
+EInst ei_make(int op, string res, *ETy ty) {
+    EInst i;
+    i.op = op;
+    i.res = res;
+    i.ty = ty;
+    return i;
+}
+
+void ei_add(EInst* i, EOp o) {
+    List_push<EOp>(&i.ops, o);
+}
+
+EOp ei_op(EInst* i, int k) {
+    return List_get<EOp>(&i.ops, k);
+}
+
+int ei_is_term(int op) {
+    if (op == EO_RET || op == EO_BR || op == EO_BRCOND || op == EO_SWITCH || op == EO_UNREACHABLE || op == EO_THROW) {
+        return 1;
+    }
+    return 0;
+}
+
+string ei_binop_name(int op) {
+    if (op == EO_ADD) { return "add"; }
+    if (op == EO_SUB) { return "sub"; }
+    if (op == EO_MUL) { return "mul"; }
+    if (op == EO_SDIV) { return "sdiv"; }
+    if (op == EO_UDIV) { return "udiv"; }
+    if (op == EO_SREM) { return "srem"; }
+    if (op == EO_UREM) { return "urem"; }
+    if (op == EO_FADD) { return "fadd"; }
+    if (op == EO_FSUB) { return "fsub"; }
+    if (op == EO_FMUL) { return "fmul"; }
+    if (op == EO_FDIV) { return "fdiv"; }
+    if (op == EO_AND) { return "and"; }
+    if (op == EO_OR) { return "or"; }
+    if (op == EO_XOR) { return "xor"; }
+    if (op == EO_SHL) { return "shl"; }
+    if (op == EO_LSHR) { return "lshr"; }
+    if (op == EO_ASHR) { return "ashr"; }
+    return "";
+}
+
+string ei_cast_name(int op) {
+    if (op == EO_TRUNC) { return "trunc"; }
+    if (op == EO_ZEXT) { return "zext"; }
+    if (op == EO_SEXT) { return "sext"; }
+    if (op == EO_FPTRUNC) { return "fptrunc"; }
+    if (op == EO_FPEXT) { return "fpext"; }
+    if (op == EO_FPTOSI) { return "fptosi"; }
+    if (op == EO_SITOFP) { return "sitofp"; }
+    if (op == EO_BITCAST) { return "bitcast"; }
+    return "";
+}
+
+void ei_args(String* s, EInst* ins) {
+    int i = 1;
+    while (i < List_len<EOp>(&ins.ops)) {
+        if (i > 1) {
+            String_append(s, ", ");
+        }
+        EOp o = ei_op(ins, i);
+        String_append(s, eo_tys(o));
+        String_append(s, " ");
+        String_append(s, eo_s(o));
+        i = i + 1;
+    }
+}
+
+string ei_render(EInst* ins) {
+    String s;
+    String_init(&s, 64);
+    if (et_len(ins.res) > 0) {
+        String_append(&s, ins.res);
+        String_append(&s, " = ");
+    }
+    int op = ins.op;
+    string ty = et_str(ins.ty);
+    if (op == EO_ALLOCA) {
+        String_append(&s, "alloca ");
+        String_append(&s, ty);
+        if (List_len<EOp>(&ins.ops) > 0) {
+            String_append(&s, ", align ");
+            String_append(&s, eo_s(ei_op(ins, 0)));
+        }
+    } else if (op == EO_LOAD) {
+        if (ins.vol == 1) {
+            String_append(&s, "load volatile ");
+        } else {
+            String_append(&s, "load ");
+        }
+        String_append(&s, ty);
+        String_append(&s, ", ptr ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+    } else if (op == EO_STORE) {
+        if (ins.vol == 1) {
+            String_append(&s, "store volatile ");
+        } else {
+            String_append(&s, "store ");
+        }
+        String_append(&s, eo_tys(ei_op(ins, 0)));
+        String_append(&s, " ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, ", ptr ");
+        String_append(&s, eo_s(ei_op(ins, 1)));
+    } else if (op == EO_GEP) {
+        String_append(&s, "gep ");
+        String_append(&s, eo_tys(ei_op(ins, 0)));
+        String_append(&s, ", ptr ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, ", ");
+        String_append(&s, eo_tys(ei_op(ins, 1)));
+        String_append(&s, " ");
+        String_append(&s, eo_s(ei_op(ins, 1)));
+    } else if (op == EO_FIELDPTR) {
+        String_append(&s, "field_ptr @");
+        String_append(&s, et_s(ei_op(ins, 0).text));
+        String_append(&s, ", ptr ");
+        String_append(&s, eo_s(ei_op(ins, 1)));
+        String_append(&s, ", ");
+        String_append(&s, eo_s(ei_op(ins, 2)));
+    } else if (op == EO_OFFSETPTR) {
+        String_append(&s, "offset_ptr ptr ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, ", i64 ");
+        String_append(&s, eo_s(ei_op(ins, 1)));
+    } else if (et_len(ei_binop_name(op)) > 0) {
+        String_append(&s, ei_binop_name(op));
+        String_append(&s, " ");
+        String_append(&s, ty);
+        String_append(&s, " ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, ", ");
+        String_append(&s, eo_s(ei_op(ins, 1)));
+    } else if (op == EO_NEG || op == EO_NOT) {
+        if (op == EO_NEG) {
+            String_append(&s, "neg ");
+        } else {
+            String_append(&s, "not ");
+        }
+        String_append(&s, ty);
+        String_append(&s, " ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+    } else if (op == EO_ICMP || op == EO_FCMP) {
+        if (op == EO_ICMP) {
+            String_append(&s, "icmp ");
+            String_append(&s, ei_icond_str(ins.icmp));
+        } else {
+            String_append(&s, "fcmp ");
+            String_append(&s, ei_fcond_str(ins.fcmp));
+        }
+        String_append(&s, " ");
+        String_append(&s, eo_tys(ei_op(ins, 0)));
+        String_append(&s, " ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, ", ");
+        String_append(&s, eo_s(ei_op(ins, 1)));
+    } else if (et_len(ei_cast_name(op)) > 0) {
+        String_append(&s, ei_cast_name(op));
+        String_append(&s, " ");
+        String_append(&s, eo_tys(ei_op(ins, 0)));
+        String_append(&s, " ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, " to ");
+        String_append(&s, ty);
+    } else if (op == EO_PTRTOINT) {
+        String_append(&s, "ptrtoint ptr ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, " to ");
+        String_append(&s, ty);
+    } else if (op == EO_INTTOPTR) {
+        String_append(&s, "inttoptr ");
+        String_append(&s, eo_tys(ei_op(ins, 0)));
+        String_append(&s, " ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, " to ptr");
+    } else if (op == EO_BR) {
+        String_append(&s, "br ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+    } else if (op == EO_BRCOND) {
+        String_append(&s, "br_cond i1 ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, ", ");
+        String_append(&s, eo_s(ei_op(ins, 1)));
+        String_append(&s, ", ");
+        String_append(&s, eo_s(ei_op(ins, 2)));
+    } else if (op == EO_SWITCH) {
+        String_append(&s, "switch ");
+        String_append(&s, eo_tys(ei_op(ins, 0)));
+        String_append(&s, " ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, ", $");
+        String_append(&s, et_s(ins.dflt));
+        String_append(&s, " [");
+        int i = 0;
+        while (i < List_len<int64>(&ins.case_vals)) {
+            if (i > 0) {
+                String_append(&s, ", ");
+            }
+            String_append(&s, et_ltoa(List_get<int64>(&ins.case_vals, i)));
+            String_append(&s, ": $");
+            String_append(&s, List_get<string>(&ins.case_lbls, i));
+            i = i + 1;
+        }
+        String_append(&s, "]");
+    } else if (op == EO_RET) {
+        if (List_len<EOp>(&ins.ops) == 0 || et_is_void(ei_op(ins, 0).ty) == 1) {
+            String_append(&s, "ret void");
+        } else {
+            String_append(&s, "ret ");
+            String_append(&s, eo_tys(ei_op(ins, 0)));
+            String_append(&s, " ");
+            String_append(&s, eo_s(ei_op(ins, 0)));
+        }
+    } else if (op == EO_UNREACHABLE) {
+        String_append(&s, "unreachable");
+    } else if (op == EO_CALL || op == EO_CALLINDIRECT) {
+        if (op == EO_CALL) {
+            String_append(&s, "call ");
+        } else {
+            String_append(&s, "call_indirect ");
+        }
+        String_append(&s, ty);
+        String_append(&s, " ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, "(");
+        ei_args(&s, ins);
+        String_append(&s, ")");
+    } else if (op == EO_MAKEIFACE || op == EO_MAKECLOSURE || op == EO_MAKESLICE) {
+        if (op == EO_MAKEIFACE) {
+            String_append(&s, "make_interface ptr ");
+        } else if (op == EO_MAKECLOSURE) {
+            String_append(&s, "make_closure ptr ");
+        } else {
+            String_append(&s, "make_slice ptr ");
+        }
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        if (op == EO_MAKESLICE) {
+            String_append(&s, ", i64 ");
+        } else {
+            String_append(&s, ", ptr ");
+        }
+        String_append(&s, eo_s(ei_op(ins, 1)));
+    } else if (op == EO_EXTRACTFAT) {
+        String_append(&s, "extract_fat ");
+        String_append(&s, eo_tys(ei_op(ins, 0)));
+        String_append(&s, " ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, ", ");
+        String_append(&s, eo_s(ei_op(ins, 1)));
+    } else if (op == EO_THROW) {
+        String_append(&s, "throw ptr ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+    } else if (op == EO_INVOKE) {
+        String_append(&s, "invoke ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+        String_append(&s, " to ");
+        String_append(&s, eo_s(ei_op(ins, 1)));
+        String_append(&s, " unwind ");
+        String_append(&s, eo_s(ei_op(ins, 2)));
+    } else if (op == EO_LANDINGPAD) {
+        String_append(&s, "landingpad");
+    } else if (op == EO_PUSHHANDLER) {
+        String_append(&s, "push_handler ");
+        String_append(&s, eo_s(ei_op(ins, 0)));
+    } else if (op == EO_POPHANDLER) {
+        String_append(&s, "pop_handler");
+    } else if (op == EO_INLINEASM) {
+        String_append(&s, "inline_asm \"");
+        String_append(&s, et_s(ins.asm_str));
+        String_append(&s, "\", \"");
+        String_append(&s, et_s(ins.asm_cons));
+        String_append(&s, "\"");
+        int i = 0;
+        while (i < List_len<EOp>(&ins.ops)) {
+            EOp o = ei_op(ins, i);
+            String_append(&s, ", ");
+            String_append(&s, eo_tys(o));
+            String_append(&s, " ");
+            String_append(&s, eo_s(o));
+            i = i + 1;
+        }
+        if (List_len<string>(&ins.clobbers) > 0) {
+            String_append(&s, " ~[");
+            int j = 0;
+            while (j < List_len<string>(&ins.clobbers)) {
+                if (j > 0) {
+                    String_append(&s, ", ");
+                }
+                String_append(&s, "\"");
+                String_append(&s, List_get<string>(&ins.clobbers, j));
+                String_append(&s, "\"");
+                j = j + 1;
+            }
+            String_append(&s, "]");
+        }
+    }
+    return (string)String_cstr(&s);
+}

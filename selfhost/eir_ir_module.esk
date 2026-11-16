@@ -1,0 +1,419 @@
+// eir_ir_module.esk: blocks, functions and the module (part of eir_ir.esk, imported in order)
+
+// --- blocks, functions, module ---
+
+struct EBlock {
+    string name;
+    List<string> lines;
+    List<int> allocas;
+    int term;
+    List<EInst> insts;  // the instructions themselves, line for line (the C emitter reads them)
+}
+
+struct EFunc {
+    string name;
+    *ETy ret;
+    List<string> pnames;
+    List<*ETy> ptypes;
+    List<*EBlock> blocks;
+    int is_extern;
+    int is_variadic;
+    int is_export;      // `export`: a C entry point under its own name (Function::isExport)
+    StrTab slots;       // the variable slots named so far (EIRBuilder::functionSlots)
+}
+
+*EBlock efn_create_block(*EFunc f, string name) {
+    *EBlock b = alloc<EBlock>(1);
+    if (et_len(name) == 0) {
+        b.name = et_cat("bb.", et_itoa(List_len<*EBlock>(&f.blocks)));
+    } else {
+        b.name = name;
+    }
+    List_push<*EBlock>(&f.blocks, b);
+    return b;
+}
+
+int efn_nparams(*EFunc f) {
+    return List_len<string>(&f.pnames);
+}
+
+*ETy efn_ptype(*EFunc f, int i) {
+    return List_get<*ETy>(&f.ptypes, i);
+}
+
+string efn_pname(*EFunc f, int i) {
+    return List_get<string>(&f.pnames, i);
+}
+
+void efn_add_param(*EFunc f, string name, *ETy t) {
+    List_push<string>(&f.pnames, name);
+    List_push<*ETy>(&f.ptypes, t);
+}
+
+void efn_dump(*EFunc f, String* os) {
+    if (f.is_extern == 1) {
+        String_append(os, "extern fn @");
+        String_append(os, f.name);
+        String_append(os, "(");
+        int i = 0;
+        while (i < efn_nparams(f)) {
+            if (i > 0) {
+                String_append(os, ", ");
+            }
+            String_append(os, et_str(efn_ptype(f, i)));
+            i = i + 1;
+        }
+        if (f.is_variadic == 1) {
+            if (efn_nparams(f) > 0) {
+                String_append(os, ", ");
+            }
+            String_append(os, "...");
+        }
+        String_append(os, ") -> ");
+        String_append(os, et_str(f.ret));
+        String_append(os, "\n\n");
+        return;
+    }
+    String_append(os, f.is_export == 1 ? "export fn @" : "fn @");
+    String_append(os, f.name);
+    String_append(os, "(");
+    int i = 0;
+    while (i < efn_nparams(f)) {
+        if (i > 0) {
+            String_append(os, ", ");
+        }
+        String_append(os, et_str(efn_ptype(f, i)));
+        String_append(os, " %");
+        String_append(os, efn_pname(f, i));
+        i = i + 1;
+    }
+    String_append(os, ") -> ");
+    String_append(os, et_str(f.ret));
+    String_append(os, " {\n");
+    int b = 0;
+    while (b < List_len<*EBlock>(&f.blocks)) {
+        *EBlock bb = List_get<*EBlock>(&f.blocks, b);
+        String_append(os, bb.name);
+        String_append(os, ":\n");
+        int k = 0;
+        while (k < List_len<string>(&bb.lines)) {
+            String_append(os, "    ");
+            String_append(os, List_get<string>(&bb.lines, k));
+            String_append(os, "\n");
+            k = k + 1;
+        }
+        b = b + 1;
+    }
+    String_append(os, "}\n\n");
+}
+
+struct EField {
+    string name;
+    *ETy ty;
+    int64 offset;
+    int64 size;
+    int is_bf;
+    int bit_off;
+    int bit_w;
+    int sgn;
+    *ETy storage;
+    int64 storage_off;
+}
+
+struct EPad {
+    *ETy ty;
+    int width;
+    int64 before;
+}
+
+struct EStruct {
+    string name;
+    List<*EField> fields;
+    int64 total;
+    int64 align;
+    int is_union;
+    int pack;
+    List<EPad> pads;
+}
+
+*EField es_field(*EStruct s, string fname) {
+    int i = 0;
+    while (i < List_len<*EField>(&s.fields)) {
+        *EField f = List_get<*EField>(&s.fields, i);
+        if (et_eq(f.name, fname) == 1) {
+            return f;
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+struct EGlobal {
+    string name;
+    *ETy ty;
+    EOp init;
+    int is_const;
+    List<EOp> elems;
+}
+
+struct EModule {
+    string name;
+    string triple;
+    List<*ETy> struct_types;
+    StrTab layout_idx;
+    List<*EStruct> layouts;
+    List<EGlobal> globals;
+    List<*EFunc> funcs;
+    StrTab fn_idx;
+}
+
+*EStruct em_layout(*EModule m, string name) {
+    int i = StrTab_get(&m.layout_idx, name, -1);
+    if (i < 0) {
+        return null;
+    }
+    return List_get<*EStruct>(&m.layouts, i);
+}
+
+int em_has_layout(*EModule m, string name) {
+    if (StrTab_get(&m.layout_idx, name, -1) >= 0) {
+        return 1;
+    }
+    return 0;
+}
+
+// structLayouts[name] (default-constructed on first use).
+*EStruct em_layout_ref(*EModule m, string name) {
+    *EStruct s = em_layout(m, name);
+    if (s != null) {
+        return s;
+    }
+    s = alloc<EStruct>(1);
+    s.name = "";
+    s.align = 1;
+    StrTab_set(&m.layout_idx, name, List_len<*EStruct>(&m.layouts));
+    List_push<*EStruct>(&m.layouts, s);
+    return s;
+}
+
+*EFunc em_func(*EModule m, string name) {
+    int i = StrTab_get(&m.fn_idx, name, -1);
+    if (i < 0) {
+        return null;
+    }
+    return List_get<*EFunc>(&m.funcs, i);
+}
+
+*EFunc em_create_func(*EModule m, string name, *ETy ret) {
+    *EFunc f = alloc<EFunc>(1);
+    f.name = name;
+    f.ret = ret;
+    if (StrTab_get(&m.fn_idx, name, -1) < 0) {
+        StrTab_set(&m.fn_idx, name, List_len<*EFunc>(&m.funcs));
+    }
+    List_push<*EFunc>(&m.funcs, f);
+    return f;
+}
+
+int64 em_struct_size(*EModule m, string sname) {
+    *EStruct s = em_layout(m, sname);
+    if (s != null) {
+        return s.total;
+    }
+    int u = et_findc(sname, '_');
+    if (u >= 0) {
+        s = em_layout(m, et_sub(sname, 0, u));
+        if (s != null) {
+            return s.total;
+        }
+    }
+    return 0;
+}
+
+// getFieldOffset: by the struct's name, else the name before its first `_`.
+int64 em_field_offset(*EModule m, string sname, string fname) {
+    *EStruct s = em_layout(m, sname);
+    if (s == null) {
+        int u = et_findc(sname, '_');
+        if (u >= 0) {
+            s = em_layout(m, et_sub(sname, 0, u));
+        }
+    }
+    if (s == null) {
+        return 0;
+    }
+    *EField f = es_field(s, fname);
+    return f != null ? f.offset : 0;
+}
+
+int64 et_type_align(*ETy t, *EModule m);
+
+int64 et_type_size(*ETy t, *EModule m) {
+    if (t == null) {
+        return 0;
+    }
+    int k = t.kind;
+    if (k == ETK_VOID) {
+        return 0;
+    }
+    if (k == ETK_INT) {
+        if (t.bits == 1) {
+            return 1;
+        }
+        return (int64)((t.bits + 7) / 8);
+    }
+    if (k == ETK_FLOAT) {
+        if (t.bits == 32) {
+            return 4;
+        }
+        return 8;
+    }
+    if (k == ETK_POINTER) {
+        return 8;
+    }
+    if (k == ETK_ARRAY) {
+        return t.size * et_type_size(t.elem, m);
+    }
+    if (k == ETK_SLICE || k == ETK_INTERFACE || k == ETK_CLOSURE) {
+        return 16;
+    }
+    if (k == ETK_STRUCT) {
+        if (m != null) {
+            int64 sz = em_struct_size(m, et_nominal(t));
+            if (sz > 0) {
+                return sz;
+            }
+        }
+        int64 total = 0;
+        int i = 0;
+        while (i < List_len<*ETy>(&t.members)) {
+            *ETy mt = List_get<*ETy>(&t.members, i);
+            int64 al = et_type_align(mt, m);
+            total = (total + al - 1) & ~(al - 1);
+            total = total + et_type_size(mt, m);
+            i = i + 1;
+        }
+        int64 mal = et_type_align(t, m);
+        return (total + mal - 1) & ~(mal - 1);
+    }
+    return 8;
+}
+
+int64 et_type_align(*ETy t, *EModule m) {
+    if (t == null) {
+        return 1;
+    }
+    int k = t.kind;
+    if (k == ETK_VOID) {
+        return 1;
+    }
+    if (k == ETK_INT) {
+        int64 sz = et_type_size(t, m);
+        if (sz > 8) {
+            return 8;
+        }
+        if (sz == 0) {
+            return 1;
+        }
+        return sz;
+    }
+    if (k == ETK_FLOAT) {
+        if (t.bits == 32) {
+            return 4;
+        }
+        return 8;
+    }
+    if (k == ETK_ARRAY) {
+        return et_type_align(t.elem, m);
+    }
+    if (k == ETK_STRUCT) {
+        if (m != null) {
+            *EStruct s = em_layout(m, et_nominal(t));
+            if (s != null && s.align > 0) {
+                return s.align;
+            }
+        }
+        int64 mal = 1;
+        int i = 0;
+        while (i < List_len<*ETy>(&t.members)) {
+            int64 al = et_type_align(List_get<*ETy>(&t.members, i), m);
+            if (al > mal) {
+                mal = al;
+            }
+            i = i + 1;
+        }
+        return mal;
+    }
+    return 8;
+}
+
+void em_dump(*EModule m, String* os) {
+    String_append(os, ";; EIR Module: ");
+    if (et_len(m.name) == 0) {
+        String_append(os, "eskiu");
+    } else {
+        String_append(os, m.name);
+    }
+    String_append(os, "\n");
+    if (et_len(m.triple) > 0) {
+        String_append(os, ";; Target: ");
+        String_append(os, m.triple);
+        String_append(os, "\n");
+    }
+    String_append(os, "\n");
+    if (List_len<*ETy>(&m.struct_types) > 0) {
+        String_append(os, ";; Type definitions\n");
+        int i = 0;
+        while (i < List_len<*ETy>(&m.struct_types)) {
+            *ETy st = List_get<*ETy>(&m.struct_types, i);
+            String_append(os, "type @");
+            String_append(os, st.name);
+            String_append(os, " = { ");
+            int j = 0;
+            while (j < List_len<*ETy>(&st.members)) {
+                if (j > 0) {
+                    String_append(os, ", ");
+                }
+                String_append(os, et_str(List_get<*ETy>(&st.members, j)));
+                j = j + 1;
+            }
+            String_append(os, " }\n");
+            i = i + 1;
+        }
+        String_append(os, "\n");
+    }
+    if (List_len<EGlobal>(&m.globals) > 0) {
+        String_append(os, ";; Globals\n");
+        int i = 0;
+        while (i < List_len<EGlobal>(&m.globals)) {
+            EGlobal g = List_get<EGlobal>(&m.globals, i);
+            String_append(os, "global @");
+            String_append(os, g.name);
+            String_append(os, " : ");
+            String_append(os, et_str(g.ty));
+            if (List_len<EOp>(&g.elems) > 0) {
+                String_append(os, " = [");
+                int j = 0;
+                while (j < List_len<EOp>(&g.elems)) {
+                    if (j > 0) {
+                        String_append(os, ", ");
+                    }
+                    String_append(os, eo_s(List_get<EOp>(&g.elems, j)));
+                    j = j + 1;
+                }
+                String_append(os, "]");
+            } else if (g.init.kind != EOK_VAR) {
+                String_append(os, " = ");
+                String_append(os, eo_s(g.init));
+            }
+            String_append(os, "\n");
+            i = i + 1;
+        }
+        String_append(os, "\n");
+    }
+    int f = 0;
+    while (f < List_len<*EFunc>(&m.funcs)) {
+        efn_dump(List_get<*EFunc>(&m.funcs, f), os);
+        f = f + 1;
+    }
+}
