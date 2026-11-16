@@ -81,6 +81,7 @@ set(SOURCES
     codegen/codegen_type.cpp
     codegen/codegen_scope.cpp
     codegen/codegen_decl.cpp
+    codegen/codegen_struct.cpp
     codegen/codegen_stmt.cpp
     codegen/codegen_expr.cpp
     codegen/codegen_unary.cpp
