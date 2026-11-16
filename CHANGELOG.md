@@ -15,9 +15,18 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   `const T* const`): the same type, in both compilers. The docs and the Book write pointers
   star first throughout (`*T`, `const *T`, `*T const`), and the spec says how to make a
   device's registers volatile without volatile fields.
+- `-Wformat` checks the calls of a printf-style function the program declares: a variadic
+  function or extern whose last fixed parameter is `string fmt` (such as ui's `textf`), as
+  it checks printf's. Both compilers.
 
 ### Fixed
 
+- WebAssembly: a program that throws or catches links with newer emsdks, which no longer link
+  in C++ mode by default when the driver is emcc (`__cxa_begin_catch` and `__cxa_end_catch`
+  were undefined): eskiuc passes `-sDEFAULT_TO_CXX=1` with exceptions. Both compilers.
+- A `--target` build for WebAssembly (emscripten), Android, iOS or visionOS whose toolchain is
+  missing says so (`emcc was not found: install Emscripten ...`) instead of falling back to
+  the host's cc and its "unrecognized option" errors.
 - `<fetch>`: HTTPS loads OpenSSL 4 (`libssl-4-x64.dll`, `libssl.so.4`, `libssl.4.dylib` and
   Homebrew's `openssl@4`) when OpenSSL 3 is not there. MSYS2 ships OpenSSL 4.1, so on
   Windows an `https://` request failed with `FETCH_ERR_NO_TLS`.
