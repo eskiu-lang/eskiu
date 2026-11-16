@@ -57,6 +57,7 @@
                     e = tc;
                     matched = 1;
                 } else if (p_at(p) == LBRACE) {
+                    p_note_type(p, e.line, e.col, e.sval);
                     e = parse_struct_init(p, sig);   // Name<...> { ... }
                     matched = 1;
                 }
@@ -66,7 +67,7 @@
                 continue;
             }
             p.failed = 0;
-            p.pos = save_pos;                  // not a template — back out
+            p_rewind(p, save_pos);                  // not a template — back out
             p.pending_gt = save_gt;
         }
         int t = p_at(p);
@@ -266,7 +267,7 @@ int star_paren_is_cast(Parser* p) {
                 return p_pos(mk_cast(cty, parse_unary(p)), lpt);
             }
             p.failed = 0;
-            p.pos = save;   // not a cast
+            p_rewind(p, save);   // not a cast
             p.pending_gt = savegt;
         }
     }

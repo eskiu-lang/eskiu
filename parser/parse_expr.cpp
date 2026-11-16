@@ -382,6 +382,7 @@ ExprPtr Parser::parsePostfix() {
                                 typeStr += typeArgs[i];
                             }
                             typeStr += ">";
+                            noteTypeRef(ident->line, ident->col, ident->name);
                             return parseStructInit(typeStr);
                         }
                     }
@@ -552,6 +553,7 @@ ExprPtr Parser::parsePrimary() {
 
     if (match(TokenType::IDENT)) {
         if (check(TokenType::LBRACE) && !noStructLiteral) {
+            noteTypeRef(tok.line, tok.column, tok.value);
             return withPos(parseStructInit(tok.value), tok);
         }
         return withPos(std::make_shared<IdentExpr>(tok.value), tok);

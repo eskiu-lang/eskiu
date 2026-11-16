@@ -241,6 +241,11 @@ private:
     // (this file's plus its imports'); the driver links each as -l<name>.
     std::vector<std::string> linkLibs;
     void addLinkLib(const std::string& name);
+    // The named types written in this file (not an import's), each with the token
+    // index after it: a backtrack drops the ones read past its position.
+    struct TypeRefAt { size_t at; Program::TypeRef ref; };
+    std::vector<TypeRefAt> typeRefs;
+    void noteTypeRef(int line, int col, const std::string& name);
 
     StmtPtr parseStatement();
     // Scripts: a file with top-level statements gets an implicit `main` (see

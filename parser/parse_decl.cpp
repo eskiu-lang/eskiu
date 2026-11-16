@@ -18,8 +18,9 @@ void Parser::parseTypeParams(std::vector<std::string>& typeParams,
         // Optional constraint(s): `<T: Iface>` or `<T: A + B>`.
         if (match(TokenType::COLON)) {
             do {
-                typeConstraints[tp].push_back(
-                    consume(TokenType::IDENT, "Expected constraint interface name").value);
+                Token iface = consume(TokenType::IDENT, "Expected constraint interface name");
+                noteTypeRef(iface.line, iface.column, iface.value);
+                typeConstraints[tp].push_back(iface.value);
             } while (match(TokenType::PLUS));
         }
     } while (match(TokenType::COMMA));

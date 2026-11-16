@@ -522,6 +522,10 @@ int g_pos_col = 0;
 
 struct Program {
     List<*DeclNode> decls;
+    // The named types written in the primary input (C++ Program::typeRefs).
+    List<int> tr_line;
+    List<int> tr_col;
+    List<string> tr_name;
 }
 
 string lit_name(int k) {

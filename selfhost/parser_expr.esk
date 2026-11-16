@@ -58,6 +58,9 @@ string parse_type_inner(Parser* p) {
     }
     p_adv(p);
     string ty = tok_text(p.src, base_tok);
+    if (base_tok.type == IDENT) {
+        p_note_type(p, base_tok.line, base_tok.col, ty);
+    }
 
     // Template instantiation: Name<TypeArg, ...>
     if (base_tok.type == IDENT && p_at(p) == LT) {
@@ -421,7 +424,7 @@ int lambda_ahead(Parser* p) {
         return e;
     }
     p.failed = 0;
-    p.pos = save;                          // not a lambda — back out
+    p_rewind(p, save);                          // not a lambda — back out
     return null;
 }
 
@@ -514,7 +517,7 @@ int lambda_ahead(Parser* p) {
         e.kind = EK_SIZEOF;
         if (as_type == 0) {
             p.failed = 0;
-            p.pos = save;
+            p_rewind(p, save);
             p.pending_gt = savegt;
             e.a = parse_expr(p);               // sval "" marks the expression form
             e.sval = "";
@@ -571,6 +574,7 @@ int lambda_ahead(Parser* p) {
     if (t == IDENT) {
         Token tok = p_adv(p);
         if (p_at(p) == LBRACE && p.no_struct_lit == 0) {   // Name { ... } struct literal
+            p_note_type(p, tok.line, tok.col, tok_text(p.src, tok));
             return p_pos(parse_struct_init(p, tok_text(p.src, tok)), tok);
         }
         return mk_ident(tok_text(p.src, tok));

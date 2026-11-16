@@ -16,6 +16,10 @@ void p_init(Parser* p, *uint8 src, int len) {
     List_init<*StmtNode>(&p.so_stmts, 4);
     List_init<*DeclNode>(&p.so_vars, 4);
     List_init<Token>(&p.toks, 256);
+    List_init<int>(&p.tr_at, 16);
+    List_init<int>(&p.tr_line, 16);
+    List_init<int>(&p.tr_col, 16);
+    List_init<string>(&p.tr_name, 16);
     let lx: Lexer;
     lx.src = src;
     lx.len = len;
@@ -90,6 +94,30 @@ Token p_adv(Parser* p) {
         p.pos = p.pos + 1;
     }
     return t;
+}
+
+// Note a named type written at (line, col) in this file (Parser::noteTypeRef).
+void p_note_type(Parser* p, int line, int col, string name) {
+    if (p.is_import == 1 || line <= 0) {
+        return;
+    }
+    List_push<int>(&p.tr_at, p.pos);
+    List_push<int>(&p.tr_line, line);
+    List_push<int>(&p.tr_col, col);
+    List_push<string>(&p.tr_name, name);
+}
+
+// Backtrack to token `save`, dropping the type names read past it (Parser::rewindTo).
+void p_rewind(Parser* p, int save) {
+    p.pos = save;
+    int n = List_len<int>(&p.tr_at);
+    while (n > 0 && List_get<int>(&p.tr_at, n - 1) > save) {
+        n = n - 1;
+        List_remove<int>(&p.tr_at, n);
+        List_remove<int>(&p.tr_line, n);
+        List_remove<int>(&p.tr_col, n);
+        List_remove<string>(&p.tr_name, n);
+    }
 }
 
 // Print `error: <file>:<line>:<col>: <msg>` at token `t` and abort (mirrors the C++

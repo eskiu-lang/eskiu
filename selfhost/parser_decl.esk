@@ -32,13 +32,17 @@ void parse_type_params(Parser* p, List<TypeParam>* out, int with_constraints) {
         List_init<string>(&tp.constraints, 2);
         if (p_at(p) == COLON) {            // constraints `: A + B`
             p_adv(p);
-            string c0 = tok_text(p.src, p_expect_ident(p, "Expected constraint interface name"));                  // first
+            Token c0t = p_expect_ident(p, "Expected constraint interface name");
+            string c0 = tok_text(p.src, c0t);                  // first
+            p_note_type(p, c0t.line, c0t.col, c0);
             if (with_constraints == 1) {
                 List_push<string>(&tp.constraints, c0);
             }
             while (p_at(p) == PLUS) {
                 p_adv(p);
-                string ck = tok_text(p.src, p_expect_ident(p, "Expected constraint interface name"));
+                Token ckt = p_expect_ident(p, "Expected constraint interface name");
+                string ck = tok_text(p.src, ckt);
+                p_note_type(p, ckt.line, ckt.col, ck);
                 if (with_constraints == 1) {
                     List_push<string>(&tp.constraints, ck);
                 }

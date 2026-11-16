@@ -33,6 +33,13 @@ struct Parser {
     List<*DeclNode> so_vars;    //   order (one of each pair is null; p_build_script_main)
     int last_call_close;   // 1 + the index of the ')' that closed the last call (0: none)
     int trailing_start;    // 1 + the first token of a statement that may end in a block
+    // The named types written in this file (not an import's), each with the token index
+    // after it (`tr_at`): a backtrack drops the ones read past its position (mirrors the
+    // C++ Parser::typeRefs).
+    List<int> tr_at;
+    List<int> tr_line;
+    List<int> tr_col;
+    List<string> tr_name;
 }
 
 // Session state shared across every file parsed in one run (mirrors the C++ parser's

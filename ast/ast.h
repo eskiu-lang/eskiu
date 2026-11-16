@@ -156,6 +156,11 @@ public:
     ESKIU_NODE_KIND(Program)
     std::vector<DeclPtr> declarations;
     std::vector<std::string> linkLibs;   // `#pragma link("name")`, deduped, in order
+    // Each named type written in the primary input (a type spelling's base name, a
+    // struct literal's name, a constraint): the editor modes resolve it to its
+    // declaration.
+    struct TypeRef { int line; int col; std::string name; };
+    std::vector<TypeRef> typeRefs;
 
     explicit Program(const std::vector<DeclPtr>& decls = {})
         : declarations(decls) {}

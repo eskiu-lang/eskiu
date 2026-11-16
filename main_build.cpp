@@ -158,6 +158,7 @@ std::shared_ptr<Program> loadProgram(const std::vector<std::string>& inputs, con
     cache.macros = &macros;
     std::vector<DeclPtr> merged;
     std::vector<std::string> linkLibs;       // `#pragma link` libraries of every input
+    std::vector<Program::TypeRef> typeRefs;  // the type names written in the first input
     if (lexFailed) *lexFailed = false;
     if (!inputs.empty()) pkgLoadRoots(inputs[0], triple);   // package imports from eskiu.lock
     for (const auto& fname : inputs) {
@@ -193,6 +194,7 @@ std::shared_ptr<Program> loadProgram(const std::vector<std::string>& inputs, con
         if (!prog) return nullptr;
         merged.insert(merged.end(), prog->declarations.begin(), prog->declarations.end());
         linkLibs.insert(linkLibs.end(), prog->linkLibs.begin(), prog->linkLibs.end());
+        if (fname == inputs.front()) typeRefs = prog->typeRefs;
     }
     // A program has one main: a script's statements are its main, so no other input may
     // define one or have top-level statements too (one file is checked by its parser).
@@ -218,6 +220,7 @@ std::shared_ptr<Program> loadProgram(const std::vector<std::string>& inputs, con
     if (macrosOut) *macrosOut = macros;
     auto program = std::make_shared<Program>(merged);
     program->linkLibs = linkLibs;
+    program->typeRefs = std::move(typeRefs);
     return program;
 }
 

@@ -80,13 +80,13 @@
     }
     string ty = strip_binding_const(raw);
     if (p_at(p) == OPERATOR) {             // `V3 operator +(...)` — an operator overload
-        p.pos = save;
+        p_rewind(p, save);
         return parse_function(p);
     }
     check_name_not_keyword(p);
     Token nm = p_expect_ident(p, str_concat("Expected declaration, got ", token_name(p_at(p))));                   // name
     if (p_at(p) == LPAREN || p_at(p) == LT) {
-        p.pos = save;                      // it's a function — re-parse from the top
+        p_rewind(p, save);                      // it's a function — re-parse from the top
         return parse_function(p);
     }
     if (p_at(p) == LBRACKET) {             // C-style `int grid[3][4];`: arrays are `int[3][4] grid`

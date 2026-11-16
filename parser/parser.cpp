@@ -252,6 +252,11 @@ void Parser::consumeTemplateClose(const char* ctx) {
 void Parser::rewindTo(size_t pos) {
     if (splitActive && pos <= splitPos) splitActive = false;
     current = pos;
+    while (!typeRefs.empty() && typeRefs.back().at > pos) typeRefs.pop_back();
+}
+
+void Parser::noteTypeRef(int line, int col, const std::string& name) {
+    if (!isImport && line > 0) typeRefs.push_back({current, {line, col, name}});
 }
 
 Parser::AngleScan Parser::scanTypeArgs(size_t open, size_t* after, bool* split) const {
@@ -361,7 +366,9 @@ void Parser::parseTypeInto(std::string& out) {
         advance();
         out += typeToken.value;
     } else if (check(TokenType::IDENT)) {
-        out += advance().value;
+        const Token& nameTok = advance();
+        noteTypeRef(nameTok.line, nameTok.column, nameTok.value);
+        out += nameTok.value;
         // Template instantiation: Name<TypeArg, ...>  e.g. Result<int, string>
         if (match(TokenType::LT)) {
             out += "<";
@@ -473,6 +480,7 @@ std::shared_ptr<Program> Parser::parse() {
     if (hadError) return nullptr;
     auto prog = std::make_shared<Program>(decls);
     prog->linkLibs = linkLibs;
+    for (const auto& r : typeRefs) prog->typeRefs.push_back(r.ref);
     return prog;
 }
 

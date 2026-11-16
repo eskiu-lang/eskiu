@@ -437,7 +437,7 @@ string fresh_name(string base, List<string>* used) {
             init = wrap_block(d);
         }
         else {
-            p.pos = save;
+            p_rewind(p, save);
             init = parse_expr_stmt(p, 0);
         }
     } else {

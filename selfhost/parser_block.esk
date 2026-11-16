@@ -35,14 +35,14 @@
         p_adv(p);
         check_name_not_keyword(p);
         if (p_at(p) != IDENT) {
-            p.pos = save;
+            p_rewind(p, save);
             return null;
         }
         Token lnt = p_peek(p);
         string nm = tok_text(p.src, lnt);
         p_adv(p);
         if (p_at(p) != COLON) {
-            p.pos = save;
+            p_rewind(p, save);
             return null;
         }
         p_adv(p);
@@ -75,7 +75,7 @@
     string ty = strip_binding_const(raw);
     check_name_not_keyword(p);
     if (p_at(p) != IDENT) {
-        p.pos = save;
+        p_rewind(p, save);
         return null;
     }
     Token tnt = p_peek(p);
@@ -106,7 +106,7 @@
         d.is_vol = is_vol;
         return d;
     }
-    p.pos = save;
+    p_rewind(p, save);
     return null;
 }
 
@@ -123,7 +123,7 @@
     p.spec = p.spec - 1;
     if (p.failed == 1) {
         p.failed = 0;
-        p.pos = save;
+        p_rewind(p, save);
         p.pending_gt = savegt;
         // Only a leading name or `*` can also begin a statement; any other decl start
         // (a type keyword, let, const, ...) is unambiguous, so re-parse it for real and
@@ -450,7 +450,7 @@ void parse_asm_operands(Parser* p, List<*StmtNode>* items, int kind) {
             List_push<string>(&g_localvars, d.name);
             return d;
         }
-        p.pos = save;
+        p_rewind(p, save);
     }
     return parse_stmt(p);
 }
