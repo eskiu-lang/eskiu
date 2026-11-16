@@ -141,6 +141,7 @@ a:hover .more { color: var(--ink); }
 .pcard-lead h3 { font-size: 30px; }
 .pcard-lead p { color: #d8d2e6; font-size: 17px; }
 .pcard-lead .more { color: var(--on-deep); }
+.pcard-lead:hover .more { color: var(--lilac-3); }
 .pstat { display: flex; flex-wrap: wrap; gap: 8px 28px; margin-top: 6px; padding-top: 16px; border-top: 1px solid var(--head-bg); font-size: 15px; color: #d8d2e6; }
 .pstat strong { display: block; font-family: var(--serif); font-weight: 800; font-size: 34px; letter-spacing: -0.02em; color: var(--on-deep); line-height: 1.1; }
 .pcard:not(.pcard-lead) .pstat { border-top-color: rgba(28, 24, 48, 0.12); color: var(--muted); }
