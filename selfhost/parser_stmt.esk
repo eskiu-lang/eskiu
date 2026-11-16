@@ -1,0 +1,476 @@
+// parser_stmt.esk: statements and name collection (part of parser.esk, imported in order)
+
+// ── Statements ────────────────────────────────────────────────────────────────
+
+// Stamp statement `s` with token `t`'s position (the token the C++ parser uses).
+*StmtNode p_spos(*StmtNode s, Token t) {
+    if (s != null) {
+        s.line = t.line;
+        s.col = t.col;
+    }
+    return s;
+}
+
+*StmtNode mk_simple(int kind) {
+    *StmtNode s = ast_new_stmt();
+    s.kind = kind;
+    return s;
+}
+
+*StmtNode mk_vardecl(string nm, string ty, *ExprNode init, int is_const) {
+    *StmtNode s = ast_new_stmt();
+    s.kind = SK_VARDECL;
+    s.name = nm;
+    s.type = ty;
+    s.expr = init;
+    s.is_const = is_const;
+    s.is_static = 0;
+    return s;
+}
+
+// Is `t` a value-const type — a leading `const ` with no pointer (mirrors the C++
+// finalizeVar rule)? Such a binding is read-only; pointee-const (`const int*`) is not.
+int is_value_const(string t) {
+    if (t[0] != 99 || t[1] != 111 || t[2] != 110 || t[3] != 115
+        || t[4] != 116 || t[5] != 32) {     // not "const "
+        return 0;
+    }
+    int i = 6;
+    while (t[i] != 0) {   // 42 = '*'
+        if (t[i] == 42) {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+*StmtNode wrap_block(*StmtNode inner) {        // a BlockStmt holding one item
+    *StmtNode b = ast_new_stmt();
+    b.kind = SK_BLOCK;
+    List_init<*StmtNode>(&b.items, 1);
+    List_push<*StmtNode>(&b.items, inner);
+    return b;
+}
+
+// finalizeVar's stored type: drop binding-only const into the (un-printed) flag.
+// (1) `*const` -> `*` (a const *pointer*); (2) a leading `const ` -> dropped, but
+// only when the type is value-const (no `*` — pointee-const stays in the type).
+string strip_binding_const(string t) {
+    int n = cstr_len(t);
+    *uint8 buf = alloc<uint8>(n + 1);
+    int w = 0;
+    int i = 0;
+    while (i < n) {
+        if (t[i] == 42 && i + 5 < n && t[i+1] == 99 && t[i+2] == 111
+            && t[i+3] == 110 && t[i+4] == 115 && t[i+5] == 116) {   // "*const"
+            buf[w] = 42;        // keep '*'
+            w = w + 1;
+            i = i + 6;                     // skip "*const"
+        } else {
+            buf[w] = (uint8)t[i];
+            w = w + 1;
+            i = i + 1;
+        }
+    }
+    buf[w] = 0;
+    // value-const leading strip, only if there is no pointer in the result.
+    int has_star = 0;
+    int k = 0;
+    while (k < w) {
+        if (buf[k] == 42) {
+            has_star = 1;
+        }
+        k = k + 1;
+    }
+    if (has_star == 0 && w >= 6 && buf[0] == 99 && buf[1] == 111 && buf[2] == 110
+        && buf[3] == 115 && buf[4] == 116 && buf[5] == 32) {        // "const "
+        *uint8 b2 = alloc<uint8>(w - 6 + 1);
+        int j = 6;
+        while (j < w) {
+            b2[j - 6] = buf[j];
+            j = j + 1;
+        }
+        b2[w - 6] = 0;
+        return (string)b2;
+    }
+    return (string)buf;
+}
+
+*StmtNode parse_return(Parser* p) {
+    p_adv(p);                              // 'return'
+    *StmtNode s = ast_new_stmt();
+    s.kind = SK_RETURN;
+    s.expr = null;
+    if (p_at(p) != SEMICOLON) {
+        s.expr = parse_expr(p);
+    }
+    p_reject_trailing(p);
+    p_expect(p, SEMICOLON, "Expected ';'");
+    return s;
+}
+
+// A `{` right after a call's ')' where no trailing block is allowed: a located error.
+void p_reject_trailing(Parser* p) {
+    if (p_at(p) == LBRACE && p.last_call_close != 0 && p.last_call_close == p.pos) {
+        p_fail(p, "a trailing block is only allowed on a call statement");
+    }
+}
+
+// `trailing`: a call statement may end in a block, passed as its last argument (a
+// `void()` lambda): f(a) { BODY } is f(a, void() { BODY }). Only the statement path
+// allows it, not a `for` header.
+*StmtNode parse_expr_stmt(Parser* p, int trailing) {
+    Token st0 = p_peek(p);
+    int saved_start = p.trailing_start;
+    p.trailing_start = trailing == 1 ? p.pos + 1 : 0;
+    *ExprNode e = parse_expr(p);
+    p.trailing_start = saved_start;
+    if (p_at(p) == LBRACE) {
+        if (trailing == 0) {
+            p_reject_trailing(p);
+        }
+        Token brace = p_peek(p);
+        int closed = p.last_call_close != 0 && p.last_call_close == p.pos;
+        if (e.kind != EK_CALL && e.kind != EK_TEMPLATECALL) {
+            p_fail(p, "a trailing block must follow a call");
+        } else if (closed == 0) {
+            p_fail(p, "a trailing block must follow the call's own ')', not parentheses around it");
+        } else if (e.kind == EK_CALL && e.a != null && e.a.kind == EK_CALL) {
+            p_fail(p, "a trailing block cannot follow a call of what a call returns");
+        }
+        if (p.failed == 0 && p_at(p) == LBRACE) {
+            *ExprNode lam = p_pos(ast_new_expr(), brace);
+            lam.kind = EK_LAMBDA;
+            lam.trailing = 1;
+            lam.sval = lambda_sig("void", ast_new_decl());
+            int lmark = local_mark();
+            lam.stmt = parse_block(p);
+            local_pop(lmark);
+            List_push<*ExprNode>(&e.kids, lam);
+            // One ';' after the block is accepted (lambdas are written `};`).
+            if (p_at(p) == SEMICOLON) {
+                p_adv(p);
+            }
+        }
+        *StmtNode ts = p_spos(ast_new_stmt(), st0);
+        ts.kind = SK_EXPR;
+        ts.expr = e;
+        return ts;
+    }
+    p_expect(p, SEMICOLON, "Expected ';'");
+    *StmtNode s = p_spos(ast_new_stmt(), st0);
+    s.kind = SK_EXPR;
+    s.expr = e;
+    return s;
+}
+
+// An `else if` chain is parsed with a loop (mirrors the C++ parseIfStatement): each
+// `else if` becomes the else branch of the one before, and still counts one nesting
+// level, since the chain is nested in the AST.
+*StmtNode parse_if(Parser* p) {
+    int saved = p.nest;
+    *StmtNode head = null;
+    *StmtNode tail = null;
+    while (true) {
+        Token ift = p_adv(p);                  // 'if'
+        p_expect(p, LPAREN, "Expected '('");
+        *ExprNode cond = parse_expr(p);
+        p_expect(p, RPAREN, "Expected ')'");
+        *StmtNode s = p_spos(ast_new_stmt(), ift);
+        s.kind = SK_IF;         // alloc zeroes, so s.s2 (optional else) is null
+        s.expr = cond;
+        s.s1 = parse_stmt(p);                  // then
+        if (tail == null) {
+            head = s;
+        } else {
+            tail.s2 = s;
+        }
+        tail = s;
+        if (p_at(p) != ELSE) {
+            break;
+        }
+        p_adv(p);
+        if (p_at(p) != IF) {
+            s.s2 = parse_stmt(p);
+            break;
+        }
+        p_nest_enter(p);
+    }
+    p.nest = saved;
+    return head;
+}
+
+*StmtNode parse_while(Parser* p) {
+    Token wt = p_peek(p);
+    p_expect(p, WHILE, "Expected 'while'");
+    p_expect(p, LPAREN, "Expected '('");
+    *ExprNode cond = parse_expr(p);
+    p_expect(p, RPAREN, "Expected ')'");
+    *StmtNode s = p_spos(ast_new_stmt(), wt);
+    s.kind = SK_WHILE;
+    s.expr = cond;
+    s.s1 = parse_stmt(p);
+    return s;
+}
+
+*StmtNode parse_do(Parser* p) {
+    Token dt = p_adv(p);                   // 'do'
+    *StmtNode body = parse_stmt(p);
+    p_expect(p, WHILE, "Expected 'while'");
+    p_expect(p, LPAREN, "Expected '('");
+    *ExprNode cond = parse_expr(p);
+    p_expect(p, RPAREN, "Expected ')'");
+    p_expect(p, SEMICOLON, "Expected ';'");
+    *StmtNode s = p_spos(ast_new_stmt(), dt);
+    s.kind = SK_DOWHILE;
+    s.s1 = body;
+    s.expr = cond;
+    return s;
+}
+
+// ── Name collection (mirrors the C++ astwalk::collectNames / freshName) ──
+// Every name spelled in a subtree: identifiers, declared locals, lambda/arm/catch
+// binders (read from their signature text), and member names. A pass that synthesizes
+// a local (a range bound, the async frame pointer) picks a name outside this set.
+int names_has(List<string>* l, string nm) {
+    int i = 0;
+    while (i < List_len<string>(l)) {
+        if (str_eq(List_get<string>(l, i), nm) == 1) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+void names_add_text(string t, List<string>* out) {
+    if (t == null) {
+        return;
+    }
+    int n = 0;
+    while (t[n] != 0) {
+        n = n + 1;
+    }
+    int i = 0;
+    while (i < n) {
+        int c = (int)t[i];
+        if ((c >= 97 && c <= 122) || (c >= 65 && c <= 90) || (c >= 48 && c <= 57) || c == 95) {
+            int st = i;
+            while (i < n) {
+                int d = (int)t[i];
+                if ((d >= 97 && d <= 122) || (d >= 65 && d <= 90) || (d >= 48 && d <= 57) || d == 95) {
+                    i = i + 1;
+                } else {
+                    break;
+                }
+            }
+            string id = p_sub(t, st, i);
+            if (names_has(out, id) == 0) {
+                List_push<string>(out, id);
+            }
+        } else {
+            i = i + 1;
+        }
+    }
+}
+
+void collect_names_s(*StmtNode s, List<string>* out);
+// The first child (`a`, and an `else` branch `s2`) is followed with a loop, so a long
+// operator chain or `else if` chain costs no recursion (the set of names is the same).
+void collect_names_e(*ExprNode e, List<string>* out) {
+    while (e != null) {
+        if (e.kind == EK_IDENT || e.kind == EK_MEMBER || e.kind == EK_SIZEOF || e.kind == EK_LAMBDA) {
+            names_add_text(e.sval, out);
+        }
+        collect_names_e(e.b, out);
+        int i = 0;
+        while (i < List_len<*ExprNode>(&e.kids)) {
+            collect_names_e(List_get<*ExprNode>(&e.kids, i), out);
+            i = i + 1;
+        }
+        if (e.kind == EK_LAMBDA) {
+            collect_names_s(e.stmt, out);
+        }
+        e = e.a;
+    }
+}
+
+void collect_names_s(*StmtNode s, List<string>* out) {
+    while (s != null) {
+        names_add_text(s.name, out);
+        collect_names_e(s.expr, out);
+        collect_names_e(s.expr2, out);
+        collect_names_s(s.s1, out);
+        int i = 0;
+        while (i < List_len<*StmtNode>(&s.items)) {
+            collect_names_s(List_get<*StmtNode>(&s.items, i), out);
+            i = i + 1;
+        }
+        s = s.s2;
+    }
+}
+
+// Whether `e` reads the name `nm` (an identifier or `sizeof(nm)`; a lambda body counts
+// when it spells the name anywhere). Member names are not reads. Mirrors the C++
+// astwalk::referencesName.
+int refs_name_e(*ExprNode e, string nm) {
+    while (e != null) {
+        if ((e.kind == EK_IDENT || e.kind == EK_SIZEOF) && str_eq(e.sval, nm) == 1) {
+            return 1;
+        }
+        if (e.kind == EK_LAMBDA) {
+            List<string> ln;
+            List_init<string>(&ln, 8);
+            collect_names_s(e.stmt, &ln);
+            return names_has(&ln, nm);
+        }
+        if (refs_name_e(e.b, nm) == 1) {
+            return 1;
+        }
+        int i = 0;
+        while (i < List_len<*ExprNode>(&e.kids)) {
+            if (refs_name_e(List_get<*ExprNode>(&e.kids, i), nm) == 1) {
+                return 1;
+            }
+            i = i + 1;
+        }
+        e = e.a;
+    }
+    return 0;
+}
+
+// `base` if it is not in `used`, else the first free `base_1`, `base_2`, ...; the chosen
+// name is added to `used`.
+string fresh_name(string base, List<string>* used) {
+    string nm = base;
+    int k = 1;
+    while (names_has(used, nm) == 1) {
+        nm = str_concat(base, str_concat("_", int_to_str(k)));
+        k = k + 1;
+    }
+    List_push<string>(used, nm);
+    return nm;
+}
+
+// `for (x in A..B)` desugars (at parse time, like the C++) into a counted ForStmt:
+//   for (int x = A, __end_x = B; x < __end_x; x = x + 1) body
+// so the bound B is evaluated once, before the first iteration.
+// The bound's name is fresh against every name in the loop, so a user `__end_x` read in
+// the body (or the bound) still means the user's variable.
+*StmtNode desugar_range(string var, *ExprNode lo, *ExprNode hi, *StmtNode body) {
+    *StmtNode s = ast_new_stmt();
+    s.kind = SK_FOR;
+    List<string> used;
+    List_init<string>(&used, 8);
+    List_push<string>(&used, var);
+    collect_names_e(lo, &used);
+    collect_names_e(hi, &used);
+    collect_names_s(body, &used);
+    string endn = fresh_name(str_concat("__end_", var), &used);
+    // Spelled `int` here; sema retypes both to the bounds' common integer type (is_range).
+    *StmtNode lod = mk_vardecl(var, "int", lo, 0);
+    lod.is_range = 1;
+    *StmtNode hid = mk_vardecl(endn, "int", hi, 0);
+    hid.is_range = 1;
+    // Both bounds are read in the enclosing scope: a B naming the loop variable
+    // (`for (i in 0..i)`) means the OUTER `i`, so the bound is declared first then.
+    *StmtNode init = null;
+    if (refs_name_e(hi, var) == 1) {
+        init = wrap_block(hid);
+        List_push<*StmtNode>(&init.items, lod);
+    }
+    else {
+        init = wrap_block(lod);
+        List_push<*StmtNode>(&init.items, hid);
+    }
+    s.s1 = init;
+    s.expr = mk_bin("<", mk_ident(var), mk_ident(endn));
+    s.expr2 = mk_bin("=", mk_ident(var), mk_bin("+", mk_ident(var), mk_lit(LIT_INT, "1")));
+    s.s2 = body;
+    return s;
+}
+
+*StmtNode parse_for(Parser* p) {
+    Token ft = p_adv(p);                   // 'for'
+    p_expect(p, LPAREN, "Expected '('");
+
+    // for-in: `IDENT in iterable` (or a range `A..B`)
+    if (p_at(p) == IDENT && p_peek2(p).type == IN) {
+        Token vt = p_peek(p);
+        string var = tok_text(p.src, vt);   // x
+        p_adv(p);
+        p_expect(p, IN, "Expected 'in'");
+        *ExprNode first = parse_expr(p);
+        if (p_at(p) == RANGE) {
+            p_expect(p, RANGE, "Expected '..'");
+            *ExprNode hi = parse_expr(p);
+            p_expect(p, RPAREN, "Expected ')'");
+            *StmtNode rs = desugar_range(var, first, hi, parse_stmt(p));
+            p_spos(rs, vt);                // at the loop variable (as the C++ parser)
+            if (rs.s1 != null) {
+                int ri = 0;
+                while (ri < List_len<*StmtNode>(&rs.s1.items)) {
+                    p_spos(List_get<*StmtNode>(&rs.s1.items, ri), vt);
+                    ri = ri + 1;
+                }
+            }
+            return rs;
+        }
+        p_expect(p, RPAREN, "Expected ')'");
+        *StmtNode s = p_spos(ast_new_stmt(), vt);
+        s.kind = SK_FORIN;
+        s.name = var;
+        s.expr = first;
+        s.s1 = parse_stmt(p);
+        s.resolved_elem = "";              // sema stamps this; "" until then (and on the no-sema path)
+        return s;
+    }
+
+    // C-style for (init; cond; step) body
+    *StmtNode init = null;
+    if (p_at(p) != SEMICOLON) {
+        int save = p.pos;
+        *StmtNode d = spec_var_decl(p);
+        if (d != null) {     // decl consumes its own ';'
+            List_push<string>(&g_localvars, d.name);
+            init = wrap_block(d);
+        }
+        else {
+            p.pos = save;
+            init = parse_expr_stmt(p, 0);
+        }
+    } else {
+        p_expect(p, SEMICOLON, "Expected ';'");
+    }
+    *ExprNode cond = null;
+    if (p_at(p) != SEMICOLON) {
+        cond = parse_expr(p);
+    }
+    p_expect(p, SEMICOLON, "Expected ';'");
+    *ExprNode step = null;
+    if (p_at(p) != RPAREN) {
+        step = parse_expr(p);
+    }
+    p_expect(p, RPAREN, "Expected ')'");
+    *StmtNode s = p_spos(ast_new_stmt(), ft);
+    s.kind = SK_FOR;
+    s.s1 = init;
+    s.expr = cond;
+    s.expr2 = step;
+    s.s2 = parse_stmt(p);
+    return s;
+}
+
+// Optional leading qualifiers, then a let- or typed local var-decl; returns null
+// (caller restores pos) if the tokens aren't actually a declaration.
+// A name is expected here. If the next token is instead a reserved keyword
+// (fn/in/match/type names/...), report it at the cause rather than letting it
+// surface far downstream. Mirrors the C++ parser's "expected a name, found keyword
+// 'fn'" diagnostic. Keyword TokenTypes are the contiguous [LET, UINT64] range.
+void check_name_not_keyword(Parser* p) {
+    int t = p_at(p);
+    if (t >= LET && t <= UINT64) {
+        p_fail(p, str_concat(str_concat("expected a name, found keyword '", tok_text(p.src, p_peek(p))), "'"));
+    }
+}

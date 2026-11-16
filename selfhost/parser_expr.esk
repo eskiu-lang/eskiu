@@ -1,0 +1,586 @@
+// parser_expr.esk: AST node constructors and the expression precedence chain (part of parser.esk, imported in order)
+
+string parse_type_inner(Parser* p) {
+    int is_const = 0;
+    if (p_at(p) == CONST) {
+        p_adv(p);
+        is_const = 1;
+    }
+    int nullable = 0;
+    if (p_at(p) == QUESTION) {   // `?*T`: checked nullable pointer
+        p_adv(p);
+        nullable = 1;
+    }
+    // A `?` between two leading stars makes the pointer after it nullable: `*?*T` is a
+    // pointer to a nullable pointer to T.
+    string lead = "";
+    while (p_at(p) == STAR) {
+        p_type_level(p);
+        p_adv(p);
+        lead = str_concat(lead, "*");
+        if (p_at(p) == QUESTION && p_peek2(p).type == STAR) {
+            p_adv(p);
+            lead = str_concat(lead, "?");
+        }
+    }
+
+    if (p_at(p) == FN) {
+        p_adv(p);                          // 'fn'
+        p_expect(p, LPAREN, "Expected '('");
+        string ft = "fn(";
+        int first = 1;
+        while (p_at(p) != RPAREN && p_at(p) != EOF_TOKEN) {
+            if (first == 0) {
+                p_adv(p);
+                ft = str_concat(ft, ",");
+            }
+            first = 0;
+            ft = str_concat(ft, parse_type(p));
+        }
+        p_expect(p, RPAREN, "Expected ')'");
+        ft = str_concat(ft, ")->");
+        p_expect(p, ARROW, "Expected '->'");
+        ft = str_concat(ft, parse_type(p));
+        ft = str_concat(lead, ft);
+        if (is_const == 1) {
+            ft = str_concat("const ", ft);
+        }
+        if (nullable == 1) {
+            ft = str_concat("?", ft);
+        }
+        return ft;
+    }
+
+    Token base_tok = p_peek(p);            // type keyword or named type (IDENT)
+    if (base_tok.type != IDENT && is_type_kw(base_tok.type) == 0) {
+        p_fail(p, str_concat("Expected type, got ", token_name(base_tok.type)));
+        return "int";
+    }
+    p_adv(p);
+    string ty = tok_text(p.src, base_tok);
+
+    // Template instantiation: Name<TypeArg, ...>
+    if (base_tok.type == IDENT && p_at(p) == LT) {
+        p_adv(p);                          // '<'
+        ty = str_concat(ty, "<");
+        ty = str_concat(ty, parse_type(p));
+        while (p_at(p) == COMMA) {
+            p_adv(p);
+            ty = str_concat(ty, ",");
+            ty = str_concat(ty, parse_type(p));
+        }
+        consume_tclose(p);
+        ty = str_concat(ty, ">");
+    }
+
+    while (p_at(p) == STAR) {
+        p_type_level(p);
+        p_adv(p);
+        ty = str_concat(ty, "*");
+        if (p_at(p) == CONST) {
+            p_adv(p);
+            ty = str_concat(ty, "const");
+        }
+    }
+    ty = str_concat(lead, ty);
+    if (is_const == 1) {
+        ty = str_concat("const ", ty);
+    }
+
+    while (p_at(p) == LBRACKET) {
+        p_type_level(p);
+        p_adv(p);
+        string sz = "";
+        while (p_at(p) != RBRACKET && p_at(p) != EOF_TOKEN) {
+            sz = str_concat(sz, tok_text(p.src, p_peek(p)));
+            p_adv(p);
+        }
+        p_expect(p, RBRACKET, "Expected ']'");
+        ty = str_concat(ty, str_concat("[", str_concat(sz, "]")));
+    }
+    if (nullable == 1) {   // preserve `?` as the outermost prefix
+        ty = str_concat("?", ty);
+    }
+    return ty;
+}
+
+// ── AST node constructors ────────────────────────────────────────────────────
+
+*ExprNode mk_lit(int lk, string v) {
+    *ExprNode e = ast_new_expr();
+    e.kind = EK_LITERAL;
+    e.lit_kind = lk;
+    e.sval = v;
+    e.slen = 0;
+    if (lk == LIT_STRING) {   // safe default; the parser overrides with the exact byte length (embedded NULs)
+        e.slen = cstr_len(v);
+    }
+    return e;
+}
+
+*ExprNode mk_ident(string nm) {
+    *ExprNode e = ast_new_expr();
+    e.kind = EK_IDENT;
+    e.sval = nm;
+    return e;
+}
+
+// Stamp `e` with token `t`'s position: each node points where the C++ parser's does
+// (an operator at its operator token, a cast at its `(`, a keyword form at its keyword).
+*ExprNode p_pos(*ExprNode e, Token t) {
+    if (e != null) {
+        e.line = t.line;
+        e.col = t.col;
+    }
+    return e;
+}
+
+*ExprNode mk_bin(string op, *ExprNode l, *ExprNode r) {
+    *ExprNode e = ast_new_expr();
+    e.kind = EK_BINARY;
+    e.sval = op;
+    e.a = l;
+    e.b = r;
+    if (l != null && l.line > 0) {   // an operation starts at its left operand
+        e.line = l.line;
+        e.col = l.col;
+    }
+    return e;
+}
+
+*ExprNode mk_un(string op, *ExprNode operand) {
+    *ExprNode e = ast_new_expr();
+    e.kind = EK_UNARY;
+    e.sval = op;
+    e.a = operand;
+    return e;
+}
+
+// Operator lexeme for a binary/unary operator token type (matches Token.value).
+string op_str(int t) {
+    if (t == PLUS) {
+        return "+";
+    }
+    if (t == MINUS) {
+        return "-";
+    }
+    if (t == STAR) {
+        return "*";
+    }
+    if (t == SLASH) {
+        return "/";
+    }
+    if (t == PERCENT) {
+        return "%";
+    }
+    if (t == AMPERSAND) {
+        return "&";
+    }
+    if (t == PIPE) {
+        return "|";
+    }
+    if (t == CARET) {
+        return "^";
+    }
+    if (t == LSHIFT) {
+        return "<<";
+    }
+    if (t == RSHIFT) {
+        return ">>";
+    }
+    if (t == EQEQ) {
+        return "==";
+    }
+    if (t == NE) {
+        return "!=";
+    }
+    if (t == LT) {
+        return "<";
+    }
+    if (t == GT) {
+        return ">";
+    }
+    if (t == LE) {
+        return "<=";
+    }
+    if (t == GE) {
+        return ">=";
+    }
+    if (t == AND) {
+        return "&&";
+    }
+    if (t == OR) {
+        return "||";
+    }
+    if (t == NOT) {
+        return "!";
+    }
+    if (t == TILDE) {
+        return "~";
+    }
+    return "?";
+}
+
+// Base operator for a compound-assignment token (x += y desugars to x = x + y).
+string compound_base(int t) {
+    if (t == PLUS_EQ) {
+        return "+";
+    }
+    if (t == MINUS_EQ) {
+        return "-";
+    }
+    if (t == STAR_EQ) {
+        return "*";
+    }
+    if (t == SLASH_EQ) {
+        return "/";
+    }
+    if (t == PERCENT_EQ) {
+        return "%";
+    }
+    if (t == AMP_EQ) {
+        return "&";
+    }
+    if (t == PIPE_EQ) {
+        return "|";
+    }
+    if (t == CARET_EQ) {
+        return "^";
+    }
+    if (t == LSHIFT_EQ) {
+        return "<<";
+    }
+    if (t == RSHIFT_EQ) {
+        return ">>";
+    }
+    return "?";
+}
+
+int is_compound(int t) {
+    if (t == PLUS_EQ || t == MINUS_EQ || t == STAR_EQ || t == SLASH_EQ || t == PERCENT_EQ) {
+        return 1;
+    }
+    if (t == AMP_EQ || t == PIPE_EQ || t == CARET_EQ || t == LSHIFT_EQ || t == RSHIFT_EQ) {
+        return 1;
+    }
+    return 0;
+}
+
+// ── Expression precedence chain (mirrors parse_expr.cpp) ──────────────────────
+
+*ExprNode mk_cast(string ty, *ExprNode inner) {
+    *ExprNode e = ast_new_expr();
+    e.kind = EK_CAST;
+    e.sval = ty;
+    e.a = inner;
+    return e;
+}
+
+// Struct literal: Name { field: expr, ... } or Name { expr, ... } (positional).
+// `name` already parsed (may carry a <...> template suffix). At '{'.
+*ExprNode parse_struct_init(Parser* p, string name) {
+    p_expect(p, LBRACE, "Expected '{'");
+    *ExprNode e = ast_new_expr();
+    e.kind = EK_STRUCTINIT;
+    e.sval = name;
+    List_init<*ExprNode>(&e.kids, 4);
+    List_init<string>(&e.names, 4);
+    if (p_at(p) != RBRACE) {
+        while (1 == 1) {
+            if (p_at(p) == IDENT && p_peek2(p).type == COLON) {
+                Token nm = p_adv(p);       // field name  (NB: not `fn` — reserved keyword)
+                p_expect(p, COLON, "Expected ':'");
+                List_push<string>(&e.names, tok_text(p.src, nm));
+            } else {
+                List_push<string>(&e.names, "");
+            }
+            List_push<*ExprNode>(&e.kids, parse_expr(p));
+            if (p_at(p) == COMMA) {
+                p_adv(p);
+            } else {
+                break;
+            }
+            if (p_at(p) == RBRACE) {                  // a trailing comma
+                break;
+            }
+        }
+    }
+    p_expect(p, RBRACE, "Expected '}'");
+    return e;
+}
+
+// Lambda signature string for the printer: "<ret>(t0 n0, t1 n1)".
+string lambda_sig(string ret, *DeclNode d) {
+    string sig = str_concat(ret, "(");
+    int i = 0;
+    int n = List_len<Param>(&d.params);
+    while (i < n) {
+        Param pm = List_get<Param>(&d.params, i);
+        if (i > 0) {
+            sig = str_concat(sig, ", ");
+        }
+        sig = str_concat(sig, pm.ty);
+        sig = str_concat(sig, " ");
+        sig = str_concat(sig, pm.name);
+        i = i + 1;
+    }
+    return str_concat(sig, ")");
+}
+
+// Does a lambda whose return type is not a type keyword start here (`S() {`,
+// `*S(int k) {`, `Box<int>(T x) {`)? A token scan, no parse (mirrors lambdaAhead).
+int lambda_ahead(Parser* p) {
+    int n = List_len<Token>(&p.toks);
+    int i = p.pos;
+    if (i < n && List_get<Token>(&p.toks, i).type == QUESTION) {
+        i = i + 1;
+    }
+    while (i < n && List_get<Token>(&p.toks, i).type == STAR) {
+        i = i + 1;
+    }
+    if (i >= n) {
+        return 0;
+    }
+    int t0 = List_get<Token>(&p.toks, i).type;
+    if (t0 != IDENT && is_type_kw(t0) == 0) {
+        return 0;
+    }
+    i = i + 1;
+    if (i < n && List_get<Token>(&p.toks, i).type == LT) {
+        int d = 1;
+        i = i + 1;
+        while (i < n && d > 0) {
+            int t = List_get<Token>(&p.toks, i).type;
+            if (t == LT) {
+                d = d + 1;
+            }
+            else if (t == GT) {
+                d = d - 1;
+            }
+            else if (t == RSHIFT) {
+                d = d - 2;
+            }
+            else if (t != IDENT && is_type_kw(t) == 0 && t != COMMA && t != STAR && t != QUESTION) {
+                return 0;
+            }
+            i = i + 1;
+        }
+        if (d != 0) {
+            return 0;
+        }
+    }
+    while (i < n && List_get<Token>(&p.toks, i).type == STAR) {
+        i = i + 1;
+    }
+    if (i >= n || List_get<Token>(&p.toks, i).type != LPAREN) {
+        return 0;
+    }
+    int d = 0;
+    while (i < n) {
+        int t = List_get<Token>(&p.toks, i).type;
+        if (t == LPAREN) {
+            d = d + 1;
+        }
+        else if (t == RPAREN) {
+            d = d - 1;
+            if (d == 0) {
+                break;
+            }
+        }
+        else if (t == LBRACE || t == SEMICOLON || t == EOF_TOKEN) {
+            return 0;
+        }
+        i = i + 1;
+    }
+    if (i + 1 < n && List_get<Token>(&p.toks, i + 1).type == LBRACE) {
+        return 1;
+    }
+    return 0;
+}
+
+// Lambda: RetType(params) { body }. Speculative: backs out (returns null) when the
+// tokens do not form one.
+*ExprNode try_parse_lambda(Parser* p) {
+    int save = p.pos;
+    Token lt0 = p_peek(p);
+    p.spec = p.spec + 1;
+    string ret = parse_type(p);
+    p_expect(p, LPAREN, "Expected '('");
+    *DeclNode tmp = ast_new_decl();
+    parse_params(p, tmp);
+    p_expect(p, RPAREN, "Expected ')'");
+    p.spec = p.spec - 1;
+    if (p.failed == 0 && p_at(p) == LBRACE) {
+        *ExprNode e = p_pos(ast_new_expr(), lt0);
+        e.kind = EK_LAMBDA;
+        e.sval = lambda_sig(ret, tmp);
+        int lmark = local_mark();
+        local_push_params(tmp);
+        e.stmt = parse_block(p);
+        local_pop(lmark);
+        return e;
+    }
+    p.failed = 0;
+    p.pos = save;                          // not a lambda — back out
+    return null;
+}
+
+*ExprNode parse_primary(Parser* p) {
+    int t = p_at(p);
+    if (t == LBRACE) {                                 // array literal { e0, e1, ... }
+        p_adv(p);
+        *ExprNode e = ast_new_expr();
+        e.kind = EK_ARRAYLIT;
+        List_init<*ExprNode>(&e.kids, 4);
+        if (p_at(p) != RBRACE) {
+            List_push<*ExprNode>(&e.kids, parse_expr(p));
+            while (p_at(p) == COMMA) {
+                p_adv(p);
+                if (p_at(p) == RBRACE) {      // trailing comma
+                    break;
+                }
+                List_push<*ExprNode>(&e.kids, parse_expr(p));
+            }
+        }
+        p_expect(p, RBRACE, "Expected '}'");
+        return e;
+    }
+    if (t == TRUE) {
+        p_adv(p);
+        return mk_lit(LIT_BOOL, "true");
+    }
+    if (t == FALSE) {
+        p_adv(p);
+        return mk_lit(LIT_BOOL, "false");
+    }
+    if (t == NULL_KW) {
+        p_adv(p);
+        return mk_lit(LIT_NULL, "null");
+    }
+    if (t == INT_LIT) {
+        Token tok = p_adv(p);
+        return mk_lit(LIT_INT, tok_text(p.src, tok));
+    }
+    if (t == FLOAT_LIT) {
+        Token tok = p_adv(p);
+        return mk_lit(LIT_FLOAT, tok_text(p.src, tok));
+    }
+    if (t == STRING_LIT) {
+        Token first = p_adv(p);
+        int vlen = 0;
+        string v = tok_str_value(p.src, first, &vlen);
+        while (p_at(p) == STRING_LIT) {        // adjacent string concatenation
+            Token nx = p_adv(p);
+            int nlen = 0;
+            string nv = tok_str_value(p.src, nx, &nlen);
+            v = str_concat_n(v, vlen, nv, nlen);
+            vlen = vlen + nlen;
+        }
+        *ExprNode e = p_pos(mk_lit(LIT_STRING, v), first);
+        e.slen = vlen;                          // exact length (embedded NULs preserved)
+        return e;
+    }
+    if (t == CHAR_LIT) {
+        Token tok = p_adv(p);
+        return mk_lit(LIT_CHAR, tok_char_value(p.src, tok));
+    }
+    if (t == SIZEOF) {
+        // sizeof(T) or sizeof(expr) (mirrors the C++ parser): a type when the operand reads
+        // as one up to the `)` and is a bare name or a composite over a known type; any
+        // other operand (`*p`, `a[0]`, `p.x`) is an expression, measured by its type.
+        Token szt = p_adv(p);                  // 'sizeof'
+        p_expect(p, LPAREN, "Expected '('");
+        int save = p.pos;
+        int savegt = p.pending_gt;
+        p.spec = p.spec + 1;
+        string ty = parse_type(p);
+        p.spec = p.spec - 1;
+        int as_type = 0;
+        if (p.failed == 0 && p_at(p) == RPAREN) {
+            int composite = 0;
+            int ci = 0;
+            while (ty[ci] != 0) {
+                int ch = (int)ty[ci];
+                if (ch == 42 || ch == 91 || ch == 63) {   // '*' '[' '?'
+                    composite = 1;
+                }
+                ci = ci + 1;
+            }
+            if (composite == 0 || type_arg_evident(p, ty) == 1) {
+                as_type = 1;
+            }
+        }
+        *ExprNode e = p_pos(ast_new_expr(), szt);
+        e.kind = EK_SIZEOF;
+        if (as_type == 0) {
+            p.failed = 0;
+            p.pos = save;
+            p.pending_gt = savegt;
+            e.a = parse_expr(p);               // sval "" marks the expression form
+            e.sval = "";
+            p_expect(p, RPAREN, "Expected ')'");
+            return e;
+        }
+        p_expect(p, RPAREN, "Expected ')'");
+        e.sval = ty;
+        return e;
+    }
+    if (t == ALLOC_WITH) {
+        Token kwt = p_adv(p);
+        p_expect(p, LPAREN, "Expected '(' after alloc_with");
+        *ExprNode al = parse_expr(p);
+        p_expect(p, COMMA, "Expected ','");
+        string ety = parse_type(p);
+        p_expect(p, COMMA, "Expected ','");
+        *ExprNode cnt = parse_expr(p);
+        p_expect(p, RPAREN, "Expected ')'");
+        *ExprNode e = p_pos(ast_new_expr(), kwt);
+        e.kind = EK_ALLOCWITH;
+        e.sval = ety;
+        e.a = al;
+        e.b = cnt;
+        return e;
+    }
+    if (t == FREE_CLOSURE) {
+        Token kwt = p_adv(p);
+        p_expect(p, LPAREN, "Expected '(' after free_closure");
+        *ExprNode c = parse_expr(p);
+        p_expect(p, RPAREN, "Expected ')'");
+        *ExprNode e = p_pos(ast_new_expr(), kwt);
+        e.kind = EK_FREECLOSURE;
+        e.a = c;
+        return e;
+    }
+    if (t == THREAD_CREATE) {
+        Token kwt = p_adv(p);
+        p_expect(p, LPAREN, "Expected '(' after thread_create");
+        *ExprNode w = parse_expr(p);
+        p_expect(p, RPAREN, "Expected ')'");
+        *ExprNode e = p_pos(ast_new_expr(), kwt);
+        e.kind = EK_THREADCREATE;
+        e.a = w;
+        return e;
+    }
+    // Lambda: RetType(params) { body } — a type keyword followed by '('.
+    if (is_type_kw(t) == 1 && p_peek2(p).type == LPAREN && p.failed == 0) {
+        *ExprNode lam = try_parse_lambda(p);
+        if (lam != null) {
+            return lam;
+        }
+    }
+    if (t == IDENT) {
+        Token tok = p_adv(p);
+        if (p_at(p) == LBRACE && p.no_struct_lit == 0) {   // Name { ... } struct literal
+            return p_pos(parse_struct_init(p, tok_text(p.src, tok)), tok);
+        }
+        return mk_ident(tok_text(p.src, tok));
+    }
+    if (t == LPAREN) {
+        p_adv(p);
+        *ExprNode e = parse_assignment(p);
+        p_expect(p, RPAREN, "Expected ')'");
+        return e;
+    }
+    p_fail(p, str_concat("Expected expression, got ", token_name(t)));
+    return mk_lit(LIT_INT, "0");
+}

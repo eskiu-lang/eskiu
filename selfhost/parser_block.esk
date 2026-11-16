@@ -1,0 +1,476 @@
+// parser_block.esk: variable declarations, switch, match, try, asm and blocks (part of parser.esk, imported in order)
+
+*StmtNode try_var_decl(Parser* p) {
+    int save = p.pos;
+    int is_const = 0;
+    int is_static = 0;
+    int is_vol = 0;
+    while (p_at(p) == VOLATILE || p_at(p) == STATIC) {
+        if (p_at(p) == STATIC) {
+            is_static = 1;
+        } else {
+            is_vol = 1;
+        }
+        p_adv(p);
+    }
+    if (p_at(p) == CONST) {                          // const-let binding (const before let)
+        int k = 1;
+        if (p_peek_k(p, 1).type == VOLATILE) {
+            k = 2;
+        }
+        if (p_peek_k(p, k).type == LET) {
+            is_const = 1;
+            p_adv(p);
+        }
+    }
+    while (p_at(p) == VOLATILE || p_at(p) == STATIC) {
+        if (p_at(p) == STATIC) {
+            is_static = 1;
+        } else {
+            is_vol = 1;
+        }
+        p_adv(p);
+    }
+    if (p_at(p) == LET) {
+        p_adv(p);
+        check_name_not_keyword(p);
+        if (p_at(p) != IDENT) {
+            p.pos = save;
+            return null;
+        }
+        Token lnt = p_peek(p);
+        string nm = tok_text(p.src, lnt);
+        p_adv(p);
+        if (p_at(p) != COLON) {
+            p.pos = save;
+            return null;
+        }
+        p_adv(p);
+        string raw = parse_type(p);
+        if (is_value_const(raw) == 1) {
+            is_const = 1;
+        }
+        string ty = strip_binding_const(raw);
+        *ExprNode init = null;
+        if (p_at(p) == EQ) {
+            p_adv(p);
+            init = parse_expr(p);
+            p_reject_trailing(p);
+        }
+        if (p_at(p) != SEMICOLON) {
+            p_fail(p, "Expected ';' after variable declaration");
+            return null;
+        }
+        p_adv(p);
+        *StmtNode d = p_spos(mk_vardecl(nm, ty, init, is_const), lnt);
+        d.is_static = is_static;
+        d.is_vol = is_vol;
+        return d;
+    }
+    // typed: Type name [= expr] ;
+    string raw = parse_type(p);
+    if (is_value_const(raw) == 1) {
+        is_const = 1;
+    }
+    string ty = strip_binding_const(raw);
+    check_name_not_keyword(p);
+    if (p_at(p) != IDENT) {
+        p.pos = save;
+        return null;
+    }
+    Token tnt = p_peek(p);
+    string nm = tok_text(p.src, tnt);
+    p_adv(p);
+    if (p_at(p) == LBRACKET) {             // C-style `int a[3];`: arrays are `int[3] a`
+        p_fail(p, str_concat("Expected declaration, got ", token_name(p_at(p))));
+        return null;
+    }
+    if (p_at(p) == EQ) {
+        p_adv(p);
+        *ExprNode init = parse_expr(p);
+        p_reject_trailing(p);
+        if (p_at(p) != SEMICOLON) {
+            p_fail(p, "Expected ';'");
+            return null;
+        }
+        p_adv(p);
+        *StmtNode d = p_spos(mk_vardecl(nm, ty, init, is_const), tnt);
+        d.is_static = is_static;
+        d.is_vol = is_vol;
+        return d;
+    }
+    if (p_at(p) == SEMICOLON) {
+        p_adv(p);
+        *StmtNode d = p_spos(mk_vardecl(nm, ty, null, is_const), tnt);
+        d.is_static = is_static;
+        d.is_vol = is_vol;
+        return d;
+    }
+    p.pos = save;
+    return null;
+}
+
+// try_var_decl run speculatively: a syntax error inside it backs out (returns null)
+// so the tokens are re-parsed as a statement, like the C++ block-item fallback.
+*StmtNode spec_var_decl(Parser* p) {
+    if (p.failed == 1) {
+        return null;
+    }
+    int save = p.pos;
+    int savegt = p.pending_gt;
+    p.spec = p.spec + 1;
+    *StmtNode d = try_var_decl(p);
+    p.spec = p.spec - 1;
+    if (p.failed == 1) {
+        p.failed = 0;
+        p.pos = save;
+        p.pending_gt = savegt;
+        // Only a leading name or `*` can also begin a statement; any other decl start
+        // (a type keyword, let, const, ...) is unambiguous, so re-parse it for real and
+        // report its error where it happens (mirrors the C++ rethrow).
+        int st = p_at(p);
+        if (st != IDENT && st != STAR) {
+            return try_var_decl(p);
+        }
+        return null;
+    }
+    return d;
+}
+
+*StmtNode parse_switch(Parser* p) {
+    Token swt = p_adv(p);                  // 'switch'
+    p_expect(p, LPAREN, "Expected '('");
+    *StmtNode s = p_spos(ast_new_stmt(), swt);
+    s.kind = SK_SWITCH;
+    s.expr = parse_expr(p);                // subject
+    p_expect(p, RPAREN, "Expected ')'");
+    p_expect(p, LBRACE, "Expected '{'");
+    List_init<*StmtNode>(&s.items, 4);
+    int mark = local_mark();               // a case's declaration reaches the end of the switch
+    while (p_at(p) != RBRACE && p_at(p) != EOF_TOKEN) {
+        *StmtNode c = ast_new_stmt();
+        c.kind = SK_CASE;
+        c.expr = null;
+        if (p_at(p) == CASE) {   // 'case' val ':'
+            p_adv(p);
+            c.expr = parse_expr(p);
+            p_adv(p);
+        }
+        else if (p_at(p) == DEFAULT) {                   // 'default' ':'
+            p_adv(p);
+            p_adv(p);
+        }
+        else {
+            break;
+        }
+        List_init<*StmtNode>(&c.items, 4);
+        while (p_at(p) != CASE && p_at(p) != DEFAULT && p_at(p) != RBRACE && p_at(p) != EOF_TOKEN) {
+            List_push<*StmtNode>(&c.items, parse_block_item(p));
+        }
+        List_push<*StmtNode>(&s.items, c);
+    }
+    local_pop(mark);
+    p_expect(p, RBRACE, "Expected '}'");
+    return s;
+}
+
+*StmtNode parse_match(Parser* p) {
+    Token mt = p_adv(p);                   // 'match'
+    int saved = p.no_struct_lit;
+    p.no_struct_lit = 1;                   // subject `Name { ... }` is the match body, not a literal
+    *ExprNode subj = parse_expr(p);
+    p.no_struct_lit = saved;
+    p_expect(p, LBRACE, "Expected '{'");
+    *StmtNode s = p_spos(ast_new_stmt(), mt);
+    s.kind = SK_MATCH;
+    s.expr = subj;
+    List_init<*StmtNode>(&s.items, 4);
+    while (p_at(p) != RBRACE && p_at(p) != EOF_TOKEN) {
+        Token cur = p_peek(p);
+        string label;
+        if (p_at(p) == IDENT && cur.len == 1 && (int)p.src[cur.start] == 95) {
+            label = "_";         // default arm
+            p_adv(p);
+        } else {
+            label = tok_text(p.src, p_expect_ident(p, "Expected variant name or '_'"));        // variant name
+            if (p_at(p) == LPAREN) {                  // payload bindings
+                p_adv(p);
+                label = str_concat(label, "(");
+                if (p_at(p) != RPAREN) {
+                    label = str_concat(label, tok_text(p.src, p_expect_ident(p, "Expected binding name")));
+                    while (p_at(p) == COMMA) {
+                        p_adv(p);
+                        label = str_concat(label, ", ");
+                        label = str_concat(label, tok_text(p.src, p_expect_ident(p, "Expected binding name")));
+                    }
+                }
+                p_expect(p, RPAREN, "Expected ')'");
+                label = str_concat(label, ")");
+            }
+        }
+        p_expect(p, ARROW, "Expected '->'");
+        *StmtNode arm = ast_new_stmt();
+        arm.kind = SK_ARM;
+        arm.name = label;
+        arm.s1 = parse_stmt(p);
+        List_push<*StmtNode>(&s.items, arm);
+    }
+    p_expect(p, RBRACE, "Expected '}'");
+    return s;
+}
+
+*StmtNode parse_try(Parser* p) {
+    p_adv(p);                              // 'try'
+    *StmtNode s = ast_new_stmt();
+    s.kind = SK_TRY;
+    s.s2 = null;                           // finally (optional)
+    s.s1 = parse_block(p);                 // body
+    List_init<*StmtNode>(&s.items, 2);
+    while (p_at(p) == CATCH) {
+        p_adv(p);                          // 'catch'
+        p_expect(p, LPAREN, "Expected '('");
+        string clbl = "";
+        Token cnt;
+        if (p_at(p) == IDENT && str_eq(tok_text(p.src, p_peek(p)), "_") == 1 && p_peek2(p).type == RPAREN) {
+            cnt = p_adv(p);
+            clbl = "_";
+        } else {
+            string cty = parse_type(p);
+            cnt = p_expect_ident(p, "Expected variable name in catch");
+            string cnm = tok_text(p.src, cnt);   // exception variable name
+            clbl = str_concat(str_concat(cty, " "), cnm);
+        }
+        p_expect(p, RPAREN, "Expected ')'");
+        *StmtNode cat = ast_new_stmt();
+        cat.kind = SK_CATCH;
+        cat.line = cnt.line;
+        cat.col = cnt.col;
+        cat.name = clbl;
+        cat.s1 = parse_block(p);
+        List_push<*StmtNode>(&s.items, cat);
+    }
+    if (p_at(p) == FINALLY) {
+        p_adv(p);
+        s.s2 = parse_block(p);
+    }
+    return s;
+}
+
+// One `"constraint"(expr), ...` list of asm operands (outputs or inputs) onto `items`.
+void parse_asm_operands(Parser* p, List<*StmtNode>* items, int kind) {
+    while (p_at(p) != RPAREN && p_at(p) != COLON && p_at(p) != EOF_TOKEN) {
+        Token ct = p_adv(p);       // constraint string
+        p_expect(p, LPAREN, "Expected '('");
+        *StmtNode op = ast_new_stmt();
+        op.kind = kind;
+        int _dl1 = 0;
+        op.name = tok_str_value(p.src, ct, &_dl1);
+        op.expr = parse_expr(p);
+        p_expect(p, RPAREN, "Expected ')'");
+        List_push<*StmtNode>(items, op);
+        if (p_at(p) == COMMA) {
+            p_adv(p);
+        } else {
+            break;
+        }
+    }
+}
+
+*StmtNode parse_asm(Parser* p) {
+    Token at = p_adv(p);                   // 'asm'
+    p_expect(p, LPAREN, "Expected '('");
+    *StmtNode s = p_spos(ast_new_stmt(), at);
+    s.kind = SK_ASM;
+    int _dl0 = 0;   // the asm string (decoded)
+    s.name = tok_str_value(p.src, p_adv(p), &_dl0);
+    List_init<*StmtNode>(&s.items, 2);
+    if (p_at(p) == COLON) {                // outputs : inputs : clobbers
+        p_adv(p);
+        parse_asm_operands(p, &s.items, SK_ASMOUTPUT);
+        if (p_at(p) == COLON) {
+            p_adv(p);
+            parse_asm_operands(p, &s.items, SK_ASMINPUT);
+            if (p_at(p) == COLON) {        // clobbers: kept as `~{c},...` in s.type
+                p_adv(p);
+                s.type = "";
+                while (p_at(p) != RPAREN && p_at(p) != EOF_TOKEN) {
+                    int _dl2 = 0;
+                    string cl = tok_str_value(p.src, p_adv(p), &_dl2);
+                    if (s.type[0] != 0) {
+                        s.type = str_concat(s.type, ",");
+                    }
+                    s.type = str_concat(s.type, str_concat("~{", str_concat(cl, "}")));
+                    if (p_at(p) == COMMA) {
+                        p_adv(p);
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    p_expect(p, RPAREN, "Expected ')'");
+    p_expect(p, SEMICOLON, "Expected ';'");
+    return s;
+}
+
+*StmtNode parse_stmt_inner(Parser* p);
+*StmtNode parse_stmt(Parser* p) {
+    p_nest_enter(p);
+    *StmtNode r = parse_stmt_inner(p);
+    p.nest = p.nest - 1;
+    return r;
+}
+
+*StmtNode parse_stmt_inner(Parser* p) {
+    int t = p_at(p);
+    // Labeled loop: IDENT ':' <for|while|do>. Only a loop keyword after the ':' makes it a
+    // label; a bare `IDENT:` has no other statement-level meaning.
+    if (t == IDENT && p_peek2(p).type == COLON) {
+        int after = p_peek_k(p, 2).type;
+        if (after == FOR || after == WHILE || after == DO) {
+            string lbl = tok_text(p.src, p_peek(p));   // IDENT text
+            p_adv(p);                                   // IDENT
+            p_expect(p, COLON, "Expected ':'");
+            *StmtNode loop = null;
+            if (p_at(p) == FOR) {
+                loop = parse_for(p);
+            }
+            else if (p_at(p) == WHILE) {
+                loop = parse_while(p);
+            }
+            else {
+                loop = parse_do(p);
+            }
+            loop.label = lbl;
+            return loop;
+        }
+    }
+    if (t == LBRACE) {
+        return parse_block(p);
+    }
+    if (t == IF) {
+        return parse_if(p);
+    }
+    if (t == FOR) {
+        return parse_for(p);
+    }
+    if (t == WHILE) {
+        return parse_while(p);
+    }
+    if (t == DO) {
+        return parse_do(p);
+    }
+    if (t == SWITCH) {
+        return parse_switch(p);
+    }
+    if (t == MATCH) {
+        return parse_match(p);
+    }
+    if (t == TRY) {
+        return parse_try(p);
+    }
+    if (t == DEFER || t == ERRDEFER) {         // defer / errdefer stmt;  (run at scope exit)
+        p_adv(p);
+        *StmtNode s = ast_new_stmt();
+        s.kind = SK_DEFER;
+        s.s1 = parse_stmt(p);
+        if (t == ERRDEFER) {
+            s.is_err = 1;
+        } else {
+            s.is_err = 0;
+        }
+        return s;
+    }
+    if (t == ASM) {
+        return parse_asm(p);
+    }
+    if (t == RETURN) {
+        return parse_return(p);
+    }
+    if (t == BREAK) {
+        Token kt = p_adv(p);                            // 'break'
+        string lbl = "";
+        if (p_at(p) == IDENT) {
+            lbl = tok_text(p.src, p_peek(p));
+            p_adv(p);
+        }
+        p_expect(p, SEMICOLON, "Expected ';'");
+        *StmtNode s = p_spos(mk_simple(SK_BREAK), kt);
+        s.label = lbl;
+        return s;
+    }
+    if (t == CONTINUE) {
+        Token kt = p_adv(p);                            // 'continue'
+        string lbl = "";
+        if (p_at(p) == IDENT) {
+            lbl = tok_text(p.src, p_peek(p));
+            p_adv(p);
+        }
+        p_expect(p, SEMICOLON, "Expected ';'");
+        *StmtNode s = p_spos(mk_simple(SK_CONTINUE), kt);
+        s.label = lbl;
+        return s;
+    }
+    if (t == THROW) {
+        p_adv(p);
+        *StmtNode s = ast_new_stmt();
+        s.kind = SK_THROW;
+        s.expr = parse_expr(p);
+        p_expect(p, SEMICOLON, "Expected ';'");
+        return s;
+    }
+    if (t == THREAD_JOIN) {
+        Token jt = p_adv(p);
+        p_expect(p, LPAREN, "Expected '(' after thread_join");
+        *StmtNode s = p_spos(ast_new_stmt(), jt);
+        s.kind = SK_THREADJOIN;
+        s.expr = parse_expr(p);
+        p_expect(p, RPAREN, "Expected ')'");
+        p_expect(p, SEMICOLON, "Expected ';'");
+        return s;
+    }
+    return parse_expr_stmt(p, 1);
+}
+
+// A block item is a local declaration (let / typed) or a statement. For a decl-
+// looking lead token, speculatively parse a var-decl and back out on failure.
+*StmtNode parse_block_item(Parser* p) {
+    int t = p_at(p);
+    // `a * b;` with `a` a variable in scope is an expression (C), not a declaration.
+    int local_times = 0;
+    if (t == IDENT && p_peek2(p).type == STAR && is_local_var(tok_text(p.src, p_peek(p))) == 1) {
+        local_times = 1;
+    }
+    if (local_times == 0 && (t == LET || t == CONST || t == VOLATILE || t == STATIC || t == STAR || t == IDENT
+        || t == FN || t == QUESTION || is_type_kw(t) == 1)) {   // QUESTION: a `?*T` nullable decl
+        int save = p.pos;
+        *StmtNode d = spec_var_decl(p);
+        if (d != null) {
+            List_push<string>(&g_localvars, d.name);
+            return d;
+        }
+        p.pos = save;
+    }
+    return parse_stmt(p);
+}
+
+*StmtNode parse_block(Parser* p) {
+    Token lbt = p_peek(p);
+    p_expect(p, LBRACE, "Expected '{'");
+    *StmtNode b = p_spos(ast_new_stmt(), lbt);
+    b.kind = SK_BLOCK;
+    List_init<*StmtNode>(&b.items, 4);
+    int mark = local_mark();
+    while (p_at(p) != RBRACE && p_at(p) != EOF_TOKEN) {
+        if (p_at(p) == PRAGMA) {   // pack / link state, no item
+            p_take_pragma(p);
+        }
+        else {
+            List_push<*StmtNode>(&b.items, parse_block_item(p));
+        }
+    }
+    local_pop(mark);
+    p_expect(p, RBRACE, "Expected '}'");
+    return b;
+}

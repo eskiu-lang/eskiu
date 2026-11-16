@@ -1,0 +1,590 @@
+// parser_core.esk: parser state, token helpers and types (part of parser.esk, imported in order)
+
+void p_init(Parser* p, *uint8 src, int len) {
+    p.src = src;
+    p.pos = 0;
+    p.pending_gt = 0;
+    p.no_struct_lit = 0;
+    p.basedir = ".";
+    p.file = g_lex_file;
+    p.spec = 0;
+    p.failed = 0;
+    p.nest = 0;
+    p.tdepth = 0;
+    p.tca_done = 0;
+    p.is_import = 0;
+    List_init<*StmtNode>(&p.so_stmts, 4);
+    List_init<*DeclNode>(&p.so_vars, 4);
+    List_init<Token>(&p.toks, 256);
+    let lx: Lexer;
+    lx.src = src;
+    lx.len = len;
+    lx.pos = 0;
+    lx.line = 1;
+    lx.col = 1;
+    Token t = lx_next(&lx);
+    while (t.type != EOF_TOKEN) {
+        List_push<Token>(&p.toks, t);
+        t = lx_next(&lx);
+    }
+    List_push<Token>(&p.toks, t);          // keep the EOF token as the last element
+    if (g_lex_errs > 0) {       // lexical errors were reported (like the C++ hadError)
+        exit(1);
+    }
+}
+
+Token p_peek(Parser* p) {
+    return List_get<Token>(&p.toks, p.pos);
+}
+
+Token p_peek2(Parser* p) {
+    int i = p.pos + 1;
+    int n = List_len<Token>(&p.toks);
+    if (i >= n) {
+        i = n - 1;
+    }
+    return List_get<Token>(&p.toks, i);
+}
+
+Token p_peek_k(Parser* p, int k) {
+    int i = p.pos + k;
+    int n = List_len<Token>(&p.toks);
+    if (i >= n) {
+        i = n - 1;
+    }
+    return List_get<Token>(&p.toks, i);
+}
+
+// The source between two tokens with each whitespace run folded to one space
+// (the C++ Parser::sourceSpan): the text `dbg(e)` prints for `e`.
+string p_source_span(Parser* p, Token from, Token to) {
+    *String out = alloc<String>(1);
+    String_init(out, 16);
+    int space = 0;
+    for (int i = from.start; i < to.start; i++) {
+        uint8 c = p.src[i];
+        if (c == 32 || c == 9 || c == 10 || c == 13) {
+            if (out.len > 0) {
+                space = 1;
+            }
+            continue;
+        }
+        if (space == 1) {
+            String_push(out, (char)32);
+            space = 0;
+        }
+        String_push(out, (char)c);
+    }
+    return out.data;
+}
+
+int p_at(Parser* p) {
+    return p_peek(p).type;
+}
+
+Token p_adv(Parser* p) {
+    Token t = p_peek(p);
+    g_pos_line = t.line;   // stamped onto the nodes built next
+    g_pos_col = t.col;
+    if (p.pos + 1 < List_len<Token>(&p.toks)) {
+        p.pos = p.pos + 1;
+    }
+    return t;
+}
+
+// Print `error: <file>:<line>:<col>: <msg>` at token `t` and abort (mirrors the C++
+// parser's located diagnostics).
+void p_report(Parser* p, Token t, string msg) {
+    uint8[32] nb;
+    lx_puts_err("error: ");
+    if (p.file == null) {
+        lx_puts_err("<input>");
+    }
+    else if (p.file[0] == 0) {
+        lx_puts_err("<input>");
+    }
+    else {
+        lx_puts_err(p.file);
+    }
+    sprintf((string)&nb[0], ":%d:%d: ", t.line, t.col);
+    lx_puts_err((string)&nb[0]);
+    lx_puts_err(msg);
+    lx_puts_err("\n");
+    exit(1);
+}
+
+// A syntax error at the current token. While speculating (p.spec > 0) it only marks
+// the attempt failed and jumps to EOF so every loop unwinds; the speculation site
+// then backtracks (like the C++ catch). Otherwise it is reported and aborts.
+void p_fail(Parser* p, string msg) {
+    if (p.spec > 0) {
+        p.failed = 1;
+        p.pos = List_len<Token>(&p.toks) - 1;
+        return;
+    }
+    p_report(p, p_peek(p), msg);
+}
+
+// Safety net against pathological input (mirrors the C++ NestGuard): more than
+// 100000 nested levels is an error rather than a stack overflow here or in the later
+// passes, which recurse once per level. The drivers run the compiler on a large stack
+// (see bigstack.esk), so the limit sits far above realistic code. Operator chains and
+// statement lists are loops and do not count. Past the limit no other reading of the
+// input is valid, so the error is reported even inside a speculative parse (like the
+// C++ NestingError, which a speculative catch rethrows).
+int P_MAX_NESTING = 100000;
+void p_nest_enter(Parser* p) {
+    p.nest = p.nest + 1;
+    if (p.nest > P_MAX_NESTING) {
+        p_report(p, p_peek(p), "nesting too deep (more than 100000 levels)");
+    }
+}
+
+// Types nest far less (mirrors the C++ kMaxTypeNesting): every template argument list,
+// fn type, pointer level and array dimension is one level, at most 1000 in all. Later
+// passes spell a generic instance by its whole argument list, so a type's cost grows
+// faster than its depth; the limit keeps every type cheap. Reported like p_nest_enter.
+int P_MAX_TYPE_NESTING = 1000;
+void p_type_level(Parser* p) {
+    p.tdepth = p.tdepth + 1;
+    if (p.tdepth > P_MAX_TYPE_NESTING) {
+        p_report(p, p_peek(p), "type nesting too deep (more than 1000 levels)");
+    }
+}
+
+// Consume a token of type `t`, or fail with `msg`.
+void p_expect(Parser* p, int t, string msg) {
+    if (p_at(p) == t) {
+        p_adv(p);
+        return;
+    }
+    p_fail(p, msg);
+}
+
+// Consume a token of type `t` and return it, or fail with `msg`.
+Token p_expect_tok(Parser* p, int t, string msg) {
+    Token k = p_peek(p);
+    if (k.type == t) {
+        p_adv(p);
+        return k;
+    }
+    p_fail(p, msg);
+    return k;
+}
+
+// Consume a name (IDENT), or fail. Returns the token.
+Token p_expect_ident(Parser* p, string msg) {
+    Token t = p_peek(p);
+    if (t.type == IDENT) {
+        p_adv(p);
+        return t;
+    }
+    p_fail(p, msg);
+    return t;
+}
+
+// Template close: a single `>` (GT) or one `>` of a `>>` (RSHIFT, split in place
+// via pending_gt — the token list isn't mutable, so we model the second `>`).
+int at_tclose(Parser* p) {
+    if (p.pending_gt > 0) {
+        return 1;
+    }
+    int t = p_at(p);
+    if (t == GT || t == RSHIFT) {
+        return 1;
+    }
+    return 0;
+}
+
+void consume_tclose(Parser* p) {
+    if (p.pending_gt > 0) {   // 2nd `>` of `>>`
+        p.pending_gt = 0;
+        p_adv(p);
+        return;
+    }
+    if (p_at(p) == RSHIFT) {            // 1st `>` of `>>`
+        p.pending_gt = 1;
+        return;
+    }
+    p_adv(p);                                                        // a lone `>`
+}
+
+// Forward declarations (mutually-recursive descent).
+*ExprNode parse_assignment(Parser* p);
+*ExprNode parse_expr(Parser* p);
+*ExprNode parse_postfix(Parser* p);
+int ternary_colon_ahead(Parser* p);
+string parse_type(Parser* p);
+*ExprNode parse_struct_init(Parser* p, string name);
+*StmtNode parse_stmt(Parser* p);
+*StmtNode parse_block(Parser* p);
+*StmtNode parse_block_item(Parser* p);
+*StmtNode try_var_decl(Parser* p);
+*StmtNode spec_var_decl(Parser* p);
+void parse_into(Parser* p, *Program prog);
+
+// Lexeme of a token as an owned NUL-terminated string (heap copy of source bytes).
+string tok_text(*uint8 src, Token t) {
+    if (t.type == INT_LIT || t.type == FLOAT_LIT) {
+        return lx_num_text(src, t.start, t.len);
+    }
+    *uint8 buf = alloc<uint8>(t.len + 1);
+    int i = 0;
+    while (i < t.len) {
+        buf[i] = src[t.start + i];
+        i = i + 1;
+    }
+    buf[t.len] = 0;
+    return (string)buf;
+}
+
+int cstr_len(string s) {
+    int i = 0;
+    while (s[i] != 0) {
+        i = i + 1;
+    }
+    return i;
+}
+
+string str_concat(string a, string b) {
+    int la = cstr_len(a);
+    int lb = cstr_len(b);
+    *uint8 buf = alloc<uint8>(la + lb + 1);
+    int i = 0;
+    while (i < la) {
+        buf[i] = (uint8)a[i];
+        i = i + 1;
+    }
+    int j = 0;
+    while (j < lb) {
+        buf[la + j] = (uint8)b[j];
+        j = j + 1;
+    }
+    buf[la + lb] = 0;
+    return (string)buf;
+}
+
+// Substring s[a, b) as a fresh NUL-terminated string.
+string p_sub(string s, int a, int b) {
+    int len = b - a;
+    if (len < 0) {
+        len = 0;
+    }
+    *uint8 buf = alloc<uint8>(len + 1);
+    int k = 0;
+    while (k < len) {
+        buf[k] = (uint8)s[a + k];
+        k = k + 1;
+    }
+    buf[len] = 0;
+    return (string)buf;
+}
+
+// Trim leading/trailing spaces and tabs.
+string str_trim(string s) {
+    int n = 0;
+    while (s[n] != 0) {
+        n = n + 1;
+    }
+    int a = 0;
+    while (a < n && ((int)s[a] == 32 || (int)s[a] == 9)) {
+        a = a + 1;
+    }
+    int b = n;
+    while (b > a && ((int)s[b - 1] == 32 || (int)s[b - 1] == 9)) {
+        b = b - 1;
+    }
+    return p_sub(s, a, b);
+}
+
+int str_eq(string a, string b) {
+    int i = 0;
+    while (a[i] != 0 && b[i] != 0) {
+        if (a[i] != b[i]) {
+            return 0;
+        }
+        i = i + 1;
+    }
+    if (a[i] == b[i]) {        // both reached NUL together
+        return 1;
+    }
+    return 0;
+}
+
+int str_has_char(string s, int c) {
+    int i = 0;
+    while (s[i] != 0) {
+        if ((int)s[i] == c) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Directory portion of a path (everything before the last '/' or '\\'), or "." if none.
+string str_dir(string s) {
+    int n = cstr_len(s);
+    int last = 0 - 1;
+    int i = 0;
+    while (i < n) {   // 47 = '/', 92 = '\\' (Windows paths)
+        if ((int)s[i] == 47 || (int)s[i] == 92) {
+            last = i;
+        }
+        i = i + 1;
+    }
+    if (last < 0) {
+        return ".";
+    }
+    *uint8 buf = alloc<uint8>(last + 1);
+    int j = 0;
+    while (j < last) {
+        buf[j] = (uint8)s[j];
+        j = j + 1;
+    }
+    buf[last] = 0;
+    return (string)buf;
+}
+
+void register_type(Parser* p, string name) {
+    List_push<string>(&g_typenames, name);     // shared across all imported files
+}
+
+int is_known_type(Parser* p, string name) {
+    int i = 0;
+    int n = List_len<string>(&g_typenames);
+    while (i < n) {
+        if (str_eq(List_get<string>(&g_typenames, i), name) == 1) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// A declared type name or an in-scope type parameter (mirrors Parser::isTypeName).
+int is_type_name(Parser* p, string name) {
+    if (is_known_type(p, name) == 1) {
+        return 1;
+    }
+    int i = 0;
+    while (i < List_len<string>(&g_tparams)) {
+        if (str_eq(List_get<string>(&g_tparams, i), name) == 1) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Locals and params in scope (mirrors Parser::localVars): a block, function or lambda
+// body drops what it declared when it ends (local_pop to its local_mark).
+int local_mark() {
+    return List_len<string>(&g_localvars);
+}
+
+void local_pop(int mark) {
+    while (List_len<string>(&g_localvars) > mark) {
+        List_remove<string>(&g_localvars, List_len<string>(&g_localvars) - 1);
+    }
+}
+
+void local_push_params(*DeclNode d) {
+    int i = 0;
+    while (i < List_len<Param>(&d.params)) {
+        List_push<string>(&g_localvars, List_get<Param>(&d.params, i).name);
+        i = i + 1;
+    }
+}
+
+int is_local_var(string name) {
+    int i = 0;
+    while (i < List_len<string>(&g_localvars)) {
+        if (str_eq(List_get<string>(&g_localvars, i), name) == 1) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Is `name` a generic function or generic enum variant parsed so far?
+int is_generic_name(string name) {
+    int i = 0;
+    while (i < List_len<string>(&g_genericnames)) {
+        if (str_eq(List_get<string>(&g_genericnames, i), name) == 1) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Can the parsed template argument `t` only be a type (mirrors Parser::typeArgIsEvident)?
+// A bare name that is not a declared type (`b` in `f(a < b, c > (d))`) may equally be
+// a comparison operand.
+int type_arg_evident(Parser* p, string t) {
+    int n = cstr_len(t);
+    int i = 0;
+    while (i < n) {   // '<' '('
+        if ((int)t[i] == 60 || (int)t[i] == 40) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    int b = 0;
+    int e = n;
+    int go = 1;
+    while (go == 1) {
+        go = 0;
+        if (b < e && ((int)t[b] == 63 || (int)t[b] == 42)) {          // '?' '*'
+            b = b + 1;
+            go = 1;
+        }
+        else if (e - b >= 6 && str_eq(p_sub(t, b, b + 6), "const ") == 1) {
+            b = b + 6;
+            go = 1;
+        }
+    }
+    go = 1;
+    while (go == 1) {
+        go = 0;
+        if (e > b && (int)t[e - 1] == 93) {                                              // ']'
+            int o = e - 1;
+            while (o >= b && (int)t[o] != 91) {                              // '['
+                o = o - 1;
+            }
+            if (o >= b) {
+                e = o;
+                go = 1;
+            }
+        }
+        else if (e - b > 6 && str_eq(p_sub(t, e - 6, e), "*const") == 1) {
+            e = e - 6;
+            go = 1;
+        }
+        else if (e > b && (int)t[e - 1] == 42) {
+            e = e - 1;
+            go = 1;
+        }
+    }
+    string base = p_sub(t, b, e);
+    if (str_eq(base, "int") == 1 || str_eq(base, "int8") == 1 || str_eq(base, "int16") == 1
+        || str_eq(base, "int32") == 1 || str_eq(base, "int64") == 1 || str_eq(base, "uint") == 1
+        || str_eq(base, "uint8") == 1 || str_eq(base, "uint16") == 1 || str_eq(base, "uint32") == 1
+        || str_eq(base, "uint64") == 1 || str_eq(base, "float") == 1 || str_eq(base, "double") == 1
+        || str_eq(base, "bool") == 1 || str_eq(base, "char") == 1 || str_eq(base, "string") == 1
+        || str_eq(base, "void") == 1) {
+        return 1;
+    }
+    return is_type_name(p, base);
+}
+
+// Push a decl's type-param names onto g_tparams; returns the old depth for restoring.
+int push_tparams(List<TypeParam>* tps) {
+    int mark = List_len<string>(&g_tparams);
+    int i = 0;
+    while (i < List_len<TypeParam>(tps)) {
+        List_push<string>(&g_tparams, List_get<TypeParam>(tps, i).name);
+        i = i + 1;
+    }
+    return mark;
+}
+
+void pop_tparams(int mark) {
+    while (List_len<string>(&g_tparams) > mark) {
+        List_remove<string>(&g_tparams, List_len<string>(&g_tparams) - 1);
+    }
+}
+
+int is_type_kw(int t) {
+    if (t == INT || t == FLOAT || t == DOUBLE || t == BOOL || t == CHAR || t == STRING || t == VOID) {
+        return 1;
+    }
+    if (t == INT8 || t == INT16 || t == INT32 || t == INT64) {
+        return 1;
+    }
+    if (t == UINT || t == UINT8 || t == UINT16 || t == UINT32 || t == UINT64) {
+        return 1;
+    }
+    return 0;
+}
+
+// String/char literal value (decoded, quotes stripped — the C++ stores the decoded
+// value in LiteralExpr.value). The byte-level escape decode (decode_escape_span,
+// backed by decode_str_escape) is shared from tokens.esk.
+string tok_str_value(*uint8 src, Token t, *int out_len) {
+    *uint8 buf = alloc<uint8>(t.len + 1);
+    int off = 0;
+    int i = t.start + 1;
+    int endp = lx_str_end(src, t.start, t.len);
+    while (i < endp) {
+        int ch = (int)src[i];
+        if (ch == 92 && i + 1 < endp) {
+            i = i + 1;
+            int adv = 0;
+            buf[off] = (uint8)decode_escape_span(src, i, endp, &adv);
+            i = i + adv;
+        } else {
+            buf[off] = (uint8)ch;
+        }
+        off = off + 1;
+        i = i + 1;
+    }
+    buf[off] = 0;
+    out_len[0] = off;   // exact byte count; the value may contain embedded NULs
+    return (string)buf;
+}
+
+// Concatenate two byte spans (length-aware, so embedded NULs survive adjacent-string concat).
+string str_concat_n(string a, int alen, string b, int blen) {
+    *uint8 buf = alloc<uint8>(alen + blen + 1);
+    int i = 0;
+    while (i < alen) {
+        buf[i] = (uint8)a[i];
+        i = i + 1;
+    }
+    int j = 0;
+    while (j < blen) {
+        buf[alen + j] = (uint8)b[j];
+        j = j + 1;
+    }
+    buf[alen + blen] = 0;
+    return (string)buf;
+}
+
+string tok_char_value(*uint8 src, Token t) {
+    *uint8 buf = alloc<uint8>(4);
+    int off = 0;
+    int i = t.start + 1;
+    int endp = t.start + t.len - 1;
+    if (i < endp) {
+        int ch = (int)src[i];
+        int consumed = 1;
+        if (ch == 92 && i + 1 < endp) {
+            int adv = 0;
+            buf[off] = (uint8)decode_escape_span(src, i + 1, endp, &adv);
+            consumed = 2 + adv;             // backslash + escape char + extra (e.g. \x41's two hex digits)
+        } else {
+            buf[off] = (uint8)ch;
+        }
+        off = off + 1;
+        if (i + consumed < endp) {          // more source chars remain: `'ab'` is not one character
+            dprintf(2, "error: character literal must contain a single character\n");
+            exit(1);
+        }
+    }
+    buf[off] = 0;
+    return (string)buf;
+}
+
+// Parse a type into its canonical string (mirrors parser.cpp parseType). Template
+// instantiation `Name<...>` is added in a later slice (S2b/S6).
+string parse_type_inner(Parser* p);
+string parse_type(Parser* p) {
+    int saved = p.tdepth;
+    p_type_level(p);
+    string ty = parse_type_inner(p);
+    p.tdepth = saved;
+    return ty;
+}

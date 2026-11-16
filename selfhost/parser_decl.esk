@@ -1,0 +1,597 @@
+// parser_decl.esk: declarations (part of parser.esk, imported in order)
+
+// ── Declarations ────────────────────────────────────────────────────────────
+
+// Allocate a DeclNode. alloc zeroes, so the flag fields (is_async/is_mustuse/is_const/
+// is_extern/is_packed/pack_align) start 0 and need no explicit init; the lists are still
+// pre-sized here (a cap hint, and one central place to size the enrichment fields).
+*DeclNode new_decl(int kind) {
+    *DeclNode d = ast_new_decl();
+    d.kind = kind;
+    List_init<TypeParam>(&d.type_params, 2);
+    List_init<*DeclNode>(&d.methods, 2);
+    List_init<List<string>>(&d.payloads, 2);
+    List_init<int>(&d.field_bits, 4);
+    List_init<int>(&d.param_escaping, 4);
+    return d;
+}
+
+// Parse an optional generic `<T, U: A + B>` list into `out` (captures names + their
+// constraints; was previously skipped). `with_constraints` mirrors the C++ AST: fn/
+// struct store constraints, but EnumDecl has no constraints field, so a generic enum
+// CONSUMES `: A + B` without storing it (keeps the printers byte-identical). Empty if
+// there's no `<`.
+void parse_type_params(Parser* p, List<TypeParam>* out, int with_constraints) {
+    if (p_at(p) != LT) {
+        return;
+    }
+    p_adv(p);                              // '<'
+    while (1 == 1) {
+        let tp: TypeParam;
+        tp.name = tok_text(p.src, p_expect_ident(p, "Expected type parameter name"));       // type-param name
+        List_init<string>(&tp.constraints, 2);
+        if (p_at(p) == COLON) {            // constraints `: A + B`
+            p_adv(p);
+            string c0 = tok_text(p.src, p_expect_ident(p, "Expected constraint interface name"));                  // first
+            if (with_constraints == 1) {
+                List_push<string>(&tp.constraints, c0);
+            }
+            while (p_at(p) == PLUS) {
+                p_adv(p);
+                string ck = tok_text(p.src, p_expect_ident(p, "Expected constraint interface name"));
+                if (with_constraints == 1) {
+                    List_push<string>(&tp.constraints, ck);
+                }
+            }
+        }
+        List_push<TypeParam>(out, tp);
+        if (p_at(p) == COMMA) {
+            p_adv(p);
+        } else {
+            break;
+        }
+    }
+    consume_tclose(p);                     // '>' (or split '>>')
+}
+
+// Parameter list (mirror parseParameterList): `[escaping] Type name`, comma-
+// separated, or a trailing `...` variadic. Fills d.params; leaves p at ')'.
+// Set by a caller whose parameters may have default values (a function or method
+// declaration); parse_params reads and clears it, so a lambda inside a default does not
+// inherit it.
+int g_allow_defaults;
+
+void parse_params(Parser* p, *DeclNode d) {
+    int allow = g_allow_defaults;
+    g_allow_defaults = 0;
+    List_init<Param>(&d.params, 4);
+    List_init<int>(&d.param_escaping, 4);
+    List_init<*ExprNode>(&d.param_defaults, 1);
+    List_init<string>(&d.param_def_texts, 1);
+    int any_def = 0;
+    if (p_at(p) != RPAREN) {
+        while (1 == 1) {
+            if (p_at(p) == ELLIPSIS) {
+                Token et = p_adv(p);
+                let pm: Param;
+                pm.ty = "...";
+                pm.name = "...";
+                pm.line = et.line;
+                pm.col = et.col;
+                List_push<Param>(&d.params, pm);
+                List_push<int>(&d.param_escaping, 0);
+                break;                     // variadic must be last
+            }
+            int esc = 0;
+            if (p_at(p) == ESCAPING) {
+                p_adv(p);
+                esc = 1;
+            }
+            let pm: Param;
+            pm.ty = parse_type(p);
+            Token pnt = p_expect_ident(p, "Expected parameter name");
+            pm.name = tok_text(p.src, pnt);
+            pm.line = pnt.line;
+            pm.col = pnt.col;
+            List_push<Param>(&d.params, pm);
+            List_push<int>(&d.param_escaping, esc);
+            *ExprNode def = null;
+            string def_text = "";
+            if (p_at(p) == EQ) {
+                if (allow == 0) {
+                    p_fail(p, "a default value is allowed only on a function's parameter");
+                    return;
+                }
+                p_adv(p);
+                Token from = p_peek(p);
+                def = parse_ternary(p);
+                def_text = p_source_span(p, from, p_peek(p));
+                any_def = 1;
+            }
+            List_push<*ExprNode>(&d.param_defaults, def);
+            List_push<string>(&d.param_def_texts, def_text);
+            if (p_at(p) == COMMA) {
+                p_adv(p);
+            } else {
+                break;
+            }
+        }
+    }
+    if (any_def == 0) {
+        List_init<*ExprNode>(&d.param_defaults, 1);
+        List_init<string>(&d.param_def_texts, 1);
+    }
+}
+
+// Read the operator token(s) after `operator`. Returns its spelling ("+","==","[]",...),
+// or "" if not overloadable. `[]` is the two-token subscript.
+string parse_operator_token(Parser* p) {
+    int t = p_at(p);
+    p_adv(p);
+    if (t == PLUS) {
+        return "+";
+    }
+    if (t == MINUS) {
+        return "-";
+    }
+    if (t == STAR) {
+        return "*";
+    }
+    if (t == SLASH) {
+        return "/";
+    }
+    if (t == PERCENT) {
+        return "%";
+    }
+    if (t == EQEQ) {
+        return "==";
+    }
+    if (t == NE) {
+        return "!=";
+    }
+    if (t == LT) {
+        return "<";
+    }
+    if (t == GT) {
+        return ">";
+    }
+    if (t == LE) {
+        return "<=";
+    }
+    if (t == GE) {
+        return ">=";
+    }
+    if (t == AMPERSAND) {
+        return "&";
+    }
+    if (t == PIPE) {
+        return "|";
+    }
+    if (t == CARET) {
+        return "^";
+    }
+    if (t == LSHIFT) {
+        return "<<";
+    }
+    if (t == RSHIFT) {
+        return ">>";
+    }
+    if (t == NOT) {
+        return "!";
+    }
+    if (t == TILDE) {
+        return "~";
+    }
+    if (t == LBRACKET) {   // consume ']'
+        p_adv(p);
+        return "[]";
+    }
+    return "";
+}
+
+*DeclNode parse_function(Parser* p) {
+    string rty = parse_type(p);            // return type (may be *T, List<T>, …)
+    *DeclNode d = new_decl(DK_FUNCTION);
+    d.ret_type = rty;
+    string opsym = "";
+    if (p_at(p) == OPERATOR) {             // `V3 operator +(V3 a, V3 b) { ... }`
+        Token opkw = p_adv(p);
+        d.line = opkw.line;
+        d.col = opkw.col;
+        Token optok = p_peek(p);
+        opsym = parse_operator_token(p);
+        if (opsym[0] == 0) {               // not an overloadable operator (mirrors the C++)
+            if (p_at(p) == LPAREN) {
+                p_report(p, optok, str_concat(str_concat("operator '", tok_text(p.src, optok)), "' cannot be overloaded"));
+            }
+            p_report(p, opkw, "expected a name, found keyword 'operator'");
+        }
+    } else {
+        Token nm = p_expect_ident(p, "Expected function name");               // function name
+        d.name = tok_text(p.src, nm);
+        d.line = nm.line;  // diagnostics point at the name (as the C++ parser)
+        d.col = nm.col;
+        parse_type_params(p, &d.type_params, 1);   // optional <T, U: Iface>
+        if (List_len<TypeParam>(&d.type_params) > 0) {
+            List_push<string>(&g_genericnames, d.name);
+        }
+    }
+    p_expect(p, LPAREN, "Expected '('");
+    g_allow_defaults = 1;
+    parse_params(p, d);                    // fills d.params, stops at ')'
+    p_expect(p, RPAREN, "Expected ')'");
+    if (opsym[0] != 0) {                   // build the canonical name from op + param types
+        let ptys: List<string>;
+        List_init<string>(&ptys, 4);
+        int i = 0;
+        int np = List_len<Param>(&d.params);
+        while (i < np) {
+            List_push<string>(&ptys, List_get<Param>(&d.params, i).ty);
+            i = i + 1;
+        }
+        if (np == 1 && ast_streq(opsym, "-") == 1) {   // unary minus
+            opsym = "u-";
+        }
+        d.name = ast_op_name(opsym, &ptys);
+        d.operator_sym = opsym;
+    }
+    if (p_at(p) == LBRACE) {
+        int mark = push_tparams(&d.type_params);
+        int lmark = local_mark();
+        local_push_params(d);
+        d.body = parse_block(p);
+        local_pop(lmark);
+        pop_tparams(mark);
+    }
+    else {      // forward declaration: ';' (no body)
+        d.body = null;
+        p_adv(p);
+    }
+    return d;
+}
+
+// int -> decimal string (handles negatives; enum member values).
+string int_to_str(int n) {
+    if (n == 0) {
+        return "0";
+    }
+    int neg = 0;
+    if (n < 0) {
+        neg = 1;
+        n = 0 - n;
+    }
+    *uint8 tmp = alloc<uint8>(16);
+    int len = 0;
+    while (n > 0) {
+        tmp[len] = (uint8)(48 + (n % 10));
+        n = n / 10;
+        len = len + 1;
+    }
+    int total = len;
+    if (neg == 1) {
+        total = total + 1;
+    }
+    *uint8 buf = alloc<uint8>(total + 1);
+    int off = 0;
+    if (neg == 1) {
+        buf[0] = 45;
+        off = 1;
+    }
+    int i = 0;
+    while (i < len) {
+        buf[off + i] = tmp[len - 1 - i];
+        i = i + 1;
+    }
+    buf[total] = 0;
+    return (string)buf;
+}
+
+// Parse a decimal or 0x-hex integer literal lexeme to an int (enum values).
+int str_to_int(string s) {
+    int i = 0;
+    int v = 0;
+    if (s[0] == 48 && (s[1] == 120 || s[1] == 88)) {       // "0x"
+        i = 2;
+        while (s[i] != 0) {
+            int c = (int)s[i];
+            int dgt = 0;
+            if (c >= 48 && c <= 57) {
+                dgt = c - 48;
+            }
+            else if (c >= 97 && c <= 102) {
+                dgt = c - 87;
+            }
+            else {
+                dgt = c - 55;
+            }
+            v = v * 16 + dgt;
+            i = i + 1;
+        }
+        return v;
+    }
+    while (s[i] != 0) {
+        v = v * 10 + ((int)s[i] - 48);
+        i = i + 1;
+    }
+    return v;
+}
+
+// An integer literal lexeme (decimal, 0x hex, leading-0 octal, as C++ std::stoll base 0)
+// to int64: enum member values, which sema then range-checks against `int`.
+int64 str_to_i64(string s) {
+    int i = 0;
+    int64 base = (int64)10;
+    if (s[0] == 48 && (s[1] == 120 || s[1] == 88)) {
+        base = (int64)16;
+        i = 2;
+    }
+    else if (s[0] == 48 && s[1] != 0) {
+        base = (int64)8;
+        i = 1;
+    }
+    int64 v = (int64)0;
+    while (s[i] != 0) {
+        int c = (int)s[i];
+        int64 dgt = (int64)0;
+        if (c >= 48 && c <= 57) {
+            dgt = (int64)(c - 48);
+        }
+        else if (c >= 97 && c <= 102) {
+            dgt = (int64)(c - 87);
+        }
+        else if (c >= 65 && c <= 70) {
+            dgt = (int64)(c - 55);
+        }
+        else {
+            return v;
+        }
+        v = v * base + dgt;
+        i = i + 1;
+    }
+    return v;
+}
+
+string i64_to_str(int64 n) {
+    *uint8 buf = alloc<uint8>(24);
+    sprintf((string)buf, "%lld", n);
+    return (string)buf;
+}
+
+// extern / intrinsic share the prototype shape: RetType name(params);
+*DeclNode parse_proto(Parser* p, int kind) {
+    *DeclNode d = new_decl(kind);
+    Token rt0 = p_peek(p);
+    d.ret_type = parse_type(p);
+    d.name = tok_text(p.src, p_expect_ident(p, "Expected function or variable name"));
+    d.line = g_pos_line;   // the name token (as the C++ parser)
+    d.col = g_pos_col;
+    if (kind == DK_INTRINSIC) {   // an intrinsic at its return type
+        d.line = rt0.line;
+        d.col = rt0.col;
+    }
+    // `extern <type> <name>;` (no parens) is a variable defined in another
+    // translation unit (a C global), not a function prototype.
+    if (kind == DK_EXTERN && p_at(p) != LPAREN) {
+        d.kind = DK_VARDECL;
+        d.is_extern = 1;
+        p_expect(p, SEMICOLON, "Expected ';'");
+        return d;
+    }
+    p_expect(p, LPAREN, "Expected '('");
+    parse_params(p, d);
+    p_expect(p, RPAREN, "Expected ')'");
+    p_expect(p, SEMICOLON, "Expected ';'");
+    return d;
+}
+
+// An unnamed bitfield after its type `ty`: `: N;` (N = 0 allowed), kept in d.pad_*.
+void parse_unnamed_bitfield(Parser* p, *DeclNode d, string ty) {
+    p_adv(p);
+    int64 w = str_to_i64(tok_text(p.src, p_expect_tok(p, INT_LIT, "Expected bit width after ':' in bitfield")));
+    if (w > (int64)1048576) {
+        w = (int64)1048576;
+    }
+    p_expect(p, SEMICOLON, "Expected ';' after field");
+    List_push<string>(&d.pad_tys, ty);
+    List_push<int>(&d.pad_bits, (int)w);
+    List_push<int>(&d.pad_at, List_len<Param>(&d.params));
+}
+
+*DeclNode parse_struct(Parser* p) {
+    *DeclNode d = new_decl(DK_STRUCT);
+    d.name = tok_text(p.src, p_expect_ident(p, "Expected struct name"));
+    d.line = g_pos_line;   // the name token (as the C++ parser)
+    d.col = g_pos_col;
+    if (g_cur_pack >= 1) {
+        d.pack_align = g_cur_pack;
+        if (g_cur_pack == 1) {
+            d.is_packed = 1;
+        }
+    }
+    parse_type_params(p, &d.type_params, 1);   // optional <T, E: Iface>
+    int tmark = push_tparams(&d.type_params);   // in scope for inline methods
+    p_expect(p, LBRACE, "Expected '{'");
+    List_init<Param>(&d.params, 4);
+    while (p_at(p) != RBRACE && p_at(p) != EOF_TOKEN) {
+        if (p_at(p) == PRAGMA) {
+            p_take_pragma(p);
+            continue;
+        }
+        string mty = parse_type(p);
+        if (p_at(p) == COLON) {
+            parse_unnamed_bitfield(p, d, mty);
+            continue;
+        }
+        check_name_not_keyword(p);         // a field/method name can't be a reserved word (e.g. `in`)
+        Token mnm = p_expect_ident(p, "Expected member name");              // member name
+        if (p_at(p) == LPAREN) {
+            // Method — a FunctionDecl whose return type + name were already read.
+            *DeclNode m = new_decl(DK_FUNCTION);
+            m.ret_type = mty;
+            m.name = tok_text(p.src, mnm);
+            m.line = mnm.line;
+            m.col = mnm.col;
+            p_expect(p, LPAREN, "Expected '('");
+            g_allow_defaults = 1;
+            parse_params(p, m);
+            p_expect(p, RPAREN, "Expected ')'");
+            if (p_at(p) == LBRACE) {
+                int lmark = local_mark();
+                local_push_params(m);
+                m.body = parse_block(p);
+                local_pop(lmark);
+            } else {
+                m.body = null;
+                p_adv(p);
+            }
+            List_push<*DeclNode>(&d.methods, m);
+        } else {
+            int bw = 0;
+            if (p_at(p) == COLON) {                       // bitfield ': width' (`: 0` is -1, rejected by sema)
+                p_adv(p);
+                bw = str_to_int(tok_text(p.src, p_expect_tok(p, INT_LIT, "Expected bit width after ':' in bitfield")));
+                if (bw == 0) {
+                    bw = 0 - 1;
+                }
+            }
+            *ExprNode fdv = null;
+            if (p_at(p) == EQ) {   // a default value
+                p_adv(p);
+                fdv = parse_expr(p);
+            }
+            p_expect(p, SEMICOLON, "Expected ';' after field");
+            let pm: Param;
+            pm.ty = mty;
+            pm.name = tok_text(p.src, mnm);
+            pm.line = mnm.line;
+            pm.col = mnm.col;
+            List_push<Param>(&d.params, pm);
+            List_push<int>(&d.field_bits, bw);
+            List_push<*ExprNode>(&d.field_dflts, fdv);
+        }
+    }
+    pop_tparams(tmark);
+    p_expect(p, RBRACE, "Expected '}'");
+    return d;
+}
+
+*DeclNode parse_union(Parser* p) {
+    *DeclNode d = new_decl(DK_UNION);
+    d.name = tok_text(p.src, p_expect_ident(p, "Expected union name"));
+    d.line = g_pos_line;   // the name token (as the C++ parser)
+    d.col = g_pos_col;
+    if (g_cur_pack >= 1) {
+        d.pack_align = g_cur_pack;
+        if (g_cur_pack == 1) {
+            d.is_packed = 1;
+        }
+    }
+    p_expect(p, LBRACE, "Expected '{'");
+    List_init<Param>(&d.params, 4);
+    while (p_at(p) != RBRACE && p_at(p) != EOF_TOKEN) {
+        let pm: Param;
+        pm.ty = parse_type(p);
+        if (p_at(p) == COLON) {
+            parse_unnamed_bitfield(p, d, pm.ty);
+            continue;
+        }
+        Token fnt = p_expect_ident(p, "Expected field name");
+        pm.name = tok_text(p.src, fnt);
+        pm.line = fnt.line;
+        pm.col = fnt.col;
+        p_expect(p, SEMICOLON, "Expected ';'");
+        List_push<Param>(&d.params, pm);
+    }
+    p_expect(p, RBRACE, "Expected '}'");
+    return d;
+}
+
+*DeclNode parse_interface(Parser* p) {
+    *DeclNode d = new_decl(DK_INTERFACE);
+    d.name = tok_text(p.src, p_expect_ident(p, "Expected interface name"));
+    d.line = g_pos_line;   // the name token (as the C++ parser)
+    d.col = g_pos_col;
+    p_expect(p, LBRACE, "Expected '{'");
+    while (p_at(p) != RBRACE && p_at(p) != EOF_TOKEN) {
+        *DeclNode m = new_decl(DK_FUNCTION);
+        m.ret_type = parse_type(p);        // return type
+        m.name = tok_text(p.src, p_expect_ident(p, "Expected method name"));    // method name
+        p_expect(p, LPAREN, "Expected '('");
+        parse_params(p, m);                // capture the method's params
+        p_expect(p, RPAREN, "Expected ')'");
+        p_expect(p, SEMICOLON, "Expected ';'");
+        List_push<*DeclNode>(&d.methods, m);
+    }
+    p_expect(p, RBRACE, "Expected '}'");
+    return d;
+}
+
+*DeclNode parse_enum(Parser* p) {
+    *DeclNode d = new_decl(DK_ENUM);
+    d.name = tok_text(p.src, p_expect_ident(p, "Expected enum name"));
+    d.line = g_pos_line;   // the name token (as the C++ parser)
+    d.col = g_pos_col;
+    parse_type_params(p, &d.type_params, 0);   // optional <T> (enum: no constraints field)
+    p_expect(p, LBRACE, "Expected '{'");
+    List_init<Param>(&d.params, 4);
+    List_init<*ExprNode>(&d.enum_vals, 4);
+    int any_expr = 0;                  // after the first value expression every value is one
+    int64 next = (int64)0;             // 64-bit, so sema can reject a value that does not fit int
+    while (p_at(p) != RBRACE && p_at(p) != EOF_TOKEN) {
+        string mname = tok_text(p.src, p_expect_ident(p, "Expected enum member name"));
+        int64 val = next;
+        *ExprNode ve = null;
+        let pl: List<string>;
+        List_init<string>(&pl, 2);
+        if (p_at(p) == LPAREN) {           // ADT payload — capture variant field types
+            p_adv(p);
+            if (p_at(p) != RPAREN) {
+                List_push<string>(&pl, parse_type(p));
+                while (p_at(p) == COMMA) {
+                    p_adv(p);
+                    List_push<string>(&pl, parse_type(p));
+                }
+            }
+            p_expect(p, RPAREN, "Expected ')'");
+        } else if (p_at(p) == EQ) {        // explicit value: a literal, or a constant expression
+            p_adv(p);
+            int lit = 0;
+            if (p_at(p) == MINUS) {
+                lit = 1;
+            }
+            int after = p_peek_k(p, lit + 1).type;
+            if (any_expr == 0 && p_peek_k(p, lit).type == INT_LIT && (after == COMMA || after == RBRACE)) {
+                int neg = 0;
+                if (p_at(p) == MINUS) {
+                    p_adv(p);
+                    neg = 1;
+                }
+                val = str_to_i64(tok_text(p.src, p_expect_tok(p, INT_LIT, "Expected integer value for enum member")));
+                if (neg == 1) {
+                    val = (int64)0 - val;
+                }
+            } else {
+                ve = parse_expr(p);        // folded by sema (mirrors the C++ valueExprs)
+                any_expr = 1;
+                val = (int64)0;
+            }
+        }
+        let pm: Param;
+        pm.name = mname;
+        pm.ty = i64_to_str(val);
+        List_push<Param>(&d.params, pm);
+        List_push<List<string>>(&d.payloads, pl);
+        List_push<*ExprNode>(&d.enum_vals, ve);
+        if (List_len<TypeParam>(&d.type_params) > 0) {   // Some<int>(x)
+            List_push<string>(&g_genericnames, mname);
+        }
+        next = val + (int64)1;
+        if (p_at(p) == COMMA) {
+            p_adv(p);
+        } else {
+            break;
+        }
+    }
+    p_expect(p, RBRACE, "Expected '}'");
+    return d;
+}

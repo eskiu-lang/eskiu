@@ -1,0 +1,468 @@
+// parser_postfix.esk: postfix, unary and binary expressions (part of parser.esk, imported in order)
+
+// Postfix chain: template call Name<...>(args), template struct-init Name<...>{...},
+// call (args), index [e], member .m, error-propagation ?.
+*ExprNode parse_postfix(Parser* p) {
+    *ExprNode e = parse_primary(p);
+    while (1 == 1) {
+        // Template call / template struct literal: ident '<' types '>' ( '(' | '{' ).
+        // Speculative — restore on failure so a bare `<` is left for comparison.
+        if (e.kind == EK_IDENT && p_at(p) == LT && p.failed == 0) {
+            int save_pos = p.pos;
+            int save_gt = p.pending_gt;
+            p.spec = p.spec + 1;
+            p_adv(p);                          // '<'
+            // `a < b, c > (d)` reads as a call only when the callee is a known generic
+            // (function, enum variant or type) or every argument can only be a type.
+            int evident = 1;
+            string sig = str_concat(e.sval, "<");
+            string ta = parse_type(p);
+            if (type_arg_evident(p, ta) == 0) {
+                evident = 0;
+            }
+            sig = str_concat(sig, ta);
+            while (p_at(p) == COMMA) {
+                p_adv(p);
+                sig = str_concat(sig, ",");
+                ta = parse_type(p);
+                if (type_arg_evident(p, ta) == 0) {
+                    evident = 0;
+                }
+                sig = str_concat(sig, ta);
+            }
+            if (is_generic_name(e.sval) == 1 || is_type_name(p, e.sval) == 1) {
+                evident = 1;
+            }
+            int matched = 0;
+            if (evident == 1 && at_tclose(p) == 1) {
+                consume_tclose(p);
+                sig = str_concat(sig, ">");
+                if (p_at(p) == LPAREN) {
+                    p_adv(p);
+                    *ExprNode tc = ast_new_expr();
+                    tc.line = e.line;      // at the name (as the C++ parser)
+                    tc.col = e.col;
+                    tc.kind = EK_TEMPLATECALL;
+                    tc.sval = sig;
+                    List_init<*ExprNode>(&tc.kids, 4);
+                    if (p_at(p) != RPAREN) {
+                        List_push<*ExprNode>(&tc.kids, parse_expr(p));
+                        while (p_at(p) == COMMA) {
+                            p_adv(p);
+                            List_push<*ExprNode>(&tc.kids, parse_expr(p));
+                        }
+                    }
+                    p_expect(p, RPAREN, "Expected ')'");
+                    p.last_call_close = p.pos;
+                    e = tc;
+                    matched = 1;
+                } else if (p_at(p) == LBRACE) {
+                    e = parse_struct_init(p, sig);   // Name<...> { ... }
+                    matched = 1;
+                }
+            }
+            p.spec = p.spec - 1;
+            if (matched == 1 && p.failed == 0) {
+                continue;
+            }
+            p.failed = 0;
+            p.pos = save_pos;                  // not a template — back out
+            p.pending_gt = save_gt;
+        }
+        int t = p_at(p);
+        if (t == LPAREN) {
+            p_adv(p);
+            *ExprNode c = ast_new_expr();
+            c.kind = EK_CALL;
+            c.a = e;
+            List_init<*ExprNode>(&c.kids, 4);
+            Token first_arg = p_peek(p);
+            if (p_at(p) != RPAREN) {
+                List_push<*ExprNode>(&c.kids, parse_expr(p));
+                while (p_at(p) == COMMA) {
+                    p_adv(p);
+                    List_push<*ExprNode>(&c.kids, parse_expr(p));
+                }
+            }
+            Token close_tok = p_peek(p);
+            p_expect(p, RPAREN, "Expected ')'");
+            p.last_call_close = p.pos;
+            if (e.kind == EK_IDENT && List_len<*ExprNode>(&c.kids) == 1 && str_eq(e.sval, "dbg") == 1) {
+                c.dbg_text = p_source_span(p, first_arg, close_tok);
+            }
+            e = c;
+        } else if (t == LBRACKET) {
+            p_adv(p);
+            *ExprNode ix = ast_new_expr();
+            ix.kind = EK_INDEX;
+            ix.a = e;
+            ix.b = parse_expr(p);
+            List_init<*ExprNode>(&ix.kids, 1);
+            if (p_at(p) == RANGE) {            // base[lo..hi] slice expression
+                p_adv(p);
+                List_push<*ExprNode>(&ix.kids, parse_expr(p));   // hi bound
+            }
+            p_expect(p, RBRACKET, "Expected ']'");
+            e = ix;
+        } else if (t == DOT) {
+            Token dt = p_adv(p);
+            Token m = p_peek(p);
+            if (m.type <= UINT64) {
+                p_adv(p);
+            } else {
+                m = p_expect_ident(p, "Expected member name");
+            }
+            *ExprNode mb = p_pos(ast_new_expr(), dt);
+            mb.kind = EK_MEMBER;
+            mb.a = e;
+            mb.sval = tok_text(p.src, m);
+            mb.mline = m.line;
+            mb.mcol = m.col;
+            e = mb;
+        } else if (t == QUESTION && ternary_colon_ahead(p) == 0) {
+            // Postfix propagation `expr?` — only when this `?` doesn't open a ternary.
+            p_adv(p);
+            *ExprNode q = ast_new_expr();
+            q.kind = EK_QUESTION;
+            q.a = e;
+            e = q;
+        } else if (t == PLUS_PLUS || t == MINUS_MINUS) {
+            p_adv(p);
+            *ExprNode id = ast_new_expr();
+            id.kind = EK_INCDEC;
+            id.a = e;
+            if (t == PLUS_PLUS) {
+                id.sval = "post++";
+            } else {
+                id.sval = "post--";
+            }
+            e = id;
+        } else {
+            return e;
+        }
+    }
+    return e;
+}
+
+// At `(` followed by `*`: does it open a cast (mirrors Parser::starParenIsCast)?
+// `(*T)x` is a cast; `(*p)`, `(*p) - 1`, `(*p)++`, `(*sp).a`, `(*pf)(x)` dereference.
+int star_paren_is_cast(Parser* p) {
+    int k = 1;
+    while (p_peek_k(p, k).type == STAR) {
+        k = k + 1;
+    }
+    if (p_peek_k(p, k).type != IDENT || p_peek_k(p, k + 1).type != RPAREN) {
+        return 1;
+    }
+    if (is_type_name(p, tok_text(p.src, p_peek_k(p, k))) == 1) {
+        return 1;
+    }
+    int f = p_peek_k(p, k + 2).type;
+    if (f == IDENT || f == INT_LIT || f == FLOAT_LIT || f == STRING_LIT || f == CHAR_LIT
+        || f == TRUE || f == FALSE || f == NULL_KW || f == NOT || f == TILDE
+        || f == SIZEOF) {
+        return 1;
+    }
+    return 0;
+}
+
+*ExprNode parse_unary_inner(Parser* p);
+*ExprNode parse_unary(Parser* p) {
+    p_nest_enter(p);
+    *ExprNode r = parse_unary_inner(p);
+    p.nest = p.nest - 1;
+    return r;
+}
+
+*ExprNode parse_unary_inner(Parser* p) {
+    // A lambda whose return type is a struct, pointer or generic type. Not in a
+    // match subject, where `f() {` is the call and the match body.
+    // At the start of a statement that may end in a block, `Name(...) {` is a call with a
+    // block, not a lambda returning `Name` (whose value the statement drops).
+    if ((p.no_struct_lit == 0 || is_type_kw(p_at(p)) == 1) && p.failed == 0 && lambda_ahead(p) == 1 &&
+        !(p.trailing_start == p.pos + 1 && p_at(p) == IDENT)) {
+        *ExprNode lam = try_parse_lambda(p);
+        if (lam != null) {
+            return lam;
+        }
+    }
+    // await E — prefix, binds like a unary operator.
+    if (p_at(p) == AWAIT) {
+        Token awt = p_adv(p);
+        *ExprNode e = p_pos(ast_new_expr(), awt);
+        e.kind = EK_AWAIT;
+        e.a = parse_unary(p);
+        return e;
+    }
+    // Fold -<int|float literal> into a negative literal (matches the C++).
+    if (p_at(p) == MINUS) {
+        int nt = p_peek2(p).type;
+        if (nt == INT_LIT || nt == FLOAT_LIT) {
+            Token mt = p_adv(p);            // '-'
+            Token num = p_adv(p);
+            int lk = LIT_INT;
+            if (nt == FLOAT_LIT) {
+                lk = LIT_FLOAT;
+            }
+            *uint8 raw = p.src;
+            // build "-" + lexeme
+            *uint8 buf = alloc<uint8>(num.len + 2);
+            buf[0] = 45;                    // '-'
+            int i = 0;
+            while (i < num.len) {
+                buf[1 + i] = raw[num.start + i];
+                i = i + 1;
+            }
+            buf[num.len + 1] = 0;
+            return p_pos(mk_lit(lk, (string)buf), mt);
+        }
+    }
+    int t = p_at(p);
+    if (t == PLUS_PLUS || t == MINUS_MINUS) {        // prefix ++x / --x
+        p_adv(p);
+        *ExprNode e = ast_new_expr();
+        e.kind = EK_INCDEC;
+        e.a = parse_unary(p);
+        if (t == PLUS_PLUS) {
+            e.sval = "pre++";
+        } else {
+            e.sval = "pre--";
+        }
+        return e;
+    }
+    if (t == NOT || t == MINUS || t == PLUS || t == AMPERSAND || t == STAR || t == TILDE) {
+        Token opt = p_adv(p);
+        return p_pos(mk_un(op_str(t), parse_unary(p)), opt);
+    }
+    // Cast (TYPE) expr — on a type keyword, a '*'-led type, or a declared type name.
+    if (t == LPAREN) {
+        Token i2 = p_peek2(p);
+        int inner = i2.type;
+        int is_cast = 0;
+        if (is_type_kw(inner) == 1) {
+            is_cast = 1;
+        }
+        else if (inner == STAR) {
+            is_cast = star_paren_is_cast(p);
+        }
+        else if (inner == IDENT && is_type_name(p, tok_text(p.src, i2)) == 1
+                 && is_local_var(tok_text(p.src, i2)) == 0) {   // unless a local shadows it
+            is_cast = 1;
+        }
+        if (is_cast == 1 && p.failed == 0) {
+            // Speculative: `(Type)operand` is a cast, but `(Type { ... })` is a
+            // parenthesized struct literal — distinguished by what follows the type. Parse
+            // the type and require a closing `)`; otherwise back out and let parse_postfix
+            // handle the parenthesized expression (e.g. `(P{ … }).field`).
+            int save = p.pos;
+            int savegt = p.pending_gt;
+            p.spec = p.spec + 1;
+            Token lpt = p_peek(p);
+            p_expect(p, LPAREN, "Expected '('");
+            string cty = parse_type(p);
+            p.spec = p.spec - 1;
+            if (p.failed == 0 && p_at(p) == RPAREN) {
+                p_expect(p, RPAREN, "Expected ')'");
+                return p_pos(mk_cast(cty, parse_unary(p)), lpt);
+            }
+            p.failed = 0;
+            p.pos = save;   // not a cast
+            p.pending_gt = savegt;
+        }
+    }
+    return parse_postfix(p);
+}
+
+// Binding strength of a binary operator token, loosest first (0: not a binary
+// operator): || < && < | < ^ < & < == != < relational < shifts < + - < * / %.
+int bin_prec(int t) {
+    if (t == OR) {
+        return 1;
+    }
+    if (t == AND) {
+        return 2;
+    }
+    if (t == PIPE) {
+        return 3;
+    }
+    if (t == CARET) {
+        return 4;
+    }
+    if (t == AMPERSAND) {
+        return 5;
+    }
+    if (t == EQEQ || t == NE) {
+        return 6;
+    }
+    if (t == LT || t == GT || t == LE || t == GE) {
+        return 7;
+    }
+    if (t == LSHIFT || t == RSHIFT) {
+        return 8;
+    }
+    if (t == PLUS || t == MINUS) {
+        return 9;
+    }
+    if (t == STAR || t == SLASH || t == PERCENT) {
+        return 10;
+    }
+    return 0;
+}
+
+// Binary operators by precedence climbing (mirrors the C++ parseBinary): a unary
+// operand, then every operator binding at least `min_prec`. Same-precedence operators
+// fold in the loop, so a long `a + b + c ...` chain costs no recursion; a tighter
+// operator on the right recurses at most once per precedence level.
+*ExprNode parse_binary(Parser* p, int min_prec) {
+    *ExprNode e = parse_unary(p);
+    while (true) {
+        int t = p_at(p);
+        int prec = bin_prec(t);
+        if (prec == 0 || prec < min_prec) {
+            return e;
+        }
+        Token opt = p_adv(p);
+        *ExprNode rhs = parse_binary(p, prec + 1);
+        e = p_pos(mk_bin(op_str(t), e, rhs), opt);
+    }
+    return e;
+}
+
+// True if the `?` at the current position opens a ternary (a matching `:` follows at
+// the same bracket nesting before a terminator) rather than postfix propagation.
+// The answer for every start position is computed once, right to left (a group is
+// skipped by jumping to its closing bracket), so nested ternaries cost linear time
+// rather than a rescan per `?` (mirrors Parser::ternaryColonAhead).
+int tca_open(int t) {
+    if (t == LPAREN || t == LBRACKET || t == LBRACE) {
+        return 1;
+    }
+    return 0;
+}
+
+int tca_close(int t) {
+    if (t == RPAREN || t == RBRACKET || t == RBRACE) {
+        return 1;
+    }
+    return 0;
+}
+
+void tca_build(Parser* p) {
+    int n = List_len<Token>(&p.toks);
+    List<int> closer;
+    List_init<int>(&closer, n + 1);
+    List<int> open;
+    List_init<int>(&open, 16);
+    int i = 0;
+    while (i < n) {
+        List_push<int>(&closer, n);
+        int t = List_get<Token>(&p.toks, i).type;
+        if (tca_open(t) == 1) {
+            List_push<int>(&open, i);
+        }
+        else if (tca_close(t) == 1 && List_len<int>(&open) > 0) {
+            int o = List_get<int>(&open, List_len<int>(&open) - 1);
+            List_remove<int>(&open, List_len<int>(&open) - 1);
+            List_set<int>(&closer, o, i);
+        }
+        i = i + 1;
+    }
+    List_init<int>(&p.tca, n + 1);
+    i = 0;
+    while (i <= n) {
+        List_push<int>(&p.tca, 0);
+        i = i + 1;
+    }
+    i = n - 1;
+    while (i >= 0) {
+        int t = List_get<Token>(&p.toks, i).type;
+        int r = 0;
+        if (tca_open(t) == 1) {
+            int c = List_get<int>(&closer, i);
+            if (c < n) {
+                r = List_get<int>(&p.tca, c + 1);
+            }
+        }
+        else if (tca_close(t) == 1) {        // closed the enclosing group before any ':'
+            r = 0;
+        }
+        else if (t == COLON) {
+            r = 1;
+        }
+        else if (t == SEMICOLON || t == COMMA || t == EOF_TOKEN) {
+            r = 0;
+        }
+        else {
+            r = List_get<int>(&p.tca, i + 1);
+        }
+        List_set<int>(&p.tca, i, r);
+        i = i - 1;
+    }
+    List_free<int>(&closer);
+    List_free<int>(&open);
+    p.tca_done = 1;
+}
+
+int ternary_colon_ahead(Parser* p) {
+    if (p.tca_done == 0) {
+        tca_build(p);
+    }
+    if (p.pos + 1 < List_len<int>(&p.tca)) {
+        return List_get<int>(&p.tca, p.pos + 1);
+    }
+    return 0;
+}
+
+*ExprNode parse_ternary_inner(Parser* p);
+*ExprNode parse_ternary(Parser* p) {
+    p_nest_enter(p);
+    *ExprNode r = parse_ternary_inner(p);
+    p.nest = p.nest - 1;
+    return r;
+}
+
+*ExprNode parse_ternary_inner(Parser* p) {
+    *ExprNode cond = parse_binary(p, 1);
+    if (p_at(p) == QUESTION && ternary_colon_ahead(p) == 1) {
+        Token qt = p_adv(p);                           // '?'
+        *ExprNode thenE = parse_assignment(p);         // then-arm: a full expression
+        p_expect(p, COLON, "Expected ':'");
+        *ExprNode elseE = parse_ternary(p);            // else-arm: right-associative
+        *ExprNode t = p_pos(ast_new_expr(), qt);
+        t.kind = EK_TERNARY;
+        t.a = cond;
+        t.b = thenE;
+        List_init<*ExprNode>(&t.kids, 1);
+        List_push<*ExprNode>(&t.kids, elseE);
+        return t;
+    }
+    return cond;
+}
+
+*ExprNode parse_assignment_inner(Parser* p);
+*ExprNode parse_assignment(Parser* p) {
+    p_nest_enter(p);
+    *ExprNode r = parse_assignment_inner(p);
+    p.nest = p.nest - 1;
+    return r;
+}
+
+*ExprNode parse_assignment_inner(Parser* p) {
+    *ExprNode left = parse_ternary(p);
+    int t = p_at(p);
+    if (is_compound(t) == 1) {
+        string base = compound_base(t);
+        Token opt = p_adv(p);
+        *ExprNode rhs = parse_assignment(p);
+        return p_pos(mk_bin("=", left, p_pos(mk_bin(base, left, rhs), opt)), opt);
+    }
+    if (t == EQ) {
+        Token opt = p_adv(p);
+        return p_pos(mk_bin("=", left, parse_assignment(p)), opt);
+    }
+    return left;
+}
+
+*ExprNode parse_expr(Parser* p) {
+    return parse_assignment(p);
+}

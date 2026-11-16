@@ -1,0 +1,572 @@
+// parser_program.esk: type aliases, top-level declarations, imports and the program (part of parser.esk, imported in order)
+
+*DeclNode parse_typealias(Parser* p) {
+    p_adv(p);                              // 'type'
+    *DeclNode d = new_decl(DK_TYPEALIAS);
+    d.name = tok_text(p.src, p_adv(p));    // alias name
+    d.line = g_pos_line;   // the name token (as the C++ parser)
+    d.col = g_pos_col;
+    p_expect(p, EQ, "Expected '='");
+    d.ret_type = parse_type(p);
+    p_expect(p, SEMICOLON, "Expected ';'");
+    return d;
+}
+
+*DeclNode mk_decl_var(string nm, string ty, *ExprNode init, int is_const) {
+    *DeclNode d = new_decl(DK_VARDECL);
+    d.name = nm;
+    d.ret_type = ty;
+    d.init = init;
+    d.is_const = is_const;
+    return d;
+}
+
+// Fallback for a non-keyword top-level decl: a let/typed global var, or a function
+// (`Type name(` / `Type name<`). Mirrors parseDeclaration's tail.
+*DeclNode parse_decl_fallback(Parser* p) {
+    int save = p.pos;
+    int is_const = 0;
+    int is_vol = 0;
+    int is_stat = 0;                       // `static` on a global: parsed, rejected by sema
+    while (p_at(p) == STATIC || p_at(p) == VOLATILE) {
+        if (p_at(p) == STATIC) {
+            is_stat = 1;
+        } else {
+            is_vol = 1;
+        }
+        p_adv(p);
+    }
+    if (p_at(p) == CONST) {
+        int k = 1;
+        if (p_peek_k(p, 1).type == VOLATILE) {
+            k = 2;
+        }
+        if (p_peek_k(p, k).type == LET) {
+            is_const = 1;
+            p_adv(p);
+        }
+    }
+    if (p_at(p) == VOLATILE) {
+        is_vol = 1;
+        p_adv(p);
+    }
+    if (p_at(p) == LET) {
+        p_adv(p);
+        check_name_not_keyword(p);
+        Token gnt = p_expect_ident(p, "Expected identifier after 'let'");
+        string nm = tok_text(p.src, gnt);
+        p_expect(p, COLON, "Expected ':'");
+        string raw = parse_type(p);
+        if (is_value_const(raw) == 1) {
+            is_const = 1;
+        }
+        string ty = strip_binding_const(raw);
+        *ExprNode init = null;
+        if (p_at(p) == EQ) {
+            p_adv(p);
+            init = parse_expr(p);
+        }
+        p_expect(p, SEMICOLON, "Expected ';'");
+        *DeclNode dv = mk_decl_var(nm, ty, init, is_const);
+        dv.is_vol = is_vol;
+        dv.is_static = is_stat;
+        dv.line = gnt.line;   // the name token (as the C++ parser)
+        dv.col = gnt.col;
+        return dv;
+    }
+    string raw = parse_type(p);
+    if (is_value_const(raw) == 1) {
+        is_const = 1;
+    }
+    string ty = strip_binding_const(raw);
+    if (p_at(p) == OPERATOR) {             // `V3 operator +(...)` — an operator overload
+        p.pos = save;
+        return parse_function(p);
+    }
+    check_name_not_keyword(p);
+    Token nm = p_expect_ident(p, str_concat("Expected declaration, got ", token_name(p_at(p))));                   // name
+    if (p_at(p) == LPAREN || p_at(p) == LT) {
+        p.pos = save;                      // it's a function — re-parse from the top
+        return parse_function(p);
+    }
+    if (p_at(p) == LBRACKET) {             // C-style `int grid[3][4];`: arrays are `int[3][4] grid`
+        p_fail(p, str_concat("Expected declaration, got ", token_name(p_at(p))));
+        return null;
+    }
+    *ExprNode init = null;
+    if (p_at(p) == EQ) {
+        p_adv(p);
+        init = parse_expr(p);
+    }
+    p_expect(p, SEMICOLON, "Expected ';'");
+    *DeclNode dv2 = mk_decl_var(tok_text(p.src, nm), ty, init, is_const);
+    dv2.is_vol = is_vol;
+    dv2.is_static = is_stat;
+    dv2.line = nm.line;     // the name token (as the C++ parser)
+    dv2.col = nm.col;
+    return dv2;
+}
+
+// Top-level declaration dispatch (mirrors parseDeclaration). A declared type name
+// is registered so later `(Name)x` casts are recognized.
+// `export` is a contextual qualifier: it starts a declaration when a function header
+// follows, a type and then `name(` or `name<T>(` before any `;` `=` `{`
+// (Parser::exportAhead).
+int p_export_ahead(Parser* p) {
+    Token t0 = p_peek(p);
+    if (t0.type != IDENT || lexeme_eq(p.src, t0.start, t0.len, "export") == 0) {
+        return 0;
+    }
+    int n = p_peek_k(p, 1).type;
+    if (n == STRUCT || n == UNION || n == ENUM || n == INTERFACE || n == PACKED) {
+        return 1;   // a type declaration: rejected with a message
+    }
+    int k = 1;
+    while (true) {
+        int t = p_peek_k(p, k).type;
+        if (t == LPAREN) {
+            int pk = p_peek_k(p, k - 1).type;
+            return k >= 3 && (pk == IDENT || pk == GT) ? 1 : 0;
+        }
+        if (t == SEMICOLON || t == EQ || t == LBRACE || t == RBRACE || t == EOF_TOKEN) {
+            return 0;
+        }
+        k = k + 1;
+    }
+    return 0;
+}
+
+*DeclNode parse_decl_top(Parser* p) {
+    int t = p_at(p);
+    *DeclNode d;
+    if (t == EXTERN) {
+        p_adv(p);
+        return parse_proto(p, DK_EXTERN);
+    }
+    if (t == INTRINSIC) {
+        p_adv(p);
+        return parse_proto(p, DK_INTRINSIC);
+    }
+    if (t == ASYNC) {   // async fn
+        p_adv(p);
+        d = parse_function(p);
+        d.is_async = 1;
+        return d;
+    }
+    if (t == MUST_USE) {   // must_use fn
+        p_adv(p);
+        d = parse_function(p);
+        d.is_mustuse = 1;
+        return d;
+    }
+    // `export T f(...)`: f is a C entry point (see p_export_ahead).
+    if (p_export_ahead(p) == 1) {
+        Token et = p_adv(p);
+        *DeclNode ed = parse_decl_top(p);
+        if (ed.kind != DK_FUNCTION) {
+            p_report(p, et, "'export' applies to a function");
+        }
+        ed.is_export = 1;
+        return ed;
+    }
+    // `deprecated("use X") T f(...)`: sema warns at each use of f.
+    if (t == IDENT && p_peek_k(p, 1).type == LPAREN && p_peek_k(p, 2).type == STRING_LIT && p_peek_k(p, 3).type == RPAREN) {
+        Token dt = p_peek(p);
+        if (lexeme_eq(p.src, dt.start, dt.len, "deprecated") == 1) {
+            p_adv(p);
+            p_adv(p);
+            int dml = 0;
+            string dmsg = tok_str_value(p.src, p_adv(p), &dml);
+            p_adv(p);
+            *DeclNode dd = parse_decl_top(p);
+            if (dd.kind != DK_FUNCTION) {
+                p_report(p, dt, "'deprecated' applies to a function");
+            }
+            if (dmsg[0] == 0) {
+                dmsg = " ";
+            }
+            dd.depr_msg = dmsg;
+            return dd;
+        }
+    }
+    if (t == STRUCT) {
+        p_adv(p);
+        d = parse_struct(p);
+        register_type(p, d.name);
+        return d;
+    }
+    if (t == PACKED) {
+        p_adv(p);
+        p_adv(p);
+        d = parse_struct(p);
+        d.is_packed = 1;
+        d.pack_align = 1;
+        register_type(p, d.name);
+        return d;
+    }
+    if (t == UNION) {
+        p_adv(p);
+        d = parse_union(p);
+        register_type(p, d.name);
+        return d;
+    }
+    if (t == INTERFACE) {
+        p_adv(p);
+        d = parse_interface(p);
+        register_type(p, d.name);
+        return d;
+    }
+    if (t == ENUM) {
+        p_adv(p);
+        d = parse_enum(p);
+        register_type(p, d.name);
+        return d;
+    }
+    if (t == IDENT) {                      // contextual `type Alias = ...;`
+        Token cur = p_peek(p);
+        if (lexeme_eq(p.src, cur.start, cur.len, "type") == 1
+            && p_peek2(p).type == IDENT && p_peek_k(p, 2).type == EQ) {
+            d = parse_typealias(p);
+            register_type(p, d.name);
+            return d;
+        }
+    }
+    return parse_decl_fallback(p);
+}
+
+// Resolve and recursively parse an `import`, appending the imported file's decls to
+// `prog` at this position (mirrors parser.cpp: dedup via g_imported, stdlib `<name>`
+// → stdlib/name.esk, relative `"path"` → basedir/path). The caller has already
+// consumed the IMPORT keyword; `p` is positioned at the path token.
+void do_import(Parser* p, *Program prog) {
+    string path = "";
+    int is_std = 0;
+    Token path_tok = p_peek(p);
+    if (p_at(p) == STRING_LIT) {
+        int _dl2 = 0;
+        path = tok_str_value(p.src, p_peek(p), &_dl2);
+        p_adv(p);
+    } else if (p_at(p) == LT) {
+        p_adv(p);
+        string name = "";
+        while (p_at(p) != GT && p_at(p) != EOF_TOKEN) {
+            name = str_concat(name, tok_text(p.src, p_adv(p)));
+        }
+        p_expect(p, GT, "Expected '>' after stdlib name");
+        path = name;
+        is_std = 1;
+    } else {
+        p_fail(p, "Expected filename or <name> after import");
+        return;
+    }
+    p_expect(p, SEMICOLON, "Expected ';' after import");
+
+    string full = resolve_import(path, is_std, p.basedir);
+    if (g_import_err != null) {
+        p_report(p, path_tok, g_import_err);
+    }
+    if (register_file(full) == 0) {   // dedup by canonical path — parse each file once
+        return;
+    }
+
+    // The preprocessor already handled this import at its line (see pre_import);
+    // otherwise read and preprocess it now. Preprocessing evaluates its #ifdef/#define,
+    // so e.g. mem.esk picks one branch, not both.
+    let pe: int = 0;
+    string psrc;
+    int plen = 0;
+    int ci = pre_find(canonical_path(full));
+    if (ci >= 0) {
+        psrc = List_get<string>(&g_pre_text, ci);
+        pe = List_get<int>(&g_pre_err, ci);
+        plen = List_get<int>(&g_pre_len, ci);
+    } else {
+        let bytes: int64 = 0;
+        *uint8 isrc = fs_read_all(full, &bytes);
+        if (isrc == null) {                      // a missing import is an error (like the C++)
+            p_report(p, path_tok, str_concat(str_concat("Cannot open import: '", full), "'"));
+        }
+        psrc = pp_run((string)isrc, (int)bytes, full, &pe);
+        plen = g_pp_out_len;
+    }
+    if (pe != 0) {                    // directive error in the import (already reported)
+        exit(1);
+    }
+    *uint8 ppsrc = (*uint8)psrc;
+    let sub: Parser;
+    g_lex_file = full;
+    p_init(&sub, ppsrc, plen);
+    sub.basedir = str_dir(full);
+    sub.is_import = 1;
+    int first = List_len<*DeclNode>(&prog.decls);
+    parse_into(&sub, prog);
+    while (first < List_len<*DeclNode>(&prog.decls)) {   // library code: not linted
+        List_get<*DeclNode>(&prog.decls, first).from_import = 1;
+        first = first + 1;
+    }
+}
+
+// Scripts (mirrors the C++ Parser::startsScriptStatement / buildScriptMain): a
+// top-level line is a statement when no declaration can start that way, and a file
+// with top-level statements gets an implicit `main` running them in order.
+int p_stmt_after_name(int t) {
+    if (t == LPAREN || t == DOT || t == EQ || t == PLUS_EQ || t == MINUS_EQ || t == STAR_EQ || t == SLASH_EQ
+        || t == PERCENT_EQ || t == AMP_EQ || t == PIPE_EQ || t == CARET_EQ || t == LSHIFT_EQ || t == RSHIFT_EQ
+        || t == PLUS_PLUS || t == MINUS_MINUS || t == COLON || t == SEMICOLON) {
+        return 1;
+    }
+    return 0;
+}
+
+int p_starts_script_stmt(Parser* p) {
+    int t = p_at(p);
+    if (t == IF || t == FOR || t == WHILE || t == DO || t == RETURN || t == SWITCH || t == MATCH || t == TRY
+        || t == THROW || t == DEFER || t == ERRDEFER || t == BREAK || t == CONTINUE || t == LBRACE
+        || t == PLUS_PLUS || t == MINUS_MINUS || t == LPAREN || t == INT_LIT || t == FLOAT_LIT
+        || t == STRING_LIT || t == CHAR_LIT || t == MINUS || t == NOT || t == AMPERSAND || t == TILDE
+        || t == NULL_KW || t == TRUE || t == FALSE || t == SIZEOF || t == FREE_CLOSURE || t == THREAD_CREATE
+        || t == THREAD_JOIN || t == ALLOC_WITH || t == AWAIT || t == ASM || t == SEMICOLON) {
+        return 1;
+    }
+    if (t != IDENT && t != STAR) {
+        return 0;
+    }
+    if (t == IDENT && str_eq(tok_text(p.src, p_peek(p)), "deprecated") == 1 && p_peek_k(p, 1).type == LPAREN
+        && p_peek_k(p, 2).type == STRING_LIT) {
+        return 0;
+    }
+    if (p_export_ahead(p) == 1) {
+        return 0;
+    }
+    int k = 0;
+    while (p_peek_k(p, k).type == STAR) {
+        k = k + 1;
+    }
+    if (p_peek_k(p, k).type != IDENT) {
+        return 0;
+    }
+    int n = p_peek_k(p, k + 1).type;
+    if (p_stmt_after_name(n) == 1) {
+        return 1;
+    }
+    if (n == LT && k == 0) {
+        // `f<int>(x)` is a call and `x < y` (no closing `>`) a comparison;
+        // `List<int> l` declares.
+        int td = 0;
+        int tj = 1;
+        while (1 == 1) {
+            int tb = p_peek_k(p, tj).type;
+            if (tb == SEMICOLON || tb == LBRACE || tb == RBRACE || tb == EOF_TOKEN) {
+                return 1;
+            }
+            if (tb == LT) {
+                td = td + 1;
+            } else if (tb == GT) {
+                td = td - 1;
+            } else if (tb == RSHIFT) {
+                td = td - 2;
+            }
+            if (td <= 0) {
+                break;
+            }
+            tj = tj + 1;
+        }
+        if (td < 0 || p_peek_k(p, tj + 1).type == LPAREN) {
+            return 1;
+        }
+        return 0;
+    }
+    if (n != LBRACKET) {
+        return 0;
+    }
+    // `arr[0] = 1` uses a name; `Point[2] ps` and `*Node[3] t` declare one.
+    int depth = 0;
+    int j = k + 1;
+    while (1 == 1) {
+        int b = p_peek_k(p, j).type;
+        if (b == EOF_TOKEN) {
+            return 0;
+        }
+        if (b == LBRACKET) {
+            depth = depth + 1;
+        } else if (b == RBRACKET) {
+            depth = depth - 1;
+            if (depth == 0) {
+                break;
+            }
+        }
+        j = j + 1;
+    }
+    if (p_peek_k(p, j + 1).type == IDENT) {
+        return 0;
+    }
+    return 1;
+}
+
+*ExprNode p_script_ident(string nm, int line, int col) {
+    *ExprNode e = mk_ident(nm);
+    e.line = line;
+    e.col = col;
+    return e;
+}
+
+*StmtNode p_script_assign(string nm, *ExprNode value, int script, int line, int col) {
+    *ExprNode be = ast_new_expr();
+    be.kind = EK_BINARY;
+    be.sval = "=";
+    be.a = p_script_ident(nm, line, col);
+    be.b = value;
+    be.script_init = script;
+    be.line = line;
+    be.col = col;
+    *StmtNode st = ast_new_stmt();
+    st.kind = SK_EXPR;
+    st.expr = be;
+    st.line = line;
+    st.col = col;
+    return st;
+}
+
+// A file with top-level statements is a script: it gets `int main(int __argc, string*
+// __argv)` running them in order, with the arguments in the globals `argc` and `argv`.
+// Each top-level variable with an initializer (not `const`, not an array literal)
+// becomes a global that starts at zero and is assigned at its place in that order.
+// The globals go before this file's declarations (`start`), main after them.
+void p_build_script_main(Parser* p, *Program prog, int start) {
+    *StmtNode first = null;
+    int i = 0;
+    int n = List_len<*StmtNode>(&p.so_stmts);
+    while (i < n && first == null) {
+        first = List_get<*StmtNode>(&p.so_stmts, i);
+        i = i + 1;
+    }
+    if (first == null) {
+        return;
+    }
+    int k = start;
+    while (k < List_len<*DeclNode>(&prog.decls)) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, k);
+        if (d.kind == DK_FUNCTION && str_eq(d.name, "main") == 1 && d.from_import == 0) {
+            let at: Token;
+            at.line = first.line;
+            at.col = first.col;
+            p_report(p, at, "a file with top-level statements has no 'main': the statements are its main");
+        }
+        k = k + 1;
+    }
+    int fl = first.line;
+    int fc = first.col;
+    *StmtNode body = ast_new_stmt();
+    body.kind = SK_BLOCK;
+    body.line = fl;
+    body.col = fc;
+    List_init<*StmtNode>(&body.items, n + 4);
+    // `main`, `argc`, `argv`, their assignments and the final `return 0` are implicit:
+    // no position (line 0), so the editor modes do not place them on the first statement.
+    List_push<*StmtNode>(&body.items, p_script_assign("argc", p_script_ident("__argc", 0, 0), 0, 0, 0));
+    List_push<*StmtNode>(&body.items, p_script_assign("argv", p_script_ident("__argv", 0, 0), 0, 0, 0));
+    i = 0;
+    while (i < n) {
+        *StmtNode s = List_get<*StmtNode>(&p.so_stmts, i);
+        *DeclNode vd = List_get<*DeclNode>(&p.so_vars, i);
+        i = i + 1;
+        if (s != null) {
+            List_push<*StmtNode>(&body.items, s);
+            continue;
+        }
+        if (vd.init == null || vd.is_const == 1 || vd.is_extern == 1 || vd.init.kind == EK_ARRAYLIT) {
+            continue;
+        }
+        vd.script_init = 1;
+        List_push<*StmtNode>(&body.items, p_script_assign(vd.name, vd.init, 1, vd.line, vd.col));
+    }
+    int ni = List_len<*StmtNode>(&body.items);
+    if (List_get<*StmtNode>(&body.items, ni - 1).kind != SK_RETURN) {
+        *ExprNode zero = ast_new_expr();
+        zero.kind = EK_LITERAL;
+        zero.lit_kind = LIT_INT;
+        zero.sval = "0";
+        zero.line = 0;
+        zero.col = 0;
+        *StmtNode ret = ast_new_stmt();
+        ret.kind = SK_RETURN;
+        ret.expr = zero;
+        ret.line = 0;
+        ret.col = 0;
+        List_push<*StmtNode>(&body.items, ret);
+    }
+    *DeclNode mainfn = new_decl(DK_FUNCTION);
+    mainfn.name = "main";
+    mainfn.ret_type = "int";
+    List_init<Param>(&mainfn.params, 2);
+    let pa: Param;
+    pa.ty = "int";
+    pa.name = "__argc";
+    List_push<Param>(&mainfn.params, pa);
+    let pv: Param;
+    pv.ty = "string*";
+    pv.name = "__argv";
+    List_push<Param>(&mainfn.params, pv);
+    List_push<int>(&mainfn.param_escaping, 0);
+    List_push<int>(&mainfn.param_escaping, 0);
+    List_init<*ExprNode>(&mainfn.param_defaults, 1);
+    List_init<string>(&mainfn.param_def_texts, 1);
+    mainfn.body = body;
+    mainfn.line = 0;
+    mainfn.col = 0;
+    mainfn.file = p.file;
+    *DeclNode ga = new_decl(DK_VARDECL);
+    ga.name = "argc";
+    ga.ret_type = "int";
+    ga.line = 0;
+    ga.col = 0;
+    ga.file = p.file;
+    *DeclNode gv = new_decl(DK_VARDECL);
+    gv.name = "argv";
+    gv.ret_type = "string*";
+    gv.line = 0;
+    gv.col = 0;
+    gv.file = p.file;
+    List_insert<*DeclNode>(&prog.decls, start, gv);
+    List_insert<*DeclNode>(&prog.decls, start, ga);
+    List_push<*DeclNode>(&prog.decls, mainfn);
+}
+
+// Parse top-level items from `p` into an existing program (used both for the entry
+// file and recursively for each import, so imported decls land in declaration order).
+void parse_into(Parser* p, *Program prog) {
+    int start = List_len<*DeclNode>(&prog.decls);
+    while (p_at(p) != EOF_TOKEN) {
+        if (p_at(p) == PRAGMA) {   // #pragma link / pack state
+            p_take_pragma(p);
+        }
+        else if (p_at(p) == IMPORT) {
+            p_adv(p);
+            do_import(p, prog);
+        }
+        else if (p_starts_script_stmt(p) == 1) {
+            if (p.is_import == 1) {
+                p_report(p, p_peek(p), "a top-level statement is allowed only in a program's own file, not in an import");
+            }
+            List_push<*StmtNode>(&p.so_stmts, parse_stmt(p));
+            List_push<*DeclNode>(&p.so_vars, null);
+        }
+        else {
+            *DeclNode d = parse_decl_top(p);
+            d.file = p.file;               // diagnostics inside it name this file
+            List_push<*DeclNode>(&prog.decls, d);
+            if (d.kind == DK_VARDECL) {
+                List_push<*StmtNode>(&p.so_stmts, null);
+                List_push<*DeclNode>(&p.so_vars, d);
+            }
+        }
+    }
+    p_build_script_main(p, prog, start);
+}
+
+*Program parse_program(Parser* p) {
+    *Program prog = alloc<Program>(1);
+    List_init<*DeclNode>(&prog.decls, 4);
+    parse_into(p, prog);
+    return prog;
+}
