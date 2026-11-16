@@ -1,0 +1,278 @@
+// esk_main_front.esk: the driver's macros, test and editor modes, checking and code
+// generation (part of esk_main.esk, imported in order)
+
+// The predefined macros of the target, as the C++ seedPredefinedMacros.
+int esk_seed_macros(EskOpts* o) {
+    if (o.triple[0] == 0) {
+#ifdef __APPLE__
+        g_pp_os = "__APPLE__";
+#else
+        g_pp_os = "__linux__";
+#endif
+    } else if (str_contains(o.triple, "linux") == 1) {
+        g_pp_os = "__linux__";
+    }
+    else if (str_contains(o.triple, "apple") == 1 || str_contains(o.triple, "darwin") == 1
+             || str_contains(o.triple, "macos") == 1) {
+        g_pp_os = "__APPLE__";
+    }
+    else if (str_contains(o.triple, "windows") == 1 || str_contains(o.triple, "win32") == 1
+             || str_contains(o.triple, "mingw") == 1) {
+        g_pp_os = "_WIN32";
+        if (str_contains(o.triple, "x86_64") == 1 || str_contains(o.triple, "amd64") == 1
+            || str_contains(o.triple, "aarch64") == 1 || str_contains(o.triple, "arm64") == 1) {
+            List_push<string>(&g_pp_predef, "_WIN64");
+        }
+    } else {
+        g_pp_os = "";
+    }
+    if (o.freestanding == 1) {
+        List_push<string>(&g_pp_predef, "__ESKIU_FREESTANDING__");
+    }
+    if (o.triple[0] == 0) {
+        g_pp_arch = cg_host_arch_macro();
+    }
+    else if (str_starts(o.triple, "aarch64") == 1 || str_starts(o.triple, "arm64") == 1) {
+        g_pp_arch = "__aarch64__";
+    }
+    else if (str_starts(o.triple, "x86_64") == 1 || str_starts(o.triple, "amd64") == 1) {
+        g_pp_arch = "__x86_64__";
+    }
+    else if (str_starts(o.triple, "arm") == 1 || str_starts(o.triple, "thumb") == 1) {
+        g_pp_arch = "__arm__";
+    }
+    else {
+        g_pp_arch = "";
+    }
+    if (str_starts(o.triple, "wasm32") == 1) {
+        List_push<string>(&g_pp_predef, "__wasm__");
+        List_push<string>(&g_pp_predef, "__wasm32__");
+        if (str_contains(o.triple, "emscripten") == 1) {
+            List_push<string>(&g_pp_predef, "__EMSCRIPTEN__");
+        }
+        if (str_contains(o.triple, "wasi") == 1) {
+            List_push<string>(&g_pp_predef, "__wasi__");
+        }
+    }
+    if (str_contains(o.triple, "android") == 1) {
+        List_push<string>(&g_pp_predef, "__ANDROID__");
+    }
+    if (str_contains(o.triple, "-ios") == 1) {
+        List_push<string>(&g_pp_predef, "TARGET_OS_IPHONE");
+        List_push<string>(&g_pp_predef, "TARGET_OS_IOS");
+        if (str_contains(o.triple, "simulator") == 1) {
+            List_push<string>(&g_pp_predef, "TARGET_IPHONE_SIMULATOR");
+        }
+    }
+    if (str_contains(o.triple, "-xros") == 1 || str_contains(o.triple, "-visionos") == 1) {
+        List_push<string>(&g_pp_predef, "TARGET_OS_IPHONE");
+        List_push<string>(&g_pp_predef, "TARGET_OS_VISION");
+        if (str_contains(o.triple, "simulator") == 1) {
+            List_push<string>(&g_pp_predef, "TARGET_OS_SIMULATOR");
+        }
+    }
+    g_stdlib_root = find_stdlib_root();
+    return ESK_GO_ON;
+}
+
+// The test modes that stop early, the editor modes, parsing, checking and the async lowering.
+int esk_front(EskOpts* o) {
+    if (cg_streq(o.mode, "--test-lexer") == 1) {
+        let ln: int64 = 0;
+        *uint8 lraw = fs_read_all(o.infile, &ln);
+        if (lraw == null) {
+            uint8[512] eb;
+            sprintf((string)&eb[0], "error: could not open file '%s'\n", o.infile);
+            eprint((string)&eb[0]);
+            return 1;
+        }
+        let lperr: int = 0;
+        string lpp = pp_run((string)lraw, (int)ln, o.infile, &lperr);
+        *uint8 lsrc = (*uint8)lpp;
+        int llen = g_pp_out_len;
+        g_lex_file = o.infile;
+        lex_dump(lsrc, llen);
+        if (lperr != 0 || g_lex_errs > 0) {
+            return 1;
+        }
+        return 0;
+    }
+    if (cg_streq(o.mode, "--test-typechecker") == 1) {
+        printf("Type checking: %s\n", o.infile);
+        printf("========================================================\n");
+    }
+    if (o.tool[0] != 0 && o.mode[0] == 0) {
+        return run_tool(o.tool, o.tool_at, &o.infiles, o.triple);
+    }
+    parser_session_init();
+    if (List_len<string>(&o.infiles) > 0) {
+        pkg_load_roots(List_get<string>(&o.infiles, 0));
+    }
+    o.prog = alloc<Program>(1);
+    List_init<*DeclNode>(&o.prog.decls, 4);
+    if (load_inputs(&o.infiles, null, o.prog) == 0) {
+        return 1;
+    }
+    if (cg_streq(o.mode, "--test-parser") == 1) {
+        print_program(o.prog);
+        return 0;
+    }
+    {
+        let sm: Sema;
+        sema_init(&sm, o.infile);
+        sm.no_depr = o.no_depr;
+        sm.werror = o.werror;
+        sm.wnone = o.wnone;
+        if (cg_streq(o.mode, "--test-codegen") == 0 && cg_streq(o.mode, "--test-eir") == 0
+            && cg_streq(o.mode, "--emit-c") == 0 && o.emit_asm == 0) {   // as the C++ driver
+            sm.wall = o.wall;
+            sm.wextra = o.wextra;
+        }
+        for (wi in 0..List_len<string>(&o.wno)) {
+            List_push<string>(&sm.wno, List_get<string>(&o.wno, wi));
+        }
+        sema_set_target(&sm, o.triple);  // sizeof folds to the target's layout
+        int ok = sema_check(&sm, o.prog);
+        if (cg_streq(o.mode, "--test-typechecker") == 1) {
+            printf("========================================================\n");
+            if (ok == 1) {
+                printf("Type checking succeeded!\n");
+                return 0;
+            }
+            printf("Type checking failed!\n");
+            return 1;
+        }
+        if (ok == 0 && (cg_streq(o.mode, "--test-codegen") == 1 || cg_streq(o.mode, "--test-eir") == 1
+                        || cg_streq(o.mode, "--emit-c") == 1 || o.emit_asm == 1)) {
+            if (g_diag_json == 0) {
+                eprint("Type checking failed!\n");
+            }
+            return 1;
+        }
+        if (ok == 0 && g_diag_json == 1) {
+            return 1;
+        }
+        if (ok == 0) {
+            uint8[512] eb;
+            sprintf((string)&eb[0], "error: %s: type checking failed\n", o.infile);
+            eprint((string)&eb[0]);
+            return 1;
+        }
+        if (o.emit_header != null) {
+            return write_c_header(&sm, o.prog, o.infile, o.emit_header);
+        }
+    }
+    async_lower(o.prog);
+    return ESK_GO_ON;
+}
+
+// The EIR modes, and the EIR module of --backend=eir.
+int esk_eir(EskOpts* o) {
+    if (cg_streq(o.mode, "--test-eir") == 1 || cg_streq(o.mode, "--emit-c") == 1 || o.emit_asm == 1) {
+        // The checker again over the lowered program, stamping each expression's type,
+        // as the C++ driver's post-lowering check feeds its EIR builder.
+        let pt: Sema;
+        sema_init(&pt, o.infile);
+        pt.wnone = 1;
+        pt.stamp_all = 1;
+        sema_set_target(&pt, o.triple);
+        if (sema_check(&pt, o.prog) == 0) {
+            eprint("error: internal: the checker rejected the lowered program\n");
+            return 1;
+        }
+        let eb: EB;
+        eb_init(&eb, o.triple);
+        eb_build(&eb, o.prog);
+        if (cg_streq(o.mode, "--emit-c") == 1 || o.emit_asm == 1) {
+            // --emit-c: the module as C99 (selfhost/eir_c.esk); --emit-asm: as ARM64
+            // assembly (selfhost/eir_asm.esk). To -o or stdout.
+            let csrc: String;
+            if (o.emit_asm == 1) {
+                csrc = ea_emit_module(eb.m, o.triple);
+            } else {
+                csrc = ec_emit_module(eb.m);
+            }
+            *uint8 cb = (*uint8)String_cstr(&csrc);
+            if (o.outfile == null || cg_streq(o.outfile, "-") == 1) {
+                write(1, (*void)cb, (int64)String_len(&csrc));
+                return 0;
+            }
+            if (fs_write_all(o.outfile, cb, (int64)String_len(&csrc)) == 0) {
+                eprint("error: cannot open output file '");
+                eprint(o.outfile);
+                eprint("'\n");
+                return 1;
+            }
+            return 0;
+        }
+        string text = eb_module_text(&eb);
+        write(1, (*void)text, (int64)et_len(text));
+        return 0;
+    }
+    o.eir_csrc = null;
+    o.eir_asm = 0;
+    o.eir_rt = 0;
+    o.eir_threads = 0;
+    if (o.backend_eir == 1 && o.mode[0] == 0) {
+        let ept: Sema;
+        sema_init(&ept, o.infile);
+        ept.wnone = 1;
+        ept.stamp_all = 1;
+        sema_set_target(&ept, o.triple);
+        if (sema_check(&ept, o.prog) == 0) {
+            eprint("error: internal: the checker rejected the lowered program\n");
+            return 1;
+        }
+        let eeb: EB;
+        eb_init(&eeb, o.triple);
+        eb_build(&eeb, o.prog);
+        if (ea_uses_asm(o.triple, o.optflag[0] != 0 && o.optflag[2] != '0' ? 1 : 0) == 1) {
+            let eas: String = ea_emit_module(eeb.m, o.triple);
+            o.eir_csrc = (string)String_cstr(&eas);
+            o.eir_asm = 1;
+            o.eir_rt = em_needs_runtime(eeb.m);
+            o.eir_threads = em_uses_threads(eeb.m);
+        } else {
+            let ecs: String = ec_emit_module(eeb.m);
+            o.eir_csrc = (string)String_cstr(&ecs);
+            o.eir_threads = str_contains(o.eir_csrc, "__eir_thread_create(");
+        }
+    }
+    return ESK_GO_ON;
+}
+
+// The LLVM IR (or the EIR program) of the program, and --test-codegen.
+int esk_codegen(EskOpts* o) {
+    cg_init(&o.g);
+    cg_set_target(&o.g, o.triple);
+    o.g.safe = o.safe;
+    o.g.freestanding = o.freestanding;
+    if (o.outfile != null && o.runmode == 0
+        && (str_ends(o.outfile, ".so") == 1 || str_ends(o.outfile, ".dylib") == 1 || str_ends(o.outfile, ".dll") == 1)) {
+        o.g.shared = 1;                  // only the exports are visible (cg_hide_non_exports)
+    }
+    o.g.fp_contract = o.fp_contract;
+    o.g.strict_alias = o.strict_alias;
+    if (o.eir_csrc == null) {
+        cg_program(&o.g, o.prog);
+    } else {
+        // The runtime of the EIR is C: no C++ exception library; pthread for threads.
+        o.g.uses_eh = 0;
+        o.g.uses_threads = o.eir_threads == 1 ? 1 : 0;
+    }
+    if (o.outfile == null && o.runmode == 0 && cg_streq(o.mode, "--test-codegen") == 0) {
+        o.outfile = cg_cat(o.infile, ".o");
+    }
+    if (cg_streq(o.mode, "--test-codegen") == 1) {
+        // --test-codegen: emit the .ll to stdout (the bootstrap harness pipes it to clang).
+        if (o.freestanding == 1) {
+            printf("%s\n%s", ir_no_builtins((string)String_cstr(&o.g.globals)), ir_no_builtins((string)String_cstr(&o.g.out)));
+            return 0;
+        }
+        printf("%s", (string)String_cstr(&o.g.globals));   // declares + string constants
+        printf("\n");
+        printf("%s", (string)String_cstr(&o.g.out));        // function definitions
+        return 0;
+    }
+    return ESK_GO_ON;
+}

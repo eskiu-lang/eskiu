@@ -417,4 +417,7 @@ int cross_driver(string triple, List<string>* out) {
 // The rest of esk_main.esk, in these parts (imported in order):
 import "esk_main_util.esk";
 import "esk_main_tools.esk";
+import "esk_main_args.esk";
+import "esk_main_front.esk";
+import "esk_main_link.esk";
 import "esk_main_driver.esk";

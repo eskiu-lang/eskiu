@@ -1,0 +1,359 @@
+// esk_main_link.esk: the driver's output: the IR file, the clang command line, the link
+// and `run` (part of esk_main.esk, imported in order)
+
+// The IR (or C, or assembly) written to a temporary file.
+int esk_write_ir(EskOpts* o) {
+    let ir: String;
+    String_init(&ir, 8192);
+    String_append(&ir, (string)String_cstr(&o.g.globals));
+    String_append(&ir, "\n");
+    String_append(&ir, (string)String_cstr(&o.g.out));
+    string irtext = (string)String_cstr(&ir);
+    if (o.freestanding == 1) {
+        irtext = ir_no_builtins(irtext);
+    }
+    if (o.eir_csrc != null) {
+        irtext = o.eir_csrc;
+    }
+    o.tmp = temp_file("ir", o.eir_asm == 1 ? ".s" : o.eir_csrc != null ? ".c" : ".ll");
+    int64 irlen = 0;
+    while (irtext[irlen] != 0) {
+        irlen = irlen + 1;
+    }
+    if (o.tmp == null || fs_write_all(o.tmp, (*uint8)irtext, irlen) == 0) {
+        eprint("error: cannot write temporary IR\n");
+        return 1;
+    }
+    if (o.runmode == 1) {
+        o.outfile = temp_exe_path();
+        if (o.outfile == null) {
+            remove(o.tmp);
+            eprint("error: could not create a temporary executable\n");
+            return 1;
+        }
+    }
+    o.cc = getenv("CLANG");
+    if (o.cc == null) {
+        o.cc = "clang";
+    }
+    if (o.eir_csrc != null) {
+        // C needs no clang: $CC, then $CLANG, then cc (the C++ driver's findCDriver order).
+        string ecc = getenv("CC");
+        if (ecc != null && ecc[0] != 0) {
+            o.cc = ecc;
+        } else if (getenv("CLANG") == null) {
+            o.cc = "cc";
+        }
+    }
+    return ESK_GO_ON;
+}
+
+// The clang command line: target, CPU, features, relocation, level and the output.
+int esk_clang_args(EskOpts* o) {
+    List_init<string>(&o.cargs, 8);
+    push_words(&o.cargs, o.cc);
+    if (o.san == 1) {
+        List_push<string>(&o.cargs, "-fsanitize=address");
+    }
+    else if (o.san == 2) {
+        List_push<string>(&o.cargs, "-fsanitize=undefined");
+    }
+    int olen = 0;
+    while (o.outfile[olen] != 0) {
+        olen = olen + 1;
+    }
+    o.want_obj = o.compile_only;
+    if (o.freestanding == 1) {
+        o.want_obj = 1;
+    }
+    if (olen >= 2 && (int)o.outfile[olen - 2] == 46 && (int)o.outfile[olen - 1] == 111) {
+        o.want_obj = 1;
+    }
+    if (olen >= 4 && (int)o.outfile[olen - 4] == 46 && (int)o.outfile[olen - 3] == 111
+        && (int)o.outfile[olen - 2] == 98 && (int)o.outfile[olen - 1] == 106) {
+        o.want_obj = 1;
+    }
+    if (o.runmode == 1) {
+        o.want_obj = 0;
+    }
+    o.final_out = o.outfile;
+    o.want_lib = 0;
+    if (o.runmode == 0 && o.compile_only == 0 && o.freestanding == 0
+        && (str_ends(o.outfile, ".a") == 1 || str_ends(o.outfile, ".lib") == 1)) {
+        o.want_lib = 1;
+    }
+    List_init<string>(&o.xdrv, 6);
+    o.cross = 0;
+    if (o.want_obj == 0 && o.want_lib == 0) {
+        o.cross = cross_driver(o.triple, &o.xdrv);
+    }
+    if (o.want_lib == 1 || o.cross == 1) {
+        o.want_obj = 1;
+        o.outfile = temp_file("obj", ".o");
+    }
+    List_push<string>(&o.cargs, "-Wno-override-module");
+    if (o.triple[0] != 0) {
+        List_push<string>(&o.cargs, "-target");
+        List_push<string>(&o.cargs, o.triple);
+    }
+    if (str_contains(o.triple, "emscripten") == 1) {
+        List_push<string>(&o.cargs, "-mllvm");
+        List_push<string>(&o.cargs, "-enable-emscripten-cxx-exceptions");
+    }
+    if (o.mcpu[0] != 0) {
+        List_push<string>(&o.cargs, cg_cat("-mcpu=", o.mcpu));
+    }
+    int mi = 0;
+    while (o.mattr[mi] != 0) {
+        int me = mi;
+        while (o.mattr[me] != 0 && (int)o.mattr[me] != 44) {
+            me = me + 1;
+        }
+        if (me > mi) {
+            List_push<string>(&o.cargs, "-Xclang");
+            List_push<string>(&o.cargs, "-target-feature");
+            List_push<string>(&o.cargs, "-Xclang");
+            List_push<string>(&o.cargs, str_after(str_prefix(o.mattr, me), mi));
+        }
+        mi = me;
+        if (o.mattr[mi] != 0) {
+            mi = mi + 1;
+        }
+    }
+    if (cg_streq(o.reloc, "static") == 1) {
+        List_push<string>(&o.cargs, "-fno-pic");
+    }
+    else if (cg_streq(o.reloc, "pic") == 1) {
+        List_push<string>(&o.cargs, "-fPIC");
+    }
+    else if (cg_streq(o.reloc, "dynamic-no-pic") == 1) {
+        List_push<string>(&o.cargs, "-mdynamic-no-pic");
+    }
+    else if (cg_streq(o.reloc, "ropi") == 1) {
+        List_push<string>(&o.cargs, "-fropi");
+    }
+    else if (cg_streq(o.reloc, "rwpi") == 1) {
+        List_push<string>(&o.cargs, "-frwpi");
+    }
+    else if (cg_streq(o.reloc, "ropi-rwpi") == 1) {
+        List_push<string>(&o.cargs, "-fropi");
+        List_push<string>(&o.cargs, "-frwpi");
+    }
+    if (o.optflag[0] != 0) {
+        List_push<string>(&o.cargs, o.optflag);
+    }
+    if (o.want_obj == 1) {
+        List_push<string>(&o.cargs, "-c");
+    }
+    if (o.eir_csrc != null && o.eir_asm == 0) {
+        // The EIR C reads memory through casts (eir_c.cpp's prelude).
+        List_push<string>(&o.cargs, "-std=c99");
+        List_push<string>(&o.cargs, "-w");
+        List_push<string>(&o.cargs, "-fno-strict-aliasing");
+    }
+    o.joined_obj = 0;
+    if (o.eir_asm == 1 && o.eir_rt == 1) {
+        string joined = o.want_obj == 1 ? o.outfile : temp_file("eir", ".o");
+        if (joined == null || eir_join_runtime(o.cc, o.triple, o.tmp, joined) == 0) {
+            remove(o.tmp);
+            return 1;
+        }
+        remove(o.tmp);
+        o.tmp = joined;
+        o.joined_obj = o.want_obj;
+    }
+    List_push<string>(&o.cargs, o.tmp);
+    List_push<string>(&o.cargs, "-o");
+    List_push<string>(&o.cargs, o.outfile);
+    List_init<string>(&o.tail, 8);
+    if (str_ends(o.final_out, ".so") == 1 || str_ends(o.final_out, ".dylib") == 1 || str_ends(o.final_out, ".dll") == 1) {
+        List_push<string>(&o.tail, "-shared");
+    }
+    if (cg_streq(o.subsystem, "windows") == 1 && cg_streq(g_pp_os, "_WIN32") == 1) {
+        if (str_contains(o.triple, "msvc") == 1) {
+            List_push<string>(&o.tail, "-Wl,/subsystem:windows");
+            List_push<string>(&o.tail, "-Wl,/entry:mainCRTStartup");
+        }
+        else {
+            List_push<string>(&o.tail, "-mwindows");
+        }
+    }
+    return ESK_GO_ON;
+}
+
+// What follows the object on the link line: the libraries, given and implied.
+int esk_link_args(EskOpts* o) {
+    if (o.want_obj == 0 || o.cross == 1) {
+        int li = 0;
+        while (li < List_len<string>(&o.linkx)) {
+            List_push<string>(&o.tail, List_get<string>(&o.linkx, li));
+            li = li + 1;
+        }
+        // The libraries the program implies (C++ implicitLinkLibs): its `#pragma link`s,
+        // then the C++ exception runtime when it throws or catches and pthread when it
+        // spawns threads, for the platform g_pp_os names. After every object, once each.
+        if (o.default_libs == 1) {
+            List<string> implied;
+            List_init<string>(&implied, 4);
+            int pi = 0;
+            while (pi < List_len<string>(&g_link_libs)) {
+                List_push<string>(&implied, List_get<string>(&g_link_libs, pi));
+                pi = pi + 1;
+            }
+            int gnu = 0;
+            int android = str_contains(o.triple, "android");
+            if (android == 0 && (cg_streq(g_pp_os, "__linux__") == 1 || cg_streq(g_pp_os, "_WIN32") == 1)) {
+                gnu = 1;
+            }
+            // Android: the NDK's static libc++ and its ABI library; pthread is in libc.
+            if (o.g.uses_eh == 1) {
+                if (cg_streq(g_pp_os, "__APPLE__") == 1) {
+                    List_push<string>(&implied, "c++");
+                }
+                else if (android == 1) {
+                    List_push<string>(&implied, "c++_static");
+                    List_push<string>(&implied, "c++abi");
+                }
+                else if (gnu == 1) {
+                    List_push<string>(&implied, "stdc++");
+                }
+            }
+            if (o.g.uses_threads == 1 && gnu == 1) {
+                List_push<string>(&implied, "pthread");
+            }
+            // emscripten catches exceptions only when linked to.
+            if (o.g.uses_eh == 1 && str_contains(o.triple, "emscripten") == 1) {
+                List_push<string>(&o.tail, "-sDISABLE_EXCEPTION_CATCHING=0");
+            }
+            int ii2 = 0;
+            while (ii2 < List_len<string>(&implied)) {
+                string lib = List_get<string>(&implied, ii2);
+                int dup = 0;
+                int di = 0;
+                while (di < List_len<string>(&o.linked)) {
+                    if (cg_streq(List_get<string>(&o.linked, di), lib) == 1) {
+                        dup = 1;
+                    }
+                    di = di + 1;
+                }
+                if (dup == 0) {
+                    List_push<string>(&o.tail, cg_cat("-l", lib));
+                    List_push<string>(&o.linked, lib);
+                }
+                ii2 = ii2 + 1;
+            }
+        }
+    }
+    List_init<string>(&o.native_dirs, 2);
+    List<string> system_dirs;
+    List_init<string>(&system_dirs, 2);
+    o.win_target = cg_streq(g_pp_os, "_WIN32");
+    if (o.want_obj == 0 || o.cross == 1) {
+        ntv_load(o.triple);
+        List<string> want_libs;
+        List_init<string>(&want_libs, 4);
+        for (wi in 0..List_len<string>(&o.linked)) {
+            List_push<string>(&want_libs, List_get<string>(&o.linked, wi));
+        }
+        if (o.default_libs == 1) {
+            for (wi in 0..List_len<string>(&g_link_libs)) {
+                List_push<string>(&want_libs, List_get<string>(&g_link_libs, wi));
+            }
+        }
+        if (ntv_lib_dirs(&want_libs, &o.native_dirs, &system_dirs) != 0) {
+            remove(o.tmp);
+            return 1;
+        }
+        int rpath = o.win_target == 0 && str_contains(o.triple, "wasm") == 0 && str_contains(o.triple, "android") == 0 &&
+                    str_contains(o.triple, "-ios") == 0 ? 1 : 0;
+        for (ni in 0..List_len<string>(&o.native_dirs)) {
+            string nd = List_get<string>(&o.native_dirs, ni);
+            List_push<string>(&o.tail, cg_cat("-L", nd));
+            if (rpath == 1) {
+                List_push<string>(&o.tail, cg_cat("-Wl,-rpath,", nd));
+            }
+        }
+        // A system library in place of an archive: its directory, unless the linker and
+        // the loader search it already.
+        for (ni in 0..List_len<string>(&system_dirs)) {
+            string sd = List_get<string>(&system_dirs, ni);
+            if (str_eq(sd, "/usr/lib") == 1 || str_eq(sd, "/lib") == 1 || str_eq(sd, "/usr/lib64") == 1 ||
+                str_eq(sd, "/lib64") == 1) {
+                continue;
+            }
+            List_push<string>(&o.tail, cg_cat("-L", sd));
+            if (rpath == 1) {
+                List_push<string>(&o.tail, cg_cat("-Wl,-rpath,", sd));
+            }
+        }
+    }
+    if (o.want_obj == 0) {
+        int ti = 0;
+        while (ti < List_len<string>(&o.tail)) {
+            List_push<string>(&o.cargs, List_get<string>(&o.tail, ti));
+            ti = ti + 1;
+        }
+    }
+    return ESK_GO_ON;
+}
+
+// Compile and link, then run the program for `run`.
+int esk_finish(EskOpts* o) {
+    int rc = 0;
+    if (o.joined_obj == 0) {
+        rc = spawn_wait(&o.cargs);
+        remove(o.tmp);
+    }
+    if (rc == 0 && o.want_lib == 1) {
+        List<string> aargs;
+        List_init<string>(&aargs, 4);
+        List_push<string>(&aargs, archiver());
+        List_push<string>(&aargs, "rcs");
+        List_push<string>(&aargs, o.final_out);
+        List_push<string>(&aargs, o.outfile);
+        remove(o.final_out);
+        rc = spawn_wait(&aargs);
+        remove(o.outfile);
+        o.outfile = o.final_out;
+    }
+    else if (rc == 0 && o.cross == 1) {
+        List_push<string>(&o.xdrv, o.outfile);
+        List_push<string>(&o.xdrv, "-o");
+        List_push<string>(&o.xdrv, o.final_out);
+        int xi = 0;
+        while (xi < List_len<string>(&o.tail)) {
+            List_push<string>(&o.xdrv, List_get<string>(&o.tail, xi));
+            xi = xi + 1;
+        }
+        rc = spawn_wait(&o.xdrv);
+        remove(o.outfile);
+        o.outfile = o.final_out;
+    }
+    if (rc != 0) {
+        if (o.runmode == 1) {
+            remove(o.outfile);
+        }
+        eprint("error: clang failed to link the output\n");
+        return 1;
+    }
+    if (o.win_target == 1) {
+        ntv_copy_dlls(&o.native_dirs, o.outfile);
+    }
+    if (str_contains(o.triple, "emscripten") == 1 && o.runmode == 0) {
+        ntv_copy_web(o.outfile);
+    }
+    if (o.runmode == 0) {
+        return 0;
+    }
+    List<string> pargs;
+    List_init<string>(&pargs, 4);
+    List_push<string>(&pargs, o.outfile);
+    int k = 0;
+    while (k < List_len<string>(&o.runargs)) {
+        List_push<string>(&pargs, List_get<string>(&o.runargs, k));
+        k = k + 1;
+    }
+    int st = spawn_wait(&pargs);
+    remove(o.outfile);
+    return st;
+}
