@@ -1,55 +1,34 @@
-# Eskiu 0.15.1
+# Eskiu 0.16.0
 
-Eskiu 0.15.1 is about packages. A build can link the system's copy of a library a package
-ships, and falls back to it when the download fails; a package can carry the files a web
-build needs next to its page; and `eskiuc build FILE.esk` builds an example or a tool of a
-package with the package's dependencies. It also fixes three bugs that the gpu package hit.
+Eskiu 0.16.0 adds Apple Vision Pro as a target, upload progress to `<fetch>`, and type-name
+navigation in the editors.
 
 ## What is new
 
-- **`ESKIU_SYSTEM_LIBS`.** `ESKIU_SYSTEM_LIBS=SDL3 eskiuc build` links the system's SDL3 in
-  place of the archive the package names in `[native.SDL3]` (`*` names every library). The
-  build looks for `libNAME` in `LIBRARY_PATH`, the directory `pkg-config` gives for it and
-  the usual library directories. Both compilers.
-- **Builds offline.** When the download of a package's archive fails and the system has the
-  library, a build for this machine prints a warning and links the system's copy instead
-  of stopping.
-- **`[web] assets`.** A package lists the files a browser build needs next to its page:
-
-  ```toml
-  [web]
-  assets = ["web/gpu-naga.wasm"]
-  ```
-
-  A `wasm32-unknown-emscripten` build in the package, or in one that depends on it, copies
-  them into the output's directory, such as the translator that gpu 0.6.0's WebGL2 backend
-  loads. Older compilers reject the table, so a package that adds it needs 0.15.1.
-- **`eskiuc build FILE.esk`** builds that file of the package (an example, a tool) with the
-  package's dependencies, to `build/FILE`.
-- **`eskiuc doctor` finds SDL3 the way a build does**: the `[native.SDL3]` archive of a
-  package, already downloaded or still to download, else the system's `libSDL3`.
-- **`install.sh --with-ui`** (`ESKIU_WITH_UI=1` for `install.ps1`) also installs the `ui`
-  tool from eskiu-lang/ui's release, checked against its SHA256SUMS.
-- **`noundef` and `nounwind`.** The code generator marks scalar parameters and results
-  `noundef`, and a function `nounwind` when nothing it calls can throw. Code at `-O2` is
-  the same on the test corpus; `-O0` objects are about 4% smaller.
+- **visionOS.** `--target arm64-apple-xros1.0` (and `arm64-apple-xros1.0-simulator`) builds
+  for Apple Vision Pro: it links through `xcrun -sdk xros` / `xrsimulator` with no `$CC`, and
+  predefines `TARGET_OS_IPHONE` and `TARGET_OS_VISION`. Both compilers
+  ([cross-compile.md](https://eskiu-lang.org/docs/cross-compile.html)).
+- **Upload progress.** `FetchOptions.body_sent`, when set, points at a counter the request
+  updates with the body's bytes sent so far, as they go.
+- **Type names in the editors.** Go to definition, find references, rename and hover work on
+  a type name wherever one is written (parameters, results, locals, fields, `*T`, `?*T`,
+  `T[]`, generic arguments, casts, `sizeof(T)`, struct literals, constraints, aliases) and
+  at its declaration. Hover shows the declaration.
 
 ## Fixed
 
-- A program of several input files failed to parse when a later file's imports used a type
-  or a generic declared by an earlier file's imports (`Expected ';'` at
-  `return Ok<GpuSurface, string>(s);`).
-- A generic function instantiated while compiling another function saw that function's
-  locals, so `List_free` failed to compile in a function with a local named `free`. Errors
-  at a call in the code generator now give the file, line and column.
-- Compiling a file of a package directly (`eskiuc src/main.esk`) used a lock that no longer
-  matched `eskiu.toml` after a dependency was edited; it now resolves the dependencies again.
-- `--target` for the other macOS architecture on a Mac links the program with `cc -target`
-  (or `$CC -target`).
-- An output in a directory that does not exist yet (`-o build/app.html`) gets that directory
-  instead of failing to link.
+- Editors (VS Code, IntelliJ, any LSP client): a file that is a part of a module
+  (`import "part.esk";`) is checked in its module, so diagnostics, hover, navigation and
+  completion see the types and names the module declares before it.
 
-Code that compiles with 0.15.0 compiles with 0.15.1. The full list is in the
+## Changed
+
+- The compiler's sources, in C++ and in Eskiu, are split into files of about 600 lines by
+  topic, and the stdlib's larger modules keep their parts in private `_module/` directories
+  that tools skip. Programs compile and behave the same.
+
+Code that compiles with 0.15.1 compiles with 0.16.0. The full list is in the
 [changelog](https://eskiu-lang.org/changelog.html).
 
 ## Install

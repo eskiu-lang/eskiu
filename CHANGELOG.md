@@ -7,7 +7,7 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
-## [Unreleased]
+## [0.16.0] - 2026-11-16
 
 ### Added
 
@@ -21,6 +21,16 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   the type's declaration, for structs, unions, enums, interfaces and aliases. Hover shows the
   declaration (`struct Point`). Both compilers.
 
+- `<fetch>`: `FetchOptions.body_sent`, when set, points at a counter the request stores the
+  body's bytes sent so far in as they go, for upload progress (a recording to a server, a
+  large POST).
+
+### Changed
+
+- The compiler's sources (C++ and the self-hosted compiler) are split into files of about
+  600 lines by topic, and the stdlib's larger modules keep their parts in private
+  directories (`stdlib/_fetch/`, `stdlib/_json/`, ...) that tools skip. No behavior change.
+
 ### Fixed
 
 - Editors (VS Code, IntelliJ, any LSP client): a file that is a part of a module
@@ -31,7 +41,7 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
-## [0.15.1] - 2026-11-10
+## [0.15.1]
 
 ### Added
 
