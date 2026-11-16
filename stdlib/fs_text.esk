@@ -1,0 +1,572 @@
+// fs_text.esk: text files, paths, directories and directory trees through descriptors (part of fs.esk, imported in order)
+
+// fopen with a UTF-8 path on every platform (_wfopen on Windows).
+*void _fs_fopen(string path, string mode) {
+#ifdef _WIN32
+    *uint16 wp = _fs_wpath(path);
+    *uint16 wm = _fs_wide(mode);
+    *void fp = null;
+    if (wp != null && wm != null) {
+        fp = _wfopen(wp, wm);
+    }
+    free((*void)wp);
+    free((*void)wm);
+    return fp;
+#else
+    return fopen(path, mode);
+#endif
+}
+
+// ── Text files ────────────────────────────────────────────────────────────
+
+// Read the whole file into `out` (cleared first). Returns 0, or -1 on failure.
+int fs_read_text(string path, String* out) {
+    out.clear();
+    *void fp = _fs_fopen(path, "rb");
+    if (fp == null) {
+        return _fs_fail_crt();
+    }
+    defer fclose(fp);
+    *uint8 buf = alloc<uint8>(65536);
+    defer free((*void)buf);
+    while (true) {
+        const int64 got = fread((*void)buf, 1, 65536, fp);
+        if (got <= 0) {
+            break;
+        }
+        _fs_append_bytes(out, buf, got);
+    }
+    if (ferror(fp) != 0) {
+        return _fs_fail_crt();
+    }
+    return 0;
+}
+
+int _fs_write_mode(string path, string text, string mode) {
+    *void fp = _fs_fopen(path, mode);
+    if (fp == null) {
+        return _fs_fail_crt();
+    }
+    const int64 n = strlen(text);
+    const int64 w = n > 0 ? fwrite((*void)text, 1, n, fp) : 0;
+    if (w != n) {
+        _fs_fail_crt();
+        fclose(fp);
+        return -1;
+    }
+    if (fclose(fp) != 0) {
+        return _fs_fail_crt();
+    }
+    return 0;
+}
+
+// Replace the file's contents with `text` (created if missing). 0 or -1.
+int fs_write_text(string path, string text) {
+    return _fs_write_mode(path, text, "wb");
+}
+
+// Append `text` to the file (created if missing). 0 or -1.
+int fs_append_text(string path, string text) {
+    return _fs_write_mode(path, text, "ab");
+}
+
+// Append each line of the file to `out` as a new String, without its "\n" or
+// "\r\n". A final line without a newline counts; an empty file adds none.
+// Free the list with fs_list_free. Returns 0, or -1 on failure.
+int fs_read_lines(string path, List<String>* out) {
+    let text: String;
+    text.init(256);
+    defer text.free();
+    if (fs_read_text(path, &text) != 0) {
+        return -1;
+    }
+    int64 start = 0;
+    for (int64 i = 0; i <= text.len; i++) {
+        if (i == text.len && start == text.len) {
+            break;
+        }
+        if (i == text.len || text.data[i] == '\n') {
+            int64 end = i;
+            if (end > start && text.data[end - 1] == '\r') {
+                end--;
+            }
+            let line: String;
+            line.init(end - start + 1);
+            _fs_append_bytes(&line, (*uint8)(text.data + start), end - start);
+            List_push<String>(out, line);
+            start = i + 1;
+        }
+    }
+    return 0;
+}
+
+// Free every String in a list filled by fs_read_lines, fs_list_dir or fs_glob,
+// then the list itself.
+void fs_list_free(List<String>* list) {
+    for (i in 0..List_len<String>(list)) {
+        let s: String = List_get<String>(list, i);
+        s.free();
+    }
+    List_free<String>(list);
+}
+
+// ── Paths and directories ─────────────────────────────────────────────────
+
+// Metadata of a path (fs_stat follows symbolic links, fs_lstat does not).
+// mtime is in Unix epoch seconds; mode holds the permission bits (0o7777 on
+// POSIX; on Windows 0o444 for a read-only file, else 0o666, plus 0o111 for a
+// directory).
+struct FileStat {
+    int64 size;
+    int64 mtime;
+    int mode;
+    bool is_dir;
+    bool is_file;
+    bool is_symlink;
+}
+
+int _fs_stat_impl(string path, FileStat* out, bool follow) {
+    out.size = 0;
+    out.mtime = 0;
+    out.mode = 0;
+    out.is_dir = false;
+    out.is_file = false;
+    out.is_symlink = false;
+#ifdef _WIN32
+    *uint16 w = _fs_wpath(path);
+    if (w == null) {   // ERROR_INVALID_NAME
+        _fs_err = 123;
+        _fs_err_win = true;
+        return -1;
+    }
+    int64[8] raw;
+    *uint8 b = (*uint8)&raw;
+    const int ok = GetFileAttributesExW(w, 0, (*void)b);
+    free((*void)w);
+    if (ok == 0) {
+        return _fs_fail_os();
+    }
+    const int64 attrs = _fs_u32_at(b, 0);
+    out.is_dir = (attrs & _FS_ATTR_DIRECTORY) != 0;
+    out.is_file = !out.is_dir;
+    out.is_symlink = !follow && (attrs & _FS_ATTR_REPARSE) != 0;
+    out.mtime = _fs_filetime_at(b, 20);
+    out.size = out.is_dir ? 0 : (_fs_u32_at(b, 28) << 32) | _fs_u32_at(b, 32);
+    out.mode = (attrs & _FS_ATTR_READONLY) != 0 ? 292 : 438;
+    if (out.is_dir) {
+        out.mode = out.mode | 73;
+    }
+    return 0;
+#else
+#ifdef _FS_HAVE_STAT
+    int64[32] raw;
+    *uint8 b = (*uint8)&raw;
+    const int r = follow ? _fs_stat_raw(path, (*void)b) : _fs_lstat_raw(path, (*void)b);
+    if (r != 0) {
+        return _fs_fail_os();
+    }
+#ifdef _FS_ST_MODE16
+    let m16: uint16 = (uint16)0;
+    memcpy((*void)&m16, (*void)(b + _FS_ST_MODE), 2);
+    const int mode = (int)m16;
+#else
+    let m32: uint32 = (uint32)0;
+    memcpy((*void)&m32, (*void)(b + _FS_ST_MODE), 4);
+    const int mode = (int)m32;
+#endif
+    let size: int64 = 0;
+    memcpy((*void)&size, (*void)(b + _FS_ST_SIZE), 8);
+    let mtime: int64 = 0;
+    memcpy((*void)&mtime, (*void)(b + _FS_ST_MTIME), 8);
+    const int kind = mode & 61440;
+    out.is_dir = kind == 16384;
+    out.is_file = kind == 32768;
+    out.is_symlink = kind == 40960;
+    out.mode = mode & 4095;
+    out.size = size;
+    out.mtime = mtime;
+    return 0;
+#else
+    *void d = opendir(path);
+    if (d != null) {
+        closedir(d);
+        out.is_dir = true;
+        return 0;
+    }
+    *void fp = fopen(path, "rb");
+    if (fp == null) {
+        return _fs_fail_os();
+    }
+    out.is_file = true;
+    out.size = fs_size(fp);
+    fclose(fp);
+    return 0;
+#endif
+#endif
+}
+
+// Fill `out` with the metadata of `path`, following symbolic links. 0 or -1.
+int fs_stat(string path, FileStat* out) {
+    return _fs_stat_impl(path, out, true);
+}
+
+// Like fs_stat, but a symbolic link describes the link itself (is_symlink).
+int fs_lstat(string path, FileStat* out) {
+    return _fs_stat_impl(path, out, false);
+}
+
+// 1 if the path names an existing file or directory (links followed), else 0.
+int fs_exists(string path) {
+    let st: FileStat;
+    return _fs_stat_impl(path, &st, true) == 0 ? 1 : 0;
+}
+
+// 1 if the path is a directory (links followed), else 0.
+int fs_is_dir(string path) {
+    let st: FileStat;
+    return _fs_stat_impl(path, &st, true) == 0 && st.is_dir ? 1 : 0;
+}
+
+// 1 if the path is a regular file (links followed), else 0.
+int fs_is_file(string path) {
+    let st: FileStat;
+    return _fs_stat_impl(path, &st, true) == 0 && st.is_file ? 1 : 0;
+}
+
+// Create one directory (its parent must exist). 0 or -1 (also if it exists).
+int fs_mkdir(string path) {
+#ifdef _WIN32
+    *uint16 w = _fs_wpath(path);
+    const int ok = w != null ? CreateDirectoryW(w, null) : 0;
+    free((*void)w);
+    return ok != 0 ? 0 : _fs_fail_os();
+#else
+    return mkdir(path, (_fs_mode_t)511) == 0 ? 0 : _fs_fail_os();
+#endif
+}
+
+bool _fs_is_sep(char c) {
+#ifdef _WIN32
+    return c == '/' || c == '\\';
+#else
+    return c == '/';
+#endif
+}
+
+// Create a directory and every missing parent ("mkdir -p"). An existing
+// directory is success. 0 or -1.
+int fs_mkdir_p(string path) {
+    const int64 n = strlen(path);
+    if (n == 0) {   // ENOENT
+        _fs_err = 2;
+        _fs_err_win = false;
+        return -1;
+    }
+    let part: String;
+    part.init(n + 1);
+    defer part.free();
+    for (int64 i = 0; i <= n; i++) {
+        if (i == n || (_fs_is_sep(path[i]) && i > 0)) {
+            if (part.len > 0 && fs_is_dir(part.cstr()) == 0) {
+                if (fs_mkdir(part.cstr()) != 0) {
+                    const int e = _fs_err;
+                    const bool ew = _fs_err_win;
+                    if (fs_is_dir(part.cstr()) == 0) {   // the mkdir error, not the check's
+                        _fs_err = e;
+                        _fs_err_win = ew;
+                        return -1;
+                    }
+                }
+            }
+        }
+        if (i < n) {
+            part.push(path[i]);
+        }
+    }
+    return 0;
+}
+
+// Remove a file or an empty directory. 0 or -1.
+int fs_remove(string path) {
+#ifdef _WIN32
+    *uint16 w = _fs_wpath(path);
+    if (w == null) {
+        _fs_err = 123;
+        _fs_err_win = true;
+        return -1;
+    }
+    const uint32 attrs = GetFileAttributesW(w);
+    int ok = 0;
+    if (attrs != (uint32)4294967295 && ((int64)attrs & _FS_ATTR_DIRECTORY) != 0) {
+        ok = RemoveDirectoryW(w);
+    } else {
+        ok = DeleteFileW(w);
+    }
+    free((*void)w);
+    return ok != 0 ? 0 : _fs_fail_os();
+#else
+    let st: FileStat;
+    if (_fs_stat_impl(path, &st, false) != 0) {
+        return -1;
+    }
+    if (st.is_dir) {
+        return rmdir(path) == 0 ? 0 : _fs_fail_os();
+    }
+    return unlink(path) == 0 ? 0 : _fs_fail_os();
+#endif
+}
+
+// Join `dir` and `name` with one separator into `out` (cleared first).
+void _fs_join(String* out, string dir, string name) {
+    out.clear();
+    out.append(dir);
+    if (out.len > 0 && !_fs_is_sep(out.data[out.len - 1])) {
+        out.push('/');
+    }
+    out.append(name);
+}
+
+#if !defined(_WIN32) && defined(_FS_HAVE_STAT)
+// ── Directory trees through descriptors ──────────────────────────────────────
+//
+// fs_remove_all and fs_walk go down a tree one open directory at a time: each
+// entry is looked up relative to its directory's descriptor (fstatat, openat with
+// O_NOFOLLOW), never by a path from the root. So a directory swapped for a
+// symbolic link while the walk runs is never entered (rm -rf could otherwise
+// delete outside the tree), and the depth is not limited by PATH_MAX. Only one
+// directory is open at a time: going back up opens ".." and checks it is the
+// directory the walk came from.
+
+struct _FsLevel {
+    List<String> names;   // the entries, sorted
+    int next;           // the next one to visit
+    int64 dev;            // identity of this directory
+    int64 ino;
+    int64 path_len;       // fs_walk: length of this directory's path
+}
+
+// A stat buffer's file kind: 1 for a directory, 0 for anything else.
+bool _fs_raw_is_dir(*uint8 b) {
+#ifdef _FS_ST_MODE16
+    let m16: uint16 = (uint16)0;
+    memcpy((*void)&m16, (*void)(b + _FS_ST_MODE), 2);
+    return ((int)m16 & 61440) == 16384;
+#else
+    let m32: uint32 = (uint32)0;
+    memcpy((*void)&m32, (*void)(b + _FS_ST_MODE), 4);
+    return ((int)m32 & 61440) == 16384;
+#endif
+}
+
+// The device and inode of an open file (as _fs_same_file reads them). 0 or -1.
+int _fs_fd_id(int fd, *int64 dev, *int64 ino) {
+    int64[32] raw;
+    *dev = 0;
+    *ino = 0;
+    if (_fs_fstat_raw(fd, (*void)&raw) != 0) {
+        return -1;
+    }
+    memcpy((*void)dev, (*void)&raw, _FS_ST_DEV_SIZE);
+    memcpy((*void)ino, (*void)((*uint8)&raw + _FS_ST_INO), 8);
+    return 0;
+}
+
+// Push a level for the open directory `fd`: its identity and sorted entries.
+int _fs_level_push(List<_FsLevel>* levels, int fd, int64 path_len) {
+    let lv: _FsLevel;
+    List_init<String>(&lv.names, 16);
+    lv.next = 0;
+    lv.path_len = path_len;
+    if (_fs_fd_id(fd, &lv.dev, &lv.ino) != 0) {
+        List_free<String>(&lv.names);
+        return _fs_fail_os();
+    }
+    const int lfd = openat(fd, ".", _FS_O_DIRFD);   // fdopendir owns its descriptor
+    if (lfd < 0) {
+        List_free<String>(&lv.names);
+        return _fs_fail_os();
+    }
+    *void d = fdopendir(lfd);
+    if (d == null) {
+        const int e = _fs_fail_os();
+        close(lfd);
+        List_free<String>(&lv.names);
+        return e;
+    }
+    while (true) {
+        *uint8 ent = (*uint8)readdir(d);
+        if (ent == null) {
+            break;
+        }
+        string nm = (string)(ent + _FS_DIRENT_NAME);
+        if (strcmp(nm, ".") == 0 || strcmp(nm, "..") == 0) {
+            continue;
+        }
+        let n: String;
+        n.from(nm);
+        List_push<String>(&lv.names, n);
+    }
+    closedir(d);
+    _fs_sort(&lv.names);
+    List_push<_FsLevel>(levels, lv);
+    return 0;
+}
+
+void _fs_level_free(List<_FsLevel>* levels) {
+    for (i in 0..List_len<_FsLevel>(levels)) {
+        fs_list_free(&levels.data[i].names);
+    }
+    List_free<_FsLevel>(levels);
+}
+
+// From the directory `cur` (the deepest level, now popped) back to its parent,
+// which must still be the directory one level up. The parent's descriptor, or -1
+// (EBUSY when the tree was moved meanwhile).
+int _fs_level_up(List<_FsLevel>* levels, int cur) {
+    const int up = openat(cur, "..", _FS_O_DIRFD);
+    close(cur);
+    if (up < 0) {
+        return _fs_fail_os();
+    }
+    int64 dev = 0;
+    int64 ino = 0;
+    *_FsLevel parent = &levels.data[List_len<_FsLevel>(levels) - 1];
+    if (_fs_fd_id(up, &dev, &ino) != 0 || dev != parent.dev || ino != parent.ino) {
+        close(up);
+        _fs_err = 16;   // EBUSY
+        _fs_err_win = false;
+        return -1;
+    }
+    return up;
+}
+
+// Remove everything under the directory `path` (not `path` itself). 0 or -1.
+int _fs_remove_tree(string path) {
+    int cur = open(path, _FS_O_DIRFD);
+    if (cur < 0) {
+        return _fs_fail_os();
+    }
+    let levels: List<_FsLevel>;
+    List_init<_FsLevel>(&levels, 8);
+    defer _fs_level_free(&levels);
+    if (_fs_level_push(&levels, cur, 0) != 0) {
+        close(cur);
+        return -1;
+    }
+    int64[32] raw;
+    while (true) {
+        *_FsLevel lv = &levels.data[List_len<_FsLevel>(&levels) - 1];
+        if (lv.next >= List_len<String>(&lv.names)) {
+            if (List_len<_FsLevel>(&levels) == 1) {
+                break;
+            }
+            let done: _FsLevel = List_pop<_FsLevel>(&levels);
+            fs_list_free(&done.names);
+            cur = _fs_level_up(&levels, cur);
+            if (cur < 0) {
+                return -1;
+            }
+            *_FsLevel parent = &levels.data[List_len<_FsLevel>(&levels) - 1];
+            string dname = parent.names.data[parent.next - 1].cstr();
+            if (unlinkat(cur, dname, _FS_AT_REMOVEDIR) != 0) {
+                const int e = _fs_fail_os();
+                close(cur);
+                return e;
+            }
+            continue;
+        }
+        string name = lv.names.data[lv.next].cstr();
+        lv.next++;
+        if (_fs_lstatat_raw(cur, name, (*void)&raw) != 0) {
+            if (_fs_errno_now() == _FS_ENOENT) {   // gone already
+                continue;
+            }
+            const int e = _fs_fail_os();
+            close(cur);
+            return e;
+        }
+        if (_fs_raw_is_dir((*uint8)&raw)) {
+            const int sub = openat(cur, name, _FS_O_DIRFD);
+            if (sub >= 0) {
+                if (_fs_level_push(&levels, sub, 0) != 0) {
+                    close(sub);
+                    close(cur);
+                    return -1;
+                }
+                close(cur);
+                cur = sub;
+                continue;
+            }
+            // No longer a directory (swapped for a link or a file): remove the entry.
+            if (_fs_errno_now() == _FS_ENOENT) {
+                continue;
+            }
+        }
+        if (unlinkat(cur, name, 0) != 0 && _fs_errno_now() != 2) {
+            const int e = _fs_fail_os();
+            close(cur);
+            return e;
+        }
+    }
+    close(cur);
+    return 0;
+}
+
+// fs_walk over the directory `root` (path `base`).
+void _fs_walk_tree(String* base, fn(string, bool)->void visit) {
+    int cur = open(base.cstr(), _FS_O_DIRFD);
+    if (cur < 0) {
+        return;
+    }
+    let levels: List<_FsLevel>;
+    List_init<_FsLevel>(&levels, 8);
+    defer _fs_level_free(&levels);
+    let path: String;
+    path.from(base.cstr());
+    defer path.free();
+    if (_fs_level_push(&levels, cur, path.len) != 0) {
+        close(cur);
+        return;
+    }
+    int64[32] raw;
+    while (true) {
+        *_FsLevel lv = &levels.data[List_len<_FsLevel>(&levels) - 1];
+        if (lv.next >= List_len<String>(&lv.names)) {
+            if (List_len<_FsLevel>(&levels) == 1) {
+                break;
+            }
+            let done: _FsLevel = List_pop<_FsLevel>(&levels);
+            fs_list_free(&done.names);
+            cur = _fs_level_up(&levels, cur);
+            if (cur < 0) {
+                return;
+            }
+            continue;
+        }
+        string name = lv.names.data[lv.next].cstr();
+        lv.next++;
+        path.len = lv.path_len;
+        path.data[path.len] = 0;
+        if (path.len > 0 && path.data[path.len - 1] != '/') {
+            path.push('/');
+        }
+        path.append(name);
+        const bool is_dir = _fs_lstatat_raw(cur, name, (*void)&raw) == 0 && _fs_raw_is_dir((*uint8)&raw);
+        visit(path.cstr(), is_dir);
+        if (!is_dir) {
+            continue;
+        }
+        const int sub = openat(cur, name, _FS_O_DIRFD);
+        if (sub < 0) {                     // unreadable, or no longer a directory
+            continue;
+        }
+        if (_fs_level_push(&levels, sub, path.len) != 0) {
+            close(sub);
+            continue;
+        }
+        close(cur);
+        cur = sub;
+    }
+    close(cur);
+}
+#endif

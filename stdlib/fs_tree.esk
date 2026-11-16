@@ -1,0 +1,569 @@
+// fs_tree.esk: directory trees through handles (Windows) and directory listing (part of fs.esk, imported in order)
+
+#ifdef _WIN32
+// ── Directory trees through handles (Windows) ────────────────────────────────
+//
+// The Windows counterpart of the descriptor walk above. Each entry is opened
+// relative to its directory's open handle (NtOpenFile with a RootDirectory, the
+// openat of NT) with FILE_OPEN_REPARSE_POINT, so the open names the entry itself,
+// never what a junction or symbolic link points to; whether it is a directory is
+// then read from that handle, and a directory is listed and removed through it.
+// Nothing is looked up by a path from the root after the root itself, so a
+// directory swapped for a junction while the walk runs is never entered, and the
+// depth is not limited by MAX_PATH. The handles of the directories above the
+// current one stay open (Windows has no "..").
+
+#define _FS_NT_ACC_LIST    1          // FILE_LIST_DIRECTORY
+#define _FS_NT_ACC_ATTRS   1048704    // FILE_READ_ATTRIBUTES | SYNCHRONIZE
+#define _FS_NT_ACC_DELETE  1114240    // DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE
+#define _FS_NT_SHARE_ALL   7
+#define _FS_NT_OPT_ENTRY   2113568    // FILE_OPEN_REPARSE_POINT | FILE_OPEN_FOR_BACKUP_INTENT | FILE_SYNCHRONOUS_IO_NONALERT
+#define _FS_NT_OPT_DIR     2113569    // the same | FILE_DIRECTORY_FILE
+#define _FS_NT_OPT_FILE    2113632    // the same as _FS_NT_OPT_ENTRY | FILE_NON_DIRECTORY_FILE
+#define _FS_FLAG_BACKUP    33554432   // FILE_FLAG_BACKUP_SEMANTICS
+#define _FS_FLAG_REPARSE   2097152    // FILE_FLAG_OPEN_REPARSE_POINT
+
+struct _FsUStr {          // UNICODE_STRING
+    uint16 len;
+    uint16 max;
+    *uint16 buf;
+}
+
+struct _FsObjAttrs {      // OBJECT_ATTRIBUTES
+    uint32 length;
+    *void root;
+    *void name;
+    uint32 attributes;
+    *void sd;
+    *void sqos;
+}
+
+struct _FsWLevel {
+    List<String> names;   // the entries, sorted
+    int next;           // the next one to visit
+    *void h;              // this directory, opened to list it (fs_remove_all: and delete it)
+    int64 path_len;       // fs_walk: length of this directory's path
+}
+
+int _fs_fail_nt(uint32 st) {
+    _fs_err = (int)RtlNtStatusToDosError(st);
+    _fs_err_win = true;
+    return -1;
+}
+
+// Open `name` (one component) relative to the directory handle `dir`; the entry
+// itself, a junction or link not followed. The handle, or null with *st set.
+*void _fs_nt_open(*void dir, string name, uint32 access, uint32 options, *uint32 st) {
+    *uint16 w = _fs_wide(name);
+    if (w == null) {   // STATUS_OBJECT_NAME_INVALID
+        *st = (uint32)3221225523;
+        return null;
+    }
+    defer free((*void)w);
+    int64 n = 0;
+    while (w[n] != (uint16)0) {
+        n++;
+    }
+    let us: _FsUStr;
+    us.len = (uint16)(n * 2);
+    us.max = (uint16)(n * 2);
+    us.buf = w;
+    let oa: _FsObjAttrs;
+    oa.length = (uint32)sizeof(_FsObjAttrs);
+    oa.root = dir;
+    oa.name = (*void)&us;
+    oa.attributes = (uint32)64;   // OBJ_CASE_INSENSITIVE, as Win32 opens
+    oa.sd = null;
+    oa.sqos = null;
+    int64[2] iosb;
+    *void h = null;
+    *st = NtOpenFile((*void)&h, access, (*void)&oa, (*void)&iosb, (uint32)_FS_NT_SHARE_ALL, options);
+    if (*st >= (uint32)2147483648) {
+        return null;
+    }
+    return h;
+}
+
+// What the open handle `h` is: 1 a directory, 0 anything else (a file, or a
+// junction or symbolic link of either kind), -1 if it cannot be read.
+int _fs_handle_kind(*void h) {
+    int64 info = 0;   // FILE_ATTRIBUTE_TAG_INFO: attributes, reparse tag
+    if (GetFileInformationByHandleEx(h, 9, (*void)&info, (uint32)8) == 0) {
+        return -1;
+    }
+    const int64 attrs = info & 4294967295;
+    if ((attrs & _FS_ATTR_REPARSE) != 0) {
+        return 0;
+    }
+    return (attrs & _FS_ATTR_DIRECTORY) != 0 ? 1 : 0;
+}
+
+// Delete the entry `h` names (an empty directory, a file or a link itself) when
+// the handle closes. 0 or -1; the handle is closed either way.
+int _fs_handle_delete(*void h) {
+    uint8 yes = (uint8)1;   // FILE_DISPOSITION_INFO
+    const int ok = SetFileInformationByHandle(h, 4, (*void)&yes, (uint32)1);
+    const int rc = ok != 0 ? 0 : _fs_fail_os();
+    CloseHandle(h);
+    return rc;
+}
+
+// Push a level for the directory opened as `list_h`: its sorted entries. The
+// level owns the handle, also when this fails.
+int _fs_wlevel_push(List<_FsWLevel>* levels, *void list_h, int64 path_len) {
+    let lv: _FsWLevel;
+    List_init<String>(&lv.names, 16);
+    lv.next = 0;
+    lv.h = list_h;
+    lv.path_len = path_len;
+    List_push<_FsWLevel>(levels, lv);
+    *_FsWLevel top = &levels.data[List_len<_FsWLevel>(levels) - 1];
+    *uint8 buf = alloc<uint8>(65536);
+    defer free((*void)buf);
+    while (true) {
+        // FILE_FULL_DIR_INFO records: next offset at 0, name length (bytes) at 60, name at 68.
+        if (GetFileInformationByHandleEx(list_h, 14, (*void)buf, (uint32)65536) == 0) {
+            const uint32 e = GetLastError();
+            if (e == (uint32)18 || e == (uint32)2) {   // NO_MORE_FILES, FILE_NOT_FOUND (empty)
+                break;
+            }
+            return _fs_fail_os();
+        }
+        int64 off = 0;
+        while (true) {
+            const int64 next = _fs_u32_at(buf, (int)off);
+            const int nlen = (int)(_fs_u32_at(buf, (int)off + 60) / 2);
+            *uint16 nm = (*uint16)(buf + off + 68);
+            const bool dot = (nlen == 1 && nm[0] == (uint16)46) || (nlen == 2 && nm[0] == (uint16)46 && nm[1] == (uint16)46);
+            if (!dot) {
+                let s: String;
+                s.init(nlen + 8);
+                _fs_append_wide_n(&s, nm, nlen);
+                List_push<String>(&top.names, s);
+            }
+            if (next == 0) {
+                break;
+            }
+            off += next;
+        }
+    }
+    _fs_sort(&top.names);
+    return 0;
+}
+
+void _fs_wlevel_free(List<_FsWLevel>* levels) {
+    for (i in 0..List_len<_FsWLevel>(levels)) {
+        *_FsWLevel lv = &levels.data[i];
+        fs_list_free(&lv.names);
+        if (lv.h != null) {
+            CloseHandle(lv.h);
+        }
+    }
+    List_free<_FsWLevel>(levels);
+}
+
+// Remove everything under the directory `path` (not `path` itself). 0 or -1.
+int _fs_remove_tree(string path) {
+    *uint16 w = _fs_wpath(path);
+    if (w == null) {
+        _fs_err = 123;
+        _fs_err_win = true;
+        return -1;
+    }
+    *void root = CreateFileW(w, (uint32)(_FS_NT_ACC_LIST | _FS_NT_ACC_ATTRS), (uint32)_FS_NT_SHARE_ALL, null, (uint32)3,
+                             (uint32)(_FS_FLAG_BACKUP | _FS_FLAG_REPARSE), null);
+    free((*void)w);
+    if ((int64)root == -1) {
+        return _fs_fail_os();
+    }
+    const int kind = _fs_handle_kind(root);
+    if (kind != 1) {
+        CloseHandle(root);
+        if (kind < 0) {
+            return _fs_fail_os();
+        }
+        return 0;   // a link now: fs_remove removes the link itself
+    }
+    let levels: List<_FsWLevel>;
+    List_init<_FsWLevel>(&levels, 8);
+    defer _fs_wlevel_free(&levels);
+    if (_fs_wlevel_push(&levels, root, 0) != 0) {
+        return -1;
+    }
+    while (true) {
+        *_FsWLevel lv = &levels.data[List_len<_FsWLevel>(&levels) - 1];
+        if (lv.next >= List_len<String>(&lv.names)) {
+            if (List_len<_FsWLevel>(&levels) == 1) {
+                break;
+            }
+            let done: _FsWLevel = List_pop<_FsWLevel>(&levels);
+            fs_list_free(&done.names);
+            if (_fs_handle_delete(done.h) != 0) {
+                return -1;
+            }
+            continue;
+        }
+        *void cur = lv.h;
+        string name = lv.names.data[lv.next].cstr();
+        lv.next++;
+        // Open the entry itself as a directory, for listing and deleting it; a
+        // non-directory fails with NOT_A_DIRECTORY and is opened for deleting only.
+        let st: uint32 = (uint32)0;
+        *void h = _fs_nt_open(cur, name, (uint32)(_FS_NT_ACC_DELETE | _FS_NT_ACC_LIST), (uint32)_FS_NT_OPT_DIR, &st);
+        if (h == null && st == (uint32)3221225731) {   // STATUS_NOT_A_DIRECTORY
+            h = _fs_nt_open(cur, name, (uint32)_FS_NT_ACC_DELETE, (uint32)_FS_NT_OPT_FILE, &st);
+        }
+        if (h == null) {
+            // OBJECT_NAME_NOT_FOUND, DELETE_PENDING: gone already
+            if (st == (uint32)3221225524 || st == (uint32)3221225558) {
+                continue;
+            }
+            return _fs_fail_nt(st);
+        }
+        const int k = _fs_handle_kind(h);
+        if (k < 0) {
+            const int e = _fs_fail_os();
+            CloseHandle(h);
+            return e;
+        }
+        if (k == 1) {
+            if (_fs_wlevel_push(&levels, h, 0) != 0) {
+                return -1;
+            }
+            continue;
+        }
+        // A file, or a junction or link: the handle names the entry, not a target.
+        if (_fs_handle_delete(h) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+// fs_walk over the directory `base`.
+void _fs_walk_tree(String* base, fn(string, bool)->void visit) {
+    *uint16 w = _fs_wpath(base.cstr());
+    if (w == null) {
+        return;
+    }
+    *void root = CreateFileW(w, (uint32)(_FS_NT_ACC_LIST | _FS_NT_ACC_ATTRS), (uint32)_FS_NT_SHARE_ALL, null, (uint32)3,
+                             (uint32)_FS_FLAG_BACKUP, null);
+    free((*void)w);
+    if ((int64)root == -1) {
+        return;
+    }
+    let levels: List<_FsWLevel>;
+    List_init<_FsWLevel>(&levels, 8);
+    defer _fs_wlevel_free(&levels);
+    let path: String;
+    path.from(base.cstr());
+    defer path.free();
+    if (_fs_wlevel_push(&levels, root, path.len) != 0) {
+        return;
+    }
+    while (true) {
+        *_FsWLevel lv = &levels.data[List_len<_FsWLevel>(&levels) - 1];
+        if (lv.next >= List_len<String>(&lv.names)) {
+            if (List_len<_FsWLevel>(&levels) == 1) {
+                break;
+            }
+            let done: _FsWLevel = List_pop<_FsWLevel>(&levels);
+            fs_list_free(&done.names);
+            CloseHandle(done.h);
+            continue;
+        }
+        *void cur = lv.h;
+        string name = lv.names.data[lv.next].cstr();
+        lv.next++;
+        path.len = lv.path_len;
+        path.data[path.len] = 0;
+        if (path.len > 0 && !_fs_is_sep(path.data[path.len - 1])) {
+            path.push('/');
+        }
+        path.append(name);
+        let st: uint32 = (uint32)0;
+        bool is_dir = false;
+        *void ah = _fs_nt_open(cur, name, (uint32)_FS_NT_ACC_ATTRS, (uint32)_FS_NT_OPT_ENTRY, &st);
+        if (ah != null) {
+            is_dir = _fs_handle_kind(ah) == 1;
+            CloseHandle(ah);
+        }
+        visit(path.cstr(), is_dir);
+        if (!is_dir) {
+            continue;
+        }
+        // Opened again after the visit, and checked through that handle: a
+        // directory swapped for a junction or link meanwhile is not entered.
+        *void dh = _fs_nt_open(cur, name, (uint32)(_FS_NT_ACC_LIST | _FS_NT_ACC_ATTRS), (uint32)_FS_NT_OPT_DIR, &st);
+        if (dh == null) {
+            continue;
+        }
+        if (_fs_handle_kind(dh) != 1) {
+            CloseHandle(dh);
+            continue;
+        }
+        if (_fs_wlevel_push(&levels, dh, path.len) != 0) {
+            let bad: _FsWLevel = List_pop<_FsWLevel>(&levels);
+            fs_list_free(&bad.names);
+            CloseHandle(bad.h);
+        }
+    }
+}
+#endif
+
+// Remove a path and everything under it ("rm -rf"). Symbolic links are removed,
+// never followed. A missing path is success. 0 or -1 (the first failure).
+int fs_remove_all(string path) {
+    // lstat("link/") follows the link: drop trailing separators first, so a
+    // symbolic link named with one is removed, not emptied.
+    let trimmed: String;
+    trimmed.from(path);
+    defer trimmed.free();
+    while (trimmed.len > 1 && _fs_is_sep(trimmed.data[trimmed.len - 1])) {
+        trimmed.len--;
+        trimmed.data[trimmed.len] = 0;
+    }
+    path = trimmed.cstr();
+    let st: FileStat;
+    if (_fs_stat_impl(path, &st, false) != 0) {
+        if (fs_errno_missing()) {
+            _fs_err = 0;
+            return 0;
+        }
+        return -1;
+    }
+#if defined(_WIN32) || defined(_FS_HAVE_STAT)
+    if (st.is_dir && !st.is_symlink && _fs_remove_tree(path) != 0) {
+        return -1;
+    }
+#else
+    if (st.is_dir && !st.is_symlink) {
+        let names: List<String>;
+        List_init<String>(&names, 8);
+        defer fs_list_free(&names);
+        if (fs_list_dir(path, &names) != 0) {
+            return -1;
+        }
+        let child: String;
+        child.init(64);
+        defer child.free();
+        for (i in 0..List_len<String>(&names)) {
+            let nm: String = List_get<String>(&names, i);
+            _fs_join(&child, path, nm.cstr());
+            if (fs_remove_all(child.cstr()) != 0) {
+                return -1;
+            }
+        }
+    }
+#endif
+    return fs_remove(path);
+}
+
+// 1 if the last failure was "no such file or directory".
+bool fs_errno_missing() {
+#ifdef _WIN32
+    if (_fs_err_win) {   // FILE/PATH_NOT_FOUND
+        return _fs_err == 2 || _fs_err == 3;
+    }
+#endif
+    return _fs_err == _FS_ENOENT;
+}
+
+// Rename or move a path, replacing an existing file at `to`. 0 or -1.
+int fs_rename(string from, string to) {
+#ifdef _WIN32
+    *uint16 wf = _fs_wpath(from);
+    *uint16 wt = _fs_wpath(to);
+    // MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED
+    const int ok = wf != null && wt != null ? MoveFileExW(wf, wt, (uint32)3) : 0;
+    free((*void)wf);
+    free((*void)wt);
+    return ok != 0 ? 0 : _fs_fail_os();
+#else
+    return rename(from, to) == 0 ? 0 : _fs_fail_os();
+#endif
+}
+
+// 1 if `a` and `b` name the same file (device and inode, links followed).
+bool _fs_same_file(string a, string b) {
+#ifdef _FS_HAVE_STAT
+    int64[32] ra;
+    int64[32] rb;
+    if (_fs_stat_raw(a, (*void)&ra) != 0 || _fs_stat_raw(b, (*void)&rb) != 0) {
+        return false;
+    }
+    return memcmp((*void)&ra, (*void)&rb, _FS_ST_DEV_SIZE) == 0
+        && memcmp((*void)((*uint8)&ra + _FS_ST_INO), (*void)((*uint8)&rb + _FS_ST_INO), 8) == 0;
+#else
+    return false;
+#endif
+}
+
+// Copy a regular file's bytes to `to` (replaced if it exists), keeping its
+// permission bits. 0 or -1 (EINVAL when `to` is `from` itself, or a link to it).
+int fs_copy(string from, string to) {
+#ifdef _WIN32
+    *uint16 wf = _fs_wpath(from);
+    *uint16 wt = _fs_wpath(to);
+    const int ok = wf != null && wt != null ? CopyFileW(wf, wt, 0) : 0;
+    free((*void)wf);
+    free((*void)wt);
+    return ok != 0 ? 0 : _fs_fail_os();
+#else
+    let st: FileStat;
+    if (fs_stat(from, &st) != 0) {
+        return -1;
+    }
+    if (st.is_dir) {   // EISDIR
+        _fs_err = 21;
+        _fs_err_win = false;
+        return -1;
+    }
+    if (_fs_same_file(from, to)) {   // EINVAL: would truncate the source
+        _fs_err = 22;
+        _fs_err_win = false;
+        return -1;
+    }
+    *void src = fopen(from, "rb");
+    if (src == null) {
+        return _fs_fail_crt();
+    }
+    defer fclose(src);
+    // Owner-only until the bytes are in, also when `to` already exists: a copy of a
+    // private file is never readable by others, not even halfway.
+    const int dfd = open(to, _FS_O_COPY, 384);   // 0600
+    if (dfd < 0) {
+        return _fs_fail_crt();
+    }
+    _fs_fchmod(dfd, 384);
+    *void dst = fdopen(dfd, "wb");
+    if (dst == null) {
+        const int e = _fs_fail_crt();
+        close(dfd);
+        return e;
+    }
+    *uint8 buf = alloc<uint8>(65536);
+    defer free((*void)buf);
+    int rc = 0;
+    while (true) {
+        const int64 got = fread((*void)buf, 1, 65536, src);
+        if (got <= 0) {
+            break;
+        }
+        if (fwrite((*void)buf, 1, got, dst) != got) {
+            rc = _fs_fail_crt();
+            break;
+        }
+    }
+    if (rc == 0 && ferror(src) != 0) {
+        rc = _fs_fail_crt();
+    }
+    if (fflush(dst) != 0 && rc == 0) {
+        rc = _fs_fail_crt();
+    }
+#ifdef _FS_HAVE_STAT
+    if (rc == 0) {   // the source's permission bits
+        _fs_fchmod(dfd, st.mode & 4095);
+    }
+#else
+    if (rc == 0) {               // 0644: no stat to read them from
+        _fs_fchmod(dfd, 420);
+    }
+#endif
+    if (fclose(dst) != 0 && rc == 0) {
+        rc = _fs_fail_crt();
+    }
+    return rc;
+#endif
+}
+
+// Sort a list of Strings bytewise ascending (Shell sort, in place).
+void _fs_sort(List<String>* list) {
+    const int n = List_len<String>(list);
+    int gap = n / 2;
+    while (gap > 0) {
+        for (int i = gap; i < n; i++) {
+            const String tmp = list.data[i];
+            int j = i;
+            while (j >= gap && strcmp(list.data[j - gap].data, tmp.data) > 0) {
+                list.data[j] = list.data[j - gap];
+                j -= gap;
+            }
+            list.data[j] = tmp;
+        }
+        gap = gap / 2;
+    }
+}
+
+// Append the names in a directory (no "." or ".."), sorted bytewise, to `out`.
+// Free the list with fs_list_free. 0 or -1.
+int fs_list_dir(string path, List<String>* out) {
+    let names: List<String>;
+    List_init<String>(&names, 16);
+#ifdef _WIN32
+    let pat: String;
+    pat.init(64);
+    _fs_join(&pat, path, "*");
+    *uint16 w = _fs_wpath(pat.cstr());
+    pat.free();
+    if (w == null) {
+        List_free<String>(&names);
+        _fs_err = 123;
+        _fs_err_win = true;
+        return -1;
+    }
+    int64[80] raw;   // WIN32_FIND_DATAW is 592 bytes; cFileName at 44
+    *uint8 b = (*uint8)&raw;
+    *void h = FindFirstFileW(w, (*void)b);
+    free((*void)w);
+    if ((int64)h == -1) {
+        const int rc = _fs_fail_os();
+        List_free<String>(&names);
+        if (_fs_err == 2) {   // ERROR_FILE_NOT_FOUND: an empty directory
+            return 0;
+        }
+        return rc;
+    }
+    while (true) {
+        let nm: String;
+        nm.init(32);
+        _fs_append_wide(&nm, (*uint16)(b + 44));
+        if (nm.eq_cstr(".") == 1 || nm.eq_cstr("..") == 1) {
+            nm.free();
+        }
+        else {
+            List_push<String>(&names, nm);
+        }
+        if (FindNextFileW(h, (*void)b) == 0) {
+            break;
+        }
+    }
+    FindClose(h);
+#else
+    *void d = opendir(path);
+    if (d == null) {
+        List_free<String>(&names);
+        return _fs_fail_os();
+    }
+    while (true) {
+        *uint8 ent = (*uint8)readdir(d);
+        if (ent == null) {
+            break;
+        }
+        string nm = (string)(ent + _FS_DIRENT_NAME);
+        if (strcmp(nm, ".") == 0 || strcmp(nm, "..") == 0) {
+            continue;
+        }
+        let s: String;
+        s.from(nm);
+        List_push<String>(&names, s);
+    }
+    closedir(d);
+#endif
+    _fs_sort(&names);
+    for (i in 0..List_len<String>(&names)) {
+        List_push<String>(out, List_get<String>(&names, i));
+    }
+    List_free<String>(&names);
+    return 0;
+}

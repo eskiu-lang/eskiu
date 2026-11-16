@@ -1,0 +1,501 @@
+// fs_glob.esk: walking, globbing, the current directory, temporary files and the result forms (part of fs.esk, imported in order)
+
+void _fs_walk_dir(String* dir, fn(string, bool)->void visit) {
+    let names: List<String>;
+    List_init<String>(&names, 16);
+    defer fs_list_free(&names);
+    if (fs_list_dir(dir.cstr(), &names) != 0) {
+        return;
+    }
+    for (i in 0..List_len<String>(&names)) {
+        let nm: String = List_get<String>(&names, i);
+        let child: String;
+        child.init(dir.len + nm.len + 2);
+        defer child.free();
+        _fs_join(&child, dir.cstr(), nm.cstr());
+        let st: FileStat;
+        const bool is_dir = _fs_stat_impl(child.cstr(), &st, false) == 0 && st.is_dir && !st.is_symlink;
+        visit(child.cstr(), is_dir);
+        if (is_dir) {
+            _fs_walk_dir(&child, visit);
+        }
+    }
+}
+
+// Visit every entry under `root` (not `root` itself), depth first, each
+// directory's entries in sorted order: visit(path, is_dir), where path is
+// `root` joined with the entry's relative path. Symbolic links are reported
+// (is_dir false) but never followed, so a link loop cannot recurse. A
+// subdirectory that cannot be read is skipped. 0, or -1 if `root` is not a
+// readable directory.
+int fs_walk(string root, fn(string, bool)->void visit) {
+    if (fs_is_dir(root) == 0) {
+        if (_fs_err == 0 || fs_exists(root) == 1) {   // ENOTDIR
+            _fs_err = 20;
+            _fs_err_win = false;
+        }
+        return -1;
+    }
+    let base: String;
+    base.from(root);
+    defer base.free();
+    while (base.len > 1 && _fs_is_sep(base.data[base.len - 1])) {
+        base.len--;
+        base.data[base.len] = 0;
+    }
+#if defined(_WIN32) || defined(_FS_HAVE_STAT)
+    _fs_walk_tree(&base, visit);
+#else
+    _fs_walk_dir(&base, visit);
+#endif
+    return 0;
+}
+
+// The position just past a [...] class starting at pat[p] (the '['), with
+// *matched set to whether `c` is in it; -1 if the class has no closing ']'.
+int _fs_class(string pat, int p, char c, *bool matched) {
+    int i = p + 1;
+    bool neg = false;
+    if (pat[i] == '!' || pat[i] == '^') {
+        neg = true;
+        i++;
+    }
+    bool hit = false;
+    bool first = true;
+    while (pat[i] != 0 && (first || pat[i] != ']')) {
+        first = false;
+        char lo = pat[i];
+        if (lo == '\\' && pat[i + 1] != 0) {
+            i++;
+            lo = pat[i];
+        }
+        char hi = lo;
+        if (pat[i + 1] == '-' && pat[i + 2] != 0 && pat[i + 2] != ']') {
+            hi = pat[i + 2];
+            if (hi == '\\' && pat[i + 3] != 0) {
+                i++;
+                hi = pat[i + 2];
+            }
+            i += 2;
+        }
+        if ((uint8)c >= (uint8)lo && (uint8)c <= (uint8)hi) {
+            hit = true;
+        }
+        i++;
+    }
+    if (pat[i] != ']') {
+        return -1;
+    }
+    *matched = hit != neg;
+    return i + 1;
+}
+
+// 1 if `name` matches the shell pattern `pat`, else 0: `*` matches any run of
+// characters, `?` one character, `[abc]` / `[a-z]` / `[!a-z]` one character of
+// (or not of) a set, and `\` makes the next character literal. A pattern
+// matches the whole name; there is no special case for '/' or a leading '.'.
+int fs_match(string pat, string name) {
+    int p = 0;
+    int n = 0;
+    int star = -1;
+    int mark = 0;
+    while (name[n] != 0) {
+        const char pc = pat[p];
+        if (pc == '*') {
+            star = p;
+            p++;
+            mark = n;
+            continue;
+        }
+        int next = -1;
+        if (pc == '?') {
+            next = p + 1;
+        }
+        else if (pc == '[') {
+            let m: bool = false;
+            const int q = _fs_class(pat, p, name[n], &m);
+            if (q < 0) {
+                if (name[n] == '[') {
+                    next = p + 1;
+                }
+            }
+            else if (m) {
+                next = q;
+            }
+        }
+        else if (pc == '\\' && pat[p + 1] != 0) {
+            if (pat[p + 1] == name[n]) {
+                next = p + 2;
+            }
+        }
+        else if (pc != 0 && pc == name[n]) {
+            next = p + 1;
+        }
+        if (next >= 0) {
+            p = next;
+            n++;
+            continue;
+        }
+        if (star < 0) {
+            return 0;
+        }
+        p = star + 1;
+        mark++;
+        n = mark;
+    }
+    while (pat[p] == '*') {
+        p++;
+    }
+    return pat[p] == 0 ? 1 : 0;
+}
+
+bool _fs_has_magic(String* s) {
+    for (int64 i = 0; i < s.len; i++) {
+        const char c = s.data[i];
+        if (c == '*' || c == '?' || c == '[') {
+            return true;
+        }
+    }
+    return false;
+}
+
+void _fs_glob_push(List<String>* out, String* path) {
+    let s: String;
+    s.from(path.cstr());
+    List_push<String>(out, s);
+}
+
+// Every entry under `dir` (recursively, not following links), for a trailing **.
+void _fs_glob_all(String* dir, List<String>* out) {
+    let names: List<String>;
+    List_init<String>(&names, 16);
+    defer fs_list_free(&names);
+    if (fs_list_dir(dir.len == 0 ? "." : dir.cstr(), &names) != 0) {
+        return;
+    }
+    let child: String;
+    child.init(64);
+    defer child.free();
+    for (i in 0..List_len<String>(&names)) {
+        let nm: String = List_get<String>(&names, i);
+        if (nm.data[0] == '.') {
+            continue;
+        }
+        _fs_join(&child, dir.cstr(), nm.cstr());
+        _fs_glob_push(out, &child);
+        let st: FileStat;
+        if (_fs_stat_impl(child.cstr(), &st, false) == 0 && st.is_dir && !st.is_symlink) {
+            _fs_glob_all(&child, out);
+        }
+    }
+}
+
+void _fs_glob_at(String* base, List<String>* comps, int i, List<String>* out) {
+    const int nc = List_len<String>(comps);
+    if (i == nc) {
+        if (base.len > 0 && fs_exists(base.cstr()) == 1) {
+            _fs_glob_push(out, base);
+        }
+        return;
+    }
+    let comp: String = List_get<String>(comps, i);
+    if (comp.len == 0) {
+        _fs_glob_at(base, comps, i + 1, out);
+        return;
+    }
+    const bool last = i + 1 == nc;
+    let child: String;
+    child.init(64);
+    defer child.free();
+    if (comp.eq_cstr("**") == 1) {
+        if (last) {
+            _fs_glob_all(base, out);
+            return;
+        }
+        _fs_glob_at(base, comps, i + 1, out);
+        let names: List<String>;
+        List_init<String>(&names, 16);
+        defer fs_list_free(&names);
+        if (fs_list_dir(base.len == 0 ? "." : base.cstr(), &names) != 0) {
+            return;
+        }
+        for (k in 0..List_len<String>(&names)) {
+            let nm: String = List_get<String>(&names, k);
+            if (nm.data[0] == '.') {
+                continue;
+            }
+            _fs_join(&child, base.cstr(), nm.cstr());
+            let st: FileStat;
+            if (_fs_stat_impl(child.cstr(), &st, false) == 0 && st.is_dir && !st.is_symlink) {
+                _fs_glob_at(&child, comps, i, out);
+            }
+        }
+        return;
+    }
+    if (!_fs_has_magic(&comp)) {
+        // A component without wildcards is a name, with fs_match's backslash
+        // escapes removed (so `d\1` names "d1", as a pattern would match it).
+        let lit: String;
+        lit.init(comp.len + 1);
+        defer lit.free();
+        for (int64 k = 0; k < comp.len; k++) {
+#ifndef _WIN32
+            if (comp.data[k] == '\\' && k + 1 < comp.len) {
+                k++;
+            }
+#endif
+            lit.push(comp.data[k]);
+        }
+        _fs_join(&child, base.cstr(), lit.cstr());
+        if (last) {
+            let st: FileStat;
+            if (_fs_stat_impl(child.cstr(), &st, false) == 0) {
+                _fs_glob_push(out, &child);
+            }
+        } else if (fs_is_dir(child.cstr()) == 1) {
+            _fs_glob_at(&child, comps, i + 1, out);
+        }
+        return;
+    }
+    let names: List<String>;
+    List_init<String>(&names, 16);
+    defer fs_list_free(&names);
+    if (fs_list_dir(base.len == 0 ? "." : base.cstr(), &names) != 0) {
+        return;
+    }
+    const bool dot_ok = comp.data[0] == '.';
+    for (k in 0..List_len<String>(&names)) {
+        let nm: String = List_get<String>(&names, k);
+        if (nm.data[0] == '.' && !dot_ok) {
+            continue;
+        }
+        if (fs_match(comp.cstr(), nm.cstr()) == 0) {
+            continue;
+        }
+        _fs_join(&child, base.cstr(), nm.cstr());
+        if (last) {
+            _fs_glob_push(out, &child);
+        }
+        else if (fs_is_dir(child.cstr()) == 1) {
+            _fs_glob_at(&child, comps, i + 1, out);
+        }
+    }
+}
+
+// Append the paths matching `pattern` to `out`, sorted and without
+// duplicates; returns how many were added. Each '/'-separated component is an
+// fs_match pattern, and a `**` component matches any number of directories
+// (zero included; a trailing `**` matches everything below). Wildcards do not
+// match names that start with '.' unless the component itself does. Relative
+// patterns are relative to the current directory and give relative paths.
+// Symbolic links are never followed by `**`. Free with fs_list_free.
+int fs_glob(string pattern, List<String>* out) {
+    let comps: List<String>;
+    List_init<String>(&comps, 8);
+    defer fs_list_free(&comps);
+    let cur: String;
+    cur.init(32);
+    defer cur.free();
+    const int64 n = strlen(pattern);
+    let base: String;
+    base.init(32);
+    defer base.free();
+    int64 start = 0;
+    if (n > 0 && _fs_is_sep(pattern[0])) {
+        base.append("/");
+        start = 1;
+    }
+    for (int64 i = start; i <= n; i++) {
+        if (i == n || _fs_is_sep(pattern[i])) {
+            let c: String;
+            c.from(cur.cstr());
+            List_push<String>(&comps, c);
+            cur.clear();
+        } else {
+            cur.push(pattern[i]);
+        }
+    }
+    let found: List<String>;
+    List_init<String>(&found, 16);
+    _fs_glob_at(&base, &comps, 0, &found);
+    _fs_sort(&found);
+    int added = 0;
+    for (i in 0..List_len<String>(&found)) {
+        let s: String = List_get<String>(&found, i);
+        if (i > 0 && strcmp(s.data, List_get<String>(&found, i - 1).data) == 0) {
+            s.free();
+            continue;
+        }
+        List_push<String>(out, s);
+        added++;
+    }
+    List_free<String>(&found);
+    return added;
+}
+
+// ── Current directory and temporary files ─────────────────────────────────
+
+// Write the current working directory into `out` (cleared first). 0 or -1.
+int fs_cwd(String* out) {
+    out.clear();
+#ifdef _WIN32
+    const uint32 need = GetCurrentDirectoryW((uint32)0, null);
+    if (need == (uint32)0) {
+        return _fs_fail_os();
+    }
+    *uint16 w = alloc<uint16>((int64)need + 1);
+    defer free((*void)w);
+    if (GetCurrentDirectoryW(need, w) == (uint32)0) {
+        return _fs_fail_os();
+    }
+    _fs_append_wide(out, w);
+    return 0;
+#else
+    int64 cap = 256;
+    while (cap <= 1048576) {
+        *char buf = alloc<char>(cap);
+        if (getcwd(buf, cap) != null) {
+            out.append((string)buf);
+            free((*void)buf);
+            return 0;
+        }
+        free((*void)buf);
+        if (_fs_errno_now() != 34) {   // ERANGE: grow and retry
+            return _fs_fail_os();
+        }
+        cap = cap * 4;
+    }
+    return _fs_fail_os();
+#endif
+}
+
+// Change the current working directory. 0 or -1.
+int fs_chdir(string path) {
+#ifdef _WIN32
+    *uint16 w = _fs_wide(path);
+    const int ok = w != null ? SetCurrentDirectoryW(w) : 0;
+    free((*void)w);
+    return ok != 0 ? 0 : _fs_fail_os();
+#else
+    return chdir(path) == 0 ? 0 : _fs_fail_os();
+#endif
+}
+
+// The system temporary directory, without a trailing separator, into `out`
+// (cleared first): $TMPDIR or /tmp on POSIX, GetTempPathW on Windows.
+void fs_temp_base(String* out) {
+    out.clear();
+#ifdef _WIN32
+    *uint16 w = alloc<uint16>(1024);
+    if (GetTempPathW((uint32)1023, w) != (uint32)0) {
+        _fs_append_wide(out, w);
+    }
+    free((*void)w);
+    if (out.len == 0) {
+        out.append(".");
+    }
+#else
+    const string t = getenv("TMPDIR");
+    out.append(t != null && t[0] != 0 ? t : "/tmp");
+#endif
+    while (out.len > 1 && _fs_is_sep(out.data[out.len - 1])) {
+        out.len--;
+        out.data[out.len] = 0;
+    }
+}
+
+// Create a new, empty file with a unique name starting with `prefix` in the
+// temporary directory and write its path into `out` (cleared first). The
+// caller removes it (fs_remove). 0 or -1.
+int fs_temp_file(string prefix, String* out) {
+    let dir: String;
+    dir.init(64);
+    defer dir.free();
+    fs_temp_base(&dir);
+#ifdef _WIN32
+    out.clear();
+    *uint16 wd = _fs_wide(dir.cstr());
+    *uint16 wp = _fs_wide(prefix);
+    *uint16 name = alloc<uint16>(1100);
+    const uint32 r = wd != null && wp != null ? GetTempFileNameW(wd, wp, (uint32)0, name) : (uint32)0;
+    free((*void)wd);
+    free((*void)wp);
+    if (r == (uint32)0) {
+        free((*void)name);
+        return _fs_fail_os();
+    }
+    _fs_append_wide(out, name);
+    free((*void)name);
+    return 0;
+#else
+    _fs_join(out, dir.cstr(), prefix);
+    out.append("XXXXXX");
+    const int fd = mkstemp(out.data);
+    if (fd < 0) {
+        out.clear();
+        return _fs_fail_os();
+    }
+    close(fd);
+    return 0;
+#endif
+}
+
+// Create a new, empty directory with a unique name starting with `prefix` in
+// the temporary directory and write its path into `out` (cleared first). The
+// caller removes it (fs_remove_all). 0 or -1.
+int fs_temp_dir(string prefix, String* out) {
+#ifdef _WIN32
+    for (attempt in 0..16) {
+        if (fs_temp_file(prefix, out) != 0) {
+            return -1;
+        }
+        // GetTempFileNameW created a file to reserve the name; swap it for a directory.
+        if (fs_remove(out.cstr()) == 0 && fs_mkdir(out.cstr()) == 0) {
+            return 0;
+        }
+    }
+    return -1;
+#else
+    let dir: String;
+    dir.init(64);
+    defer dir.free();
+    fs_temp_base(&dir);
+    _fs_join(out, dir.cstr(), prefix);
+    out.append("XXXXXX");
+    if (mkdtemp(out.data) == null) {
+        out.clear();
+        return _fs_fail_os();
+    }
+    return 0;
+#endif
+}
+
+// ── Result forms ───────────────────────────────────────────────────────────
+
+// fs_read_text as a Result: the file's text, or an error. fs_last_error gives the OS
+// reason. Free the text with String_free.
+Result<String, string> fs_read_text_result(string path) {
+    let text: String;
+    String_init(&text, 256);
+    if (fs_read_text(path, &text) != 0) {
+        String_free(&text);
+        return Err<String, string>("cannot read the file");
+    }
+    return Ok<String, string>(text);
+}
+
+// fs_write_text as a Result (the value is 0). fs_last_error gives the OS reason.
+Result<int, string> fs_write_text_result(string path, string text) {
+    if (fs_write_text(path, text) != 0) {
+        return Err<int, string>("cannot write the file");
+    }
+    return Ok<int, string>(0);
+}
+
+// fs_append_text as a Result (the value is 0). fs_last_error gives the OS reason.
+Result<int, string> fs_append_text_result(string path, string text) {
+    if (fs_append_text(path, text) != 0) {
+        return Err<int, string>("cannot append to the file");
+    }
+    return Ok<int, string>(0);
+}
