@@ -7,6 +7,22 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- `*T const` and `const *T const`, the star-first spellings of a const pointer (`T* const`,
+  `const T* const`): the same type, in both compilers. The docs and the Book write pointers
+  star first throughout (`*T`, `const *T`, `*T const`), and the spec says how to make a
+  device's registers volatile without volatile fields.
+
+### Fixed
+
+- Self-hosted compiler: a member access through a const pointer (`P* const q`, then `q.v`)
+  emitted invalid IR, and reassigning a local `int* const` was not an error.
+
+---
+
 ## [0.16.0] - 2026-11-16
 
 ### Added
