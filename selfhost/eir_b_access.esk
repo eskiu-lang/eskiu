@@ -1,0 +1,415 @@
+// eir_b_access.esk: casts, ternaries, members, indexes and struct literals (part of eir_b_expr.esk, imported in order)
+
+// --- the other expressions ---
+
+void eb_cast(EB* b, *ExprNode node) {
+    *ETy to = eb_type(b, node.sval);
+    *ExprNode x = node.a;
+    if (x.kind == EK_IDENT && et_is_ptr(to) == 1 && eb_has_var(b, x.sval) == 0 && em_func(b.m, x.sval) != null) {
+        b.lastv = eo_global(x.sval, to);
+        return;
+    }
+    EOp v = eb_eval(b, x);
+    if (v.kind == EOK_NULL) {
+        b.lastv = eo_null();
+        b.lastv.ty = to;
+        return;
+    }
+    if (et_is_int(to) == 1 && to.bits == 1) {
+        b.lastv = eb_truth(b, v);
+        return;
+    }
+    if (eb_num(v.ty) == 1 && eb_num(to) == 1) {
+        b.lastv = eb_coerce(b, v, to);
+        return;
+    }
+    string dst = eb_new_var(b);
+    if (et_is_ptr(v.ty) == 1 && et_is_ptr(to) == 1) {
+        eb_i1(b, EO_BITCAST, dst, to, v);
+    } else if (et_is_ptr(v.ty) == 1 && et_is_int(to) == 1) {
+        eb_i1(b, EO_PTRTOINT, dst, to, v);
+    } else if (et_is_int(v.ty) == 1 && et_is_ptr(to) == 1) {
+        eb_i1(b, EO_INTTOPTR, dst, to, v);
+    } else {
+        b.lastv = v;
+        b.lastv.ty = to;
+        return;
+    }
+    b.lastv = eo_var(dst, to);
+}
+
+void eb_ternary(EB* b, *ExprNode node) {
+    EOp c = eb_truth(b, eb_eval(b, node.a));
+    *EBlock then_bb = eb_block(b, "ternary.then");
+    *EBlock else_bb = eb_block(b, "ternary.else");
+    *EBlock merge = eb_block(b, "ternary.merge");
+    *ETy rt = eb_expr_type(b, node);
+    string slot = et_cat(eb_new_var(b), ".ternary");
+    int64 al = (int64)8;
+    if (rt.bits <= 32 && et_is_iface(rt) == 0 && et_is_closure(rt) == 0 && et_is_slice(rt) == 0 && et_is_struct(rt) == 0) {
+        al = (int64)4;
+    }
+    eb_i1(b, EO_ALLOCA, slot, rt, eo_int(al, et_i32()));
+    eb_br_cond(b, c, then_bb, else_bb);
+    eb_set_block(b, then_bb);
+    EOp tv = eb_eval_for(b, node.b, rt);
+    eb_store(b, tv, eo_var(slot, et_ptr(rt)));
+    eb_br(b, merge);
+    eb_set_block(b, else_bb);
+    EOp fv = eb_eval_for(b, List_get<*ExprNode>(&node.kids, 0), rt);
+    eb_store(b, fv, eo_var(slot, et_ptr(rt)));
+    eb_br(b, merge);
+    eb_set_block(b, merge);
+    string dst = eb_new_var(b);
+    eb_i1(b, EO_LOAD, dst, rt, eo_var(slot, et_ptr(rt)));
+    b.lastv = eo_var(dst, rt);
+    b.lastl = eo_var(slot, et_ptr(rt));
+}
+
+void eb_member(EB* b, *ExprNode node) {
+    *ExprNode base = node.a;
+    string member = node.sval;
+    *ETy ot = eb_expr_type(b, base);
+    if (et_is_slice(ot) == 1 || (et_is_ptr(ot) == 1 && ot.elem != null && et_is_slice(ot.elem) == 1)) {
+        EOp fat = eb_eval(b, base);
+        if (et_eq(member, "len") == 1) {
+            string lv = et_cat(eb_new_var(b), ".len");
+            eb_i2(b, EO_EXTRACTFAT, lv, et_i64(), fat, eo_int((int64)1, et_i32()));
+            b.lastv = eo_var(lv, et_i64());
+            string lp = et_cat(eb_new_var(b), ".len_ptr");
+            eb_i2(b, EO_OFFSETPTR, lp, et_ptr(et_i64()), fat, eo_int((int64)8, et_i64()));
+            b.lastl = eo_var(lp, et_ptr(et_i64()));
+            return;
+        } else if (et_eq(member, "ptr") == 1 || et_eq(member, "data") == 1) {
+            *ETy el = null;
+            if (et_is_slice(ot) == 1) {
+                el = ot.elem;
+            } else {
+                el = ot.elem.elem;
+            }
+            if (el == null) {
+                el = et_u8();
+            }
+            string pv = et_cat(eb_new_var(b), ".ptr");
+            eb_i2(b, EO_EXTRACTFAT, pv, et_ptr(el), fat, eo_int((int64)0, et_i32()));
+            b.lastv = eo_var(pv, et_ptr(el));
+            b.lastl = fat;
+            return;
+        }
+    }
+    string sname = "";
+    if (et_is_struct(ot) == 1) {
+        sname = et_nominal(ot);
+    } else if (et_is_ptr(ot) == 1 && ot.elem != null && et_is_struct(ot.elem) == 1) {
+        sname = et_nominal(ot.elem);
+    } else {
+        string sb = eb_sema_type(b, base);
+        if (et_len(sb) > 0) {
+            string st = tyq_strip(sb);
+            while (et_len(st) > 0 && st[0] == '*') {
+                st = et_from(st, 1);
+            }
+            while (et_len(st) > 0 && st[et_len(st) - 1] == '*') {
+                st = et_sub(st, 0, et_len(st) - 1);
+            }
+            if (et_findc(st, '<') >= 0) {
+                sname = eb_mangle_note(b, st);
+            } else {
+                sname = ty_nominal(ty_parse(st));
+            }
+        }
+    }
+    if (et_len(sname) == 0 && base.kind == EK_IDENT) {
+        *ETy vt = eb_var_type(b, base.sval);
+        if (et_is_ptr(vt) == 1 && vt.elem != null && et_is_struct(vt.elem) == 1) {
+            sname = et_nominal(vt.elem);
+        } else if (et_is_struct(vt) == 1) {
+            sname = et_nominal(vt);
+        }
+    }
+    *EStruct st = null;
+    if (et_len(sname) > 0) {
+        st = em_layout(b.m, sname);
+    }
+    if (st != null) {
+        *EField fi = es_field(st, member);
+        if (fi != null && fi.is_bf == 1) {
+            b.lastv = eb_load_bitfield(b, node, eb_vol_rooted(b, node));
+            b.lastl = b.lastv;
+            return;
+        }
+    }
+    int is_ptr = et_is_ptr(ot);
+    if (is_ptr == 0 && base.kind == EK_IDENT) {
+        if (et_is_ptr(eb_var_type(b, base.sval)) == 1) {
+            is_ptr = 1;
+        }
+    }
+    EOp bp;
+    if (is_ptr == 1) {
+        bp = eb_eval(b, base);
+    } else {
+        bp = eb_lvalue(b, base);
+    }
+    *ETy mt = null;
+    if (st != null) {
+        *EField fi = es_field(st, member);
+        if (fi != null) {
+            mt = fi.ty;
+        }
+    }
+    if (mt == null) {
+        mt = eb_expr_type(b, node);
+    }
+    string fp = eb_new_var(b);
+    eb_i3(b, EO_FIELDPTR, fp, et_ptr(mt), eo_var(sname, null), bp, eo_str(member));
+    string ld = eb_new_var(b);
+    eb_load_v(b, ld, mt, eo_var(fp, et_ptr(mt)), eb_vol_rooted(b, node));
+    b.lastv = eo_var(ld, mt);
+    b.lastl = eo_var(fp, et_ptr(mt));
+}
+
+void eb_index(EB* b, *ExprNode node) {
+    if (et_len(node.op_fn) > 0) {
+        eb_op_call(b, node.op_fn, node.a, node.b);
+        return;
+    }
+    int is_slice = 0;
+    if (List_len<*ExprNode>(&node.kids) > 0) {
+        is_slice = 1;
+    }
+    *ETy bt = eb_expr_type(b, node.a);
+    *ETy el = null;
+    if (bt != null && (et_is_ptr(bt) == 1 || et_is_array(bt) == 1 || et_is_slice(bt) == 1) && bt.elem != null) {
+        el = bt.elem;
+    }
+    if (el == null) {
+        *ETy self_ty = eb_expr_type(b, node);
+        if (is_slice == 1 && et_is_slice(self_ty) == 1) {
+            el = self_ty.elem;
+        } else if (is_slice == 0 && self_ty != null) {
+            el = self_ty;
+        }
+    }
+    if (el == null) {
+        el = et_i32();
+    }
+    if (is_slice == 1) {
+        EOp lo = eb_eval(b, node.b);
+        EOp hi = eb_eval(b, List_get<*ExprNode>(&node.kids, 0));
+        string lv = et_cat(eb_new_var(b), ".slice_len");
+        eb_i2(b, EO_SUB, lv, et_i64(), hi, lo);
+        EOp start;
+        if (et_is_slice(bt) == 1) {
+            EOp fat = eb_eval(b, node.a);
+            string bd = et_cat(eb_new_var(b), ".base_data");
+            eb_i2(b, EO_EXTRACTFAT, bd, et_ptr(el), fat, eo_int((int64)0, et_i32()));
+            string sp = et_cat(eb_new_var(b), ".slice_start");
+            eb_i2(b, EO_GEP, sp, et_ptr(el), eo_var(bd, et_ptr(el)), lo);
+            start = eo_var(sp, et_ptr(el));
+        } else if (et_is_ptr(bt) == 1) {
+            EOp bp = eb_eval(b, node.a);
+            string sp = et_cat(eb_new_var(b), ".slice_start");
+            eb_i2(b, EO_GEP, sp, et_ptr(el), bp, lo);
+            start = eo_var(sp, et_ptr(el));
+        } else {
+            EOp bp = eb_lvalue(b, node.a);
+            string sp = et_cat(eb_new_var(b), ".slice_start");
+            eb_i2(b, EO_GEP, sp, et_ptr(el), bp, lo);
+            start = eo_var(sp, et_ptr(el));
+        }
+        string ss = et_cat(eb_new_var(b), ".slice");
+        *ETy slt = et_slice(el);
+        eb_i2(b, EO_MAKESLICE, ss, slt, start, eo_var(lv, et_i64()));
+        b.lastv = eo_var(ss, slt);
+        b.lastl = b.lastv;
+        return;
+    }
+    EOp bp;
+    if (et_is_slice(bt) == 1) {
+        EOp fat = eb_eval(b, node.a);
+        string dp = et_cat(eb_new_var(b), ".slice_data");
+        eb_i2(b, EO_EXTRACTFAT, dp, et_ptr(el), fat, eo_int((int64)0, et_i32()));
+        bp = eo_var(dp, et_ptr(el));
+    } else if (et_is_ptr(bt) == 1) {
+        bp = eb_eval(b, node.a);
+    } else {
+        bp = eb_lvalue(b, node.a);
+    }
+    EOp idx = eb_eval(b, node.b);
+    string gd = eb_new_var(b);
+    eb_i2(b, EO_GEP, gd, et_ptr(el), bp, idx);
+    string ld = eb_new_var(b);
+    eb_load_v(b, ld, el, eo_var(gd, et_ptr(el)), eb_vol_rooted(b, node));
+    b.lastv = eo_var(ld, el);
+    b.lastl = eo_var(gd, et_ptr(el));
+}
+
+void eb_question(EB* b, *ExprNode node) {
+    EOp rv = eb_eval(b, node.a);
+    *ETy st = rv.ty;
+    string sname = "";
+    if (st != null) {
+        sname = et_nominal(st);
+    }
+    string tmp = et_cat(eb_new_var(b), ".q_tmp");
+    eb_i1(b, EO_ALLOCA, tmp, st, eo_int((int64)8, et_i32()));
+    eb_store(b, rv, eo_var(tmp, et_ptr(st)));
+    string okp = et_cat(eb_new_var(b), ".q_ok_ptr");
+    eb_i3(b, EO_FIELDPTR, okp, et_ptr(et_i1()), eo_var(sname, null), eo_var(tmp, et_ptr(st)), eo_str("ok"));
+    string okv = et_cat(eb_new_var(b), ".q_ok");
+    eb_i1(b, EO_LOAD, okv, et_i1(), eo_var(okp, et_ptr(et_i1())));
+    string ie = et_cat(eb_new_var(b), ".q_iserr");
+    eb_icmp(b, ie, et_i1(), eo_var(okv, et_i1()), eo_int((int64)0, et_i1()), EIC_EQ);
+    *EBlock err_bb = eb_block(b, "q.err");
+    *EBlock cont = eb_block(b, "q.cont");
+    eb_br_cond(b, eo_var(ie, et_i1()), err_bb, cont);
+    eb_set_block(b, err_bb);
+    EOp whole = eo_var(tmp, st);
+    *ETy rt = null;
+    if (b.cur_fn != null) {
+        rt = b.cur_fn.ret;
+    }
+    if (et_is_struct(rt) == 1 && et_eq(et_nominal(rt), sname) == 0) {
+        string rname = et_nominal(rt);
+        eb_ensure_layout(b, rname);
+        string out = et_cat(eb_new_var(b), ".q_out");
+        eb_i1(b, EO_ALLOCA, out, rt, eo_int((int64)8, et_i32()));
+        int fi = 0;
+        while (fi < 2) {
+            string fname = "ok";
+            if (fi == 1) {
+                fname = "error";
+            }
+            fi = fi + 1;
+            *EField from = null;
+            *EField to = null;
+            *EStruct sfrom = em_layout(b.m, sname);
+            *EStruct sto = em_layout(b.m, rname);
+            if (sfrom != null) {
+                from = es_field(sfrom, fname);
+            }
+            if (sto != null) {
+                to = es_field(sto, fname);
+            }
+            if (from == null || to == null) {
+                continue;
+            }
+            string fp = eb_new_var(b);
+            string tp = eb_new_var(b);
+            string v = eb_new_var(b);
+            eb_i3(b, EO_FIELDPTR, fp, et_ptr(from.ty), eo_var(sname, null), eo_var(tmp, et_ptr(st)), eo_str(fname));
+            eb_i1(b, EO_LOAD, v, from.ty, eo_var(fp, et_ptr(from.ty)));
+            eb_i3(b, EO_FIELDPTR, tp, et_ptr(to.ty), eo_var(rname, null), eo_var(out, et_ptr(rt)), eo_str(fname));
+            eb_store(b, eo_var(v, from.ty), eo_var(tp, et_ptr(to.ty)));
+        }
+        whole = eo_var(out, rt);
+    }
+    eb_run_cleanups(b, 0, 1);
+    if (b.blk != null && b.blk.term == 0) {
+        eb_i1(b, EO_RET, "", whole.ty, whole);
+    }
+    eb_set_block(b, cont);
+    *ETy vt = eb_expr_type(b, node);
+    string vp = et_cat(eb_new_var(b), ".q_val_ptr");
+    eb_i3(b, EO_FIELDPTR, vp, et_ptr(vt), eo_var(sname, null), eo_var(tmp, et_ptr(st)), eo_str("value"));
+    string uw = et_cat(eb_new_var(b), ".q_unwrapped");
+    eb_i1(b, EO_LOAD, uw, vt, eo_var(vp, et_ptr(vt)));
+    b.lastv = eo_var(uw, vt);
+}
+
+void eb_struct_init(EB* b, *ExprNode node0) {
+    *ExprNode full = eb_with_defaults(b, node0);
+    *ExprNode node = node0;
+    if (full != null) {
+        node = full;
+    }
+    string sname = node.sval;
+    if (et_findc(sname, '<') >= 0) {
+        string sp = sname;
+        if (SMap_len(&b.tpo) > 0) {
+            sp = ty_subst_type(sname, &b.tpo);
+        }
+        sname = eb_mangle_note(b, sp);
+    }
+    *ETy sty = eb_type(b, sname);
+    int64 al = et_type_align(sty, null);
+    if (al < (int64)1) {
+        al = (int64)1;
+    }
+    string slot = eb_new_var(b);
+    eb_i1(b, EO_ALLOCA, slot, sty, eo_int(al, et_i32()));
+    int n = List_len<*ExprNode>(&node.kids);
+    int i = 0;
+    while (i < n) {
+        string fname = "";
+        if (i < List_len<string>(&node.names)) {
+            fname = et_s(List_get<string>(&node.names, i));
+        }
+        *ExprNode fv = List_get<*ExprNode>(&node.kids, i);
+        i = i + 1;
+        if (fv == null) {
+            continue;
+        }
+        *EField fi = null;
+        *ETy ft = null;
+        *EStruct st = em_layout(b.m, sname);
+        if (st != null) {
+            if (et_len(fname) == 0 && i - 1 < List_len<*EField>(&st.fields)) {
+                fname = List_get<*EField>(&st.fields, i - 1).name;
+            }
+            fi = es_field(st, fname);
+            if (fi != null) {
+                ft = fi.ty;
+            }
+        }
+        if (ft == null) {
+            ft = eb_expr_type(b, fv);
+        }
+        if (fi != null && fi.is_bf == 1) {
+            EOp v = eb_eval(b, fv);
+            string wp = eb_new_var(b);
+            eb_i2(b, EO_OFFSETPTR, wp, et_ptr(fi.storage), eo_var(slot, et_ptr(sty)), eo_int(fi.storage_off, et_i64()));
+            string wv = eb_new_var(b);
+            eb_i1(b, EO_LOAD, wv, fi.storage, eo_var(wp, et_ptr(fi.storage)));
+            int64 mask = eb_bf_mask(fi);
+            int64 fmask = (int64)((uint64)mask << (uint64)fi.bit_off);
+            string cl = eb_new_var(b);
+            eb_i2(b, EO_AND, cl, fi.storage, eo_var(wv, fi.storage), eo_int(~fmask, fi.storage));
+            EOp vs = v;
+            if (v.ty.bits != fi.storage.bits) {
+                string cv = eb_new_var(b);
+                if (v.ty.bits > fi.storage.bits) {
+                    eb_i1(b, EO_TRUNC, cv, fi.storage, v);
+                } else if (fi.sgn == 1) {
+                    eb_i1(b, EO_SEXT, cv, fi.storage, v);
+                } else {
+                    eb_i1(b, EO_ZEXT, cv, fi.storage, v);
+                }
+                vs = eo_var(cv, fi.storage);
+            }
+            string vm = eb_new_var(b);
+            eb_i2(b, EO_AND, vm, fi.storage, vs, eo_int(mask, fi.storage));
+            EOp sh = eo_var(vm, fi.storage);
+            if (fi.bit_off > 0) {
+                string s2 = eb_new_var(b);
+                eb_i2(b, EO_SHL, s2, fi.storage, sh, eo_int((int64)fi.bit_off, fi.storage));
+                sh = eo_var(s2, fi.storage);
+            }
+            string nw = eb_new_var(b);
+            eb_i2(b, EO_OR, nw, fi.storage, eo_var(cl, fi.storage), sh);
+            eb_store(b, eo_var(nw, fi.storage), eo_var(wp, et_ptr(fi.storage)));
+            continue;
+        }
+        string fp = eb_new_var(b);
+        eb_i3(b, EO_FIELDPTR, fp, et_ptr(ft), eo_var(sname, null), eo_var(slot, et_ptr(sty)), eo_str(fname));
+        if (fv.kind == EK_ARRAYLIT && et_is_array(ft) == 1) {
+            eb_array_init(b, eo_var(fp, et_ptr(ft)), fv, ft);
+            continue;
+        }
+        EOp v = eb_eval_for(b, fv, ft);
+        eb_store(b, v, eo_var(fp, et_ptr(ft)));
+    }
+    b.lastl = eo_var(slot, et_ptr(sty));
+    b.lastv = eo_var(slot, sty);
+}
