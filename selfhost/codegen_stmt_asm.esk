@@ -1,0 +1,196 @@
+// Part of codegen.esk (the statement kinds of cg_stmt), imported in order; compile codegen.esk, not this file alone.
+
+void cg_stmt_asm(Codegen* g, *StmtNode st) {
+    // Inline assembly (mirrors CodeGen::visit(AsmStmt)): a side-effecting `asm` call
+    // numbered like clang, the outputs first. A register output is a result of the
+    // call (several make a struct) stored into its lvalue; a memory output `=m` is an
+    // indirect `=*m` operand (`ptr elementtype(T)`); `+r` feeds the old value through
+    // an input tied to the output, `+m` the address again as `*m`, after the inputs.
+    String cons;
+    String_init(&cons, 32);
+    String args;
+    String_init(&args, 32);
+    String tcons;   // tied inputs (constraints, then args)
+    String_init(&tcons, 16);
+    String targs;
+    String_init(&targs, 16);
+    List<string> raddr;   // register outputs: address,
+    List_init<string>(&raddr, 2);
+    List<string> rty;       // LLVM type
+    List_init<string>(&rty, 2);
+    List<string> rvol;     // and "volatile " or ""
+    List_init<string>(&rvol, 2);
+    int nargs = 0;
+    int ntied = 0;
+    int n = List_len<*StmtNode>(&st.items);
+    int i = 0;
+    int oi = 0;
+    while (i < n) {
+        *StmtNode op = List_get<*StmtNode>(&st.items, i);
+        i = i + 1;
+        if (op.kind != SK_ASMOUTPUT) {
+            continue;
+        }
+        int rw = 0;
+        if ((int)op.name[0] == 43) {
+            rw = 1;
+        }
+        string body = cg_sub_str(op.name, 1, cg_strlen(op.name));
+        string lty = cg_lltype(g, cg_etype(g, op.expr));
+        string addr = cg_lval(g, op.expr).op;
+        string vol = cg_vol(g, op.expr);
+        if (String_len(&cons) > 0) {
+            String_append(&cons, ",");
+        }
+        if (cg_streq(body, "m") == 1) {
+            String_append(&cons, "=*m");
+            if (nargs > 0) {
+                String_append(&args, ", ");
+            }
+            String_append(&args, "ptr elementtype(");
+            String_append(&args, lty);
+            String_append(&args, ") ");
+            String_append(&args, addr);
+            nargs = nargs + 1;
+            if (rw == 1) {
+                if (ntied > 0) {
+                    String_append(&tcons, ",");
+                    String_append(&targs, ", ");
+                }
+                String_append(&tcons, "*m");
+                String_append(&targs, "ptr elementtype(");
+                String_append(&targs, lty);
+                String_append(&targs, ") ");
+                String_append(&targs, addr);
+                ntied = ntied + 1;
+            }
+        } else {
+            String_append(&cons, "=");
+            String_append(&cons, cg_asm_cons(g, body));
+            List_push<string>(&raddr, addr);
+            List_push<string>(&rty, lty);
+            List_push<string>(&rvol, vol);
+            if (rw == 1) {
+                string cur = cg_tmp(g);
+                cg_emit(g, "  ");
+                cg_emit(g, cur);
+                cg_emit(g, " = load ");
+                cg_emit(g, vol);
+                cg_emit(g, lty);
+                cg_emit(g, ", ptr ");
+                cg_emit(g, addr);
+                cg_emit(g, "\n");
+                if (ntied > 0) {
+                    String_append(&tcons, ",");
+                    String_append(&targs, ", ");
+                }
+                String_append(&tcons, cg_itoa(oi));
+                String_append(&targs, lty);
+                String_append(&targs, " ");
+                String_append(&targs, cur);
+                ntied = ntied + 1;
+            }
+        }
+        oi = oi + 1;
+    }
+    i = 0;
+    while (i < n) {
+        *StmtNode inp = List_get<*StmtNode>(&st.items, i);
+        i = i + 1;
+        if (inp.kind == SK_ASMOUTPUT) {
+            continue;
+        }
+        CgVal a = cg_expr(g, inp.expr);
+        if (String_len(&cons) > 0) {
+            String_append(&cons, ",");
+        }
+        if (nargs > 0) {
+            String_append(&args, ", ");
+        }
+        String_append(&cons, cg_asm_cons(g, inp.name));
+        String_append(&args, a.ty);
+        String_append(&args, " ");
+        String_append(&args, a.op);
+        nargs = nargs + 1;
+    }
+    if (ntied > 0) {
+        if (String_len(&cons) > 0) {
+            String_append(&cons, ",");
+        }
+        if (nargs > 0) {
+            String_append(&args, ", ");
+        }
+        String_append(&cons, (string)String_cstr(&tcons));
+        String_append(&args, (string)String_cstr(&targs));
+    }
+    if (st.type != null && st.type[0] != 0) {
+        if (String_len(&cons) > 0) {
+            String_append(&cons, ",");
+        }
+        String_append(&cons, st.type);
+    }
+    if (String_len(&cons) > 0) {
+        String_append(&cons, ",~{dirflag},~{fpsr},~{flags}");
+    }
+    int nr = List_len<string>(&rty);
+    string ret = "void";
+    if (nr == 1) {
+        ret = List_get<string>(&rty, 0);
+    }
+    if (nr > 1) {
+        ret = "{ ";
+        int ri = 0;
+        while (ri < nr) {
+            if (ri > 0) {
+                ret = cg_cat(ret, ", ");
+            }
+            ret = cg_cat(ret, List_get<string>(&rty, ri));
+            ri = ri + 1;
+        }
+        ret = cg_cat(ret, " }");
+    }
+    string res = "";
+    if (nr > 0) {
+        res = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, res);
+        cg_emit(g, " = call ");
+    }
+    else {
+        cg_emit(g, "  call ");
+    }
+    cg_emit(g, ret);
+    cg_emit(g, " asm sideeffect \"");
+    cg_emit(g, cg_ll_escape(st.name));
+    cg_emit(g, "\", \"");
+    cg_emit(g, cg_ll_escape((string)String_cstr(&cons)));
+    cg_emit(g, "\"(");
+    cg_emit(g, (string)String_cstr(&args));
+    cg_emit(g, ")\n");
+    int ri = 0;
+    while (ri < nr) {
+        string v = res;
+        if (nr > 1) {
+            v = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, v);
+            cg_emit(g, " = extractvalue ");
+            cg_emit(g, ret);
+            cg_emit(g, " ");
+            cg_emit(g, res);
+            cg_emit(g, ", ");
+            cg_emit(g, cg_itoa(ri));
+            cg_emit(g, "\n");
+        }
+        cg_emit(g, "  store ");
+        cg_emit(g, List_get<string>(&rvol, ri));
+        cg_emit(g, List_get<string>(&rty, ri));
+        cg_emit(g, " ");
+        cg_emit(g, v);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, List_get<string>(&raddr, ri));
+        cg_emit(g, "\n");
+        ri = ri + 1;
+    }
+    return;
+}

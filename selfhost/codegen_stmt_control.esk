@@ -1,0 +1,470 @@
+// Part of codegen.esk (the statement kinds of cg_stmt), imported in order; compile codegen.esk, not this file alone.
+
+void cg_stmt_block(Codegen* g, *StmtNode st) {
+    int mark = List_len<*StmtNode>(&g.cleanups);   // this block's cleanup frame
+    int lmark = List_len<CgLocal>(&g.locals);      // and its variable scope
+    int i = 0;
+    int n = List_len<*StmtNode>(&st.items);
+    while (i < n) {
+        if (g.terminated == 1) {          // rest of the block is unreachable
+            i = n;
+        }
+        else {
+            cg_stmt(g, List_get<*StmtNode>(&st.items, i));
+            i = i + 1;
+        }
+    }
+    if (g.terminated == 0) {   // fall-through: defers only
+        cg_run_cleanups(g, mark, 0);
+    }
+    cg_cleanups_trunc(g, mark);
+    cg_locals_trunc(g, lmark);
+    return;
+}
+
+void cg_stmt_if(Codegen* g, *StmtNode st) {
+    // An `else if` chain is emitted with a loop (mirrors CodeGen::visit(IfStmt)). Each
+    // link's else body is a scope of its own (as cg_scoped_stmt makes it); those scopes
+    // and the branches to each link's end label are closed innermost first.
+    List<string> ends;
+    List_init<string>(&ends, 2);
+    List<int> marks;
+    List_init<int>(&marks, 2);
+    List<int> lmarks;
+    List_init<int>(&lmarks, 2);
+    *StmtNode n = st;
+    while (n != null) {
+        CgVal c = cg_cond(g, n.expr);
+        string l_then = cg_lbl(g);
+        string l_end = cg_lbl(g);
+        string l_else = l_end;
+        if (n.s2 != null) {
+            l_else = cg_lbl(g);
+        }
+        cg_emit(g, "  br i1 ");
+        cg_emit(g, c.op);
+        cg_emit(g, ", label %");
+        cg_emit(g, l_then);
+        cg_emit(g, ", label %");
+        cg_emit(g, l_else);
+        cg_emit(g, "\n");
+        g.terminated = 1;
+        cg_label(g, l_then);
+        cg_scoped_stmt(g, n.s1);
+        cg_br(g, l_end);
+        if (n.s2 != null && n.s2.kind == SK_IF) {
+            cg_label(g, l_else);
+            List_push<string>(&ends, l_end);
+            List_push<int>(&marks, List_len<*StmtNode>(&g.cleanups));
+            List_push<int>(&lmarks, List_len<CgLocal>(&g.locals));
+            n = n.s2;
+        } else {
+            if (n.s2 != null) {
+                cg_label(g, l_else);
+                cg_scoped_stmt(g, n.s2);
+                cg_br(g, l_end);
+            }
+            cg_label(g, l_end);
+            n = null;
+        }
+    }
+    int i = List_len<string>(&ends) - 1;
+    while (i >= 0) {
+        int mark = List_get<int>(&marks, i);
+        if (g.terminated == 0) {
+            cg_run_cleanups(g, mark, 0);
+        }
+        cg_cleanups_trunc(g, mark);
+        cg_locals_trunc(g, List_get<int>(&lmarks, i));
+        string l_end = List_get<string>(&ends, i);
+        cg_br(g, l_end);
+        cg_label(g, l_end);
+        i = i - 1;
+    }
+    List_free<string>(&ends);
+    List_free<int>(&marks);
+    List_free<int>(&lmarks);
+    return;
+}
+
+void cg_stmt_while(Codegen* g, *StmtNode st) {
+    string l_cond = cg_lbl(g);
+    string l_body = cg_lbl(g);
+    string l_end = cg_lbl(g);
+    cg_br(g, l_cond);
+    cg_label(g, l_cond);
+    CgVal c = cg_cond(g, st.expr);
+    cg_emit(g, "  br i1 ");
+    cg_emit(g, c.op);
+    cg_emit(g, ", label %");
+    cg_emit(g, l_body);
+    cg_emit(g, ", label %");
+    cg_emit(g, l_end);
+    cg_emit(g, "\n");
+    g.terminated = 1;
+    cg_label(g, l_body);
+    cg_loop_push(g, l_cond, l_end, st.label);
+    cg_scoped_stmt(g, st.s1);
+    cg_loop_pop(g);
+    cg_br(g, l_cond);
+    cg_label(g, l_end);
+    return;
+}
+
+void cg_stmt_dowhile(Codegen* g, *StmtNode st) {
+    string l_body = cg_lbl(g);
+    string l_cond = cg_lbl(g);
+    string l_end = cg_lbl(g);
+    cg_br(g, l_body);
+    cg_label(g, l_body);
+    cg_loop_push(g, l_cond, l_end, st.label);       // `continue` re-tests the condition
+    cg_scoped_stmt(g, st.s1);
+    cg_loop_pop(g);
+    cg_br(g, l_cond);
+    cg_label(g, l_cond);
+    CgVal c = cg_cond(g, st.expr);
+    cg_emit(g, "  br i1 ");
+    cg_emit(g, c.op);
+    cg_emit(g, ", label %");
+    cg_emit(g, l_body);
+    cg_emit(g, ", label %");
+    cg_emit(g, l_end);
+    cg_emit(g, "\n");
+    g.terminated = 1;
+    cg_label(g, l_end);
+    return;
+}
+
+void cg_stmt_for(Codegen* g, *StmtNode st) {
+    string l_cond = cg_lbl(g);
+    string l_body = cg_lbl(g);
+    string l_step = cg_lbl(g);
+    string l_end = cg_lbl(g);
+    // The init is scoped to the loop; its wrapping block's items are emitted in the
+    // loop scope itself so the loop variable stays visible to cond/step/body.
+    int lmark = List_len<CgLocal>(&g.locals);
+    // `for (i in A..B)`: derive the bounds' common integer type here too. A generic
+    // instance's shared AST carries the type sema stamped for SOME instance, and the
+    // no-sema driver (cg_main) stamps none. An unknown bound keeps the sema stamp.
+    if (st.s1 != null && st.s1.kind == SK_BLOCK && List_len<*StmtNode>(&st.s1.items) == 2) {
+        *StmtNode rlo = List_get<*StmtNode>(&st.s1.items, 0);
+        *StmtNode rhi = List_get<*StmtNode>(&st.s1.items, 1);
+        if (rlo.is_range == 1 && rhi.is_range == 1) {
+            string ct = ast_range_var_type(cg_range_bound_type(g, rlo.expr), cg_range_bound_type(g, rhi.expr));
+            if (ct[0] != 0) {
+                rlo.type = ct;
+                rhi.type = ct;
+            }
+        }
+    }
+    if (st.s1 != null) {
+        if (st.s1.kind == SK_BLOCK) {
+            int ii = 0;
+            while (ii < List_len<*StmtNode>(&st.s1.items)) {
+                cg_stmt(g, List_get<*StmtNode>(&st.s1.items, ii));
+                ii = ii + 1;
+            }
+        } else {
+            cg_stmt(g, st.s1);
+        }
+    }
+    cg_br(g, l_cond);
+    cg_label(g, l_cond);
+    if (st.expr != null) {
+        CgVal c = cg_cond(g, st.expr);
+        cg_emit(g, "  br i1 ");
+        cg_emit(g, c.op);
+        cg_emit(g, ", label %");
+        cg_emit(g, l_body);
+        cg_emit(g, ", label %");
+        cg_emit(g, l_end);
+        cg_emit(g, "\n");
+        g.terminated = 1;
+    } else {
+        cg_br(g, l_body);
+    }
+    cg_label(g, l_body);
+    cg_loop_push(g, l_step, l_end, st.label);
+    cg_scoped_stmt(g, st.s2);
+    cg_loop_pop(g);
+    cg_br(g, l_step);
+    cg_label(g, l_step);
+    if (st.expr2 != null) {
+        cg_expr(g, st.expr2);
+    }
+    cg_br(g, l_cond);
+    cg_label(g, l_end);
+    cg_locals_trunc(g, lmark);
+    return;
+}
+
+void cg_stmt_forin(Codegen* g, *StmtNode st) {
+    // `for (v in it)` has no direct IR form: desugar to a counted for over the
+    // iterable's elements, then reuse the SK_FOR path (break/continue, defers). Array
+    // `T[N]` → it[i], length N; slice `T[]` → it[i], length it.len; list-like struct →
+    // it.data[i], length it.size. `it` is the real iterable expression, so a field
+    // (`b.vals`) works, not just a bare identifier. (Async fns get this via async_lower;
+    // this is the synchronous path.)
+    string itty = cg_etype(g, st.expr);
+    string fi = cg_cat("__fi", cg_itoa(g.lam_seq));
+    g.lam_seq = g.lam_seq + 1;
+    *ExprNode lengthE = cgb_lit(LIT_INT, "0");
+    *ExprNode elemE = cgb_lit(LIT_INT, "0");
+    // The iterable is evaluated once. Anything but a stable place (a call, a variable
+    // index) is held in a local: a list-like value that has an address by a pointer to
+    // it, anything else (an array, a slice, a pointer, a returned value) by value.
+    *ExprNode itE = st.expr;
+    if (ast_stable_place(st.expr) == 0) {
+        string itv = cg_cat(fi, "_v");
+        if (cg_is_slice(itty) == 0 && cg_is_array(itty) == 0 && (int)itty[0] != 42 && cg_addressable(g, st.expr) == 1) {
+            *ExprNode addr = alloc<ExprNode>(1);
+            addr.kind = EK_UNARY;
+            addr.sval = "&";
+            addr.a = st.expr;
+            cg_stmt(g, cgb_vardecl(itv, cg_cat("*", itty), addr));
+        } else {
+            cg_stmt(g, cgb_vardecl(itv, itty, st.expr));
+        }
+        itE = cgb_ident(itv);
+    }
+    // A slice `T[]` also matches cg_is_array (both spell "T[...]"), so test slice first.
+    if (cg_is_slice(itty) == 1) {
+        lengthE = cgb_member(itE, "len");
+        elemE = cgb_index(itE, cgb_ident(fi));
+    } else if (cg_is_array(itty) == 1) {
+        string cnt = cg_dim_val(g, cg_array_count(itty));
+        lengthE = cgb_lit(LIT_INT, cnt);
+        elemE = cgb_index(itE, cgb_ident(fi));
+    } else {
+        lengthE = cgb_member(itE, "size");
+        elemE = cgb_index(cgb_member(itE, "data"), cgb_ident(fi));
+    }
+    string elemTy = st.resolved_elem;                 // sema-stamped element type (R1)
+    if (elemTy[0] == 0) {   // fall back structurally (e.g. the no-sema path)
+        elemTy = cg_etype(g, elemE);
+    }
+    *StmtNode initS = cgb_vardecl(fi, "int", cgb_lit(LIT_INT, "0"));
+    *ExprNode cond = cgb_bin("<", cgb_ident(fi), lengthE);
+    *ExprNode step = cgb_bin("=", cgb_ident(fi), cgb_bin("+", cgb_ident(fi), cgb_lit(LIT_INT, "1")));
+    *StmtNode bodyS = cgb_block2(cgb_vardecl(st.name, elemTy, elemE), st.s1);
+    *StmtNode forS = cgb_for(initS, cond, step, bodyS);
+    forS.label = st.label;                            // carry the for-in's label onto the desugared loop
+    cg_stmt(g, forS);
+    return;
+}
+
+void cg_stmt_break(Codegen* g, *StmtNode st) {
+    if (st.label != null && st.label[0] != 0) {
+        // `break label`: scan the loops-only stack from innermost out for the named loop.
+        int i = List_len<string>(&g.loop_lbls);
+        while (i > 0) {
+            i = i - 1;
+            if (cg_streq(List_get<string>(&g.loop_lbls, i), st.label) == 1) {
+                cg_run_cleanups(g, List_get<int>(&g.loop_lbl_cld, i), 0);
+                cg_br(g, List_get<string>(&g.loop_lbl_end, i));
+                return;
+            }
+        }
+        return;
+    }
+    int n = List_len<string>(&g.loop_end);
+    if (n > 0) {
+        cg_run_cleanups(g, List_get<int>(&g.loop_cldepth, n - 1), 0);   // run loop-body defers
+        cg_br(g, List_get<string>(&g.loop_end, n - 1));
+    }
+    return;
+}
+
+void cg_stmt_continue(Codegen* g, *StmtNode st) {
+    if (st.label != null && st.label[0] != 0) {
+        int i = List_len<string>(&g.loop_lbls);
+        while (i > 0) {
+            i = i - 1;
+            if (cg_streq(List_get<string>(&g.loop_lbls, i), st.label) == 1) {
+                cg_run_cleanups(g, List_get<int>(&g.loop_lbl_cld, i), 0);
+                cg_br(g, List_get<string>(&g.loop_lbl_cont, i));
+                return;
+            }
+        }
+        return;
+    }
+    // The innermost loop's depth comes from the loops-only stack: loop_cldepth also
+    // holds an entry per enclosing `switch` (for break), so indexing it by the loop
+    // count ran a switch case's defers on a `continue` of a loop inside that case.
+    int n = List_len<string>(&g.loop_lbl_cont);
+    if (n > 0) {
+        cg_run_cleanups(g, List_get<int>(&g.loop_lbl_cld, n - 1), 0);
+        cg_br(g, List_get<string>(&g.loop_lbl_cont, n - 1));
+    }
+    return;
+}
+
+void cg_stmt_vardecl(Codegen* g, *StmtNode st) {
+    // A variable of a type with field defaults that nothing initializes starts as the
+    // default value (as the C++ visit(VarDecl)).
+    if (st.expr == null) {
+        st.expr = cg_default_expr(g, st.type);
+    }
+    string ty = cg_lltype(g, st.type);
+    if (st.is_static == 1) {
+        // A `static` local: one instance at module scope, persists across calls.
+        // Its storage is a private global; the slot is that global's pointer, so
+        // ordinary load/store on the local read/write the persistent cell.
+        string gname = cg_cat("@.static.", cg_itoa(g.strcount));
+        g.strcount = g.strcount + 1;
+        g.lam_expret = cg_lam_ret_of(st.type);  // thread fn-type return into a lambda init
+        // Compute the initializer first (a string literal appends its constant to
+        // g.globals; that must not land mid-line — see the module-global path).
+        string sinit = cg_global_init_ty(g, st.expr, st.type);
+        g.lam_expret = "";
+        String_append(&g.globals, gname);
+        String_append(&g.globals, " = internal global ");
+        String_append(&g.globals, cg_tyval(ty, sinit));
+        String_append(&g.globals, "\n");
+        cg_add_local(g, st.name, gname, ty, cg_apply_sub(g, st.type));
+        if (st.is_vol == 1) {
+            List_push<string>(&g.vols, st.name);
+        }
+        return;
+    }
+    string slot = cg_entry_alloca(g, ty);   // hoisted to the entry block, not re-run per loop iteration
+    // The name is bound after its initializer: `{ int64 x = x + 1; }` reads the outer x.
+    if (st.expr != null) {
+        if (st.expr.kind == EK_ARRAYLIT) {          // { ... } (nested for T[N][M]) → zero-fill + store
+            cg_array_init(g, slot, st.type, st.expr, 1);
+        } else if (st.expr.kind == EK_STRUCTINIT) { // P { f: v, ... } → store fields via GEP
+            cg_struct_init(g, slot, st.type, st.expr);
+        } else {
+            g.lam_expret = cg_lam_ret_of(st.type);   // thread fn-type return into a lambda init
+            cg_hint_iface(g, st.expr, st.type);
+            CgVal init = cg_expr(g, st.expr);
+            g.lam_expret = "";
+            string iop = cg_coerce(g, init, ty);    // widen/truncate/null-coerce to the declared type
+            if (cg_is_iface(g, cg_dealias(g, st.type)) == 1) {
+                iop = cg_iface_conv(g, st.type, init, st.expr);
+            }
+            cg_emit(g, "  store ");
+            if (st.is_vol == 1) {   // an MMIO init is a volatile store
+                cg_emit(g, "volatile ");
+            }
+            cg_emit(g, ty);
+            cg_emit(g, " ");
+            cg_emit(g, iop);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, slot);
+            cg_emit(g, "\n");
+        }
+    } else {
+        // A local declared without a value starts at zero (mirrors the C++ codegen):
+        // every declaration, so each loop iteration, gets a fresh zero.
+        if (cg_ll_big(g, ty) == 1) {
+            cg_zero_fill(g, slot, ty);
+        }
+        else {
+            cg_emit(g, "  store ");
+            if (st.is_vol == 1) {
+                cg_emit(g, "volatile ");
+            }
+            cg_emit(g, ty);
+            cg_emit(g, " zeroinitializer, ptr ");
+            cg_emit(g, slot);
+            cg_emit(g, "\n");
+        }
+    }
+    cg_add_local(g, st.name, slot, ty, cg_apply_sub(g, st.type));
+    if (st.is_vol == 1) {
+        List_push<string>(&g.vols, st.name);
+    }
+    return;
+}
+
+void cg_stmt_switch(Codegen* g, *StmtNode st) {
+    // C-style fall-through: a `switch` instruction jumps to each case's block; a
+    // block flows into the next unless its body terminates (break/return). `break`
+    // targets the end (pushed onto loop_end). Case values must be constants.
+    CgVal subj = cg_expr(g, st.expr);
+    int nc = List_len<*StmtNode>(&st.items);
+    List<string> labels;
+    List_init<string>(&labels, nc);
+    int di = 0 - 1;                                   // default case index, -1 if none
+    int i = 0;
+    while (i < nc) {
+        List_push<string>(&labels, cg_lbl(g));
+        if (List_get<*StmtNode>(&st.items, i).expr == null) {
+            di = i;
+        }
+        i = i + 1;
+    }
+    string l_end = cg_lbl(g);
+    string deflbl = l_end;
+    if (di >= 0) {
+        deflbl = List_get<string>(&labels, di);
+    }
+    cg_emit(g, "  switch ");
+    cg_emit(g, subj.ty);
+    cg_emit(g, " ");
+    cg_emit(g, subj.op);
+    cg_emit(g, ", label %");
+    cg_emit(g, deflbl);
+    cg_emit(g, " [ ");
+    i = 0;
+    while (i < nc) {
+        *StmtNode c = List_get<*StmtNode>(&st.items, i);
+        if (c.expr != null) {
+            // A constant label: fold it (`K`, `K + 10`, a top-level `const`), matching
+            // the C++ back-end's constant folder.
+            CgK ck = cg_cfold(g, c.expr);
+            if (ck.ok == 0 || ck.isf == 1) {
+                dprintf(2, "error: switch case value must be a constant integer\n");
+                exit(1);
+            }
+            cg_emit(g, subj.ty);
+            cg_emit(g, " ");
+            cg_emit(g, cg_k_text(ck, subj.ty));
+            cg_emit(g, ", label %");
+            cg_emit(g, List_get<string>(&labels, i));
+            cg_emit(g, " ");
+        }
+        i = i + 1;
+    }
+    cg_emit(g, "]\n");
+    g.terminated = 1;
+    List_push<string>(&g.loop_end, l_end);
+    List_push<int>(&g.loop_cldepth, List_len<*StmtNode>(&g.cleanups));            // break → end
+    int clmark = List_len<CgLocal>(&g.locals);        // the switch body is one scope (C)
+    i = 0;
+    while (i < nc) {
+        cg_label(g, List_get<string>(&labels, i));
+        *StmtNode c = List_get<*StmtNode>(&st.items, i);
+        // Each case's statements are a scope: a `defer` there runs when the case body
+        // is left (by `break`, or by falling through into the next case).
+        int cmark = List_len<*StmtNode>(&g.cleanups);
+        int bi = 0;
+        int bn = List_len<*StmtNode>(&c.items);
+        while (bi < bn) {
+            if (g.terminated == 1) {
+                bi = bn;
+            }
+            else {
+                cg_stmt(g, List_get<*StmtNode>(&c.items, bi));
+                bi = bi + 1;
+            }
+        }
+        if (g.terminated == 0) {
+            cg_run_cleanups(g, cmark, 0);
+        }
+        cg_cleanups_trunc(g, cmark);
+        if (i + 1 < nc) {   // fall through
+            cg_br(g, List_get<string>(&labels, i + 1));
+        }
+        else {
+            cg_br(g, l_end);
+        }
+        i = i + 1;
+    }
+    cg_locals_trunc(g, clmark);
+    List_remove<string>(&g.loop_end, List_len<string>(&g.loop_end) - 1);
+    List_remove<int>(&g.loop_cldepth, List_len<int>(&g.loop_cldepth) - 1);
+    cg_label(g, l_end);
+    return;
+}
