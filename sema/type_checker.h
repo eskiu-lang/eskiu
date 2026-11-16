@@ -368,6 +368,10 @@ private:
     // Per-function `escaping` flags for each parameter (closure-retention).
     std::map<std::string, std::vector<bool>> functionParamEscaping;
     std::set<std::string> mustUseFuncs;   // functions whose result may not be discarded
+    // printf-style functions the program declares: a variadic function whose last fixed
+    // parameter is `string fmt`, with that parameter's index (-Wformat checks their calls).
+    std::map<std::string, int> formatFunctions;
+    void noteFormatFunction(const std::string& name, const std::vector<std::pair<std::string, std::string>>& params);
     std::set<std::string> externFnNames;  // `extern` C functions (fn-typed params take a C fn pointer)
     // `?*T` variables currently known non-null, keyed by narrowKey ("name@scope") so a
     // shadowing declaration is a different variable. A narrowed identifier's expression

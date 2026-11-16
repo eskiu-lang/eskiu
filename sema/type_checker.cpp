@@ -158,6 +158,7 @@ bool TypeChecker::check(Program* program) {
             defineFunction(funcDecl->name, sigRet, paramTypes);
             functionParamEscaping[funcDecl->name] = funcDecl->paramEscaping;
             if (funcDecl->mustUse) mustUseFuncs.insert(funcDecl->name);
+            noteFormatFunction(funcDecl->name, funcDecl->params);
             // Operator overload: index it by op so `a op b` resolves by operand types
             // (with the usual numeric coercions), not by an exact mangled-name match.
             if (!funcDecl->operatorSym.empty())
@@ -170,6 +171,7 @@ bool TypeChecker::check(Program* program) {
             defineFunction(externDecl->name, externDecl->returnType, paramTypes);
             functionParamEscaping[externDecl->name] = externDecl->paramEscaping;
             externFnNames.insert(externDecl->name);
+            noteFormatFunction(externDecl->name, externDecl->params);
         } else if (auto intrinDecl = nodeCast<IntrinsicDecl>(decl.get())) {
             // Intrinsics carry an ordinary signature; only codegen treats them
             // specially (inline lowering instead of a call).

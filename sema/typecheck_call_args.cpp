@@ -122,8 +122,20 @@ static int formatIndexOf(const std::string& fn) {
     return it == table.end() ? -1 : it->second;
 }
 
+void TypeChecker::noteFormatFunction(const std::string& name,
+                                     const std::vector<std::pair<std::string, std::string>>& params) {
+    size_t n = params.size();
+    if (n >= 2 && params[n - 1].first == "..." && params[n - 2].second == "fmt" &&
+        tyq::strip(params[n - 2].first) == "string")
+        formatFunctions[name] = (int)n - 2;
+}
+
 void TypeChecker::checkFormatCall(Expr* call, const std::string& fn, const std::vector<ExprPtr>& args, int shift) {
     int fi = formatIndexOf(fn);
+    if (fi < 0) {
+        auto it = formatFunctions.find(fn);
+        if (it != formatFunctions.end()) fi = it->second;
+    }
     if (fi < 0) return;
     fi -= shift;
     if (fi < 0 || fi >= (int)args.size()) return;
