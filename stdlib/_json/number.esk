@@ -1,4 +1,4 @@
-// json_number.esk: number formatting, printing, paths and the result forms (part of json.esk, imported in order)
+// _json/number.esk: number formatting, printing, paths and the result forms (part of json.esk, imported in order)
 
 // High 64 bits of the 128-bit product a * b.
 uint64 _json_mulhi(uint64 a, uint64 b) {

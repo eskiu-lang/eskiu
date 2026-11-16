@@ -1,4 +1,4 @@
-// fs_glob.esk: walking, globbing, the current directory, temporary files and the result forms (part of fs.esk, imported in order)
+// _fs/glob.esk: walking, globbing, the current directory, temporary files and the result forms (part of fs.esk, imported in order)
 
 void _fs_walk_dir(String* dir, fn(string, bool)->void visit) {
     let names: List<String>;

@@ -1,4 +1,4 @@
-// fs_text.esk: text files, paths, directories and directory trees through descriptors (part of fs.esk, imported in order)
+// _fs/text.esk: text files, paths, directories and directory trees through descriptors (part of fs.esk, imported in order)
 
 // fopen with a UTF-8 path on every platform (_wfopen on Windows).
 *void _fs_fopen(string path, string mode) {

@@ -1,4 +1,4 @@
-// process_windows.esk: the Windows platform layer (part of process.esk, imported in order)
+// _process/windows.esk: the Windows platform layer (part of process.esk, imported in order)
 
 #ifdef _WIN32
 // ── Windows ───────────────────────────────────────────────────────────────

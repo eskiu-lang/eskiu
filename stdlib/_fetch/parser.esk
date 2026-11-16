@@ -1,4 +1,4 @@
-// fetch_parser.esk: the response parser and the request machine (part of fetch.esk, imported in order)
+// _fetch/parser.esk: the response parser and the request machine (part of fetch.esk, imported in order)
 
 // ── Response parser ──────────────────────────────────────────────────────────
 //

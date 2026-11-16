@@ -1,4 +1,4 @@
-// fs_tree.esk: directory trees through handles (Windows) and directory listing (part of fs.esk, imported in order)
+// _fs/tree.esk: directory trees through handles (Windows) and directory listing (part of fs.esk, imported in order)
 
 #ifdef _WIN32
 // ── Directory trees through handles (Windows) ────────────────────────────────

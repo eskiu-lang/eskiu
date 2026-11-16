@@ -1,4 +1,4 @@
-// http2_server_frames.esk: frame handlers, timeouts and the servers (part of http2_server.esk, imported in order)
+// _http2_server/frames.esk: frame handlers, timeouts and the servers (part of http2_server.esk, imported in order)
 
 void H2Server_on_data(H2Server* s, H2Frame* h, *uint8 p) {
     if (h.stream_id == 0) {

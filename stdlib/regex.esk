@@ -418,8 +418,8 @@ int _re_script_of(int r) {
 }
 
 // The rest of regex.esk, in these parts (imported in order):
-import "regex_parse.esk";
-import "regex_compile.esk";
-import "regex_vm.esk";
-import "regex_lazy_dfa.esk";
-import "regex_search.esk";
+import "_regex/parse.esk";
+import "_regex/compile.esk";
+import "_regex/vm.esk";
+import "_regex/lazy_dfa.esk";
+import "_regex/search.esk";

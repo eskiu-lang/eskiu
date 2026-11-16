@@ -1,4 +1,4 @@
-// regex_lazy_dfa.esk: the lazy DFA (part of regex.esk, imported in order)
+// _regex/lazy_dfa.esk: the lazy DFA (part of regex.esk, imported in order)
 
 // =========================== lazy DFA ======================================
 

@@ -1,4 +1,4 @@
-// regex_parse.esk: parsing (part of regex.esk, imported in order)
+// _regex/parse.esk: parsing (part of regex.esk, imported in order)
 
 // =========================== parsing =======================================
 

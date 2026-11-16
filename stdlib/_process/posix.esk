@@ -1,4 +1,4 @@
-// process_posix.esk: the POSIX platform layer (part of process.esk, imported in order)
+// _process/posix.esk: the POSIX platform layer (part of process.esk, imported in order)
 
 #ifndef _WIN32
 // ── POSIX ─────────────────────────────────────────────────────────────────

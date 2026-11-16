@@ -1,4 +1,4 @@
-// http_worker.esk: the worker pool and serving connections (part of http.esk, imported in order)
+// _http/worker.esk: the worker pool and serving connections (part of http.esk, imported in order)
 
 // ── Worker pool ──────────────────────────────────────────────────────────────
 

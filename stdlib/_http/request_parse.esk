@@ -1,4 +1,4 @@
-// http_request_parse.esk: parsing requests and the response builder (part of http.esk, imported in order)
+// _http/request_parse.esk: parsing requests and the response builder (part of http.esk, imported in order)
 
 // Parse the request in buf[0..len) into self (its fields are cleared first).
 // *need is set to the total byte count the request needs once its head and

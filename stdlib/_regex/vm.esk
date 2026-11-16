@@ -1,4 +1,4 @@
-// regex_vm.esk: the Pike VM and the search prefilter (part of regex.esk, imported in order)
+// _regex/vm.esk: the Pike VM and the search prefilter (part of regex.esk, imported in order)
 
 void _re_scratch_free(*_ReScratch sc) {
     if (sc == null) {

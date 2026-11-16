@@ -424,5 +424,5 @@ void _h2_send_response(H2Conn* conn, int stream_id, HttpResponse* res) {
 }
 
 // The rest of http2_server.esk, in these parts (imported in order):
-import "http2_server_conn.esk";
-import "http2_server_frames.esk";
+import "_http2_server/conn.esk";
+import "_http2_server/frames.esk";

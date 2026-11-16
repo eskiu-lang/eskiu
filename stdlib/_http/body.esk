@@ -1,4 +1,4 @@
-// http_body.esk: the binary-safe request (full body) (part of http.esk, imported in order)
+// _http/body.esk: the binary-safe request (full body) (part of http.esk, imported in order)
 
 // ── Binary-safe request (full body) ────────────────────────────────────────────
 //

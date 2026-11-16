@@ -1,4 +1,4 @@
-// regex_compile.esk: compilation (part of regex.esk, imported in order)
+// _regex/compile.esk: compilation (part of regex.esk, imported in order)
 
 // Skip what matches nothing and takes no quantifier of its own: empty \Q\E
 // quotes, and flag groups (?flags), which set the flags for the rest of the

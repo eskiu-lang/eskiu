@@ -347,7 +347,7 @@ int JsonValue_as_bool(JsonValue* v) {
 }
 
 // The rest of json.esk, in these parts (imported in order):
-import "json_parser.esk";
-import "json_edit.esk";
-import "json_ryu_tables.esk";
-import "json_number.esk";
+import "_json/parser.esk";
+import "_json/edit.esk";
+import "_json/ryu_tables.esk";
+import "_json/number.esk";

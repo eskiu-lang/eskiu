@@ -287,8 +287,8 @@ void _proc_env_merge(List<string>* extra, List<String>* out) {
 }
 
 // The rest of process.esk, in these parts (imported in order):
-import "process_windows.esk";
-import "process_posix.esk";
+import "_process/windows.esk";
+import "_process/posix.esk";
 
 // Read the child's stream to its end into `out`. Returns the bytes read, or -1.
 int64 Process_read_all(Process* p, int stream, String* out) {

@@ -545,6 +545,6 @@ int _http_request_head(HttpRequest* self, *uint8 buf, int hend, int64 max_body, 
 }
 
 // The rest of http.esk, in these parts (imported in order):
-import "http_request_parse.esk";
-import "http_worker.esk";
-import "http_body.esk";
+import "_http/request_parse.esk";
+import "_http/worker.esk";
+import "_http/body.esk";

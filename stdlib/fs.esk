@@ -585,6 +585,6 @@ int64 _fs_filetime_at(*uint8 b, int off) {
 #endif
 
 // The rest of fs.esk, in these parts (imported in order):
-import "fs_text.esk";
-import "fs_tree.esk";
-import "fs_glob.esk";
+import "_fs/text.esk";
+import "_fs/tree.esk";
+import "_fs/glob.esk";

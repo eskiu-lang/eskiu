@@ -1,4 +1,4 @@
-// regex_search.esk: the backtracker, searching and the public matching API (part of regex.esk, imported in order)
+// _regex/search.esk: the backtracker, searching and the public matching API (part of regex.esk, imported in order)
 
 // Set to make every search run the Pike VM alone (tests compare it with the DFA).
 bool _re_force_vm = false;

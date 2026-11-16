@@ -1,4 +1,4 @@
-// fetch_request.esk: rendering, connecting, the blocking and async drivers and the result forms (part of fetch.esk, imported in order)
+// _fetch/request.esk: rendering, connecting, the blocking and async drivers and the result forms (part of fetch.esk, imported in order)
 
 // Render the request for the current URL into c.req.
 void _fetch_render(_FetchCall* c) {

@@ -316,5 +316,5 @@ int Response_ok(Response* self) {
 }
 
 // The rest of fetch.esk, in these parts (imported in order):
-import "fetch_parser.esk";
-import "fetch_request.esk";
+import "_fetch/parser.esk";
+import "_fetch/request.esk";

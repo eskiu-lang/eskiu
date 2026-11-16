@@ -1,4 +1,4 @@
-// json_parser.esk: the parser (part of json.esk, imported in order)
+// _json/parser.esk: the parser (part of json.esk, imported in order)
 
 // ── Parser (recursive descent) ───────────────────────────────────────────────
 // Strict RFC 8259: exact literals, the number grammar, the full escape set with

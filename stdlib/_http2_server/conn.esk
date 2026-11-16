@@ -1,4 +1,4 @@
-// http2_server_conn.esk: the server connection engine (part of http2_server.esk, imported in order)
+// _http2_server/conn.esk: the server connection engine (part of http2_server.esk, imported in order)
 
 // ── Server connection engine (transport-agnostic) ───────────────────────────
 //
