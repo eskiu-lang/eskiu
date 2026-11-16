@@ -1,0 +1,440 @@
+// process_windows.esk: the Windows platform layer (part of process.esk, imported in order)
+
+#ifdef _WIN32
+// ── Windows ───────────────────────────────────────────────────────────────
+
+// Append `arg` to a command line quoted for CommandLineToArgvW / the C runtime.
+void _proc_quote_arg(String* cmd, string arg) {
+    if (cmd.len > 0) {
+        cmd.push(' ');
+    }
+    bool plain = arg[0] != 0;
+    for (int i = 0; arg[i] != 0; i++) {
+        const char c = arg[i];
+        if (c == ' ' || c == '\t' || c == '\n' || c == 11 || c == '"') {
+            plain = false;
+        }
+    }
+    if (plain) {
+        cmd.append(arg);
+        return;
+    }
+    cmd.push('"');
+    int i = 0;
+    while (true) {
+        int slashes = 0;
+        while (arg[i] == '\\') {
+            slashes++;
+            i++;
+        }
+        if (arg[i] == 0) {
+            for (k in 0..slashes * 2) {
+                cmd.push('\\');
+            }
+            break;
+        }
+        if (arg[i] == '"') {
+            for (k in 0..slashes * 2 + 1) {
+                cmd.push('\\');
+            }
+            cmd.push('"');
+        } else {
+            for (k in 0..slashes) {
+                cmd.push('\\');
+            }
+            cmd.push(arg[i]);
+        }
+        i++;
+    }
+    cmd.push('"');
+}
+
+*void _proc_inheritable(*void h) {
+    if (h == null || (int64)h == -1) {
+        return null;
+    }
+    let d: *void = null;
+    if (DuplicateHandle(GetCurrentProcess(), h, GetCurrentProcess(), &d, (uint32)0, 1, (uint32)2) == 0) {
+        return null;
+    }
+    return d;
+}
+
+// Start the child for `cmdline` (UTF-8). Pipes the streams the options ask
+// for: stdin when `pipe_in`, stdout/stderr unless inherited (stderr not when merged).
+// With `job`, the child starts suspended inside a new Job object (p.hjob), so
+// a timeout can end every process it starts.
+int _proc_start(String* cmdline, ProcessOptions* o, bool pipe_in, bool job, Process* p) {
+    p.pid = 0;
+    p.exit_code = -1;
+    p.exited = false;
+    p.hproc = null;
+    p.hjob = null;
+    p.hin = null;
+    p.hout = null;
+    p.herr = null;
+    let sa: _proc_sa;
+    sa.n = (uint32)24;
+    sa.desc = null;
+    sa.inherit = 1;
+    let c_in: *void = null;
+    let c_out: *void = null;
+    let c_err: *void = null;
+    if (pipe_in) {
+        let r: *void = null;
+        let w: *void = null;
+        if (CreatePipe(&r, &w, (*void)&sa, (uint32)0) == 0) {
+            return _fs_fail_os();
+        }
+        SetHandleInformation(w, (uint32)1, (uint32)0);
+        c_in = r;
+        p.hin = w;
+    } else if (o.inherit_stdin) {
+        c_in = _proc_inheritable(GetStdHandle((uint32)4294967286));
+    } else {
+        *uint16 nul = _fs_wide("NUL");
+        c_in = CreateFileW(nul, (uint32)2147483648, (uint32)3, (*void)&sa, (uint32)3, (uint32)0, null);
+        free((*void)nul);
+    }
+    if (o.inherit_stdout) {
+        c_out = _proc_inheritable(GetStdHandle((uint32)4294967285));
+    } else {
+        let r: *void = null;
+        let w: *void = null;
+        if (CreatePipe(&r, &w, (*void)&sa, (uint32)0) == 0) {
+            return _fs_fail_os();
+        }
+        SetHandleInformation(r, (uint32)1, (uint32)0);
+        c_out = w;
+        p.hout = r;
+    }
+    if (o.merge_stderr) {
+        c_err = _proc_inheritable(c_out);
+    } else if (o.inherit_stderr) {
+        c_err = _proc_inheritable(GetStdHandle((uint32)4294967284));
+    } else {
+        let r: *void = null;
+        let w: *void = null;
+        if (CreatePipe(&r, &w, (*void)&sa, (uint32)0) == 0) {
+            return _fs_fail_os();
+        }
+        SetHandleInformation(r, (uint32)1, (uint32)0);
+        c_err = w;
+        p.herr = r;
+    }
+    int64[13] si;   // STARTUPINFOW, 104 bytes
+    *uint8 sb = (*uint8)&si;
+    memset((*void)sb, 0, 104);
+    *int32 cb = (*int32)sb;
+    cb[0] = 104;
+    cb[15] = 256;   // dwFlags = STARTF_USESTDHANDLES
+    **void hs = (**void)(sb + 80);
+    hs[0] = c_in;
+    hs[1] = c_out;
+    hs[2] = c_err;
+    int64[3] pi;    // PROCESS_INFORMATION
+    *uint16 wcmd = _fs_wide(cmdline.cstr());
+    *uint16 wcwd = o.cwd != null ? _fs_wide(o.cwd) : null;
+    *uint16 wenv = null;
+    uint32 flags = (uint32)0;
+    if (o.env != null && List_len<string>(o.env) > 0) {
+        let all: List<String>;
+        List_init<String>(&all, 64);
+        _proc_env_merge(o.env, &all);
+        let block: String;
+        block.init(4096);
+        for (i in 0..List_len<String>(&all)) {
+            let e: String = List_get<String>(&all, i);
+            _fs_append_bytes(&block, (*uint8)e.data, e.len + 1);
+        }
+        let zero: uint8 = (uint8)0;
+        _fs_append_bytes(&block, &zero, 1);
+        // Convert the NUL-separated UTF-8 block to UTF-16 in one call (length given).
+        const int wn = MultiByteToWideChar((uint32)65001, (uint32)0, (string)block.data, (int)block.len, null, 0);
+        wenv = alloc<uint16>((int64)wn + 1);
+        MultiByteToWideChar((uint32)65001, (uint32)0, (string)block.data, (int)block.len, wenv, wn);
+        block.free();
+        fs_list_free(&all);
+        flags = (uint32)1024;   // CREATE_UNICODE_ENVIRONMENT
+    }
+    if (job) {   // CREATE_SUSPENDED
+        flags = flags | (uint32)4;
+    }
+    const int ok = wcmd != null ? CreateProcessW(null, wcmd, null, null, 1, flags, (*void)wenv, wcwd, (*void)sb, (*void)&pi) : 0;
+    if (ok == 0) {
+        _fs_fail_os();
+    }
+    free((*void)wcmd);
+    free((*void)wcwd);
+    free((*void)wenv);
+    if (c_in != null) {
+        CloseHandle(c_in);
+    }
+    if (c_out != null) {
+        CloseHandle(c_out);
+    }
+    if (c_err != null) {
+        CloseHandle(c_err);
+    }
+    if (ok == 0) {
+        if (p.hin != null) {
+            CloseHandle(p.hin);
+            p.hin = null;
+        }
+        if (p.hout != null) {
+            CloseHandle(p.hout);
+            p.hout = null;
+        }
+        if (p.herr != null) {
+            CloseHandle(p.herr);
+            p.herr = null;
+        }
+        return -1;
+    }
+    **void ph = (**void)&pi;
+    p.hproc = ph[0];
+    if (job) {
+        p.hjob = CreateJobObjectW(null, null);
+        if (p.hjob != null && AssignProcessToJobObject(p.hjob, p.hproc) == 0) {
+            CloseHandle(p.hjob);
+            p.hjob = null;
+        }
+        ResumeThread(ph[1]);
+    }
+    CloseHandle(ph[1]);
+    *int32 ids = (*int32)&pi;
+    p.pid = (int)ids[4];
+    return 0;
+}
+
+void _proc_cmdline(List<string>* argv, String* out) {
+    out.clear();
+    for (i in 0..List_len<string>(argv)) {
+        _proc_quote_arg(out, List_get<string>(argv, i));
+    }
+}
+
+struct _proc_job {
+    *void h;
+    String* buf;
+    string text;
+}
+
+void _proc_drain(_proc_job* j) {
+    *uint8 buf = alloc<uint8>(65536);
+    while (true) {
+        let got: uint32 = (uint32)0;
+        if (ReadFile(j.h, (*void)buf, (uint32)65536, &got, null) == 0 || got == (uint32)0) {
+            break;
+        }
+        _fs_append_bytes(j.buf, buf, (int64)got);
+    }
+    free((*void)buf);
+}
+
+void _proc_feed(_proc_job* j) {
+    int64 off = 0;
+    const int64 n = strlen(j.text);
+    while (off < n) {
+        const int64 chunk = n - off > 65536 ? 65536 : n - off;
+        let put: uint32 = (uint32)0;
+        if (WriteFile(j.h, (*void)((*uint8)j.text + off), (uint32)chunk, &put, null) == 0) {
+            break;
+        }
+        off += (int64)put;
+    }
+    CloseHandle(j.h);
+}
+
+int _proc_run_cmd(String* cmdline, ProcessOptions* o, ProcessResult* r) {
+    r.stdout.init(256);
+    r.stderr.init(64);
+    r.exit_code = -1;
+    r.timed_out = false;
+    let p: Process;
+    if (_proc_start(cmdline, o, o.stdin_text != null, o.timeout_ms > 0, &p) != 0) {
+        return -1;
+    }
+    let jout: _proc_job;
+    jout.h = p.hout;
+    jout.buf = &r.stdout;
+    jout.text = null;
+    let jerr: _proc_job;
+    jerr.h = p.herr;
+    jerr.buf = &r.stderr;
+    jerr.text = null;
+    let jin: _proc_job;
+    jin.h = p.hin;
+    jin.buf = null;
+    jin.text = o.stdin_text;
+    *_proc_job po = &jout;
+    *_proc_job pe = &jerr;
+    *_proc_job pn = &jin;
+    *void t_out = null;
+    *void t_err = null;
+    *void t_in = null;
+    if (p.hout != null) {
+        t_out = thread_create(void() {
+            _proc_drain(po);
+        });
+    }
+    if (p.herr != null) {
+        t_err = thread_create(void() {
+            _proc_drain(pe);
+        });
+    }
+    if (p.hin != null) {
+        t_in = thread_create(void() {
+            _proc_feed(pn);
+        });
+    }
+    uint32 wait_ms = (uint32)4294967295;   // INFINITE
+    if (o.timeout_ms > 0) {
+        wait_ms = o.timeout_ms >= 4294967295 ? (uint32)4294967294 : (uint32)o.timeout_ms;
+    }
+    if (WaitForSingleObject(p.hproc, wait_ms) == (uint32)258) {   // WAIT_TIMEOUT
+        if (p.hjob != null) {
+            TerminateJobObject(p.hjob, (uint32)137);
+        }
+        TerminateProcess(p.hproc, (uint32)137);
+        WaitForSingleObject(p.hproc, (uint32)4294967295);
+        r.timed_out = true;
+    }
+    if (t_in != null) {
+        thread_join(t_in);
+    }
+    if (t_out != null) {
+        thread_join(t_out);
+    }
+    if (t_err != null) {
+        thread_join(t_err);
+    }
+    let code: uint32 = (uint32)0;
+    GetExitCodeProcess(p.hproc, &code);
+    r.exit_code = r.timed_out ? 137 : (int)code;
+    if (p.hout != null) {
+        CloseHandle(p.hout);
+    }
+    if (p.herr != null) {
+        CloseHandle(p.herr);
+    }
+    CloseHandle(p.hproc);
+    if (p.hjob != null) {
+        CloseHandle(p.hjob);
+    }
+    return 0;
+}
+
+int process_run(List<string>* argv, ProcessOptions* opts, ProcessResult* out) {
+    let def: ProcessOptions;            // the defaults: every field zero
+    ProcessOptions* o = opts != null ? opts : &def;
+    _proc_flush_inherited(o);
+    let cmd: String;
+    cmd.init(64);
+    defer cmd.free();
+    _proc_cmdline(argv, &cmd);
+    return _proc_run_cmd(&cmd, o, out);
+}
+
+int sh_with(string command, ProcessOptions* opts, ProcessResult* out) {
+    let def: ProcessOptions;            // the defaults: every field zero
+    ProcessOptions* o = opts != null ? opts : &def;
+    _proc_flush_inherited(o);
+    let cmd: String;
+    cmd.init(64);
+    defer cmd.free();
+    cmd.append("cmd.exe /d /s /c \"");
+    cmd.append(command);
+    cmd.append("\"");
+    return _proc_run_cmd(&cmd, o, out);
+}
+
+int process_spawn(List<string>* argv, ProcessOptions* opts, Process* p) {
+    let def: ProcessOptions;            // the defaults: every field zero
+    ProcessOptions* o = opts != null ? opts : &def;
+    _proc_flush_inherited(o);
+    let cmd: String;
+    cmd.init(64);
+    defer cmd.free();
+    _proc_cmdline(argv, &cmd);
+    return _proc_start(&cmd, o, !o.inherit_stdin, false, p);
+}
+
+int Process_write_stdin(Process* p, string text) {
+    if (p.hin == null) {
+        return -1;
+    }
+    int64 off = 0;
+    const int64 n = strlen(text);
+    while (off < n) {
+        const int64 chunk = n - off > 65536 ? 65536 : n - off;
+        let put: uint32 = (uint32)0;
+        if (WriteFile(p.hin, (*void)((*uint8)text + off), (uint32)chunk, &put, null) == 0) {
+            return _fs_fail_os();
+        }
+        off += (int64)put;
+    }
+    return 0;
+}
+
+void Process_close_stdin(Process* p) {
+    if (p.hin != null) {
+        CloseHandle(p.hin);
+        p.hin = null;
+    }
+}
+
+int64 Process_read(Process* p, int stream, String* out) {
+    *void h = stream == 2 ? p.herr : p.hout;
+    if (h == null) {
+        return -1;
+    }
+    *uint8 buf = alloc<uint8>(65536);
+    defer free((*void)buf);
+    let got: uint32 = (uint32)0;
+    if (ReadFile(h, (*void)buf, (uint32)65536, &got, null) == 0) {
+        if (GetLastError() == (uint32)109) {   // ERROR_BROKEN_PIPE: end of output
+            return 0;
+        }
+        return (int64)_fs_fail_os();
+    }
+    _fs_append_bytes(out, buf, (int64)got);
+    return (int64)got;
+}
+
+int Process_wait(Process* p) {
+    if (p.exited) {
+        return p.exit_code;
+    }
+    Process_close_stdin(p);
+    WaitForSingleObject(p.hproc, (uint32)4294967295);
+    let code: uint32 = (uint32)0;
+    GetExitCodeProcess(p.hproc, &code);
+    p.exit_code = (int)code;
+    p.exited = true;
+    return p.exit_code;
+}
+
+int Process_kill(Process* p) {
+    if (p.exited) {
+        return 0;
+    }
+    return TerminateProcess(p.hproc, (uint32)137) != 0 ? 0 : _fs_fail_os();
+}
+
+void Process_free(Process* p) {
+    Process_close_stdin(p);
+    if (p.hout != null) {
+        CloseHandle(p.hout);
+        p.hout = null;
+    }
+    if (p.herr != null) {
+        CloseHandle(p.herr);
+        p.herr = null;
+    }
+    if (p.hproc != null) {
+        CloseHandle(p.hproc);
+        p.hproc = null;
+    }
+}
+#endif
