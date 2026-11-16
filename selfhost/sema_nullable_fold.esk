@@ -1,0 +1,457 @@
+// sema_nullable_fold.esk: typed constant folding and casts (part of sema_nullable.esk, imported in order)
+
+// The typed fold behind sema_fold_int (mirrors TypeChecker::foldConstIntT): the value
+// keeps its C type, so the operators follow C's usual arithmetic conversions.
+int sema_fold_ci(Sema* s, *ExprNode e, AstCInt* out) {
+    if (e == null) {
+        return 0;
+    }
+    if (e.kind == EK_LITERAL) {
+        if (e.lit_kind == LIT_INT) {
+            out[0] = sema_lit_ci(e.sval);
+            return 1;
+        }
+        if (e.lit_kind == LIT_CHAR) {
+            out[0] = ast_ci_make((int64)(uint8)e.sval[0], 32, 0);
+            return 1;
+        }
+        if (e.lit_kind == LIT_BOOL) {
+            out[0] = ast_ci_bool(sema_streq(e.sval, "true"));
+            return 1;
+        }
+        return 0;
+    }
+    if (e.kind == EK_IDENT) {
+        int si = sema_sym_index(s, e.sval);
+        // An enum member is registered as an untyped global; it folds to its value below.
+        if (si >= 0 && List_get<Sym>(&s.syms, si).depth == 0 && List_get<Sym>(&s.syms, si).type[0] == 0) {
+            si = -1;
+        }
+        if (si >= 0) {
+            // A `const` integer folds through its initializer (bounded against a
+            // self-referential const).
+            Sym sy = List_get<Sym>(&s.syms, si);
+            if (sy.is_const == 0 && sy.depth == 0 && sy.type[0] == 0) {   // an enum member
+                si = -1;
+            }
+        }
+        if (si >= 0) {
+            Sym sy = List_get<Sym>(&s.syms, si);
+            if (sy.is_const == 0 || sy.init == null || sema_is_int_ty(sy.type) == 0) {
+                return 0;
+            }
+            if (s.fold_depth > 64) {
+                return 0;
+            }
+            s.fold_depth = s.fold_depth + 1;
+            AstCInt v = ast_ci_make((int64)0, 32, 0);
+            int ok = sema_fold_ci(s, sy.init, &v);
+            s.fold_depth = s.fold_depth - 1;
+            if (ok == 0) {
+                return 0;
+            }
+            if (ast_ci_cast(sema_strip_const(sema_resolve_scalar(s, sy.type)), v, out) == 0) {
+                out[0] = v;
+            }
+            return 1;
+        }
+        int i = NameIdx_first(&s.evars_ix, e.sval);
+        while (i >= 0) {
+            EVar ev = List_get<EVar>(&s.evars, i);
+            if (ev.plain == 1) {
+                out[0] = ast_ci_of(sema_parse_int(ev.val));
+                return 1;
+            }
+            i = NameIdx_next(&s.evars_ix, i);
+        }
+        return 0;
+    }
+    if (e.kind == EK_UNARY) {
+        AstCInt v = ast_ci_make((int64)0, 32, 0);
+        if (sema_fold_ci(s, e.a, &v) == 0) {
+            return 0;
+        }
+        return ast_ci_unary(e.sval, v, out);
+    }
+    if (e.kind == EK_BINARY) {
+        // A left-leaning chain (`A + B + C ...`) is folded along its spine with a loop.
+        List<*ExprNode> spine;
+        List_init<*ExprNode>(&spine, 4);
+        *ExprNode b = e;
+        while (b != null && b.kind == EK_BINARY) {
+            List_push<*ExprNode>(&spine, b);
+            b = b.a;
+        }
+        AstCInt x = ast_ci_make((int64)0, 32, 0);
+        if (sema_fold_ci(s, b, &x) == 0) {
+            return 0;
+        }
+        int i = List_len<*ExprNode>(&spine) - 1;
+        while (i >= 0) {
+            *ExprNode n = List_get<*ExprNode>(&spine, i);
+            AstCInt y = ast_ci_make((int64)0, 32, 0);
+            int land = sema_streq(n.sval, "&&");
+            int lor = sema_streq(n.sval, "||");
+            if (land == 1 || lor == 1) {
+                // `&&` / `||` short-circuit: an unevaluated right operand need not fold.
+                if ((land == 1 && x.v == (int64)0) || (lor == 1 && x.v != (int64)0)) {
+                    x = ast_ci_bool(lor);
+                }
+                else {
+                    if (sema_fold_ci(s, n.b, &y) == 0) {
+                        return 0;
+                    }
+                    x = ast_ci_bool((int)(y.v != (int64)0));
+                }
+                i = i - 1;
+                continue;
+            }
+            if (sema_fold_ci(s, n.b, &y) == 0) {
+                return 0;
+            }
+            if (ast_ci_binary(n.sval, x, y, &x) == 0) {
+                return 0;
+            }
+            i = i - 1;
+        }
+        List_free<*ExprNode>(&spine);
+        out[0] = x;
+        return 1;
+    }
+    if (e.kind == EK_TERNARY) {
+        AstCInt c = ast_ci_make((int64)0, 32, 0);
+        if (sema_fold_ci(s, e.a, &c) == 0) {
+            return 0;
+        }
+        *ExprNode taken = List_get<*ExprNode>(&e.kids, 0);
+        *ExprNode other = e.b;
+        if (c.v != (int64)0) {
+            taken = e.b;
+            other = List_get<*ExprNode>(&e.kids, 0);
+        }
+        AstCInt a = ast_ci_make((int64)0, 32, 0);
+        if (sema_fold_ci(s, taken, &a) == 0) {
+            return 0;
+        }
+        out[0] = a;
+        // The arms meet at their common type (when the other one folds too).
+        AstCInt o = ast_ci_make((int64)0, 32, 0);
+        if (sema_fold_ci(s, other, &o) == 1) {
+            int r = a.rank;
+            if (o.rank > r) {
+                r = o.rank;
+            }
+            int u = 0;
+            if (a.rank == o.rank) {
+                if (a.uns == 1 || o.uns == 1) {
+                    u = 1;
+                }
+            }
+            else if (a.rank > o.rank) {
+                u = a.uns;
+            } else {
+                u = o.uns;
+            }
+            out[0] = ast_ci_make(a.v, r, u);
+        }
+        return 1;
+    }
+    if (e.kind == EK_CAST) {
+        string to = sema_strip_const(sema_resolve_scalar(s, sema_isub(s, e.sval)));
+        int is_int = 1;
+        AstCInt iv = ast_ci_make((int64)0, 32, 0);
+        double dv = 0.0;
+        if (sema_fold_num_ci(s, e.a, &is_int, &iv, &dv) == 0) {
+            return 0;
+        }
+        if (is_int == 0) {
+            // A floating value converts toward zero; out of range it has no value (C).
+            if (sema_is_int_ty(to) == 0) {
+                return 0;
+            }
+            int64 fv = (int64)0;
+            if (sema_streq(to, "bool") == 1) {
+                if (dv != 0.0) {
+                    fv = (int64)1;
+                }
+            }
+            else {
+                if (sema_float_fits_int(dv, to) == 0) {
+                    return 0;
+                }
+                if (dv >= 9223372036854775808.0) {
+                    fv = (int64)(uint64)dv;
+                } else {
+                    fv = (int64)dv;
+                }
+            }
+            iv = ast_ci_make(fv, 64, sema_streq(to, "uint64"));
+        }
+        if (ast_ci_cast(to, iv, out) == 0) {
+            out[0] = iv;
+        }
+        return 1;
+    }
+    if (e.kind == EK_SIZEOF) {
+        // A type whose target layout is known here (scalars, pointers, arrays, structs and
+        // unions of those) folds; the rest is left to codegen (mirrors the C++). A size is
+        // unsigned 64-bit (C's size_t).
+        if (s.in_inst == 1) {
+            return 0;
+        }
+        string zt = e.sval;
+        if (e.a != null) {
+            zt = sema_infer_type(s, e.a);
+        }
+        else if (sema_known_type(s, zt) == 0 && sema_lookup(s, zt) == 1) {
+            zt = sema_lookup_type(s, zt);
+        }
+        if (zt == null || zt[0] == 0) {
+            return 0;
+        }
+        int64 sz = sema_const_sizeof(s, zt);
+        if (sz == (int64)0) {
+            return 0;
+        }
+        out[0] = ast_ci_make(sz, 64, 1);
+        return 1;
+    }
+    return 0;
+}
+
+double sema_fold_to_float(string t, double v) {
+    if (sema_streq(t, "float") == 1) {
+        return (double)(float)v;
+    }
+    return v;
+}
+
+double sema_ci_double(AstCInt c) {
+    if (c.uns == 1) {
+        return (double)(uint64)c.v;
+    }
+    return (double)c.v;
+}
+
+// Fold an arithmetic constant expression that may involve floating values (C rules:
+// integer operands stay integer; mirrors TypeChecker::foldConstNum). is_int says which
+// of iv / dv holds the value.
+int sema_fold_num(Sema* s, *ExprNode e, int* is_int, int64* iv, double* dv) {
+    AstCInt c = ast_ci_make((int64)0, 32, 0);
+    if (sema_fold_num_ci(s, e, is_int, &c, dv) == 0) {
+        return 0;
+    }
+    iv[0] = c.v;
+    return 1;
+}
+
+int sema_fold_num_ci(Sema* s, *ExprNode e, int* is_int, AstCInt* iv, double* dv) {
+    if (e == null) {
+        return 0;
+    }
+    if (e.kind == EK_LITERAL && e.lit_kind == LIT_FLOAT) {
+        is_int[0] = 0;
+        dv[0] = strtod(e.sval, null);
+        return 1;
+    }
+    if (e.kind == EK_IDENT) {
+        int si = sema_sym_index(s, e.sval);
+        if (si >= 0) {
+            Sym sy = List_get<Sym>(&s.syms, si);
+            string t = sema_strip_const(sema_resolve_scalar(s, sy.type));
+            if (sy.is_const == 1 && sy.init != null && (sema_streq(t, "float") == 1 || sema_streq(t, "double") == 1)) {
+                if (s.fold_depth > 64) {
+                    return 0;
+                }
+                s.fold_depth = s.fold_depth + 1;
+                int ok = sema_fold_num_ci(s, sy.init, is_int, iv, dv);
+                s.fold_depth = s.fold_depth - 1;
+                if (ok == 0) {
+                    return 0;
+                }
+                if (is_int[0] == 1) {
+                    dv[0] = sema_ci_double(iv[0]);
+                }
+                is_int[0] = 0;
+                dv[0] = sema_fold_to_float(t, dv[0]);
+                return 1;
+            }
+        }
+    }
+    if (e.kind == EK_UNARY && sema_streq(e.sval, "-") == 1) {
+        if (sema_fold_num_ci(s, e.a, is_int, iv, dv) == 0) {
+            return 0;
+        }
+        if (is_int[0] == 1) {
+            AstCInt t = iv[0];
+            ast_ci_unary("-", t, iv);
+        } else {
+            dv[0] = 0.0 - dv[0];
+        }
+        return 1;
+    }
+    if (e.kind == EK_BINARY) {
+        List<*ExprNode> spine;
+        List_init<*ExprNode>(&spine, 4);
+        *ExprNode b = e;
+        while (b != null && b.kind == EK_BINARY) {
+            List_push<*ExprNode>(&spine, b);
+            b = b.a;
+        }
+        int ok = sema_fold_num_ci(s, b, is_int, iv, dv);
+        int i = List_len<*ExprNode>(&spine) - 1;
+        while (ok == 1 && i >= 0) {
+            *ExprNode n = List_get<*ExprNode>(&spine, i);
+            int y_int = 1;
+            AstCInt yi = ast_ci_make((int64)0, 32, 0);
+            double yd = 0.0;
+            if (sema_fold_num_ci(s, n.b, &y_int, &yi, &yd) == 0) {
+                ok = 0;
+            }
+            else if (is_int[0] == 1 && y_int == 1) {
+                AstCInt x0 = iv[0];
+                if (ast_ci_binary(n.sval, x0, yi, iv) == 0) {
+                    ok = 0;
+                }
+            } else {
+                double x = dv[0];
+                if (is_int[0] == 1) {
+                    x = sema_ci_double(iv[0]);
+                }
+                double y = yd;
+                if (y_int == 1) {
+                    y = sema_ci_double(yi);
+                }
+                if (sema_streq(n.sval, "+") == 1) {
+                    dv[0] = x + y;
+                }
+                else if (sema_streq(n.sval, "-") == 1) {
+                    dv[0] = x - y;
+                }
+                else if (sema_streq(n.sval, "*") == 1) {
+                    dv[0] = x * y;
+                }
+                else if (sema_streq(n.sval, "/") == 1) {
+                    dv[0] = x / y;
+                }
+                else {
+                    ok = 0;
+                }
+                is_int[0] = 0;
+            }
+            i = i - 1;
+        }
+        List_free<*ExprNode>(&spine);
+        return ok;
+    }
+    if (e.kind == EK_CAST) {
+        string to = sema_strip_const(sema_resolve_scalar(s, sema_isub(s, e.sval)));
+        if (sema_streq(to, "float") == 1 || sema_streq(to, "double") == 1) {
+            if (sema_fold_num_ci(s, e.a, is_int, iv, dv) == 0) {
+                return 0;
+            }
+            if (is_int[0] == 1) {
+                dv[0] = sema_ci_double(iv[0]);
+            }
+            is_int[0] = 0;
+            dv[0] = sema_fold_to_float(to, dv[0]);
+            return 1;
+        }
+    }
+    is_int[0] = 1;
+    return sema_fold_ci(s, e, iv);
+}
+
+// A switch `case` label codegen can fold to an integer constant.
+int sema_is_const_int(Sema* s, *ExprNode e) {
+    if (e == null) {
+        return 0;
+    }
+    if (e.kind == EK_LITERAL) {
+        if (e.lit_kind == LIT_INT || e.lit_kind == LIT_CHAR || e.lit_kind == LIT_BOOL) {
+            return 1;
+        }
+        return 0;
+    }
+    if (e.kind == EK_IDENT) {
+        if (sema_local_bound(s, e.sval) == 0 && sema_is_enum_member(s, e.sval) == 1) {
+            return 1;
+        }
+        // `const int K = 7` folds too
+        int ci = sema_sym_index(s, e.sval);   // (a const parameter has no initializer to fold)
+        if (sema_sym_const(s, e.sval) == 1 && ci >= 0 && List_get<Sym>(&s.syms, ci).init != null
+            && sema_is_int_ty(sema_lookup_type(s, e.sval)) == 1) {
+            return 1;
+        }
+        return 0;
+    }
+    if (e.kind == EK_UNARY) {
+        if (sema_streq(e.sval, "-") == 1 || sema_streq(e.sval, "~") == 1 || sema_streq(e.sval, "!") == 1) {
+            return sema_is_const_int(s, e.a);
+        }
+        return 0;
+    }
+    if (e.kind == EK_BINARY) {
+        if (sema_streq(e.sval, "=") == 1 || sema_streq(e.sval, "&&") == 1 || sema_streq(e.sval, "||") == 1) {
+            return 0;
+        }
+        if (sema_is_const_int(s, e.a) == 1 && sema_is_const_int(s, e.b) == 1) {
+            return 1;
+        }
+        return 0;
+    }
+    if (e.kind == EK_CAST) {
+        return sema_is_const_int(s, e.a);
+    }
+    if (e.kind == EK_SIZEOF) {
+        return 1;
+    }
+    return 0;
+}
+
+// Coarse class of a type spelling for cast checking: 1 number (incl. enum), 2 pointer,
+// 3 aggregate (struct/union value, array), 0 unknown (alias etc.: not judged).
+int sema_cast_class(Sema* s, string t0) {
+    string t = sema_strip_nullable(sema_strip_const(t0));
+    if (t[0] == 0) {
+        return 0;
+    }
+    if (sema_is_numeric_ty(t) == 1 || sema_is_enum(s, t) == 1) {
+        *DeclNode ed = sema_find_tdecl(s, t);
+        if (ed != null && ed.kind == DK_ENUM && sema_is_aggregate(s, t) == 1) {   // a sum type
+            return 3;
+        }
+        return 1;
+    }
+    if (sema_is_fn_type(t) == 1) {
+        return 3;
+    }
+    if (sema_is_ptrish(t) == 1) {
+        return 2;
+    }
+    if (sema_is_arr_ty(t) == 1) {
+        return 3;
+    }
+    *DeclNode d = sema_find_tdecl(s, sema_base_name(t));
+    if (d != null && (d.kind == DK_STRUCT || d.kind == DK_UNION)) {
+        return 3;
+    }
+    if (sema_find_iface(s, t) != null) {   // an interface value {data, vtable}
+        return 3;
+    }
+    return 0;
+}
+
+// Is any `operator []` overload declared?
+int sema_any_index_op(Sema* s) {
+    int i = 0;
+    int n = List_len<*DeclNode>(&s.fndecls);
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&s.fndecls, i);
+        if (d.operator_sym != null && sema_streq(d.operator_sym, "[]") == 1) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}

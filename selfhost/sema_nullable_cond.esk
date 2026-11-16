@@ -1,0 +1,450 @@
+// sema_nullable_cond.esk: condition narrowing and constant folding (part of sema_nullable.esk, imported in order)
+
+// The `operator` declaration `e` calls (null for a built-in operation).
+*DeclNode sema_op_decl(Sema* s, *ExprNode e) {
+    if (s.has_ops == 0 || e == null || e.a == null) {
+        return null;
+    }
+    string op = "";
+    if (e.kind == EK_BINARY && e.b != null) {
+        op = e.sval;
+        if (sema_streq(op, "&&") == 1 || sema_streq(op, "||") == 1 || sema_streq(op, "=") == 1) {
+            return null;
+        }
+        int n = 0;
+        while (op[n] != 0) {
+            n = n + 1;
+        }
+        if (n >= 2 && (int)op[n - 1] == 61 && sema_is_cmp_op(op) == 0) {   // `a += b`
+            op = sema_sub_str(op, 0, n - 1);
+        }
+    } else if (e.kind == EK_UNARY && (sema_streq(e.sval, "-") == 1 || sema_streq(e.sval, "!") == 1 || sema_streq(e.sval, "~") == 1)) {
+        op = e.sval;
+        if (sema_streq(op, "-") == 1) {
+            op = "u-";
+        }
+    } else if (e.kind == EK_INDEX && e.b != null && List_len<*ExprNode>(&e.kids) == 0) {
+        op = "[]";
+    } else {
+        return null;
+    }
+    List<string> tys;
+    List_init<string>(&tys, 2);
+    List_push<string>(&tys, sema_infer_type(s, e.a));
+    if (e.kind != EK_UNARY) {
+        List_push<string>(&tys, sema_infer_type(s, e.b));
+    }
+    *DeclNode d = sema_find_op(s, op, &tys);
+    List_free<string>(&tys);
+    return d;
+}
+
+// May `name` be narrowed? Not when its address is taken (a write through the pointer can
+// store null behind the check); for a global, anywhere in the program.
+int sema_narrowable(Sema* s, string name) {
+    int si = sema_sym_index(s, name);
+    if (si < 0) {
+        return 1;
+    }
+    Sym sy = List_get<Sym>(&s.syms, si);
+    if (sy.addr_taken == 1) {
+        return 0;
+    }
+    if (sy.depth == 0 && StrTab_has(&s.gaddr_set, name) == 1) {
+        return 0;
+    }
+    return 1;
+}
+
+void sema_cond_narrow_leaf(Sema* s, *ExprNode c, int when_true, List<string>* out);
+// Keys of the `?*T` variables proven non-null when `c` evaluates to `when_true`
+// (`p != null`, `p == null` false, `p`, `!c`, `a && b` true, `a || b` false).
+void sema_cond_narrow(Sema* s, *ExprNode c, int when_true, List<string>* out) {
+    // The left spine of a run of `&&` (or `||`) is followed with a loop; its right
+    // operands are scanned afterwards, bottom-up, so the keys keep their source order.
+    List<*ExprNode> rights;
+    List_init<*ExprNode>(&rights, 4);
+    List<int> senses;
+    List_init<int>(&senses, 4);
+    *ExprNode whole = c;
+    while (c != null) {
+        if (c.kind == EK_UNARY && sema_streq(c.sval, "!") == 1) {
+            if (when_true == 1) {
+                when_true = 0;
+            } else {
+                when_true = 1;
+            }
+            c = c.a;
+            continue;
+        }
+        if (c.kind == EK_BINARY
+            && ((sema_streq(c.sval, "&&") == 1 && when_true == 1) || (sema_streq(c.sval, "||") == 1 && when_true == 0))) {
+            List_push<*ExprNode>(&rights, c.b);
+            List_push<int>(&senses, when_true);
+            c = c.a;
+            continue;
+        }
+        break;
+    }
+    // A call may assign any global: a global proven non-null by an earlier operand is
+    // not proven after this one runs.
+    if (sema_has_call(s, c) == 1) {
+        sema_drop_global_keys(out);
+    }
+    sema_cond_narrow_leaf(s, c, when_true, out);
+    int i = List_len<*ExprNode>(&rights) - 1;
+    while (i >= 0) {
+        sema_cond_narrow(s, List_get<*ExprNode>(&rights, i), List_get<int>(&senses, i), out);
+        i = i - 1;
+    }
+    List_free<*ExprNode>(&rights);
+    List_free<int>(&senses);
+    // A variable the condition itself assigns, steps, or takes the address of is not
+    // proven by an earlier test in it (mirrors the C++ condNarrowings).
+    if (List_len<string>(out) > 0) {
+        List<string> asg;
+        List_init<string>(&asg, 2);
+        sema_assigned_names(whole, &asg);
+        int k = List_len<string>(out) - 1;
+        while (k >= 0 && List_len<string>(&asg) > 0) {
+            string key = List_get<string>(out, k);
+            int at = 0;   // '@'
+            while (key[at] != 0 && (int)key[at] != 64) {
+                at = at + 1;
+            }
+            if (sema_in_list(&asg, sema_sub_str(key, 0, at)) == 1) {
+                List_remove<string>(out, k);
+            }
+            k = k - 1;
+        }
+    }
+}
+
+// Names of the variables `e` assigns, increments/decrements, or takes the address of (not
+// inside a lambda body, whose captures are copies). Kind-aware, like sema_drop_assigned_e.
+void sema_assigned_names(*ExprNode e, List<string>* out) {
+    if (e == null) {
+        return;
+    }
+    if (e.kind == EK_BINARY && sema_streq(e.sval, "=") == 1 && e.a != null && e.a.kind == EK_IDENT) {
+        List_push<string>(out, e.a.sval);
+    }
+    if (e.kind == EK_UNARY && sema_streq(e.sval, "&") == 1 && e.a != null && e.a.kind == EK_IDENT) {
+        List_push<string>(out, e.a.sval);
+    }
+    if (e.kind == EK_INCDEC && e.a != null && e.a.kind == EK_IDENT) {
+        List_push<string>(out, e.a.sval);
+    }
+    if (e.kind == EK_BINARY || e.kind == EK_INDEX || e.kind == EK_TERNARY) {
+        sema_assigned_names(e.a, out);
+        sema_assigned_names(e.b, out);
+    }
+    else if (e.kind == EK_UNARY || e.kind == EK_MEMBER || e.kind == EK_CAST || e.kind == EK_QUESTION
+             || e.kind == EK_AWAIT || e.kind == EK_CALL || e.kind == EK_INCDEC) {
+        sema_assigned_names(e.a, out);
+    }
+    if (e.kind == EK_CALL || e.kind == EK_TEMPLATECALL || e.kind == EK_STRUCTINIT
+        || e.kind == EK_ARRAYLIT || e.kind == EK_INDEX || e.kind == EK_TERNARY) {
+        int i = 0;
+        int n = List_len<*ExprNode>(&e.kids);
+        while (i < n) {
+            sema_assigned_names(List_get<*ExprNode>(&e.kids, i), out);
+            i = i + 1;
+        }
+    }
+}
+
+// sema_cond_narrow for an operand that is not itself `!`, or a `&&`/`||` run.
+void sema_cond_narrow_leaf(Sema* s, *ExprNode c, int when_true, List<string>* out) {
+    if (c == null) {
+        return;
+    }
+    if (c.kind == EK_BINARY) {
+        if (sema_streq(c.sval, "!=") == 1 || sema_streq(c.sval, "==") == 1) {
+            *ExprNode idE = null;
+            if (c.a != null && c.a.kind == EK_IDENT && c.b != null && c.b.kind == EK_LITERAL && c.b.lit_kind == LIT_NULL) {
+                idE = c.a;
+            }
+            else if (c.b != null && c.b.kind == EK_IDENT && c.a != null && c.a.kind == EK_LITERAL && c.a.lit_kind == LIT_NULL) {
+                idE = c.b;
+            }
+            if (idE != null && sema_lookup_type(s, idE.sval)[0] == 63 && sema_streq(c.sval, "!=") == when_true
+                && sema_narrowable(s, idE.sval) == 1) {
+                List_push<string>(out, sema_nkey(s, idE.sval));
+            }
+        }
+        return;
+    }
+    if (when_true == 1 && c.kind == EK_IDENT && sema_lookup_type(s, c.sval)[0] == 63 && sema_narrowable(s, c.sval) == 1) {
+        List_push<string>(out, sema_nkey(s, c.sval));   // `if (p)`
+    }
+}
+
+// Insert `keys` into the narrowed set; the newly inserted ones go to `ins` (to undo).
+void sema_narrow_apply(Sema* s, List<string>* keys, List<string>* ins) {
+    int i = 0;
+    int n = List_len<string>(keys);
+    while (i < n) {
+        string k = List_get<string>(keys, i);
+        if (k[0] != 0 && sema_in_list(&s.narrowed, k) == 0) {
+            List_push<string>(&s.narrowed, k);
+            List_push<string>(ins, k);
+            sema_bump(s);
+        }
+        i = i + 1;
+    }
+}
+
+void sema_narrow_undo(Sema* s, List<string>* ins) {
+    int i = 0;
+    int n = List_len<string>(ins);
+    while (i < n) {
+        sema_narrow_drop(s, List_get<string>(ins, i));
+        i = i + 1;
+    }
+}
+
+// Forget narrowing of every variable assigned (or address-taken) in `e` / `st`, before a
+// loop whose later iterations observe the assignment. Kind-aware walk (see uninit scan).
+void sema_drop_assigned_e(Sema* s, *ExprNode e) {
+    if (e == null || List_len<string>(&s.narrowed) == 0) {
+        return;
+    }
+    if (e.kind == EK_BINARY && sema_streq(e.sval, "=") == 1 && e.a != null && e.a.kind == EK_IDENT) {
+        sema_narrow_kill(s, e.a.sval);
+    }
+    if (e.kind == EK_UNARY && sema_streq(e.sval, "&") == 1 && e.a != null && e.a.kind == EK_IDENT) {
+        sema_narrow_kill(s, e.a.sval);
+    }
+    if (e.kind == EK_BINARY || e.kind == EK_INDEX || e.kind == EK_TERNARY) {
+        sema_drop_assigned_e(s, e.a);
+        sema_drop_assigned_e(s, e.b);
+    }
+    else if (e.kind == EK_UNARY || e.kind == EK_MEMBER || e.kind == EK_CAST || e.kind == EK_QUESTION
+             || e.kind == EK_AWAIT || e.kind == EK_CALL || e.kind == EK_INCDEC) {
+        sema_drop_assigned_e(s, e.a);
+    }
+    if (e.kind == EK_CALL || e.kind == EK_TEMPLATECALL || e.kind == EK_STRUCTINIT
+        || e.kind == EK_ARRAYLIT || e.kind == EK_INDEX || e.kind == EK_TERNARY) {
+        int i = 0;
+        int n = List_len<*ExprNode>(&e.kids);
+        while (i < n) {
+            sema_drop_assigned_e(s, List_get<*ExprNode>(&e.kids, i));
+            i = i + 1;
+        }
+    }
+    if (e.kind == EK_LAMBDA) {
+        sema_drop_assigned(s, e.stmt);
+    }
+}
+
+void sema_drop_assigned(Sema* s, *StmtNode st) {
+    if (st == null || List_len<string>(&s.narrowed) == 0) {
+        return;
+    }
+    sema_drop_assigned_e(s, st.expr);
+    sema_drop_assigned_e(s, st.expr2);
+    sema_drop_assigned(s, st.s1);
+    sema_drop_assigned(s, st.s2);
+    int i = 0;
+    int n = List_len<*StmtNode>(&st.items);
+    while (i < n) {
+        sema_drop_assigned(s, List_get<*StmtNode>(&st.items, i));
+        i = i + 1;
+    }
+}
+
+// A `?*T` (checked nullable pointer) may not be dereferenced / indexed / member-accessed
+// without a null-check. Mirrors the C++ `checkNullableDeref`: the `?` prefix marks the type
+// nullable; a narrowed ident is exempt in its guarded branch.
+void sema_check_nullable_deref(Sema* s, *ExprNode operand, string how) {
+    if (operand == null) {
+        return;
+    }
+    string t = sema_infer_type(s, operand);
+    if (t[0] != 63) {                        // not (or no longer) a `?…` nullable pointer
+        return;
+    }
+    s.had_error = 1;
+    int ol = s.line;                   // at the pointer (as the C++ checker)
+    int oc = s.col;
+    if (operand.line > 0) {
+        ol = operand.line;
+        oc = operand.col;
+    }
+    dprintf(2, "error: %s:%d:%d: cannot %s a possibly-null pointer of type '%s'; check it first (e.g. `if (x != null)`)\n",
+           s.filename, ol, oc, how, t);
+}
+
+// `s.len` of a slice: a read-only view of the fat pointer's length.
+int sema_is_slice_len(Sema* s, *ExprNode e) {
+    if (e == null || e.kind != EK_MEMBER || sema_streq(e.sval, "len") == 0) {
+        return 0;
+    }
+    string bt = sema_strip_nullable(sema_strip_const(sema_infer_type(s, e.a)));
+    int n = 0;
+    while (bt[n] != 0) {
+        n = n + 1;
+    }
+    if (n >= 2 && (int)bt[n - 2] == 91 && (int)bt[n - 1] == 93) {   // "...[]"
+        return 1;
+    }
+    return 0;
+}
+
+// An expression that denotes storage (a variable, field, element, or `*p`): it may be
+// assigned to or have its address taken. Mirrors the C++ isLvalueExpr.
+int sema_stored_base(Sema* s, *ExprNode base);
+int sema_is_lvalue(Sema* s, *ExprNode e) {
+    if (e == null) {
+        return 0;
+    }
+    if (e.kind == EK_IDENT) {
+        if (sema_local_bound(s, e.sval) == 1) {
+            return 1;
+        }
+        if (sema_find_fn(s, e.sval) >= 0) {
+            return 0;
+        }
+        return 1;
+    }
+    if (e.kind == EK_UNARY) {
+        return sema_streq(e.sval, "*");
+    }
+    if (e.kind == EK_MEMBER) {
+        if (sema_is_slice_len(s, e) == 1) {
+            return 0;
+        }
+        return sema_stored_base(s, e.a);
+    }
+    if (e.kind == EK_INDEX) {
+        if (List_len<*ExprNode>(&e.kids) > 0) {
+            return 0;
+        }
+        // `v[i]` on a struct value calls its `operator []`, which returns a value.
+        string bc = sema_canon(s, sema_infer_type(s, e.a));
+        if (sema_judgeable(s, bc) == 1 && sema_is_struct(s, sema_base_name(bc)) == 1 && sema_arr_bracket(bc) < 0) {
+            return 0;
+        }
+        return sema_stored_base(s, e.a);
+    }
+    return 0;
+}
+
+// A field or an array element is storage only when its struct or array is: through a
+// pointer (or a slice), or itself stored (`mk().x` and `arr()[0]` are temporaries).
+// Mirrors the C++ isLvalueExpr.
+int sema_stored_base(Sema* s, *ExprNode base) {
+    string bc = sema_canon(s, sema_strip_nullable(sema_infer_type(s, base)));
+    int n = sema_slen(bc);
+    if (n == 0) {
+        return 1;
+    }
+    if ((int)bc[n - 1] == 93 && !(n >= 2 && (int)bc[n - 2] == 91)) {   // T[N]
+        return sema_is_lvalue(s, base);
+    }
+    if ((int)bc[0] == 42 || (int)bc[n - 1] == 42) {                                        // pointer
+        return 1;
+    }
+    if ((int)bc[n - 1] == 93) {                                                             // slice
+        return 1;
+    }
+    if (sema_is_struct(s, sema_base_name(bc)) == 1) {
+        return sema_is_lvalue(s, base);
+    }
+    return 1;
+}
+
+// Parse an integer spelling (optional '-', decimal, 0x hex, leading-0 octal) as int64.
+int64 sema_parse_int(string t) {
+    int i = 0;
+    int64 base = 10;
+    int64 sign = (int64)1;
+    if (t[0] == '-') {
+        sign = (int64)-1;
+        i = 1;
+    }
+    if (t[i] == '0' && (t[i + 1] == 'x' || t[i + 1] == 'X')) {
+        base = 16;
+        i = i + 2;
+    }
+    else if (t[i] == '0' && t[i + 1] != 0) {
+        base = 8;
+        i = i + 1;
+    }
+    int64 v = 0;
+    while (t[i] != 0) {
+        int ch = (int)t[i];
+        int64 d = 0;
+        if (ch >= 48 && ch <= 57) {
+            d = (int64)(ch - 48);
+        }
+        else if (ch >= 97 && ch <= 102) {
+            d = (int64)(ch - 87);
+        }
+        else if (ch >= 65 && ch <= 70) {
+            d = (int64)(ch - 55);
+        }
+        else {
+            return sign * v;
+        }
+        v = v * base + d;
+        i = i + 1;
+    }
+    return sign * v;
+}
+
+// Value of an integer constant expression built from literals, enum members, unary and
+// binary operators and casts (mirrors TypeChecker::foldConstInt). Returns 0 when the
+// value is not known here (`sizeof`, a non-constant name, division by zero).
+// `v` converted to the integer type `t` (C: truncate, then sign- or zero-extend); a
+// non-integer or 64-bit type leaves it unchanged.
+int64 sema_trunc_const(string t, int64 v) {
+    if (sema_streq(t, "bool") == 1) {
+        if (v != (int64)0) {
+            return (int64)1;
+        }
+        return (int64)0;
+    }
+    if (sema_streq(t, "char") == 1 || sema_streq(t, "uint8") == 1) {
+        return (int64)(uint8)v;
+    }
+    if (sema_streq(t, "int8") == 1) {
+        return (int64)(int8)v;
+    }
+    if (sema_streq(t, "uint16") == 1) {
+        return (int64)(uint16)v;
+    }
+    if (sema_streq(t, "int16") == 1) {
+        return (int64)(int16)v;
+    }
+    if (sema_streq(t, "uint") == 1 || sema_streq(t, "uint32") == 1) {
+        return (int64)(uint32)v;
+    }
+    if (sema_streq(t, "int") == 1 || sema_streq(t, "int32") == 1) {
+        return (int64)(int32)v;
+    }
+    return v;
+}
+
+int sema_fold_ci(Sema* s, *ExprNode e, AstCInt* out);
+int sema_fold_num_ci(Sema* s, *ExprNode e, int* is_int, AstCInt* iv, double* dv);
+
+int sema_fold_int(Sema* s, *ExprNode e, int64* out) {
+    AstCInt c = ast_ci_make((int64)0, 32, 0);
+    if (sema_fold_ci(s, e, &c) == 0) {
+        return 0;
+    }
+    out[0] = c.v;
+    return 1;
+}
+
+// An integer literal spelling (an optional '-') with its type. A negative literal
+// (`-2147483648`) is one token, typed by its value as the program sees it at run time:
+// `int` when the value fits, else `int64` (mirrors the C++ foldConstIntT).
+AstCInt sema_lit_ci(string t) {
+    if (t[0] == '-') {
+        return ast_ci_neg_lit(sema_parse_int(sema_sub_str(t, 1, sema_slen(t))));
+    }
+    return ast_ci_lit(sema_parse_int(t));
+}
