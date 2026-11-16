@@ -1,0 +1,435 @@
+// eir_b_types.esk: types (part of eir_b_core.esk, imported in order)
+
+// --- types ---
+
+int64 eb_size_of_type(EB* b, string spelling);
+void eb_ensure_layout(EB* b, string name);
+
+int eb_dim_name(EB* b, string nm, *int64 out) {
+    int n = et_len(nm);
+    if (et_pfx(nm, "sizeof(") == 1 && n > 0 && nm[n - 1] == ')') {
+        *out = eb_size_of_type(b, et_sub(nm, 7, n - 1));
+        if (*out > (int64)0) {
+            return 1;
+        }
+        return 0;
+    }
+    if (IMap_has(&b.enum_consts, nm) == 0) {
+        return 0;
+    }
+    *out = IMap_get(&b.enum_consts, nm);
+    return 1;
+}
+
+string eb_strip_tags(string t0) {
+    string t = t0;
+    int p = et_find(t, "struct:", 0);
+    while (p >= 0) {
+        t = et_cat(et_sub(t, 0, p), et_from(t, p + 7));
+        p = et_find(t, "struct:", 0);
+    }
+    p = et_find(t, "interface:", 0);
+    while (p >= 0) {
+        t = et_cat(et_sub(t, 0, p), et_from(t, p + 10));
+        p = et_find(t, "interface:", 0);
+    }
+    return t;
+}
+
+// A generic instance spelled `G<args>`: its mangled name maps back to G and the args
+// (the checker's templateInstanceArgs, which the C++ builder reads).
+void eb_note_instance(EB* b, string spelled, string mangled) {
+    if (IAMap_get(&b.inst_args, mangled) != null) {
+        return;
+    }
+    List<string> args;
+    string base = ty_split_template(eb_strip_tags(spelled), &args);
+    if (DMap_has(&b.tmpl_decls, base) == 0 && DMap_has(&b.generic_enums, base) == 0) {
+        return;
+    }
+    IAMap_set(&b.inst_args, mangled, base, &args);
+}
+
+// The mangled name of a spelled instance `G<args>`, noted for the lookups by name.
+string eb_mangle_note(EB* b, string spelled) {
+    string m = ty_mangle(spelled);
+    eb_note_instance(b, spelled, m);
+    return m;
+}
+
+*ETy eb_type(EB* b, string type_str) {
+    string s0 = type_str;
+    if (SMap_len(&b.tpo) > 0) {
+        s0 = ty_subst_type(type_str, &b.tpo);
+    }
+    string s = tyq_strip(s0);
+    if (et_eq(s, "closure") == 1 || et_eq(s, "{ ptr, ptr }") == 1) {
+        return et_closure(null);
+    }
+    string raw = s;
+    if (SMap_len(&b.aliases) > 0) {
+        s = ty_dealias_spelling(s, &b.aliases);
+    } else if (SMap_len(&g_ty_aliases) > 0) {
+        s = ty_dealias_spelling(s, &g_ty_aliases);
+    }
+    // The checker records an instance's args as spelled (`List<*A3>`), aliases included.
+    if (et_eq(raw, s) == 0 && et_findc(raw, '<') >= 0) {
+        *TyT rt = ty_parse(raw);
+        if (rt.kind == TYK_TEMPLATE) {
+            eb_note_instance(b, raw, ty_mangle(s));
+        }
+    }
+    if (et_eq(s, "closure") == 1 || et_eq(s, "{ ptr, ptr }") == 1) {
+        return et_closure(null);
+    }
+    *TyT t = ty_parse(s);
+    int k = t.kind;
+    if (k == TYK_VOID) {
+        return et_void();
+    }
+    if (k == TYK_BOOL) {
+        return et_i1();
+    }
+    if (k == TYK_CHAR) {
+        return et_u8();
+    }
+    if (k == TYK_FLOAT) {
+        if (et_eq(t.name, "float") == 1) {
+            return et_f32();
+        }
+        return et_f64();
+    }
+    if (k == TYK_INT) {
+        string n = t.name;
+        if (et_eq(n, "int8") == 1) { return et_i8(); }
+        if (et_eq(n, "uint8") == 1) { return et_u8(); }
+        if (et_eq(n, "int16") == 1) { return et_i16(); }
+        if (et_eq(n, "uint16") == 1) { return et_u16(); }
+        if (et_eq(n, "int64") == 1) { return et_i64(); }
+        if (et_eq(n, "uint64") == 1) { return et_u64(); }
+        if (et_eq(n, "uint") == 1 || et_eq(n, "uint32") == 1) { return et_u32(); }
+        return et_i32();
+    }
+    if (k == TYK_POINTER || k == TYK_STRING) {
+        if (t.pointee != null) {
+            return et_ptr(eb_type(b, ty_str(t.pointee)));
+        }
+        return et_ptr(et_u8());
+    }
+    if (k == TYK_SLICE) {
+        if (t.elem != null) {
+            return et_slice(eb_type(b, ty_str(t.elem)));
+        }
+        return et_slice(et_u8());
+    }
+    if (k == TYK_ARRAY) {
+        int64 n = (int64)0;
+        if (et_len(t.dim) > 0) {
+            int64 v = (int64)0;
+            EB* bb = b;
+            if (ast_fold_dim(t.dim, int(string nm, *int64 o) { return eb_dim_name(bb, nm, o); }, &v) == 1
+                && v > (int64)0) {
+                n = v;
+            }
+        }
+        *ETy el = et_i32();
+        if (t.elem != null) {
+            el = eb_type(b, ty_str(t.elem));
+        }
+        return et_array(el, n);
+    }
+    if (k == TYK_TEMPLATE || k == TYK_NAMED || k == TYK_STRUCT) {
+        string sname = "";
+        if (k == TYK_TEMPLATE || et_findc(s, '<') >= 0) {
+            sname = ty_mangle(s);
+            eb_note_instance(b, s, sname);
+        } else {
+            sname = ty_nominal(t);
+        }
+        if (et_len(sname) == 0) {
+            sname = et_s(t.name);
+        }
+        if (DMap_has(&b.plain_enums, sname) == 1) {
+            return et_i32();
+        }
+        if (eb_iface(b, sname) != null) {
+            return et_iface(sname);
+        }
+        eb_ensure_layout(b, sname);   // every struct the module names has a layout
+        *EStruct st = em_layout(b.m, sname);
+        if (st != null) {
+            List<*ETy> flds;
+            int i = 0;
+            while (i < List_len<*EField>(&st.fields)) {
+                List_push<*ETy>(&flds, List_get<*EField>(&st.fields, i).ty);
+                i = i + 1;
+            }
+            return et_struct(sname, &flds);
+        }
+        return et_struct(sname, null);
+    }
+    if (k == TYK_INTERFACE) {
+        string sname = ty_nominal(t);
+        if (et_len(sname) == 0) {
+            sname = et_s(t.name);
+        }
+        return et_iface(sname);
+    }
+    if (k == TYK_VALIST) {
+        List<*ETy> f;
+        List_push<*ETy>(&f, et_ptr(null));
+        List_push<*ETy>(&f, et_ptr(null));
+        List_push<*ETy>(&f, et_ptr(null));
+        List_push<*ETy>(&f, et_i32());
+        List_push<*ETy>(&f, et_i32());
+        return et_struct("__va_list", &f);
+    }
+    if (k == TYK_FN) {
+        if (t.ret != null) {
+            return et_closure(eb_type(b, ty_str(t.ret)));
+        }
+        return et_closure(et_void());
+    }
+    return et_i32();
+}
+
+// The checker's type for `e` (semaType): in a generic instance the one it had in this
+// instance (else the shared record with the type parameters substituted); "" if none.
+string eb_inst_type(EB* b, *ExprNode e, int* found) {
+    *found = 0;
+    if (SMap_len(&b.tpo) == 0 || e.ainst == null) {
+        return "";
+    }
+    string recs = e.ainst;
+    string key = et_cat(b.inst_key, "\f");
+    int kl = et_len(key);
+    int i = 0;
+    int n = et_len(recs);
+    while (i < n) {
+        int j = i;
+        while (j < n && recs[j] != '\n') {
+            j = j + 1;
+        }
+        if (j - i >= kl && et_eq(et_sub(recs, i, i + kl), key) == 1) {
+            *found = 1;
+            return et_sub(recs, i + kl, j);
+        }
+        i = j + 1;
+    }
+    return "";
+}
+
+string eb_sema_type(EB* b, *ExprNode e) {
+    if (e == null) {
+        return "";
+    }
+    int found = 0;
+    string t = eb_inst_type(b, e, &found);
+    if (found == 1) {
+        return t;
+    }
+    if (e.aty != null) {
+        if (SMap_len(&b.tpo) == 0) {
+            return e.aty;
+        }
+        return ty_subst_type(e.aty, &b.tpo);
+    }
+    return "";
+}
+
+string eb_targs_name(string sval, List<string>* args) {
+    return ty_split_template(sval, args);
+}
+
+*ETy eb_expr_type(EB* b, *ExprNode e) {
+    if (e == null) {
+        return et_i32();
+    }
+    if (SMap_len(&b.tpo) > 0 && e.kind == EK_IDENT) {
+        *ETy vt = eb_var_type(b, e.sval);
+        if (vt != null && et_is_void(vt) == 0) {
+            return vt;
+        }
+    }
+    int found = 0;
+    string it = eb_inst_type(b, e, &found);
+    if (found == 1) {
+        return eb_type(b, it);
+    }
+    if (e.aty != null) {
+        string t = e.aty;
+        if (SMap_len(&b.tpo) > 0) {
+            t = ty_subst_type(t, &b.tpo);
+        }
+        return eb_type(b, t);
+    }
+    if (e.kind == EK_IDENT) {
+        *ETy vt = eb_var_type(b, e.sval);
+        if (vt != null && et_is_void(vt) == 0) {
+            return vt;
+        }
+    }
+    if (e.kind == EK_CAST) {
+        string tt = e.sval;
+        if (SMap_len(&b.tpo) > 0) {
+            tt = ty_subst_type(tt, &b.tpo);
+        }
+        return eb_type(b, tt);
+    }
+    if (e.kind == EK_MEMBER) {
+        *ETy bty = eb_expr_type(b, e.a);
+        if (bty != null && (et_is_slice(bty) == 1 || (et_is_ptr(bty) == 1 && bty.elem != null && et_is_slice(bty.elem) == 1))) {
+            if (et_eq(e.sval, "len") == 1) {
+                return et_i64();
+            }
+            if (et_eq(e.sval, "ptr") == 1 || et_eq(e.sval, "data") == 1) {
+                *ETy el = null;
+                if (et_is_slice(bty) == 1) {
+                    el = bty.elem;
+                } else {
+                    el = bty.elem.elem;
+                }
+                if (el == null) {
+                    el = et_u8();
+                }
+                return et_ptr(el);
+            }
+        }
+        string sname = "";
+        if (et_is_struct(bty) == 1) {
+            sname = et_nominal(bty);
+        } else if (et_is_ptr(bty) == 1 && bty.elem != null && et_is_struct(bty.elem) == 1) {
+            sname = et_nominal(bty.elem);
+        }
+        if (et_len(sname) > 0) {
+            *EStruct st = em_layout(b.m, sname);
+            if (st != null) {
+                *EField fi = es_field(st, e.sval);
+                if (fi != null) {
+                    return fi.ty;
+                }
+            }
+        }
+    }
+    if (e.kind == EK_INDEX) {
+        *ETy bty = eb_expr_type(b, e.a);
+        if (List_len<*ExprNode>(&e.kids) > 0) {
+            *ETy el = null;
+            if (bty != null && (et_is_ptr(bty) == 1 || et_is_array(bty) == 1 || et_is_slice(bty) == 1) && bty.elem != null) {
+                el = bty.elem;
+            }
+            if (el == null && e.aty != null) {
+                string et = e.aty;
+                if (SMap_len(&b.tpo) > 0) {
+                    et = ty_subst_type(et, &b.tpo);
+                }
+                if (et_sfx(et, "[]") == 1) {
+                    el = eb_type(b, et_sub(et, 0, et_len(et) - 2));
+                }
+            }
+            if (el == null) {
+                el = et_i32();
+            }
+            return et_slice(el);
+        }
+        if (bty != null && (et_is_ptr(bty) == 1 || et_is_array(bty) == 1 || et_is_slice(bty) == 1) && bty.elem != null) {
+            return bty.elem;
+        }
+    }
+    if (e.kind == EK_UNARY) {
+        if (et_eq(e.sval, "*") == 1) {
+            *ETy ot = eb_expr_type(b, e.a);
+            if (et_is_ptr(ot) == 1 && ot.elem != null) {
+                return ot.elem;
+            }
+        } else if (et_eq(e.sval, "&") == 1) {
+            *ETy ot = eb_expr_type(b, e.a);
+            if (ot != null) {
+                return et_ptr(ot);
+            }
+        }
+    }
+    if (e.kind == EK_TEMPLATECALL) {
+        List<string> raw;
+        string fname = eb_targs_name(e.sval, &raw);
+        List<string> sargs;
+        string mangled = fname;
+        int i = 0;
+        while (i < List_len<string>(&raw)) {
+            string a = List_get<string>(&raw, i);
+            if (SMap_len(&b.tpo) > 0) {
+                a = ty_subst_type(a, &b.tpo);
+            }
+            List_push<string>(&sargs, a);
+            mangled = et_cat3(mangled, "_", ty_mangle(a));
+            i = i + 1;
+        }
+        *EFunc f = em_func(b.m, mangled);
+        if (f != null) {
+            return f.ret;
+        }
+        f = em_func(b.m, fname);
+        if (f != null) {
+            return f.ret;
+        }
+        *DeclNode td = DMap_get(&b.fn_tmpl_decls, fname);
+        if (td != null) {
+            SMap subs;
+            int k = 0;
+            while (k < List_len<TypeParam>(&td.type_params) && k < List_len<string>(&sargs)) {
+                SMap_set(&subs, List_get<TypeParam>(&td.type_params, k).name, List_get<string>(&sargs, k));
+                k = k + 1;
+            }
+            return eb_type(b, ty_subst_type(td.ret_type, &subs));
+        }
+    }
+    if (e.kind == EK_CALL) {
+        *ETy ct = eb_expr_type(b, e.a);
+        if (et_is_closure(ct) == 1 && ct.ret != null) {
+            return ct.ret;
+        }
+        if (e.a != null && e.a.kind == EK_IDENT) {
+            *EFunc f = em_func(b.m, e.a.sval);
+            if (f != null) {
+                return f.ret;
+            }
+        }
+        if (e.a != null && e.a.kind == EK_MEMBER) {
+            *ETy bty = eb_expr_type(b, e.a.a);
+            string sname = "";
+            if (et_is_struct(bty) == 1) {
+                sname = et_nominal(bty);
+            } else if (et_is_ptr(bty) == 1 && bty.elem != null && et_is_struct(bty.elem) == 1) {
+                sname = et_nominal(bty.elem);
+            }
+            if (et_len(sname) > 0) {
+                *EFunc f = em_func(b.m, et_cat3(sname, "_", e.a.sval));
+                if (f != null) {
+                    return f.ret;
+                }
+            }
+        }
+    }
+    if (e.kind == EK_BINARY) {
+        string op = e.sval;
+        if (et_eq(op, "==") == 1 || et_eq(op, "!=") == 1 || et_eq(op, "<") == 1 || et_eq(op, "<=") == 1
+            || et_eq(op, ">") == 1 || et_eq(op, ">=") == 1 || et_eq(op, "&&") == 1 || et_eq(op, "||") == 1) {
+            return et_i1();
+        }
+        *ETy lt = eb_expr_type(b, e.a);
+        *ETy rt = eb_expr_type(b, e.b);
+        if (et_is_float(lt) == 1) {
+            return lt;
+        }
+        if (et_is_float(rt) == 1) {
+            return rt;
+        }
+        if (lt != null && lt.bits > 32) {
+            return lt;
+        }
+        if (rt != null && rt.bits > 32) {
+            return rt;
+        }
+    }
+    return et_i32();
+}

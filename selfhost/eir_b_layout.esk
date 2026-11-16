@@ -1,0 +1,600 @@
+// eir_b_layout.esk: layout and bitfields (part of eir_b_core.esk, imported in order)
+
+// --- layout ---
+
+int64 eb_up(int64 x, int64 a) {
+    if (a == (int64)0) {
+        return x;
+    }
+    return (x + a - (int64)1) / a * a;
+}
+
+int64 eb_max(int64 a, int64 c) {
+    if (a > c) {
+        return a;
+    }
+    return c;
+}
+
+void eb_ensure_layout_of(EB* b, *ETy t) {
+    *ETy e = t;
+    while (e != null && et_is_array(e) == 1) {
+        e = e.elem;
+    }
+    if (e != null && et_is_struct(e) == 1) {
+        eb_ensure_layout(b, et_nominal(e));
+    }
+}
+
+*ETy eb_unsigned_unit(int64 bytes) {
+    if (bytes >= (int64)8) {
+        return et_u64();
+    }
+    if (bytes >= (int64)4) {
+        return et_u32();
+    }
+    if (bytes >= (int64)2) {
+        return et_u16();
+    }
+    return et_u8();
+}
+
+struct ELItem {
+    string fname;
+    string ftype;
+    int width;
+    int unnamed;
+    *ETy ty;
+    int64 size;
+    int64 align;
+    int64 natural;
+}
+
+void eb_add_field(*EStruct si, *ELItem it, int64 off) {
+    *EField fi = alloc<EField>(1);
+    fi.name = it.fname;
+    fi.ty = it.ty;
+    fi.offset = off;
+    fi.size = it.size;
+    List_push<*EField>(&si.fields, fi);
+}
+
+void eb_add_bitfield(EB* b, *EStruct si, *ELItem it, int64 unit_off, int64 unit_bytes, int64 bit_off) {
+    *EField fi = alloc<EField>(1);
+    fi.name = it.fname;
+    fi.ty = it.ty;
+    fi.offset = unit_off;
+    fi.size = unit_bytes;
+    fi.is_bf = 1;
+    fi.bit_off = (int)bit_off;
+    fi.bit_w = it.width;
+    if (et_is_int(it.ty) == 1 && it.ty.sgn == 1 && it.ty.bits > 1) {
+        fi.sgn = 1;
+    }
+    *DeclNode en = DMap_get(&b.plain_enums, tyq_strip(it.ftype));
+    if (en != null && b.msbf == 0) {
+        int negative = 0;
+        int i = 0;
+        while (i < List_len<Param>(&en.params)) {
+            string mn = List_get<Param>(&en.params, i).name;
+            if (IMap_has(&b.enum_consts, mn) == 1 && IMap_get(&b.enum_consts, mn) < (int64)0) {
+                negative = 1;
+            }
+            i = i + 1;
+        }
+        if (negative == 0) {
+            fi.sgn = 0;
+            fi.ty = et_u32();
+        }
+    }
+    fi.storage = eb_unsigned_unit(unit_bytes);
+    fi.storage_off = unit_off;
+    List_push<*EField>(&si.fields, fi);
+}
+
+int64 eb_span_unit(int64 bitpos, int64 w) {
+    int64 bytes = (bitpos % (int64)8 + w + (int64)7) / (int64)8;
+    if (bytes <= (int64)1) {
+        return (int64)1;
+    }
+    if (bytes <= (int64)2) {
+        return (int64)2;
+    }
+    if (bytes <= (int64)4) {
+        return (int64)4;
+    }
+    return (int64)8;
+}
+
+// Lay out a struct or union as C does on the target (layoutRecord).
+void eb_layout_record(EB* b, string name, *DeclNode d, int is_union, int pack_align, SMap* subs) {
+    int is_packed = 0;
+    if (pack_align == 1) {
+        is_packed = 1;
+    }
+    int64 pack_n = (int64)0;
+    if (pack_align >= 2) {
+        pack_n = (int64)pack_align;
+    }
+    int contiguous = 0;
+    if (is_packed == 1 || pack_n > (int64)0) {
+        contiguous = 1;
+    }
+    *EStruct si = alloc<EStruct>(1);
+    si.name = name;
+    si.align = (int64)1;
+    List<*ETy> field_types;
+    int64 struct_align = (int64)1;
+    List<Param> lfs;
+    List<int> lbits;
+    List<int> lnamed;
+    ast_layout_fields(d, &lfs, &lbits, &lnamed);
+    List<*ELItem> items;
+    int i = 0;
+    while (i < List_len<Param>(&lfs)) {
+        Param p = List_get<Param>(&lfs, i);
+        *ELItem it = alloc<ELItem>(1);
+        it.fname = p.name;
+        it.ftype = p.ty;
+        it.width = List_get<int>(&lbits, i);
+        it.unnamed = 1 - List_get<int>(&lnamed, i);
+        string ts = p.ty;
+        if (SMap_len(subs) > 0) {
+            ts = ty_subst_type(p.ty, subs);
+        }
+        *ETy ft = eb_type(b, ts);
+        eb_ensure_layout_of(b, ft);
+        int64 fs = et_type_size(ft, b.m);
+        if (et_is_struct(ft) == 1) {
+            int64 ss = em_struct_size(b.m, et_nominal(ft));
+            if (ss != (int64)0) {
+                fs = ss;
+            }
+        }
+        int64 fa = et_type_align(ft, b.m);
+        if (fa < (int64)1) {
+            fa = (int64)1;
+        }
+        int64 natural = fa;
+        if (is_packed == 1) {
+            fa = (int64)1;
+        }
+        if (pack_n > (int64)0 && pack_n < fa) {
+            fa = pack_n;
+        }
+        it.ty = ft;
+        it.size = fs;
+        it.align = fa;
+        it.natural = natural;
+        List_push<*ELItem>(&items, it);
+        if (it.unnamed == 0) {
+            List_push<*ETy>(&field_types, ft);
+        }
+        i = i + 1;
+    }
+    int64 size = (int64)0;
+    int n = List_len<*ELItem>(&items);
+    if (is_union == 1) {
+        i = 0;
+        while (i < n) {
+            *ELItem it = List_get<*ELItem>(&items, i);
+            i = i + 1;
+            if (it.unnamed == 1) {
+                int64 bytes = (int64)0;
+                if (b.msbf == 1) {
+                    bytes = it.size;
+                } else {
+                    int w = it.width;
+                    if (w < 0) {
+                        w = 0;
+                    }
+                    bytes = ((int64)w + (int64)7) / (int64)8;
+                }
+                size = eb_max(size, bytes);
+                continue;
+            }
+            struct_align = eb_max(struct_align, it.align);
+            if (it.width > 0) {
+                eb_add_bitfield(b, si, it, (int64)0, it.size, (int64)0);
+            } else {
+                eb_add_field(si, it, (int64)0);
+            }
+            size = eb_max(size, it.size);
+        }
+    } else if (b.msbf == 1) {
+        int64 off = (int64)0;
+        int64 cur_bits = (int64)0;
+        int64 cur_off = (int64)0;
+        int64 word_off = (int64)0;
+        int open = 0;
+        int after_bits = 0;
+        i = 0;
+        while (i < n) {
+            *ELItem it = List_get<*ELItem>(&items, i);
+            i = i + 1;
+            if (it.unnamed == 1 && it.width <= 0) {
+                if (after_bits == 1) {
+                    int64 a = it.natural;
+                    if (b.msvc == 1) {
+                        a = it.align;
+                    }
+                    off = eb_up(off, a);
+                    struct_align = eb_max(struct_align, a);
+                }
+                open = 0;
+                after_bits = 0;
+                continue;
+            }
+            if (it.width > 0) {
+                int64 st_bits = it.size * (int64)8;
+                int64 w = (int64)it.width;
+                if (open == 0 || cur_bits != st_bits || cur_off + w > st_bits) {
+                    word_off = eb_up(off, it.align);
+                    off = word_off + it.size;
+                    struct_align = eb_max(struct_align, it.align);
+                    open = 1;
+                    cur_bits = st_bits;
+                    cur_off = (int64)0;
+                }
+                if (it.unnamed == 0) {
+                    eb_add_bitfield(b, si, it, word_off, it.size, cur_off);
+                }
+                cur_off = cur_off + w;
+                after_bits = 1;
+            } else {
+                open = 0;
+                after_bits = 0;
+                off = eb_up(off, it.align);
+                eb_add_field(si, it, off);
+                off = off + it.size;
+                struct_align = eb_max(struct_align, it.align);
+            }
+        }
+        size = off;
+    } else {
+        int64 bitpos = (int64)0;
+        i = 0;
+        while (i < n) {
+            *ELItem it = List_get<*ELItem>(&items, i);
+            i = i + 1;
+            if (it.unnamed == 1 && it.width <= 0) {
+                bitpos = eb_up(bitpos, it.natural * (int64)8);
+                if (b.bfal == 1) {
+                    struct_align = eb_max(struct_align, it.natural);
+                }
+                continue;
+            }
+            if (it.unnamed == 0 || b.bfal == 1) {
+                struct_align = eb_max(struct_align, it.align);
+            }
+            if (it.width > 0) {
+                int64 w = (int64)it.width;
+                int64 unit_bits = it.size * (int64)8;
+                if (contiguous == 0 && it.align < it.size) {
+                    if (bitpos % (it.align * (int64)8) + w > unit_bits) {
+                        bitpos = eb_up(bitpos, it.align * (int64)8);
+                    }
+                } else if (contiguous == 0 && unit_bits != (int64)0
+                           && bitpos / unit_bits != (bitpos + w - (int64)1) / unit_bits) {
+                    bitpos = eb_up(bitpos, unit_bits);
+                }
+                if (it.unnamed == 0) {
+                    if (contiguous == 1) {
+                        int64 unit = eb_span_unit(bitpos, w);
+                        eb_add_bitfield(b, si, it, bitpos / (int64)8, unit, bitpos % (int64)8);
+                    } else {
+                        int64 unit_off = bitpos / (it.align * (int64)8) * it.align;
+                        eb_add_bitfield(b, si, it, unit_off, it.size, bitpos - unit_off * (int64)8);
+                    }
+                }
+                bitpos = bitpos + w;
+            } else {
+                int64 off = eb_up((bitpos + (int64)7) / (int64)8, it.align);
+                eb_add_field(si, it, off);
+                bitpos = (off + it.size) * (int64)8;
+            }
+        }
+        size = (bitpos + (int64)7) / (int64)8;
+    }
+    si.align = struct_align;
+    si.total = eb_up(size, struct_align);
+    si.is_union = is_union;
+    si.pack = pack_align;
+    i = 0;
+    while (i < List_len<string>(&d.pad_tys)) {
+        EPad pd;
+        string pt = List_get<string>(&d.pad_tys, i);
+        if (SMap_len(subs) > 0) {
+            pt = ty_subst_type(pt, subs);
+        }
+        pd.ty = eb_type(b, pt);
+        pd.width = List_get<int>(&d.pad_bits, i);
+        pd.before = (int64)List_get<int>(&d.pad_at, i);
+        List_push<EPad>(&si.pads, pd);
+        i = i + 1;
+    }
+    *EStruct slot = em_layout_ref(b.m, name);
+    *slot = *si;
+    List_push<*ETy>(&b.m.struct_types, et_struct(name, &field_types));
+}
+
+*EVariant eb_variant_for(EB* b, string variant, string inst) {
+    if (et_len(inst) > 0) {
+        eb_ensure_layout(b, inst);
+        *EVariant v = VMap_get(&b.adt_inst_vars, et_cat3(inst, "::", variant));
+        if (v != null) {
+            return v;
+        }
+    }
+    return VMap_get(&b.adt_vars, variant);
+}
+
+string eb_generic_variant_instance(EB* b, string variant, List<string>* args) {
+    *EVariant v = VMap_get(&b.adt_vars, variant);
+    if (v == null || DMap_has(&b.generic_enums, v.en) == 0 || List_len<string>(args) == 0) {
+        return "";
+    }
+    string spelled = et_cat(v.en, "<");
+    int i = 0;
+    while (i < List_len<string>(args)) {
+        if (i > 0) {
+            spelled = et_cat(spelled, ",");
+        }
+        spelled = et_cat(spelled, List_get<string>(args, i));
+        i = i + 1;
+    }
+    spelled = et_cat(spelled, ">");
+    string inst = ty_mangle(spelled);
+    if (IAMap_get(&b.inst_args, inst) == null) {
+        IAMap_set(&b.inst_args, inst, v.en, args);
+    }
+    return inst;
+}
+
+// A sum type: { i32 tag, [N x i64] payload } (layoutAdt).
+void eb_layout_adt(EB* b, string name, *DeclNode e, SMap* subs) {
+    int64 max_payload = (int64)0;
+    int i = 0;
+    while (i < List_len<Param>(&e.params)) {
+        *EVariant v = alloc<EVariant>(1);
+        v.en = name;
+        v.idx = i;
+        int64 poff = (int64)0;
+        int64 pmax = (int64)1;
+        if (i < List_len<List<string>>(&e.payloads)) {
+            List<string> pl = List_get<List<string>>(&e.payloads, i);
+            int j = 0;
+            while (j < List_len<string>(&pl)) {
+                string ps = List_get<string>(&pl, j);
+                if (SMap_len(subs) > 0) {
+                    ps = ty_subst_type(ps, subs);
+                }
+                *ETy pt = eb_type(b, ps);
+                eb_ensure_layout_of(b, pt);
+                List_push<*ETy>(&v.payload, pt);
+                int64 al = et_type_align(pt, b.m);
+                if (al > pmax) {
+                    pmax = al;
+                }
+                poff = (poff + al - (int64)1) & ~(al - (int64)1);
+                int64 sz = et_type_size(pt, b.m);
+                if (et_is_struct(pt) == 1) {
+                    int64 ss = em_struct_size(b.m, et_nominal(pt));
+                    if (ss != (int64)0) {
+                        sz = ss;
+                    }
+                }
+                poff = poff + sz;
+                j = j + 1;
+            }
+        }
+        poff = (poff + pmax - (int64)1) & ~(pmax - (int64)1);
+        if (poff > max_payload) {
+            max_payload = poff;
+        }
+        string mname = List_get<Param>(&e.params, i).name;
+        if (SMap_len(subs) == 0) {
+            VMap_set(&b.adt_vars, mname, v);
+        } else {
+            VMap_set(&b.adt_inst_vars, et_cat3(name, "::", mname), v);
+        }
+        i = i + 1;
+    }
+    int64 words = (max_payload + (int64)7) / (int64)8;
+    if (words < (int64)1) {
+        words = (int64)1;
+    }
+    *EStruct si = alloc<EStruct>(1);
+    si.name = name;
+    *EField tag = alloc<EField>(1);
+    tag.name = "tag";
+    tag.ty = et_i32();
+    tag.size = (int64)4;
+    List_push<*EField>(&si.fields, tag);
+    si.total = (int64)8 + (int64)8 * words;
+    si.align = (int64)8;
+    *EStruct slot = em_layout_ref(b.m, name);
+    *slot = *si;
+    List<*ETy> ft;
+    List_push<*ETy>(&ft, et_i32());
+    List_push<*ETy>(&b.m.struct_types, et_struct(name, &ft));
+}
+
+void eb_ensure_layout_of_name(EB* b, string name);
+
+void eb_ensure_layout(EB* b, string name) {
+    if (et_len(name) == 0 || em_has_layout(b.m, name) == 1 || StrTab_has(&b.in_progress, name) == 1) {
+        return;
+    }
+    StrTab_set(&b.in_progress, name, 1);
+    eb_ensure_layout_of_name(b, name);
+    StrTab_remove(&b.in_progress, name);
+}
+
+void eb_ensure_layout_of_name(EB* b, string name) {
+    *EInstArgs ia = IAMap_get(&b.inst_args, name);
+    if (ia != null) {
+        *DeclNode ge = DMap_get(&b.generic_enums, ia.base);
+        if (ge != null) {
+            SMap subs;
+            int i = 0;
+            while (i < List_len<TypeParam>(&ge.type_params) && i < List_len<string>(&ia.args)) {
+                SMap_set(&subs, List_get<TypeParam>(&ge.type_params, i).name, List_get<string>(&ia.args, i));
+                i = i + 1;
+            }
+            eb_layout_adt(b, name, ge, &subs);
+            return;
+        }
+        *DeclNode td = DMap_get(&b.tmpl_decls, ia.base);
+        if (td != null) {
+            SMap subs;
+            int i = 0;
+            while (i < List_len<TypeParam>(&td.type_params) && i < List_len<string>(&ia.args)) {
+                SMap_set(&subs, List_get<TypeParam>(&td.type_params, i).name, List_get<string>(&ia.args, i));
+                i = i + 1;
+            }
+            int pk = td.pack_align;
+            if (td.is_packed == 1) {
+                pk = 1;
+            }
+            eb_layout_record(b, name, td, 0, pk, &subs);
+            return;
+        }
+    }
+    SMap none;
+    *DeclNode sd = DMap_get(&b.plain_structs, name);
+    if (sd != null) {
+        int pk = sd.pack_align;
+        if (sd.is_packed == 1) {
+            pk = 1;
+        }
+        eb_layout_record(b, name, sd, 0, pk, &none);
+        return;
+    }
+    *DeclNode ad = DMap_get(&b.adt_enums, name);
+    if (ad != null) {
+        eb_layout_adt(b, name, ad, &none);
+        return;
+    }
+    *DeclNode ud = DMap_get(&b.union_decls, name);
+    if (ud != null) {
+        eb_layout_record(b, name, ud, 1, ud.pack_align, &none);
+    }
+}
+
+// --- bitfields ---
+
+*EField eb_bitfield_of(EB* b, *ExprNode m) {
+    string bt = et_nominal(eb_expr_type(b, m.a));
+    *EStruct st = em_layout(b.m, bt);
+    if (st == null) {
+        return null;
+    }
+    *EField fi = es_field(st, m.sval);
+    if (fi != null && fi.is_bf == 1) {
+        return fi;
+    }
+    return null;
+}
+
+EOp eb_bitfield_base(EB* b, *ExprNode m) {
+    *ETy bt = eb_expr_type(b, m.a);
+    if (et_is_ptr(bt) == 1) {
+        return eb_eval(b, m.a);
+    }
+    return eb_lvalue(b, m.a);
+}
+
+*ETy eb_bitfield_read_type(*EField fi) {
+    *ETy t = fi.ty;
+    if (et_is_int(t) == 1 && t.bits >= 32
+        && ((t.sgn == 0 && fi.bit_w < 32) || (t.sgn == 1 && t.bits == 64 && fi.bit_w <= 32))) {
+        return et_i32();
+    }
+    return t;
+}
+
+int64 eb_bf_mask(*EField fi) {
+    if (fi.bit_w >= 64) {
+        return (int64)-1;
+    }
+    return (int64)(((uint64)1 << (uint64)fi.bit_w) - (uint64)1);
+}
+
+EOp eb_load_bitfield_at(EB* b, EOp base, *EField fi, int vol) {
+    string wp = eb_new_var(b);
+    eb_i2(b, EO_OFFSETPTR, wp, et_ptr(fi.storage), base, eo_int(fi.storage_off, et_i64()));
+    string wv = eb_new_var(b);
+    eb_load_v(b, wv, fi.storage, eo_var(wp, et_ptr(fi.storage)), vol);
+    EOp cur = eo_var(wv, fi.storage);
+    if (fi.bit_off > 0) {
+        string sh = eb_new_var(b);
+        eb_i2(b, EO_LSHR, sh, fi.storage, cur, eo_int((int64)fi.bit_off, fi.storage));
+        cur = eo_var(sh, fi.storage);
+    }
+    int64 mask = eb_bf_mask(fi);
+    string mk = eb_new_var(b);
+    eb_i2(b, EO_AND, mk, fi.storage, cur, eo_int(mask, fi.storage));
+    cur = eo_var(mk, fi.storage);
+    if (fi.sgn == 1 && fi.bit_w < fi.storage.bits) {
+        *ETy sty = null;
+        if (et_is_int(fi.ty) == 1 && fi.ty.bits == fi.storage.bits) {
+            sty = fi.ty;
+        } else if (fi.storage.bits == 64) {
+            sty = et_i64();
+        } else if (fi.storage.bits == 32) {
+            sty = et_i32();
+        } else if (fi.storage.bits == 16) {
+            sty = et_i16();
+        } else {
+            sty = et_i8();
+        }
+        int sh = fi.storage.bits - fi.bit_w;
+        string shl = eb_new_var(b);
+        eb_i2(b, EO_SHL, shl, fi.storage, cur, eo_int((int64)sh, fi.storage));
+        EOp as_signed = eb_coerce(b, eo_var(shl, fi.storage), sty);
+        string ashr = eb_new_var(b);
+        eb_i2(b, EO_ASHR, ashr, sty, as_signed, eo_int((int64)sh, sty));
+        cur = eo_var(ashr, sty);
+    }
+    return eb_coerce(b, eb_coerce(b, cur, fi.ty), eb_bitfield_read_type(fi));
+}
+
+void eb_store_bitfield_at(EB* b, EOp base, *EField fi, EOp val, int vol) {
+    string wp = eb_new_var(b);
+    eb_i2(b, EO_OFFSETPTR, wp, et_ptr(fi.storage), base, eo_int(fi.storage_off, et_i64()));
+    string wv = eb_new_var(b);
+    eb_load_v(b, wv, fi.storage, eo_var(wp, et_ptr(fi.storage)), vol);
+    int64 mask = eb_bf_mask(fi);
+    int64 fmask = (int64)((uint64)mask << (uint64)fi.bit_off);
+    string cleared = eb_new_var(b);
+    eb_i2(b, EO_AND, cleared, fi.storage, eo_var(wv, fi.storage), eo_int(~fmask, fi.storage));
+    EOp vs = eb_coerce(b, eb_coerce(b, val, fi.ty), fi.storage);
+    string vm = eb_new_var(b);
+    eb_i2(b, EO_AND, vm, fi.storage, vs, eo_int(mask, fi.storage));
+    EOp shifted = eo_var(vm, fi.storage);
+    if (fi.bit_off > 0) {
+        string s = eb_new_var(b);
+        eb_i2(b, EO_SHL, s, fi.storage, shifted, eo_int((int64)fi.bit_off, fi.storage));
+        shifted = eo_var(s, fi.storage);
+    }
+    string nw = eb_new_var(b);
+    eb_i2(b, EO_OR, nw, fi.storage, eo_var(cleared, fi.storage), shifted);
+    eb_store_v(b, eo_var(nw, fi.storage), eo_var(wp, et_ptr(fi.storage)), vol);
+}
+
+EOp eb_load_bitfield(EB* b, *ExprNode m, int vol) {
+    *EField fi = eb_bitfield_of(b, m);
+    if (fi == null) {
+        return eo_int((int64)0, et_i32());
+    }
+    return eb_load_bitfield_at(b, eb_bitfield_base(b, m), fi, vol);
+}
+
+void eb_store_bitfield(EB* b, *ExprNode m, EOp val, int vol) {
+    *EField fi = eb_bitfield_of(b, m);
+    if (fi == null) {
+        return;
+    }
+    eb_store_bitfield_at(b, eb_bitfield_base(b, m), fi, val, vol);
+}

@@ -1,0 +1,323 @@
+// eir_b_fold.esk: constant folding and cleanups (part of eir_b_core.esk, imported in order)
+
+// --- constant folding ---
+
+int eb_is_global_name(EB* b, string name) {
+    int i = 0;
+    while (i < List_len<EGlobal>(&b.m.globals)) {
+        if (et_eq(List_get<EGlobal>(&b.m.globals, i).name, name) == 1) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+int64 et_parse_int(string s, int* ok) {
+    *ok = 1;
+    int n = et_len(s);
+    if (n == 0) {
+        *ok = 0;
+        return (int64)0;
+    }
+    int i = 0;
+    int base = 10;
+    if (n > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+        base = 16;
+        i = 2;
+    } else if (n > 1 && s[0] == '0') {
+        base = 8;
+        i = 1;
+    }
+    uint64 v = (uint64)0;
+    while (i < n) {
+        char c = s[i];
+        int d = -1;
+        if (c >= '0' && c <= '9') {
+            d = (int)c - 48;
+        } else if (c >= 'a' && c <= 'f') {
+            d = (int)c - 87;
+        } else if (c >= 'A' && c <= 'F') {
+            d = (int)c - 55;
+        }
+        if (d < 0 || d >= base) {
+            break;
+        }
+        v = v * (uint64)base + (uint64)d;
+        i = i + 1;
+    }
+    return (int64)v;
+}
+
+int64 et_parse_signed(string s) {
+    int ok = 0;
+    if (et_len(s) > 0 && s[0] == '-') {
+        return (int64)0 - et_parse_int(et_from(s, 1), &ok);
+    }
+    return et_parse_int(s, &ok);
+}
+
+int eb_fold(EB* b, *ExprNode e, AstCInt* out) {
+    if (e == null) {
+        return 0;
+    }
+    if (e.kind == EK_LITERAL) {
+        if (e.lit_kind == LIT_INT) {
+            int ok = 0;
+            string v = e.sval;
+            if (et_len(v) > 0 && v[0] == '-') {
+                int64 m = et_parse_int(et_from(v, 1), &ok);
+                if (ok == 0) {
+                    return 0;
+                }
+                *out = ast_ci_neg_lit(m);
+            } else {
+                int64 m = et_parse_int(v, &ok);
+                if (ok == 0) {
+                    return 0;
+                }
+                *out = ast_ci_lit(m);
+            }
+            return 1;
+        }
+        if (e.lit_kind == LIT_CHAR) {
+            int64 c = (int64)0;
+            if (et_len(e.sval) > 0) {
+                c = (int64)(uint8)e.sval[0];
+            }
+            *out = ast_ci_make(c, 32, 0);
+            return 1;
+        }
+        if (e.lit_kind == LIT_BOOL) {
+            int64 c = (int64)0;
+            if (et_eq(e.sval, "true") == 1) {
+                c = (int64)1;
+            }
+            *out = ast_ci_make(c, 32, 0);
+            return 1;
+        }
+        return 0;
+    }
+    if (e.kind == EK_IDENT) {
+        if (IMap_has(&b.enum_consts, e.sval) == 0) {
+            return 0;
+        }
+        int64 v = IMap_get(&b.enum_consts, e.sval);
+        *ETy t = TMap_get(&b.const_types, e.sval);
+        if (t == null) {
+            t = et_i32();
+        }
+        if (t.bits < 32) {
+            *out = ast_ci_make(v, 32, 0);
+        } else {
+            int r = 32;
+            if (t.bits > 32) {
+                r = 64;
+            }
+            *out = ast_ci_make(v, r, 1 - t.sgn);
+        }
+        return 1;
+    }
+    if (e.kind == EK_UNARY) {
+        AstCInt x;
+        if (eb_fold(b, e.a, &x) == 0) {
+            return 0;
+        }
+        return ast_ci_unary(e.sval, x, out);
+    }
+    if (e.kind == EK_BINARY) {
+        AstCInt l;
+        AstCInt r;
+        if (eb_fold(b, e.a, &l) == 0 || eb_fold(b, e.b, &r) == 0) {
+            return 0;
+        }
+        return ast_ci_binary(e.sval, l, r, out);
+    }
+    if (e.kind == EK_CAST) {
+        AstCInt x;
+        string t = e.sval;
+        string al = SMap_get(&b.aliases, t);
+        if (al != null) {
+            t = al;
+        }
+        if (eb_fold(b, e.a, &x) == 0) {
+            return 0;
+        }
+        return ast_ci_cast(t, x, out);
+    }
+    if (e.kind == EK_SIZEOF) {
+        int64 n = (int64)0;
+        if (e.a == null && et_len(e.sval) > 0 && (eb_has_var(b, e.sval) == 1 || eb_is_global_name(b, e.sval) == 1)) {
+            n = et_type_size(eb_var_type(b, e.sval), b.m);
+        } else if (e.a == null && et_len(e.sval) > 0) {
+            n = eb_size_of_type(b, e.sval);
+        } else if (e.a != null) {
+            n = et_type_size(eb_expr_type(b, e.a), b.m);
+        }
+        if (n == (int64)0) {
+            return 0;
+        }
+        *out = ast_ci_make(n, 64, 1);
+        return 1;
+    }
+    if (e.kind == EK_TERNARY) {
+        AstCInt c;
+        AstCInt x;
+        AstCInt y;
+        if (eb_fold(b, e.a, &c) == 0 || eb_fold(b, e.b, &x) == 0
+            || eb_fold(b, List_get<*ExprNode>(&e.kids, 0), &y) == 0) {
+            return 0;
+        }
+        if (c.v != (int64)0) {
+            *out = x;
+        } else {
+            *out = y;
+        }
+        return 1;
+    }
+    return 0;
+}
+
+int64 eb_size_of_type(EB* b, string spelling) {
+    string t = spelling;
+    if (SMap_len(&b.tpo) > 0) {
+        t = ty_subst_type(spelling, &b.tpo);
+    }
+    *ETy ty = eb_type(b, t);
+    if (et_is_struct(ty) == 1) {
+        eb_ensure_layout(b, et_nominal(ty));
+    }
+    int64 sz = et_type_size(ty, b.m);
+    if (et_is_struct(ty) == 1) {
+        int64 ss = em_struct_size(b.m, et_nominal(ty));
+        if (ss != (int64)0) {
+            sz = ss;
+        }
+    }
+    return sz;
+}
+
+int64 eb_fold_int(EB* b, *ExprNode e) {
+    AstCInt v;
+    if (eb_fold(b, e, &v) == 1) {
+        return v.v;
+    }
+    return (int64)0;
+}
+
+void eb_array_init(EB* b, EOp dest, *ExprNode lit, *ETy at) {
+    if (lit == null || et_is_array(at) == 0) {
+        return;
+    }
+    int i = 0;
+    while (i < List_len<*ExprNode>(&lit.kids) && (int64)i < at.size) {
+        string ep = eb_new_var(b);
+        eb_i2(b, EO_GEP, ep, et_ptr(at.elem), dest, eo_int((int64)i, et_i32()));
+        *ExprNode el = List_get<*ExprNode>(&lit.kids, i);
+        if (et_is_array(at.elem) == 1) {
+            if (el != null && el.kind == EK_ARRAYLIT) {
+                eb_array_init(b, eo_var(ep, et_ptr(at.elem)), el, at.elem);
+            } else {
+                EOp sv = eb_eval(b, el);
+                eb_store(b, sv, eo_var(ep, et_ptr(at.elem)));
+            }
+        } else {
+            EOp v = eb_eval_for(b, el, at.elem);
+            eb_store(b, v, eo_var(ep, et_ptr(at.elem)));
+        }
+        i = i + 1;
+    }
+}
+
+int eb_vol_rooted(EB* b, *ExprNode e0) {
+    if (b.vol_vars.count == 0) {
+        return 0;
+    }
+    *ExprNode e = e0;
+    while (e != null) {
+        if (e.kind == EK_IDENT) {
+            return StrTab_has(&b.vol_vars, e.sval);
+        }
+        if (e.kind == EK_UNARY) {
+            if (et_eq(e.sval, "*") == 0 || et_len(e.op_fn) > 0) {
+                break;
+            }
+            e = e.a;
+        } else if (e.kind == EK_INDEX) {
+            if (et_len(e.op_fn) > 0) {
+                break;
+            }
+            e = e.a;
+        } else if (e.kind == EK_MEMBER) {
+            e = e.a;
+        } else {
+            break;
+        }
+    }
+    return 0;
+}
+
+// --- cleanups ---
+
+void eb_run_cleanups(EB* b, int depth, int error_path) {
+    int i = List_len<*EFrame>(&b.cleanups) - 1;
+    while (i >= depth) {
+        *EFrame fr = List_get<*EFrame>(&b.cleanups, i);
+        List<*EDefer> items;
+        int c = 0;
+        while (c < List_len<*EDefer>(&fr.items)) {
+            List_push<*EDefer>(&items, List_get<*EDefer>(&fr.items, c));
+            c = c + 1;
+        }
+        int j = List_len<*EDefer>(&items) - 1;
+        while (j >= 0) {
+            if (eb_terminated(b) == 1) {
+                return;
+            }
+            *EDefer d = List_get<*EDefer>(&items, j);
+            if (d.is_err == 1 && error_path == 0) {
+                j = j - 1;
+                continue;
+            }
+            *EScopes saved = eb_snapshot(b);
+            if (d.snap != null && List_len<int>(&d.snap.marks) > 0) {
+                b.sc = *eb_copy_scopes(d.snap);
+            }
+            eb_stmt(b, d.body);
+            b.sc = *saved;
+            j = j - 1;
+        }
+        i = i - 1;
+    }
+}
+
+void eb_push_frame(EB* b) {
+    List_push<*EFrame>(&b.cleanups, alloc<EFrame>(1));
+}
+
+void eb_pop_frame(EB* b) {
+    List_pop<*EFrame>(&b.cleanups);
+}
+
+int eb_nframes(EB* b) {
+    return List_len<*EFrame>(&b.cleanups);
+}
+
+void eb_visit_body(EB* b, *StmtNode body) {
+    if (body == null) {
+        return;
+    }
+    if (body.kind == SK_BLOCK) {
+        eb_stmt(b, body);
+        return;
+    }
+    eb_push_scope(b);
+    eb_push_frame(b);
+    int depth = eb_nframes(b) - 1;
+    eb_stmt(b, body);
+    if (b.blk != null && b.blk.term == 0) {
+        eb_run_cleanups(b, depth, 0);
+    }
+    eb_pop_frame(b);
+    eb_pop_scope(b);
+}
