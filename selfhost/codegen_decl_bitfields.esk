@@ -1,0 +1,402 @@
+// codegen_decl_bitfields.esk: bitfield struct layout (SysV and AAPCS) (part of codegen_decl.esk, imported in order)
+
+int cg_is_bf_struct(Codegen* g, string sname) {
+    if (cg_has_targs(sname) == 1) {
+        sname = cg_ensure_struct_inst(g, sname);
+    }
+    int i = 0;
+    int n = List_len<CgBF>(&g.bitfields);
+    while (i < n) {
+        if (cg_streq(List_get<CgBF>(&g.bitfields, i).sname, sname) == 1) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+void cg_bf_layout_ms(Codegen* g, *DeclNode d);   // fwd: the Windows (MS) rules
+int cg_ll_align_of(Codegen* g, string t);         // fwd
+int cg_c_align(Codegen* g, string t);             // fwd
+int cg_needs_manual(Codegen* g, *DeclNode d);     // fwd
+int cg_ll_size_of(Codegen* g, string t);          // fwd
+
+// A byte range [off, end) of a bitfield struct: a storage unit (ty = its integer type,
+// "" = a packed byte run) or a normal field (ty = its LLVM type, "" = a byte filler).
+struct CgSpan {
+    int off;
+    int end;
+    string ty;
+}
+
+void cg_span_insert(List<CgSpan>* l, CgSpan s, int bigfirst) {   // keep sorted by offset
+    List_push<CgSpan>(l, s);
+    int i = List_len<CgSpan>(l) - 1;
+    while (i > 0) {
+        CgSpan p = List_get<CgSpan>(l, i - 1);
+        int before = 0;
+        if (s.off < p.off) {
+            before = 1;
+        }
+        if (bigfirst == 1 && s.off == p.off && s.end > p.end) {
+            before = 1;
+        }
+        if (before == 0) {
+            break;
+        }
+        List_set<CgSpan>(l, i, p);
+        i = i - 1;
+    }
+    List_set<CgSpan>(l, i, s);
+}
+
+string cg_bytes_ty(int n) {
+    return cg_cat("[", cg_cat(cg_itoa(n), " x i8]"));
+}
+
+// Lay out a struct with bitfields like C on the target (CodeGen::layoutBitfieldStruct):
+// the MS rules on Windows, else SysV/AAPCS (clang's Itanium layout): a bitfield takes the
+// next free bit unless it would cross a boundary of its declared type's storage unit,
+// then it starts at that boundary; a packed struct (or #pragma pack) packs bitfields
+// back to back; a normal field starts at the next byte, aligned. Every field is then
+// addressed by byte offset (slot.boffs); the emitted `%S = type` only has to reproduce
+// the C size and alignment: each maximal storage unit as an integer of its type, the
+// normal fields outside the units as themselves, and `[n x i8]` for the other bytes.
+// An unnamed bitfield takes its bits like a named one but is no storage (it holds no
+// data); a `: 0` moves the next field to the next boundary of its type's alignment,
+// whatever the packing. Neither raises the struct alignment, except on AAPCS (g.bfal).
+void cg_bf_layout(Codegen* g, *DeclNode d) {
+    if (g.msbf == 1) {
+        cg_bf_layout_ms(g, d);
+        return;
+    }
+    List<Param> lfs;
+    List<int> lbits;
+    List<int> lnamed;
+    ast_layout_fields(d, &lfs, &lbits, &lnamed);
+    int nf = List_len<Param>(&lfs);
+    int contig = 0;
+    int cap = 0;
+    if (d.is_packed == 1) {
+        contig = 1;
+        cap = 1;
+    }
+    else if (d.pack_align >= 2) {
+        contig = 1;
+        cap = d.pack_align;
+    }
+    List<CgSpan> units;
+    List_init<CgSpan>(&units, 8);
+    List<CgSpan> normals;
+    List_init<CgSpan>(&normals, 8);
+    List<CgSpan> uds;    // unnamed bitfields' C ABI data bytes
+    List_init<CgSpan>(&uds, 4);
+    int bitpos = 0;
+    int salign = 1;
+    int i = 0;
+    while (i < nf) {
+        Param pm = List_get<Param>(&lfs, i);
+        int bw = List_get<int>(&lbits, i);
+        int named = List_get<int>(&lnamed, i);
+        string lty = cg_lltype(g, pm.ty);
+        int size = cg_size(g, pm.ty);
+        int nal = cg_align(g, pm.ty);
+        if (named == 0 && bw == 0) {
+            int za = cg_c_align(g, lty);
+            bitpos = cg_align_up(bitpos, za * 8);
+            if (g.bfal == 1 && za > salign) {
+                salign = za;
+            }
+            let zd: CgSpan;
+            zd.off = bitpos / 8;
+            zd.end = (bitpos + size * 8 + 7) / 8;
+            zd.ty = "";
+            List_push<CgSpan>(&uds, zd);
+            i = i + 1;
+            continue;
+        }
+        int al = cg_c_align(g, lty);
+        if (cap > 0 && al > cap) {
+            al = cap;
+        }
+        if ((named == 1 || g.bfal == 1) && al > salign) {
+            salign = al;
+        }
+        let slot: CgBF;
+        slot.sname = d.name;
+        slot.fname = pm.name;
+        slot.fety = pm.ty;
+        slot.fidx = 0;
+        slot.sty = lty;
+        slot.aal = 0;
+        slot.aty = lty;
+        slot.boff = 0;
+        slot.bw = 0;
+        slot.sgn = 0;
+        if (bw > 0) {
+            slot.bw = bw;
+            // Signed unless the type is unsigned or an enum with no negative member (as clang).
+            string fdt = cg_dealias(g, pm.ty);
+            if (cg_is_unsigned(fdt) == 0 && cg_in_strlist(&g.enum_uns, fdt) == 0) {
+                slot.sgn = 1;
+            }
+            if (contig == 1) {
+                slot.boffs = bitpos / 8;
+                slot.boff = bitpos % 8;
+                int span = (slot.boff + bw + 7) / 8;
+                slot.aty = cg_cat("i", cg_itoa(span * 8));
+                slot.aal = 1;
+                let u: CgSpan;
+                u.off = slot.boffs;
+                u.end = slot.boffs + span;
+                u.ty = "";
+                if (named == 1) {
+                    cg_span_insert(&units, u, 1);
+                }
+            } else if (al < size) {
+                // A type aligned below its size (int64 on 32-bit x86 SysV): the bitfield may
+                // not cross its type's size from an alignment boundary, and its storage is
+                // the bytes it spans from that boundary (clang's rule).
+                int ab = al * 8;
+                if (bitpos % ab + bw > size * 8) {
+                    bitpos = cg_align_up(bitpos, ab);
+                }
+                slot.boffs = bitpos / ab * al;
+                slot.boff = bitpos - slot.boffs * 8;
+                int aspan = (slot.boff + bw + 7) / 8;
+                slot.aty = cg_cat("i", cg_itoa(aspan * 8));
+                slot.aal = al;
+                let au: CgSpan;
+                au.off = slot.boffs;
+                au.end = slot.boffs + aspan;
+                au.ty = "";
+                if (named == 1) {
+                    cg_span_insert(&units, au, 1);
+                }
+            } else {
+                int ub = size * 8;
+                if (bitpos / ub != (bitpos + bw - 1) / ub) {
+                    bitpos = cg_align_up(bitpos, ub);
+                }
+                slot.boffs = bitpos / ub * size;
+                slot.boff = bitpos - slot.boffs * 8;
+                slot.aal = nal;
+                // A bool bitfield is read and written as its byte (the value is i1).
+                if (cg_streq(lty, "i1") == 1) {
+                    slot.aty = "i8";
+                }
+                let u: CgSpan;
+                u.off = slot.boffs;
+                u.end = slot.boffs + size;
+                u.ty = slot.aty;
+                if (named == 1) {
+                    cg_span_insert(&units, u, 1);
+                }
+            }
+            if (named == 0) {
+                int ufirst = slot.boffs * 8 + slot.boff;
+                let ud: CgSpan;
+                ud.off = ufirst / 8;
+                ud.end = (ufirst + size * 8 + 7) / 8;
+                ud.ty = "";
+                List_push<CgSpan>(&uds, ud);
+            }
+            bitpos = bitpos + bw;
+        } else {
+            int off = cg_align_up((bitpos + 7) / 8, al);
+            slot.boffs = off;
+            let nsp: CgSpan;
+            nsp.off = off;
+            nsp.end = off + size;
+            nsp.ty = lty;
+            List_push<CgSpan>(&normals, nsp);
+            bitpos = (off + size) * 8;
+        }
+        if (named == 1) {
+            List_push<CgBF>(&g.bitfields, slot);
+        }
+        i = i + 1;
+    }
+    int total = cg_align_up((bitpos + 7) / 8, salign);
+    // The bytes an unnamed bitfield counts as data for the C ABI (clang's
+    // BitsContainNoUserData: from its first bit through its type's size) end at the struct.
+    if (List_len<string>(&d.pad_tys) > 0) {
+        List_push<string>(&g.unnamed_tys, d.name);
+    }
+    i = 0;
+    while (i < List_len<CgSpan>(&uds)) {
+        CgSpan us = List_get<CgSpan>(&uds, i);
+        let ue: CgUData;
+        ue.sname = d.name;
+        ue.off = us.off;
+        ue.end = us.end;
+        if (ue.off > total) {
+            ue.off = total;
+        }
+        if (ue.end > total) {
+            ue.end = total;
+        }
+        List_push<CgUData>(&g.udata, ue);
+        i = i + 1;
+    }
+    // Maximal storage units (aligned power-of-two units nest or are disjoint; a packed
+    // struct's overlapping byte runs merge).
+    List<CgSpan> store;
+    List_init<CgSpan>(&store, 8);
+    i = 0;
+    while (i < List_len<CgSpan>(&units)) {
+        CgSpan u = List_get<CgSpan>(&units, i);
+        int n = List_len<CgSpan>(&store);
+        if (n > 0 && u.off < List_get<CgSpan>(&store, n - 1).end) {
+            if (contig == 1) {
+                CgSpan last = List_get<CgSpan>(&store, n - 1);
+                if (u.end > last.end) {
+                    last.end = u.end;
+                    List_set<CgSpan>(&store, n - 1, last);
+                }
+            }
+        } else {
+            List_push<CgSpan>(&store, u);
+        }
+        i = i + 1;
+    }
+    List<CgSpan> elems;
+    List_init<CgSpan>(&elems, 8);
+    i = 0;
+    while (i < List_len<CgSpan>(&store)) {
+        cg_span_insert(&elems, List_get<CgSpan>(&store, i), 0);
+        i = i + 1;
+    }
+    i = 0;
+    while (i < List_len<CgSpan>(&normals)) {
+        CgSpan nsp = List_get<CgSpan>(&normals, i);
+        int o = nsp.off;
+        int overlap = 0;
+        int j = 0;
+        while (j < List_len<CgSpan>(&store)) {
+            CgSpan u = List_get<CgSpan>(&store, j);
+            if (u.end > o && u.off < nsp.end) {
+                overlap = 1;
+                if (u.off > o) {
+                    let pc: CgSpan;
+                    pc.off = o;
+                    pc.end = u.off;
+                    pc.ty = "";
+                    cg_span_insert(&elems, pc, 0);
+                }
+                if (u.end > o) {
+                    o = u.end;
+                }
+            }
+            j = j + 1;
+        }
+        if (overlap == 0) {
+            cg_span_insert(&elems, nsp, 0);
+        }
+        else if (o < nsp.end) {
+            let rest: CgSpan;
+            rest.off = o;
+            rest.end = nsp.end;
+            rest.ty = "";
+            cg_span_insert(&elems, rest, 0);
+        }
+        i = i + 1;
+    }
+    // The elements' natural LLVM layout gives the C one unless it is less aligned than C
+    // (a field whose C alignment is above LLVM's): then the type is packed, padded by hand.
+    int llal = 1;
+    i = 0;
+    while (i < List_len<CgSpan>(&elems)) {
+        CgSpan le = List_get<CgSpan>(&elems, i);
+        if (le.ty[0] != 0) {
+            int ea = cg_ll_align_of(g, le.ty);
+            if (ea > llal) {
+                llal = ea;
+            }
+        }
+        i = i + 1;
+    }
+    int byhand = contig;
+    if (llal < salign) {
+        byhand = 1;
+    }
+    String body;
+    String_init(&body, 32);
+    int cur = 0;
+    i = 0;
+    while (i < List_len<CgSpan>(&elems)) {
+        CgSpan e = List_get<CgSpan>(&elems, i);
+        string t = e.ty;
+        if (t[0] == 0) {
+            t = cg_bytes_ty(e.end - e.off);
+        }
+        int a = 1;
+        if (byhand == 0) {
+            a = cg_ll_align_of(g, t);
+        }
+        if (cg_align_up(cur, a) < e.off) {
+            if (String_len(&body) > 0) {
+                String_append(&body, ", ");
+            }
+            String_append(&body, cg_bytes_ty(e.off - cur));
+        }
+        if (String_len(&body) > 0) {
+            String_append(&body, ", ");
+        }
+        String_append(&body, t);
+        cur = e.end;
+        i = i + 1;
+    }
+    // Trailing bytes the natural layout would not add (padding of a packed type, or the
+    // bits of a trailing unnamed bitfield).
+    int natend = cur;
+    if (byhand == 0) {
+        natend = cg_align_up(cur, llal);
+    }
+    if (cur < total && natend < total) {
+        if (String_len(&body) > 0) {
+            String_append(&body, ", ");
+        }
+        String_append(&body, cg_bytes_ty(total - cur));
+    }
+    string op = "{ ";
+    string cl = " }";
+    if (byhand == 1) {
+        op = "<{ ";
+        cl = " }>";
+        llal = 1;
+    }
+    cg_deftype(g, d.name, cg_cat(op, cg_cat((string)String_cstr(&body), cl)));
+    cg_set_calign(g, d.name, salign, llal);
+}
+
+// Append element `t` to an MS-layout struct body; returns its LLVM index. Laid out by
+// hand (manual) it is placed at alignment min(align, packn) (packn 0: no cap, 1: a packed
+// struct), with a `[k x i8]` filler before it, tracking the byte offset and the struct
+// alignment.
+int cg_ms_elem(Codegen* g, String* body, int* count, int* off, int* salign, int packn, int manual, string t) {
+    if (manual == 1) {
+        int a = cg_c_align(g, t);
+        if (packn >= 1 && a > packn) {
+            a = packn;
+        }
+        if (a > salign[0]) {
+            salign[0] = a;
+        }
+        int at = cg_align_up(off[0], a);
+        if (at > off[0]) {
+            if (count[0] > 0) {
+                String_append(body, ", ");
+            }
+            String_append(body, cg_bytes_ty(at - off[0]));
+            count[0] = count[0] + 1;
+        }
+        off[0] = at + cg_ll_size_of(g, t);
+    }
+    if (count[0] > 0) {
+        String_append(body, ", ");
+    }
+    String_append(body, t);
+    count[0] = count[0] + 1;
+    return count[0] - 1;
+}

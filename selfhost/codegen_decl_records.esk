@@ -1,0 +1,521 @@
+// codegen_decl_records.esk: the MS bitfield layout, manual layouts, C integer kinds and unions (part of codegen_decl.esk, imported in order)
+
+// The MS layout (Windows targets): consecutive bitfields pack into storage words of their
+// declared type (uint8 → i8, uint64 → i64); a new word opens when the declared width
+// changes or the next field won't fit. A normal field closes the word and gets its own
+// slot. Registers a slot per field (word index + bit offset/width, or a plain index for a
+// normal field) and emits `%S = type { … }` (`<{ … }>` when packed or under pack(N)).
+// An unnamed bitfield takes its bits like a named one. A `: 0` right after a bitfield
+// closes the word and aligns the next field to its type (capped by the packing on MSVC,
+// not on mingw), which needs the layout by hand; anywhere else it is ignored.
+void cg_bf_layout_ms(Codegen* g, *DeclNode d) {
+    if (List_len<string>(&d.pad_tys) > 0) {
+        List_push<string>(&g.unnamed_tys, d.name);
+    }
+    String body;
+    String_init(&body, 32);
+    List<Param> lfs;
+    List<int> lbits;
+    List<int> lnamed;
+    ast_layout_fields(d, &lfs, &lbits, &lnamed);
+    int nf = List_len<Param>(&lfs);
+    int packn = 1;
+    if (d.is_packed == 0) {
+        packn = d.pack_align;
+    }
+    int manual = 0;
+    if (packn >= 2 || cg_needs_manual(g, d) == 1) {
+        manual = 1;
+    }
+    int after = 0;
+    int zi = 0;
+    while (zi < nf) {
+        int zb = List_get<int>(&lbits, zi);
+        if (List_get<int>(&lnamed, zi) == 0 && zb == 0) {
+            if (after == 1) {
+                manual = 1;
+            }
+            after = 0;
+        }
+        else {
+            after = 0;
+            if (zb > 0) {
+                after = 1;
+            }
+        }
+        zi = zi + 1;
+    }
+    after = 0;
+    int llcount = 0;          // number of LLVM fields emitted so far
+    int off = 0;
+    int salign = 1;
+    int curword = 0 - 1;      // open bitfield word's LLVM index (-1 = none)
+    int curbits = 0;          // open word's width in bits
+    int curoff = 0;
+    int i = 0;
+    while (i < nf) {
+        Param pm = List_get<Param>(&lfs, i);
+        int bw = List_get<int>(&lbits, i);
+        int named = List_get<int>(&lnamed, i);
+        if (named == 0 && bw == 0) {
+            if (after == 1) {
+                int za = cg_c_align(g, cg_lltype(g, pm.ty));
+                if (g.msvc == 1) {
+                    if (d.is_packed == 1) {
+                        za = 1;
+                    }
+                    if (packn >= 2 && za > packn) {
+                        za = packn;
+                    }
+                }
+                if (za > salign) {
+                    salign = za;
+                }
+                int zat = cg_align_up(off, za);
+                if (zat > off) {
+                    if (llcount > 0) {
+                        String_append(&body, ", ");
+                    }
+                    String_append(&body, cg_bytes_ty(zat - off));
+                    llcount = llcount + 1;
+                }
+                off = zat;
+            }
+            curword = 0 - 1;
+            curbits = 0;
+            curoff = 0;
+            after = 0;
+            i = i + 1;
+            continue;
+        }
+        after = 0;
+        if (bw > 0) {
+            after = 1;
+        }
+        let slot: CgBF;
+        slot.sname = d.name;
+        slot.fname = pm.name;
+        slot.fety = pm.ty;
+        slot.boffs = 0 - 1;
+        slot.aal = 0;
+        if (bw > 0) {
+            string sty = cg_lltype(g, pm.ty);
+            string uty = sty;   // a bool's unit is its byte
+            if (cg_streq(sty, "i1") == 1) {
+                uty = "i8";
+            }
+            int stb = cg_int_w(uty);
+            if (curword < 0 || curbits != stb || curoff + bw > stb) {   // open a fresh word
+                curword = cg_ms_elem(g, &body, &llcount, &off, &salign, packn, manual, uty);
+                curbits = stb;
+                curoff = 0;
+            }
+            slot.fidx = curword;
+            slot.boff = curoff;
+            slot.bw = bw;
+            slot.sty = sty;
+            slot.aty = uty;
+            slot.sgn = 0;
+            if (cg_is_unsigned(cg_dealias(g, pm.ty)) == 0) {
+                slot.sgn = 1;
+            }
+            curoff = curoff + bw;
+        } else {
+            curword = 0 - 1;      // a normal field closes the word
+            curbits = 0;
+            curoff = 0;
+            string fty = cg_lltype(g, pm.ty);
+            slot.fidx = cg_ms_elem(g, &body, &llcount, &off, &salign, packn, manual, fty);
+            slot.boff = 0;
+            slot.bw = 0;
+            slot.sgn = 0;
+            slot.sty = fty;
+            slot.aty = fty;
+        }
+        if (named == 1) {
+            List_push<CgBF>(&g.bitfields, slot);
+        }
+        i = i + 1;
+    }
+    string op = "{ ";
+    string cl = " }";
+    if (d.is_packed == 1) {
+        op = "<{ ";
+        cl = " }>";
+    }
+    if (manual == 1) {
+        int total = cg_align_up(off, salign);
+        if (total > off) {
+            String_append(&body, ", ");
+            String_append(&body, cg_bytes_ty(total - off));
+        }
+        op = "<{ ";
+        cl = " }>";
+    }
+    cg_deftype(g, d.name, cg_cat(op, cg_cat((string)String_cstr(&body), cl)));
+    if (manual == 1) {
+        cg_set_calign(g, d.name, salign, 1);
+    }
+}
+
+// Lay out a struct by hand (C++ CodeGen::buildPackedLayout): each field at its C alignment
+// (cg_c_align), capped at N for `#pragma pack(N>=2)` (N = 0: no cap, a struct holding a
+// pack(N) one), with explicit `[K x i8]` padding fillers, emitted as an LLVM packed struct
+// `<{ … }>` (so LLVM adds no padding of its own) whose C alignment is recorded. Records a
+// phys-index slot per field (reusing the bitfield machinery, so member GEP / struct-init
+// pick up the physical index). The logical CgStruct field-list is already registered by
+// pass 1a; this only emits the type + the phys slots.
+void cg_emit_manual(Codegen* g, *DeclNode d, int N) {
+    String body;
+    String_init(&body, 32);
+    int nf = List_len<Param>(&d.params);
+    int offset = 0;
+    int structAlign = 1;
+    int physIdx = 0;
+    int emitted = 0;
+    int i = 0;
+    while (i < nf) {
+        Param pm = List_get<Param>(&d.params, i);
+        int al = cg_c_align(g, cg_lltype(g, pm.ty));
+        if (N > 0 && al > N) {
+            al = N;
+        }
+        if (al > structAlign) {
+            structAlign = al;
+        }
+        int aligned = cg_align_up(offset, al);
+        if (aligned > offset) {                              // alignment padding filler
+            if (emitted > 0) {
+                String_append(&body, ", ");
+            }
+            String_append(&body, "[");
+            String_append(&body, cg_itoa(aligned - offset));
+            String_append(&body, " x i8]");
+            emitted = emitted + 1;
+            physIdx = physIdx + 1;
+            offset = aligned;
+        }
+        let slot: CgBF;
+        slot.sname = d.name;
+        slot.fname = pm.name;
+        slot.fidx = physIdx;
+        slot.boff = 0;
+        slot.bw = 0;
+        slot.sgn = 0;
+        slot.sty = cg_lltype(g, pm.ty);
+        slot.fety = pm.ty;
+        slot.boffs = 0 - 1;
+        slot.aty = slot.sty;
+        slot.aal = 0;
+        List_push<CgBF>(&g.bitfields, slot);
+        if (emitted > 0) {
+            String_append(&body, ", ");
+        }
+        String_append(&body, cg_lltype(g, pm.ty));
+        emitted = emitted + 1;
+        physIdx = physIdx + 1;
+        offset = offset + cg_size(g, pm.ty);
+        i = i + 1;
+    }
+    int total = cg_align_up(offset, structAlign);            // size rounds up to the struct's align
+    if (total > offset) {
+        if (emitted > 0) {
+            String_append(&body, ", ");
+        }
+        String_append(&body, "[");
+        String_append(&body, cg_itoa(total - offset));
+        String_append(&body, " x i8]");
+    }
+    cg_deftype(g, d.name, cg_cat("<{ ", cg_cat((string)String_cstr(&body), " }>")));
+    cg_set_calign(g, d.name, structAlign, 1);
+}
+
+// 1 if the program also defines `name` with a body (an `extern` then a definition
+// of the same symbol, e.g. a test stubbing a C library): emit only the define.
+// Does the program define (not just `extern`-declare) the global variable `name`?
+int cg_prog_defines_var(*Program prog, string name) {
+    int i = 0;
+    int n = List_len<*DeclNode>(&prog.decls);
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        if (d.kind == DK_VARDECL && d.is_extern == 0 && cg_streq(d.name, name) == 1) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// The C integer type an extern spells by name (<ctypes>, C++ CodeGen::cIntKind):
+// "z" size_t, "s" ssize_t, "l" c_long, "" anything else.
+string cg_cint_kind(string t0) {
+    string t = t0;
+    if (t[0] == 'c' && t[1] == 'o' && t[2] == 'n' && t[3] == 's' && t[4] == 't' && t[5] == ' ') {
+        t = cg_sub_str(t, 6, (int)strlen(t));
+    }
+    if (cg_streq(t, "size_t") == 1) {
+        return "z";
+    }
+    if (cg_streq(t, "ssize_t") == 1) {
+        return "s";
+    }
+    if (cg_streq(t, "c_long") == 1) {
+        return "l";
+    }
+    return "";
+}
+
+// The C library functions whose size_t / ssize_t positions an `int64` spelling also
+// stands for (C++ knownCSizes): each parameter's kind, then '.' and the result's.
+string cg_known_csize(string name) {
+    string[33] names = {"memcpy", "memmove", "memset", "memcmp", "memchr", "memmem", "strlen", "strnlen",
+        "strncmp", "strncpy", "strncat", "strncasecmp", "strspn", "strcspn", "strxfrm", "malloc", "calloc",
+        "realloc", "aligned_alloc", "qsort", "bsearch", "snprintf", "vsnprintf", "strftime", "fread", "fwrite",
+        "getcwd", "read", "write", "send", "recv", "mmap", "munmap"};
+    string[33] pats = {"--z.-", "--z.-", "--z.-", "--z.-", "--z.-", "-z-z.-", "-.z", "-z.z",
+        "--z.-", "--z.-", "--z.-", "--z.-", "--.z", "--.z", "--z.z", "z.-", "zz.-",
+        "-z.-", "zz.-", "-zz-.-", "--zz-.-", "-z-.-", "-z--.-", "-z--.z", "-zz-.z", "-zz-.z",
+        "-z.-", "--z.s", "--z.s", "--z-.s", "--z-.s", "-z----.-", "-z.-"};
+    int i = 0;
+    while (i < 33) {
+        if (cg_streq(names[i], name) == 1) {
+            return pats[i];
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+// The kind of parameter `idx` (or of the result when idx < 0) of the extern `name`,
+// over all its declarations (C++ externCInts).
+string cg_cint_kinds(Codegen* g, *Program prog, string name, int idx) {
+    int i = 0;
+    int n = List_len<*DeclNode>(&prog.decls);
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        if (d.kind == DK_EXTERN && cg_streq(d.name, name) == 1) {
+            string k = "";
+            if (idx < 0) {
+                k = cg_cint_kind(d.ret_type);
+            } else if (idx < List_len<Param>(&d.params)) {
+                k = cg_cint_kind(List_get<Param>(&d.params, idx).ty);
+            }
+            if (k[0] != 0) {
+                return k;
+            }
+        }
+        i = i + 1;
+    }
+    // A known C function spelled with int64 where C has size_t or ssize_t.
+    string pat = cg_known_csize(name);
+    if (pat[0] == 0) {
+        return "";
+    }
+    int dot = 0;
+    while (pat[dot] != '.') {
+        dot = dot + 1;
+    }
+    i = 0;
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        if (d.kind == DK_EXTERN && cg_streq(d.name, name) == 1) {
+            int np = 0;
+            while (np < List_len<Param>(&d.params) && cg_streq(List_get<Param>(&d.params, np).ty, "...") == 0) {
+                np = np + 1;
+            }
+            if (np == dot) {
+                string t = d.ret_type;
+                char c = pat[dot + 1];
+                if (idx >= 0) {
+                    t = List_get<Param>(&d.params, idx).ty;
+                    c = pat[idx];
+                }
+                t = cg_dealias(g, t);
+                if (c != '-' && (cg_streq(t, "int64") == 1 || cg_streq(t, "uint64") == 1)) {
+                    if (c == 'z') {
+                        return "z";
+                    }
+                    return "s";
+                }
+            }
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+// The LLVM type of a C integer kind on the target (C++ CodeGen::cIntType).
+string cg_cint_ll(Codegen* g, string k) {
+    if ((cg_streq(k, "l") == 1 && g.wintgt == 1) || g.ptrsz == 4) {
+        return "i32";
+    }
+    return "i64";
+}
+
+int cg_prog_defines(*Program prog, string name) {
+    int i = 0;
+    int n = List_len<*DeclNode>(&prog.decls);
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        if (d.kind == DK_FUNCTION && d.body != null && cg_streq(d.name, name) == 1) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Emit a union's storage type with its C layout: `{ <most-aligned member>, [pad x i8] }`,
+// sized to the largest member rounded up to that alignment (all members overlap at
+// offset 0). A bare `[N x i8]` would be 1-aligned and misplace the union in a struct.
+// Anchor choice mirrors the C++ codegen: highest alignment, ties to the larger member.
+// An unnamed bitfield is no member: it only adds its bytes (on MS rules its type's size)
+// and, on AAPCS, its type's alignment (a `: 0` only that, uncapped). On MSVC a `: 0` right
+// after a bitfield adds its type's size.
+void cg_emit_union(Codegen* g, *DeclNode d) {
+    int maxsz = 0;
+    int maxal = 1;
+    string anchor = "";
+    int anchorsz = 0;
+    int anchoral = 1;
+    // Under `#pragma pack(N)` each member's alignment is capped at N; when that lowers the
+    // union's alignment the body is packed (`<{ }>`) with its C alignment recorded.
+    int cap = 0;
+    int natal = 1;
+    if (d.is_packed == 1) {
+        cap = 1;
+    } else if (d.pack_align >= 2) {
+        cap = d.pack_align;
+    }
+    List<Param> lfs;
+    List<int> lbits;
+    List<int> lnamed;
+    ast_layout_fields(d, &lfs, &lbits, &lnamed);
+    List<int> usz;         // unnamed bitfields' type sizes (C ABI data)
+    List_init<int>(&usz, 2);
+    int after = 0;
+    int fi = 0;
+    while (fi < List_len<Param>(&lfs)) {
+        string ft = List_get<Param>(&lfs, fi).ty;
+        int sz = cg_size(g, ft);
+        int al = cg_c_align(g, cg_lltype(g, ft));
+        int bw = List_get<int>(&lbits, fi);
+        int was = after;
+        after = 0;
+        if (List_get<int>(&lnamed, fi) == 0) {
+            List_push<int>(&usz, sz);
+            if (bw > 0) {
+                after = 1;
+            }
+            if (bw == 0) {
+                if (g.msbf == 0 && g.bfal == 1) {
+                    if (al > maxal) {
+                        maxal = al;
+                    }
+                    if (al > natal) {
+                        natal = al;
+                    }
+                }
+                if (was == 1 && g.msvc == 1 && sz > maxsz) {
+                    maxsz = sz;
+                }
+            } else {
+                int usz = (bw + 7) / 8;
+                if (g.msbf == 1) {
+                    usz = sz;
+                }
+                if (usz > maxsz) {
+                    maxsz = usz;
+                }
+                if (g.msbf == 0 && g.bfal == 1) {
+                    if (al > natal) {
+                        natal = al;
+                    }
+                    if (cap > 0 && al > cap) {
+                        al = cap;
+                    }
+                    if (al > maxal) {
+                        maxal = al;
+                    }
+                }
+            }
+            fi = fi + 1;
+            continue;
+        }
+        if (al > natal) {
+            natal = al;
+        }
+        if (cap > 0 && al > cap) {
+            al = cap;
+        }
+        if (sz > maxsz) {
+            maxsz = sz;
+        }
+        if (al > maxal) {
+            maxal = al;
+        }
+        if (anchor[0] == 0 || al > anchoral || (al == anchoral && sz > anchorsz)) {
+            anchor = ft;
+            anchorsz = sz;
+            anchoral = al;
+        }
+        fi = fi + 1;
+    }
+    int total = cg_align_up(maxsz, maxal);
+    if (total == 0) {
+        total = 1;
+    }
+    if (List_len<string>(&d.pad_tys) > 0) {
+        List_push<string>(&g.unnamed_tys, d.name);
+    }
+    fi = 0;
+    while (fi < List_len<int>(&usz)) {
+        let ue: CgUData;
+        ue.sname = d.name;
+        ue.off = 0;
+        ue.end = List_get<int>(&usz, fi);
+        if (ue.end > total) {
+            ue.end = total;
+        }
+        List_push<CgUData>(&g.udata, ue);
+        fi = fi + 1;
+    }
+    String body;
+    String_init(&body, 32);
+    if (anchor[0] != 0) {
+        String_append(&body, cg_lltype(g, anchor));
+    }
+    if (total > anchorsz) {
+        if (anchor[0] != 0) {
+            String_append(&body, ", ");
+        }
+        String_append(&body, "[");
+        String_append(&body, cg_itoa(total - anchorsz));
+        String_append(&body, " x i8]");
+    }
+    if (maxal < natal) {
+        cg_deftype(g, d.name, cg_cat("<{ ", cg_cat((string)String_cstr(&body), " }>")));
+        cg_set_calign(g, d.name, maxal, 1);
+        return;
+    }
+    cg_deftype(g, d.name, cg_cat("{ ", cg_cat((string)String_cstr(&body), " }")));
+    if (anchor[0] != 0) {
+        cg_set_calign(g, d.name, maxal, cg_align(g, anchor));
+    }
+    else {
+        cg_set_calign(g, d.name, maxal, 1);
+    }
+}
+
+// The architecture macro to predefine for programs this compiler builds (the host's, as
+// resolved when this compiler itself was built).
+string cg_host_arch_macro() {
+    string a = "";
+#ifdef __aarch64__
+    a = "__aarch64__";
+#endif
+#ifdef __x86_64__
+    a = "__x86_64__";
+#endif
+    return a;
+}
