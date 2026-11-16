@@ -124,6 +124,11 @@ set(SOURCES
     eir/eir_c_call.cpp
     eir/eir_obj.cpp
     eir/eir_as_arm64.cpp
+    eir/eir_as_directives.cpp
+    eir/eir_as_encode.cpp
+    eir/eir_as_inst.cpp
+    eir/eir_as_macho.cpp
+    eir/eir_as_elf.cpp
     eir/eir_runtime.cpp
 )
 
