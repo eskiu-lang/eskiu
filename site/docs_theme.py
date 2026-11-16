@@ -250,6 +250,7 @@ SHELL = """<!doctype html>
         <a href="{p}the-book-of-eskiu.html">Book</a>
         <a href="{d}internals.html">Internals</a>
         <a href="{p}changelog.html">Changelog</a>
+        <a href="{p}llms.txt">llms.txt</a>
         <a href="{gh}">GitHub</a>
         <a href="https://reactvision.xyz">ReactVision</a>
       </nav>

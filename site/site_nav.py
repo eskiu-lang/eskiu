@@ -38,6 +38,8 @@ NAV = [
          "iOS", "Bibliotecas estáticas para Swift y Objective-C"),
         ("platforms.html#visionos", "visionOS", "Apple Vision Pro and its simulator",
          "visionOS", "Apple Vision Pro y su simulador"),
+        ("platforms.html#quest", "Meta Quest", "Android with OpenXR",
+         "Meta Quest", "Android con OpenXR"),
         ("platforms.html#android", "Android", "Shared libraries for Kotlin and Java",
          "Android", "Bibliotecas compartidas para Kotlin y Java"),
         ("platforms.html#bare-metal", "Bare metal", "Kernels and boards with no operating system",
