@@ -41,7 +41,7 @@ compiling in every 0.16.x, and later changes are announced by warnings first
 | **Collections** | `<list>` `List<T>`, `<map>` `Map<V>` (string-keyed) / `HashMap<K,V>`, `<string>` `String`, `<bytes>` binary-safe `Bytes` buffer |
 | **Interfaces** | `interface Drawable { void draw(); }`: structural typing (method signatures must match), vtable dispatch; an interface value (`let d: Drawable = &c;`) can be a local, field, parameter or return value |
 | **Memory** | Stack default; heap via `<mem>` `alloc<T>(n)` / `free`; explicit allocators `<alloc>` via `alloc_with`; typed pointer arithmetic |
-| **volatile** | `volatile let reg: *uint8 = (uint8*) 0x3F8;`: MMIO-safe loads/stores |
+| **volatile** | `volatile let reg: *uint8 = (*uint8) 0x3F8;`: MMIO-safe loads/stores |
 | **Inline asm** | `asm("cli");` simple form; `asm("outb ${0:b}, $1" :: "{ax}"(v), "N{dx}"(p) : "memory");` extended form (LLVM operand references `$0`/`$1` and LLVM constraint codes) |
 | **Freestanding** | `--freestanding` flag: `<mem>` `alloc<T>`/`free` call `esk_alloc`/`esk_free`; user-supplied in kernel |
 | **Cross-compile** | `--target TRIPLE` (AArch64, x86-64, 32-bit ARM, 32-bit x86, WebAssembly), plus `--mcpu` / `--mattr` / `--reloc`; hard-float ARM for the 3DS, COFF for Windows, emscripten and WASI, Android through the NDK, iOS through Xcode; `.a` and `.so` library outputs and `--subsystem=windows`. See [cross-compile.md](../dev/cross-compile.md) |

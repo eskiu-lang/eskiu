@@ -511,7 +511,7 @@ errors located at the backslash. As in C, an octal escape takes at most three di
 *uint8     // pointer to uint8
 **char     // pointer to pointer to char
 </code></pre>
-<p>Both leading-star (<code>*T</code>) and trailing-star (<code>T*</code>) syntax are accepted. The canonical form in this document is <code>*T</code>.</p>
+<p>Both leading-star (<code>*T</code>) and trailing-star (<code>T*</code>) syntax are accepted and name the same type, also with <code>const</code>: <code>const *T</code> is <code>const T*</code> and <code>*T const</code> is <code>T* const</code>. This document, the Book and the examples write <code>*T</code>.</p>
 <pre><code class="language-eskiu">let ptr: *int = null;
 let buf: *uint8 = null;
 </code></pre>
@@ -738,10 +738,12 @@ pt.y = 2.5;
 </code></pre>
 <h3 id="45-volatile-variables">4.5 Volatile Variables</h3>
 <p>The <code>volatile</code> qualifier prevents the compiler (via LLVM) from optimising away loads and stores to a variable. It is required for memory-mapped I/O (MMIO) registers whose value may change or have side effects outside the program's control.</p>
-<pre><code class="language-eskiu">volatile let uart: *uint8 = (uint8*) 0x3F8;
+<pre><code class="language-eskiu">volatile let uart: *uint8 = (*uint8) 0x3F8;
 *uart = 'A';   // store is always emitted, not eliminated by optimiser
+
+volatile *uint8 status = (*uint8) 0x3FD;   // the same, in the C-style declaration form
 </code></pre>
-<p><code>volatile</code> applies to every load and store of the variable itself and of any place reached from it by <code>*</code>, <code>[]</code> or <code>.</code> (<code>*uart</code>, <code>uart[i]</code>, <code>dev.ctrl</code>), including <code>++</code>/<code>--</code>, compound assignment and the storage word of a bitfield (<code>dev.mode = 5</code> reads and writes the word with volatile accesses), for locals and globals. The initializing store of a volatile variable is volatile too. It has no effect on variables that are never accessed through a pointer, but the canonical use is MMIO pointer variables as shown above.</p>
+<p><code>volatile</code> applies to every load and store of the variable itself and of any place reached from it by <code>*</code>, <code>[]</code> or <code>.</code> (<code>*uart</code>, <code>uart[i]</code>, <code>dev.ctrl</code>), including <code>++</code>/<code>--</code>, compound assignment and the storage word of a bitfield (<code>dev.mode = 5</code> reads and writes the word with volatile accesses), for locals and globals. The initializing store of a volatile variable is volatile too. It has no effect on variables that are never accessed through a pointer, but the canonical use is MMIO pointer variables as shown above. A struct field cannot be declared <code>volatile</code>: to make the accesses to a device's registers volatile, reach the struct through a volatile pointer (<code>volatile *Dev dev = (*Dev) 0x4000;</code>, then <code>dev.ctrl = 1</code> is a volatile store).</p>
 <h3 id="46-constants-const">4.6 Constants (<code>const</code>)</h3>
 <p>The <code>const</code> qualifier declares an immutable, typed binding. It prefixes either declaration form, must be initialised, and may not be reassigned:</p>
 <pre><code class="language-eskiu">const int MAX = 100;
@@ -767,7 +769,7 @@ const let p: Point = Point { x: 1.0, y: 2.0 };
 p.x = 5.0;                      // error: cannot assign to read-only location 'p'
 </code></pre>
 <h3 id="pointer-constness">Pointer constness</h3>
-<p>For pointers, <code>const</code> distinguishes <em>what</em> is read-only, exactly as in C:</p>
+<p>For pointers, <code>const</code> distinguishes <em>what</em> is read-only, as in C (the C spellings, <code>const int*</code>, <code>int* const</code>, mean the same):</p>
 <div class="tablewrap"><table>
 <thead>
 <tr>
@@ -779,46 +781,46 @@ p.x = 5.0;                      // error: cannot assign to read-only location 'p
 </thead>
 <tbody>
 <tr>
-<td><code>int*</code></td>
+<td><code>*int</code></td>
 <td>ordinary pointer</td>
 <td>yes</td>
 <td>yes</td>
 </tr>
 <tr>
-<td><code>const int*</code></td>
+<td><code>const *int</code></td>
 <td>pointer to const int</td>
 <td>yes</td>
 <td><strong>no</strong></td>
 </tr>
 <tr>
-<td><code>int* const</code></td>
+<td><code>*int const</code></td>
 <td>const pointer to int</td>
 <td><strong>no</strong></td>
 <td>yes</td>
 </tr>
 <tr>
-<td><code>const int* const</code></td>
+<td><code>const *int const</code></td>
 <td>const pointer to const int</td>
 <td><strong>no</strong></td>
 <td><strong>no</strong></td>
 </tr>
 </tbody>
 </table></div>
-<pre><code class="language-eskiu">int sum(const int* p, int n) {  // a read-only view of the caller's data
+<pre><code class="language-eskiu">int sum(const *int p, int n) {  // a read-only view of the caller's data
     int s = 0;
     for (i in 0..n) { s = s + p[i]; }   // reads through the const pointer are fine
     return s;
 }
 
-const int* r = &amp;v;
+const *int r = &amp;v;
 r = &amp;w;     // allowed: the pointer is rebindable
 *r = 10;    // error: cannot assign to read-only location 'r'  (pointee is const)
 
-int* const c = &amp;v;
+*int const c = &amp;v;
 c = &amp;w;     // error: cannot assign to read-only location 'c'  (binding is const)
 *c = 10;    // allowed: the pointee is writable
 </code></pre>
-<p>Const-correctness is enforced on conversions: adding const (<code>int*</code> → <code>const int*</code>) is always allowed, but any conversion that would <strong>drop</strong> a const qualifier (in an initializer, assignment, call argument, or return) is a compile error. <code>const</code> has no ABI effect; it is stripped before code generation. It applies uniformly to locals, parameters, struct fields and return types.</p>
+<p>Const-correctness is enforced on conversions: adding const (<code>*int</code> → <code>const *int</code>) is always allowed, but any conversion that would <strong>drop</strong> a const qualifier (in an initializer, assignment, call argument, or return) is a compile error. <code>const</code> has no ABI effect; it is stripped before code generation. It applies uniformly to locals, parameters, struct fields and return types.</p>
 <p>A method call <code>x.m()</code> passes <code>&amp;x</code> as <code>self</code>, so on a <code>const</code> value (or through a <code>const T*</code>) it is allowed only when the method declares a read-only receiver, <code>int P_get(const P* self)</code>. A method whose <code>self</code> is a plain <code>*P</code> may write through it and is rejected there.</p>
 <h3 id="47-static-locals-static">4.7 Static Locals (<code>static</code>)</h3>
 <p>The <code>static</code> qualifier gives a <strong>local</strong> variable a single instance that persists across calls, exactly as in C. Its storage lives for the whole program, not the enclosing call, so it retains its value between invocations:</p>
@@ -1274,8 +1276,8 @@ consumed; only a bare call statement discards it.</p>
 <p><code>deprecated("message")</code> before a function declaration marks the function as on its way
 out. It keeps working, and each use outside an imported module prints a warning with the
 message:</p>
-<pre><code class="language-eskiu">int Rect_area(const Rect* self) { return self.w * self.h; }
-deprecated(&quot;use Rect_area&quot;) int rect_area(const Rect* r) { return Rect_area(r); }
+<pre><code class="language-eskiu">int Rect_area(const *Rect self) { return self.w * self.h; }
+deprecated(&quot;use Rect_area&quot;) int rect_area(const *Rect r) { return Rect_area(r); }
 
 int a = rect_area(&amp;r);   // warning: 'rect_area' is deprecated: use Rect_area
 </code></pre>
@@ -1341,9 +1343,9 @@ recognized only before a function header, so a variable named <code>export</code
 <p>A <code>void</code> function may use <code>return;</code> with no operand or allow control to fall off the end of the body. It may also <code>return f();</code> where <code>f</code> is itself <code>void</code> (the call runs, nothing is returned).</p>
 <p>A call to a <code>void</code> function has no value: it can be a statement, the operand of <code>return</code> in a <code>void</code> function, or both arms of a <code>?:</code> used as a statement (<code>c ? f() : g();</code>), but not an operand of an operator (<code>&amp;&amp;</code>, <code>||</code>, a comparison, arithmetic), a condition, an initializer, or an argument (also not one passed through <code>...</code>, as in <code>printf("%d", f())</code>).</p>
 <p>The one function that may not be <code>void</code> is <code>main</code>: its return value is the process exit
-code, so it must return <code>int</code> (<code>int main()</code> or <code>int main(int argc, string* argv)</code>). A
+code, so it must return <code>int</code> (<code>int main()</code> or <code>int main(int argc, *string argv)</code>). A
 <code>void main()</code> is a compile error.</p>
-<p><strong>Scripts.</strong> A file may instead have statements at the top level, mixed with declarations. It is then a script: the compiler gives it <code>int main(int __argc, string* __argv)</code>, whose body is those statements in source order. The arguments are in the globals <code>int argc</code> and <code>string* argv</code>. A top-level variable of a script is a global that the functions see; one with an initializer starts at zero and is assigned at its place in that order, so its initializer may be any expression (a call, <code>argv[1]</code>), not only a constant. A <code>const</code> variable and an array-literal initializer keep the global rules (a constant). A statement cannot name a global declared after it, as a function cannot. A <code>return n;</code> ends the script with exit code <code>n</code>; reaching the end returns 0.</p>
+<p><strong>Scripts.</strong> A file may instead have statements at the top level, mixed with declarations. It is then a script: the compiler gives it <code>int main(int __argc, *string __argv)</code>, whose body is those statements in source order. The arguments are in the globals <code>int argc</code> and <code>*string argv</code>. A top-level variable of a script is a global that the functions see; one with an initializer starts at zero and is assigned at its place in that order, so its initializer may be any expression (a call, <code>argv[1]</code>), not only a constant. A <code>const</code> variable and an array-literal initializer keep the global rules (a constant). A statement cannot name a global declared after it, as a function cannot. A <code>return n;</code> ends the script with exit code <code>n</code>; reaching the end returns 0.</p>
 <pre><code class="language-eskiu">extern int printf(string fmt, ...);
 int total = 0;
 void add(int n) { total += n; }
@@ -1470,17 +1472,17 @@ int same = identity&lt;int&gt;(42);
 int i = identity(42);         // T inferred as int
 
 let nums: List&lt;int&gt;;
-List_init(&amp;nums, 4);          // T inferred as int from the List&lt;int&gt;* argument
+List_init(&amp;nums, 4);          // T inferred as int from the *List&lt;int&gt; argument
 List_push(&amp;nums, 7);
 int first = List_get(&amp;nums, 0);
 </code></pre>
 <p>Inference unifies each parameter type against the concrete argument type
 structurally (peeling pointers, matching template instances and slice element types),
-so a <code>List&lt;T&gt;*</code> parameter binds <code>T</code> from a <code>List&lt;int&gt;*</code> argument and a <code>T[]</code> parameter
+so a <code>*List&lt;T&gt;</code> parameter binds <code>T</code> from a <code>*List&lt;int&gt;</code> argument and a <code>T[]</code> parameter
 binds <code>T</code> from an <code>int[]</code> slice (<code>sum(a[0..4])</code>). If a type parameter cannot be
 inferred from any argument, pass the type arguments explicitly. Each unique set
 of type arguments generates a separate monomorphic instantiation.</p>
-<p>A binding from a composite parameter type (<code>*T</code>, <code>List&lt;T&gt;*</code>) takes precedence. When a
+<p>A binding from a composite parameter type (<code>*T</code>, <code>*List&lt;T&gt;</code>) takes precedence. When a
 type parameter is bound only by parameters spelled as the bare type parameter (<code>T a, T
 b</code>), every such argument must deduce the same type. Integer deductions that differ meet
 at their common type by the usual arithmetic conversions (section 3.1), so
@@ -1561,7 +1563,7 @@ yields a <code>*Future&lt;T&gt;</code>, a handle to the eventual result, rather 
 <pre><code class="language-eskiu">import &lt;future&gt;;
 import &lt;net_async&gt;;
 
-async int read_len(EventLoop* lp, int fd, *uint8 buf) {
+async int read_len(*EventLoop lp, int fd, *uint8 buf) {
     int n = await net_read_async(lp, fd, buf, 4096);   // suspend until readable
     return n;
 }
@@ -1935,7 +1937,7 @@ int n = l.len();             // List_len&lt;int&gt;(&amp;l)
 int first = l.get(0);        // List_get&lt;int&gt;(&amp;l, 0)
 l.free();
 </code></pre>
-<p>It works the same way inside a generic body, where the receiver's type arguments are the enclosing instance's (<code>void Box_twice&lt;T&gt;(Box&lt;T&gt;* self, T x) { self.set(x); }</code>). An inline method declared in the struct body takes precedence over a free function of the same name.</p>
+<p>It works the same way inside a generic body, where the receiver's type arguments are the enclosing instance's (<code>void Box_twice&lt;T&gt;(*Box&lt;T&gt; self, T x) { self.set(x); }</code>). An inline method declared in the struct body takes precedence over a free function of the same name.</p>
 <h3 id="82a-operator-overloading">8.2a Operator Overloading</h3>
 <p>A type can give meaning to an operator by declaring <code>operator &lt;op&gt;</code>, so <code>a + b</code> reads as algebra instead of a nested call. This is aimed at value types like vectors and matrices, where the notation carries the meaning.</p>
 <pre><code class="language-eskiu">struct V3 { float x; float y; float z; }
@@ -2171,7 +2173,7 @@ struct Box&lt;T&gt; {
 Cell&lt;int&gt; c = Cell&lt;int&gt;{ 21 };
 int n = c.twice();                // 42
 </code></pre>
-<p>A generic function in the <code>Type_method</code> form (<code>T Cell_peek&lt;T&gt;(Cell&lt;T&gt;* self)</code>) is also callable as <code>c.peek()</code>, with its type arguments taken from the receiver (§8.2).</p>
+<p>A generic function in the <code>Type_method</code> form (<code>T Cell_peek&lt;T&gt;(*Cell&lt;T&gt; self)</code>) is also callable as <code>c.peek()</code>, with its type arguments taken from the receiver (§8.2).</p>
 <h3 id="102-template-functions">10.2 Template Functions</h3>
 <pre><code class="language-eskiu">T identity&lt;T&gt;(T x) {
     return x;
@@ -2399,8 +2401,8 @@ let a: Bump;  Bump_init(&amp;a, backing, 4096);
 </table></div>
 <h3 id="116-mmio-and-volatile">11.6 MMIO and volatile</h3>
 <p>See §4.5 for the <code>volatile</code> qualifier. In freestanding/kernel contexts, hardware registers are accessed through <code>volatile</code> pointer variables:</p>
-<pre><code class="language-eskiu">volatile let uart_dr: *uint8 = (uint8*) 0x3F8;   // UART data register
-volatile let uart_sr: *uint8 = (uint8*) 0x3FD;   // UART status register
+<pre><code class="language-eskiu">volatile let uart_dr: *uint8 = (*uint8) 0x3F8;   // UART data register
+volatile let uart_sr: *uint8 = (*uint8) 0x3FD;   // UART status register
 
 void uart_putc(uint8 c) {
     while ((*uart_sr &amp; 0x20) == 0) {}   // spin until TX ready
@@ -2632,7 +2634,7 @@ qsort((*void)&amp;arr[0], (int64)5, (int64)4, cmp);
 </tr>
 <tr>
 <td><code>stdlib/http.esk</code></td>
-<td>HTTP/1.1: <code>HttpRequest</code> + <code>HttpRequest_parse</code>/<code>_parse_status</code>/<code>_header</code> (RFC 9112 framing, the same as <code>http_recv</code>: <code>_parse_status</code> is 0 for a complete request, -1 when more bytes are needed, else the HTTP error status), <code>HttpResponse</code> + <code>HttpResponse_header</code>/<code>_set_body</code>/<code>_render</code>/<code>_render_head</code> (a HEAD response: Content-Length, no body; a 1xx, 204 or 304 has neither; <code>HttpResponse_header</code> returns 1, or 0 and adds nothing for a name that is not a token or a value with a CR or LF, which would inject a header line; a Content-Length the handler sets is not sent next to the automatic one, only a 1xx, 204 or 304 keeps it), and a threaded worker pool <code>http_serve(port, nworkers, handler)</code> where <code>handler</code> is <code>fn(HttpRequest*, HttpResponse*)-&gt;void</code> (<code>http_serve_with(port, nworkers, handler, lim)</code> takes an <code>HttpLimits</code>); it reads each request until complete (<code>HttpConnBuf_feed</code>, incremental: the head is parsed once and a chunked body decoded as it arrives), answering a bad one 400, 413, 501 or 505 without the handler (limits: a head over <code>HTTP_SERVE_MAX_HEAD</code>, 64 KiB, is 400, a body over <code>HttpLimits.max_body</code>, by default <code>HTTP_SERVE_MAX_BODY</code> (1 MiB), 413). <code>HttpLimits</code> (<code>HttpLimits_init</code> / <code>http_limits()</code> give the defaults) holds every server's timeouts in ms, 0 turning one off: <code>header_ms</code> (<code>HTTP_HEADER_TIMEOUT_MS</code>, 10 s: the whole head; trickled bytes do not extend it), <code>body_ms</code> (<code>HTTP_BODY_TIMEOUT_MS</code>, 60 s: the body once the head is in), <code>idle_ms</code> (<code>HTTP_IDLE_TIMEOUT_MS</code>, 60 s: an HTTP/2 connection with no open stream), <code>write_ms</code> (<code>HTTP_WRITE_TIMEOUT_MS</code>, 30 s: the client must take the answer; an HTTP/2 stream counts it from the last response data sent), <code>write_total_ms</code> (<code>HTTP_WRITE_TOTAL_MS</code>, 5 min: an HTTP/2 stream's whole response must be sent within it from when it is ready, however the peer paces its window updates; past it the stream is reset with CANCEL and its buffered response freed, the connection stays open), <code>max_open</code> (<code>HTTP_MAX_OPEN_CONNS</code>, 1024: connections an async server holds at once; one past it is closed at once), and <code>max_body</code> (<code>HTTP_SERVE_MAX_BODY</code>, 1 MiB: the largest request body, HTTP/1.1 and HTTP/2, answered 413 past it; a server taking uploads raises it). A request cut by <code>header_ms</code> or <code>body_ms</code> after some of it arrived is answered 408; a peer that sent nothing is just closed. <code>http_serve</code> applies them with <code>SO_RCVTIMEO</code> (set to what is left of the deadline before each read) and <code>SO_SNDTIMEO</code>. <code>http_chunked_step</code> decodes a chunked body incrementally; a chunk-size or trailer line longer than <code>HTTP_CHUNK_LINE_MAX</code> (8192 bytes, CRLF included) is malformed however it was split into reads. The servers and <code>http_recv</code> drop the chunked input they have decoded, so their buffer holds the head and one unfinished chunk or line, and they reject a trailer section longer than <code>HTTP_CHUNK_TRAILER_MAX</code> (64 KiB) with 400. Plus a binary-safe full-body reader <code>HttpReq</code> + <code>http_recv</code> (loops until the Content-Length body arrives, or decodes a chunked body, into a <code>*uint8</code> body; RFC 9112 framing: <code>Transfer-Encoding</code> with <code>Content-Length</code>, a missing, repeated or invalid <code>Host</code> (not uri-host [":" port]), whitespace before a header colon, an obsolete line fold or a bad version is 400, a coding other than <code>chunked</code> 501), <code>HttpReq_header</code>, <code>http_reply</code>, <code>http_reply_error</code>: for uploads a single-recv String body would corrupt binary bytes</td>
+<td>HTTP/1.1: <code>HttpRequest</code> + <code>HttpRequest_parse</code>/<code>_parse_status</code>/<code>_header</code> (RFC 9112 framing, the same as <code>http_recv</code>: <code>_parse_status</code> is 0 for a complete request, -1 when more bytes are needed, else the HTTP error status), <code>HttpResponse</code> + <code>HttpResponse_header</code>/<code>_set_body</code>/<code>_render</code>/<code>_render_head</code> (a HEAD response: Content-Length, no body; a 1xx, 204 or 304 has neither; <code>HttpResponse_header</code> returns 1, or 0 and adds nothing for a name that is not a token or a value with a CR or LF, which would inject a header line; a Content-Length the handler sets is not sent next to the automatic one, only a 1xx, 204 or 304 keeps it), and a threaded worker pool <code>http_serve(port, nworkers, handler)</code> where <code>handler</code> is <code>fn(*HttpRequest, *HttpResponse)-&gt;void</code> (<code>http_serve_with(port, nworkers, handler, lim)</code> takes an <code>HttpLimits</code>); it reads each request until complete (<code>HttpConnBuf_feed</code>, incremental: the head is parsed once and a chunked body decoded as it arrives), answering a bad one 400, 413, 501 or 505 without the handler (limits: a head over <code>HTTP_SERVE_MAX_HEAD</code>, 64 KiB, is 400, a body over <code>HttpLimits.max_body</code>, by default <code>HTTP_SERVE_MAX_BODY</code> (1 MiB), 413). <code>HttpLimits</code> (<code>HttpLimits_init</code> / <code>http_limits()</code> give the defaults) holds every server's timeouts in ms, 0 turning one off: <code>header_ms</code> (<code>HTTP_HEADER_TIMEOUT_MS</code>, 10 s: the whole head; trickled bytes do not extend it), <code>body_ms</code> (<code>HTTP_BODY_TIMEOUT_MS</code>, 60 s: the body once the head is in), <code>idle_ms</code> (<code>HTTP_IDLE_TIMEOUT_MS</code>, 60 s: an HTTP/2 connection with no open stream), <code>write_ms</code> (<code>HTTP_WRITE_TIMEOUT_MS</code>, 30 s: the client must take the answer; an HTTP/2 stream counts it from the last response data sent), <code>write_total_ms</code> (<code>HTTP_WRITE_TOTAL_MS</code>, 5 min: an HTTP/2 stream's whole response must be sent within it from when it is ready, however the peer paces its window updates; past it the stream is reset with CANCEL and its buffered response freed, the connection stays open), <code>max_open</code> (<code>HTTP_MAX_OPEN_CONNS</code>, 1024: connections an async server holds at once; one past it is closed at once), and <code>max_body</code> (<code>HTTP_SERVE_MAX_BODY</code>, 1 MiB: the largest request body, HTTP/1.1 and HTTP/2, answered 413 past it; a server taking uploads raises it). A request cut by <code>header_ms</code> or <code>body_ms</code> after some of it arrived is answered 408; a peer that sent nothing is just closed. <code>http_serve</code> applies them with <code>SO_RCVTIMEO</code> (set to what is left of the deadline before each read) and <code>SO_SNDTIMEO</code>. <code>http_chunked_step</code> decodes a chunked body incrementally; a chunk-size or trailer line longer than <code>HTTP_CHUNK_LINE_MAX</code> (8192 bytes, CRLF included) is malformed however it was split into reads. The servers and <code>http_recv</code> drop the chunked input they have decoded, so their buffer holds the head and one unfinished chunk or line, and they reject a trailer section longer than <code>HTTP_CHUNK_TRAILER_MAX</code> (64 KiB) with 400. Plus a binary-safe full-body reader <code>HttpReq</code> + <code>http_recv</code> (loops until the Content-Length body arrives, or decodes a chunked body, into a <code>*uint8</code> body; RFC 9112 framing: <code>Transfer-Encoding</code> with <code>Content-Length</code>, a missing, repeated or invalid <code>Host</code> (not uri-host [":" port]), whitespace before a header colon, an obsolete line fold or a bad version is 400, a coding other than <code>chunked</code> 501), <code>HttpReq_header</code>, <code>http_reply</code>, <code>http_reply_error</code>: for uploads a single-recv String body would corrupt binary bytes</td>
 </tr>
 <tr>
 <td><code>stdlib/multipart.esk</code></td>
@@ -2648,7 +2650,7 @@ qsort((*void)&amp;arr[0], (int64)5, (int64)4, cmp);
 </tr>
 <tr>
 <td><code>stdlib/eventloop.esk</code></td>
-<td>Readiness reactor over kqueue (macOS) / epoll (Linux): <code>EventLoop</code>, <code>el_new</code>, <code>EventLoop_add_read</code>, <code>EventLoop_add_write</code>, <code>EventLoop_del</code>, <code>EventLoop_run</code>, <code>EventLoop_stop</code>, <code>EventLoop_free</code>, plus a timer wheel (<code>EventLoop_add_timer</code>/<code>EventLoop_del_timer</code>). Callback is <code>fn(EventLoop*, int)-&gt;void</code></td>
+<td>Readiness reactor over kqueue (macOS) / epoll (Linux): <code>EventLoop</code>, <code>el_new</code>, <code>EventLoop_add_read</code>, <code>EventLoop_add_write</code>, <code>EventLoop_del</code>, <code>EventLoop_run</code>, <code>EventLoop_stop</code>, <code>EventLoop_free</code>, plus a timer wheel (<code>EventLoop_add_timer</code>/<code>EventLoop_del_timer</code>). Callback is <code>fn(*EventLoop, int)-&gt;void</code></td>
 </tr>
 <tr>
 <td><code>stdlib/atomic.esk</code></td>
@@ -2720,7 +2722,7 @@ qsort((*void)&amp;arr[0], (int64)5, (int64)4, cmp);
 </tr>
 <tr>
 <td><code>stdlib/http_async.esk</code></td>
-<td>Non-blocking concurrent HTTP/1.1 server built on the event loop's accept loop: <code>http_serve_async</code> (and <code>http_serve_async_with(lp, fd, handler, max_conns, lim)</code> for other <code>HttpLimits</code>; the reads and the write race a timer, and at most <code>lim.max_open</code> connections are open at once), with the same <code>fn(HttpRequest*, HttpResponse*)-&gt;void</code> handler interface as <code>&lt;http&gt;</code>. Each connection socket is non-blocking and the answer is written with <code>net_write_async</code>, so a client that does not read parks only its own connection</td>
+<td>Non-blocking concurrent HTTP/1.1 server built on the event loop's accept loop: <code>http_serve_async</code> (and <code>http_serve_async_with(lp, fd, handler, max_conns, lim)</code> for other <code>HttpLimits</code>; the reads and the write race a timer, and at most <code>lim.max_open</code> connections are open at once), with the same <code>fn(*HttpRequest, *HttpResponse)-&gt;void</code> handler interface as <code>&lt;http&gt;</code>. Each connection socket is non-blocking and the answer is written with <code>net_write_async</code>, so a client that does not read parks only its own connection</td>
 </tr>
 <tr>
 <td><code>stdlib/http2.esk</code></td>
@@ -2807,7 +2809,7 @@ printf(&quot;%d\n&quot;, String_to_int(&amp;n));     // -2026
 String_free(&amp;n);
 </code></pre>
 <h3 id="string-scripting-helpers">String scripting helpers</h3>
-<p>These follow the stdlib ownership rule: a <code>String* out</code> is cleared and refilled
+<p>These follow the stdlib ownership rule: a <code>*String out</code> is cleared and refilled
 (the caller initialised it and frees it), a <code>self</code> String is edited in place, and
 split results are <code>List&lt;String&gt;</code>s of owned Strings released with
 <code>String_split_free</code>. Lengths, widths and indices count bytes; case mapping
@@ -2821,71 +2823,71 @@ changes ASCII letters only and leaves every other byte (UTF-8 included) as is.</
 </thead>
 <tbody>
 <tr>
-<td><code>int64 String_find(String* self, string needle, int64 from)</code></td>
+<td><code>int64 String_find(*String self, string needle, int64 from)</code></td>
 <td>First index at or after <code>from</code>, or <code>-1</code>; an empty needle matches at <code>from</code></td>
 </tr>
 <tr>
-<td><code>int String_contains(String* self, string needle)</code></td>
+<td><code>int String_contains(*String self, string needle)</code></td>
 <td>1 or 0</td>
 </tr>
 <tr>
-<td><code>int String_replace(String* self, string from, string to)</code></td>
+<td><code>int String_replace(*String self, string from, string to)</code></td>
 <td>Replace the first occurrence in place; 1 if replaced. An empty <code>from</code> replaces nothing</td>
 </tr>
 <tr>
-<td><code>int64 String_replace_all(String* self, string from, string to)</code></td>
+<td><code>int64 String_replace_all(*String self, string from, string to)</code></td>
 <td>Replace every non-overlapping occurrence, left to right (<code>"aaa"</code>, <code>"aa"</code> to <code>"b"</code> gives <code>"ba"</code>); returns the count</td>
 </tr>
 <tr>
-<td><code>void String_split_str(String* self, string sep, List&lt;String&gt;* out)</code></td>
+<td><code>void String_split_str(*String self, string sep, *List&lt;String&gt; out)</code></td>
 <td>Split on a string; separators at the ends or side by side give empty parts, an empty <code>sep</code> gives one part</td>
 </tr>
 <tr>
-<td><code>void String_lines(String* self, List&lt;String&gt;* out)</code></td>
+<td><code>void String_lines(*String self, *List&lt;String&gt; out)</code></td>
 <td>Split on <code>\n</code> or <code>\r\n</code>; a final terminator adds no empty line, an empty String has none</td>
 </tr>
 <tr>
-<td><code>void List_join&lt;T&gt;(List&lt;T&gt;* self, string sep, String* out)</code></td>
+<td><code>void List_join&lt;T&gt;(*List&lt;T&gt; self, string sep, *String out)</code></td>
 <td>Join the C strings of a <code>List&lt;string&gt;</code> into <code>out</code>: <code>parts.join(sep, &amp;out)</code></td>
 </tr>
 <tr>
-<td><code>void String_join(String* self, List&lt;String&gt;* parts, string sep)</code></td>
+<td><code>void String_join(*String self, *List&lt;String&gt; parts, string sep)</code></td>
 <td>Join Strings (the inverse of a split) into <code>self</code></td>
 </tr>
 <tr>
-<td><code>void String_lower(String* self)</code>, <code>void String_upper(String* self)</code></td>
+<td><code>void String_lower(*String self)</code>, <code>void String_upper(*String self)</code></td>
 <td>ASCII case mapping in place</td>
 </tr>
 <tr>
-<td><code>void String_repeat(String* self, int64 n)</code></td>
+<td><code>void String_repeat(*String self, int64 n)</code></td>
 <td><code>n</code> copies of itself; <code>n &lt;= 0</code> empties it</td>
 </tr>
 <tr>
-<td><code>void String_pad_left(String* self, int64 width, char fill)</code>, <code>String_pad_right</code></td>
+<td><code>void String_pad_left(*String self, int64 width, char fill)</code>, <code>String_pad_right</code></td>
 <td>Pad to <code>width</code> bytes; a longer String is unchanged</td>
 </tr>
 <tr>
-<td><code>double String_to_double(String* self)</code></td>
+<td><code>double String_to_double(*String self)</code></td>
 <td>Leading number in C <code>strtod</code> syntax, 0.0 if none</td>
 </tr>
 <tr>
-<td><code>int String_parse_double(String* self, *double out)</code></td>
+<td><code>int String_parse_double(*String self, *double out)</code></td>
 <td>The whole String (surrounding whitespace allowed) as one number: 1 and <code>*out</code> set, or 0</td>
 </tr>
 <tr>
-<td><code>void String_from_double(String* self, double d)</code></td>
+<td><code>void String_from_double(*String self, double d)</code></td>
 <td>Shortest of <code>%.15g</code> / <code>%.17g</code> that reads back as <code>d</code> (<code>0.1</code>, <code>3</code>, <code>1e+20</code>)</td>
 </tr>
 <tr>
-<td><code>void String_format(String* self, string fmt, ...)</code></td>
+<td><code>void String_format(*String self, string fmt, ...)</code></td>
 <td><code>printf</code>-style formatting into <code>self</code> (cleared first), through the C library's <code>vsnprintf</code> (C rules: <code>%lld</code> for <code>int64</code>, <code>s.cstr()</code> for a String)</td>
 </tr>
 <tr>
-<td><code>void String_appendf(String* self, string fmt, ...)</code></td>
+<td><code>void String_appendf(*String self, string fmt, ...)</code></td>
 <td>The same, appending</td>
 </tr>
 <tr>
-<td><code>void String_reserve(String* self, int64 need)</code></td>
+<td><code>void String_reserve(*String self, int64 need)</code></td>
 <td>Grow the buffer to at least <code>need</code> bytes</td>
 </tr>
 </tbody>
@@ -2915,11 +2917,11 @@ List the caller initialised. Elements are copied by value.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>List_map&lt;T,U&gt;(self, fn(T)-&gt;U f, List&lt;U&gt;* out)</code></td>
+<td><code>List_map&lt;T,U&gt;(self, fn(T)-&gt;U f, *List&lt;U&gt; out)</code></td>
 <td>Append <code>f(x)</code> for each element</td>
 </tr>
 <tr>
-<td><code>List_filter&lt;T&gt;(self, fn(T)-&gt;bool keep, List&lt;T&gt;* out)</code></td>
+<td><code>List_filter&lt;T&gt;(self, fn(T)-&gt;bool keep, *List&lt;T&gt; out)</code></td>
 <td>Append the elements <code>keep</code> accepts</td>
 </tr>
 <tr>
@@ -2943,7 +2945,7 @@ List the caller initialised. Elements are copied by value.</p>
 <td>In place</td>
 </tr>
 <tr>
-<td><code>void List_slice&lt;T&gt;(self, int start, int end, List&lt;T&gt;* out)</code></td>
+<td><code>void List_slice&lt;T&gt;(self, int start, int end, *List&lt;T&gt; out)</code></td>
 <td>Append <code>[start, end)</code>, clamped to the list</td>
 </tr>
 <tr>
@@ -2971,7 +2973,7 @@ List the caller initialised. Elements are copied by value.</p>
 <td>Size <code>n</code>; new elements are zero (a struct's field defaults are not applied in generic code)</td>
 </tr>
 <tr>
-<td><code>void List_copy_from&lt;T&gt;(self, List&lt;T&gt;* src)</code></td>
+<td><code>void List_copy_from&lt;T&gt;(self, *List&lt;T&gt; src)</code></td>
 <td><code>self</code> becomes a copy of <code>src</code>'s elements</td>
 </tr>
 <tr>
@@ -2979,7 +2981,7 @@ List the caller initialised. Elements are copied by value.</p>
 <td>In <code>&lt;sort&gt;</code>: sort the list in place, as <code>sort&lt;T&gt;</code> (not stable)</td>
 </tr>
 <tr>
-<td><code>void List_join&lt;T&gt;(self, string sep, String* out)</code></td>
+<td><code>void List_join&lt;T&gt;(self, string sep, *String out)</code></td>
 <td>In <code>&lt;string&gt;</code>: join a <code>List&lt;string&gt;</code></td>
 </tr>
 </tbody>
@@ -2993,7 +2995,7 @@ int sum = big.reduce(0, int(int acc, int x) { return acc + x; });  // 45
 </code></pre>
 <h3 id="map-hashmap-and-set">Map, HashMap and Set</h3>
 <p><code>Map&lt;V&gt;</code> and <code>HashMap&lt;K,V&gt;</code> gain <code>_has</code>, <code>_get_or(key, dflt)</code>, <code>_len</code>,
-<code>_remove</code>, <code>_keys(List*)</code>, <code>_values(List*)</code> and <code>_each(fn(K, V)-&gt;void)</code>.
+<code>_remove</code>, <code>_keys(*List)</code>, <code>_values(*List)</code> and <code>_each(fn(K, V)-&gt;void)</code>.
 Iteration is in table order, which is unspecified; the callback of <code>_each</code> must
 not insert or remove. <code>Map_remove</code> frees the map's copy of the key but not the
 value. Removal uses backward-shift deletion (the later entries of the probe run
@@ -3230,7 +3232,7 @@ returns 0 when the program ran (whatever its exit code) and -1 when it could not
 is the exit status, or 128+N when signal N ended the child. With <code>timeout_ms</code> the child is
 killed when the time runs out (on POSIX its whole process group, so the commands a shell
 started die too), <code>r.timed_out</code> is set and <code>exit_code</code> is 137. <code>ProcessOptions</code> fields:
-<code>stdin_text</code>, <code>cwd</code>, <code>env</code> (a <code>List&lt;string&gt;*</code> of extra <code>"NAME=value"</code> entries replacing
+<code>stdin_text</code>, <code>cwd</code>, <code>env</code> (a <code>*List&lt;string&gt;</code> of extra <code>"NAME=value"</code> entries replacing
 same-named ones), <code>timeout_ms</code>, and the flags <code>inherit_stdin</code>, <code>inherit_stdout</code>,
 <code>inherit_stderr</code> (use the parent's stream instead of a pipe; without <code>stdin_text</code> or
 <code>inherit_stdin</code> the child's stdin is empty) and <code>merge_stderr</code> (<code>2&gt;&amp;1</code>). When the child
@@ -3369,11 +3371,11 @@ Defining <code>ESKIU_FETCH_NO_TLS</code> before <code>import &lt;fetch&gt;</code
 <code>Future&lt;int&gt;</code> that completes with the same code. Connecting, the TLS handshake and the
 reads and writes wait on the loop; the host name lookup blocks. The options are copied
 when the call starts; <code>url</code> and <code>r</code> must stay valid until the future completes.</p>
-<pre><code class="language-eskiu">async int get_both(EventLoop* lp, FetchOptions* o) {
+<pre><code class="language-eskiu">async int get_both(*EventLoop lp, *FetchOptions o) {
     let a: Response;
     let b: Response;
-    Future&lt;int&gt;* fa = fetch_async(lp, &quot;https://example.com/a&quot;, o, &amp;a);
-    Future&lt;int&gt;* fb = fetch_async(lp, &quot;https://example.com/b&quot;, o, &amp;b);
+    *Future&lt;int&gt; fa = fetch_async(lp, &quot;https://example.com/a&quot;, o, &amp;a);
+    *Future&lt;int&gt; fb = fetch_async(lp, &quot;https://example.com/b&quot;, o, &amp;b);
     int both = await join2(fa, fb);           // the two requests run at the same time
     int rc = fa.value != 0 ? fa.value : fb.value;
     Future_free&lt;int&gt;(fa);  Future_free&lt;int&gt;(fb);
@@ -3661,7 +3663,7 @@ level tag is colored through <code>&lt;term&gt;</code> when colors are enabled f
 <h3 id="command-line-arguments-args">Command-line arguments (<code>&lt;args&gt;</code>)</h3>
 <pre><code class="language-eskiu">import &lt;args&gt;;
 
-int main(int argc, string* argv) {
+int main(int argc, *string argv) {
     let p: ArgParser;
     ArgParser_init(&amp;p, &quot;copy&quot;, &quot;Copy files.&quot;);
     defer ArgParser_free(&amp;p);
@@ -3923,7 +3925,7 @@ Nothing is added when no executable is linked. With <code>--freestanding</code> 
 no linking happens, so bare-metal targets are linked yourself (see the <code>ld.lld</code>
 invocation in <code>kernel/Makefile</code>).</p>
 <p><strong>Running directly.</strong> <code>eskiuc run file.esk [args...]</code> compiles to a temporary executable, runs it (forwarding <code>args...</code>), then deletes it, propagating the program's exit code, handy for quick iteration. If the program is killed by a signal, <code>run</code> exits with <code>128 +</code> the signal number, as a shell does. Compiler flags (including ones that take a value, such as <code>--target TRIPLE</code>) go <em>before</em> the script and program arguments <em>after</em> it; a <code>--</code> right after the script is dropped, so <code>eskiuc run --asan file.esk -- input.txt</code> passes only <code>input.txt</code>. Because a leading <code>#!</code> line is ignored, a script can also start with <code>#!/usr/bin/env -S eskiuc run</code> and, once <code>chmod +x</code>'d, be executed directly.</p>
-<p><strong>REPL.</strong> <code>eskiuc repl</code> reads inputs from standard input and runs each one through the LLVM ORC JIT in the compiler's process (prompts <code>&gt;</code> and <code>...</code> are shown only when standard input is a terminal). An input is a group of top-level declarations (functions, structs, enums, unions, interfaces, type aliases, <code>import</code>s) or a sequence of statements; it continues on the next line while it is unfinished: a bracket, a string literal, a block comment or an <code>#if</code>/<code>#ifdef</code> is still open; the line ends with an operator (<code>1 +</code>, <code>x &gt; 3 ?</code>) or with a header whose body comes next (<code>int sq(int n)</code>, <code>for (i in 0..3)</code>, <code>struct P</code>, <code>else</code>, <code>= int(int v)</code>); or the input parses neither as declarations nor as statements only because it ends early (a <code>do { ... }</code> before its <code>while</code>). An <code>if</code> or a <code>try</code> waits one more line for an <code>else</code>, <code>catch</code> or <code>finally</code> (any other line runs it first). A blank line sends a pending input as it is, unless a bracket is open. A line that starts with an operator (<code>? 10</code>, <code>.len</code>, <code>&amp;&amp; b</code>) is reported, since the line before has already run: break a long expression after the operator instead. Statements run as the body of a fresh function. A variable declared at their top level (<code>int x = f();</code>, or <code>let x = expr;</code>, where the REPL infers the type of <code>expr</code>) becomes a session variable, a global assigned when the input runs; declaring it again with the same type assigns the same variable. When the last statement is an expression other than an assignment, an increment or a call to a variadic C function, its value is printed by type: numbers, <code>bool</code>, <code>char</code> and <code>string</code> as literals, pointers as addresses, structs field by field (<code>Point{x: 1, y: 2}</code>), enums and sum types by member (<code>Rect(2, 3)</code>), arrays, slices and <code>List&lt;T&gt;</code> as <code>[a, b]</code>, <code>String</code> as its text, other types as <code>&lt;Type&gt;</code>. Every input is type-checked together with the declarations accepted so far, and a later declaration of a name replaces the earlier one for later inputs; code compiled before keeps the function or variable it was linked against (redefining a type recompiles every function and resets the session variables of that type to zero). An input that fails to parse or type-check prints its diagnostics and leaves the session unchanged; an exception that leaves an input is reported (<code>error: uncaught exception: int 5</code>) and the session continues. A crash in an input (a bad pointer, a trap) is reported too on Unix, but the process may be left in a bad state. The REPL is not available on Windows in this release (the JIT does not register the unwind tables Windows exceptions need): <code>eskiuc repl</code> there says so and exits 1; run files with <code>eskiuc run</code>. An input that contains <code>await</code> runs as the body of an <code>async</code> function, and the REPL drives its future on the session's event loop (<code>repl_loop()</code>, an <code>EventLoop*</code> created on first use, with <code>&lt;future&gt;</code> and <code>&lt;eventloop&gt;</code> imported into the session) until it completes; when nothing left on the loop could complete it (no pending timer and no watched descriptor), the input reports <code>error: the awaited future did not complete</code>. Commands: <code>:type EXPR</code> (print the type, run nothing), <code>:load FILE</code> (add the file's declarations), <code>:reset</code>, <code>:help</code>, <code>:quit</code> (or end of input). The self-hosted <code>eskiuc-esk</code> has no REPL.</p>
+<p><strong>REPL.</strong> <code>eskiuc repl</code> reads inputs from standard input and runs each one through the LLVM ORC JIT in the compiler's process (prompts <code>&gt;</code> and <code>...</code> are shown only when standard input is a terminal). An input is a group of top-level declarations (functions, structs, enums, unions, interfaces, type aliases, <code>import</code>s) or a sequence of statements; it continues on the next line while it is unfinished: a bracket, a string literal, a block comment or an <code>#if</code>/<code>#ifdef</code> is still open; the line ends with an operator (<code>1 +</code>, <code>x &gt; 3 ?</code>) or with a header whose body comes next (<code>int sq(int n)</code>, <code>for (i in 0..3)</code>, <code>struct P</code>, <code>else</code>, <code>= int(int v)</code>); or the input parses neither as declarations nor as statements only because it ends early (a <code>do { ... }</code> before its <code>while</code>). An <code>if</code> or a <code>try</code> waits one more line for an <code>else</code>, <code>catch</code> or <code>finally</code> (any other line runs it first). A blank line sends a pending input as it is, unless a bracket is open. A line that starts with an operator (<code>? 10</code>, <code>.len</code>, <code>&amp;&amp; b</code>) is reported, since the line before has already run: break a long expression after the operator instead. Statements run as the body of a fresh function. A variable declared at their top level (<code>int x = f();</code>, or <code>let x = expr;</code>, where the REPL infers the type of <code>expr</code>) becomes a session variable, a global assigned when the input runs; declaring it again with the same type assigns the same variable. When the last statement is an expression other than an assignment, an increment or a call to a variadic C function, its value is printed by type: numbers, <code>bool</code>, <code>char</code> and <code>string</code> as literals, pointers as addresses, structs field by field (<code>Point{x: 1, y: 2}</code>), enums and sum types by member (<code>Rect(2, 3)</code>), arrays, slices and <code>List&lt;T&gt;</code> as <code>[a, b]</code>, <code>String</code> as its text, other types as <code>&lt;Type&gt;</code>. Every input is type-checked together with the declarations accepted so far, and a later declaration of a name replaces the earlier one for later inputs; code compiled before keeps the function or variable it was linked against (redefining a type recompiles every function and resets the session variables of that type to zero). An input that fails to parse or type-check prints its diagnostics and leaves the session unchanged; an exception that leaves an input is reported (<code>error: uncaught exception: int 5</code>) and the session continues. A crash in an input (a bad pointer, a trap) is reported too on Unix, but the process may be left in a bad state. The REPL is not available on Windows in this release (the JIT does not register the unwind tables Windows exceptions need): <code>eskiuc repl</code> there says so and exits 1; run files with <code>eskiuc run</code>. An input that contains <code>await</code> runs as the body of an <code>async</code> function, and the REPL drives its future on the session's event loop (<code>repl_loop()</code>, an <code>*EventLoop</code> created on first use, with <code>&lt;future&gt;</code> and <code>&lt;eventloop&gt;</code> imported into the session) until it completes; when nothing left on the loop could complete it (no pending timer and no watched descriptor), the input reports <code>error: the awaited future did not complete</code>. Commands: <code>:type EXPR</code> (print the type, run nothing), <code>:load FILE</code> (add the file's declarations), <code>:reset</code>, <code>:help</code>, <code>:quit</code> (or end of input). The self-hosted <code>eskiuc-esk</code> has no REPL.</p>
 <p><strong>Formatting.</strong> <code>eskiuc fmt file.esk …</code> reformats files in place. It changes only the blanks between tokens and the line breaks, so it never alters a program's tokens or behavior (only <code>__LINE__</code> and diagnostics positions move), and it is idempotent:</p>
 <ul>
 <li>One statement per line: a line is split after each statement's <code>;</code> and around block braces, so <code>if (a) { return 1; }</code> takes three lines and <code>x = 1; y = 2;</code> two. <code>} else {</code>, <code>} while (c);</code> and <code>});</code> stay together; an empty block stays <code>{}</code>; initializer braces (<code>{1, 2}</code>, <code>P{x: 1}</code>) and enum bodies stay on their line. A trailing <code>//</code> comment stays with the statement's first line.</li>

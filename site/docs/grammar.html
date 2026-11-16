@@ -382,7 +382,8 @@ var-decl        = qualifier* 'let' IDENT ':' type ( '=' expr )? ';'
 qualifier       = 'const' | 'volatile' | 'static'
 </code></pre>
 <p><code>const</code> placement follows C: before a <code>let</code> it qualifies the binding; within a
-type it qualifies the pointee (<code>const int*</code>) or pointer level (<code>int* const</code>).</p>
+type it qualifies the pointee (<code>const *int</code>, or <code>const int*</code>) or the pointer level (<code>*int const</code>,
+or <code>int* const</code>).</p>
 <p><code>static</code> is a storage qualifier valid only on a <strong>local</strong> variable: the variable
 has a single instance that persists across calls (like C). Its initializer must
 be a compile-time constant. Applying <code>static</code> to a global is rejected (a global
@@ -402,8 +403,8 @@ scalar-type = 'int' | 'int8' | 'int16' | 'int32' | 'int64'
             | 'uint' | 'uint8' | 'uint16' | 'uint32' | 'uint64'
             | 'float' | 'double' | 'bool' | 'char' | 'string' | 'void'
 </code></pre>
-<p>Pointers may be written either C-style (<code>int*</code>) or leading (<code>*int</code>); both are
-equivalent. An array suffix binds tighter than a leading pointer, so <code>*T[N]</code> is an array
+<p>Pointers may be written leading (<code>*int</code>) or C-style (<code>int*</code>); both are equivalent, and the
+docs write the leading form. An array suffix binds tighter than a leading pointer, so <code>*T[N]</code> is an array
 of N pointers (each element a <code>*T</code>). There is no pointer-to-array type (<code>T[N]*</code> does not
 parse); use a <code>*T</code> to the first element. Suffixes chain for multidimensional arrays: <code>T[N][M]</code> is N
 arrays of M (C order, leftmost bracket outermost). Empty brackets make a <strong>slice</strong>: <code>T[]</code>

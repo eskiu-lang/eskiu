@@ -1219,7 +1219,7 @@ response; `http_serve` runs a pool of worker threads over `<net>` + `<threading>
 ```eskiu
 import <http>;
 
-void handle(HttpRequest* req, HttpResponse* res) {
+void handle(*HttpRequest req, *HttpResponse res) {
     HttpResponse_header(res, "Content-Type", "text/plain");
     HttpResponse_set_body(res, "Hello from Eskiu\n");
 }
@@ -1288,7 +1288,7 @@ import <sort>;
 
 struct Count { String path; int lines; }
 
-int main(int argc, string* argv) {
+int main(int argc, *string argv) {
     let p: ArgParser;
     ArgParser_init(&p, "count_lines", "Count the lines of the .esk files under DIR.");
     ArgParser_argument(&p, "dir", "where to look", ARGS_REQUIRED);
@@ -1772,7 +1772,7 @@ These features are primarily useful for bare-metal and kernel programming. Both 
 Mark a pointer variable `volatile` to prevent the compiler from optimising away loads and stores through it. This is essential for memory-mapped I/O (MMIO) registers:
 
 ```eskiu
-volatile let uart: *uint8 = (uint8*) 0x3F8;
+volatile let uart: *uint8 = (*uint8) 0x3F8;
 
 // Both the read and the write are always emitted, never cached or removed
 uint8 status = *uart;

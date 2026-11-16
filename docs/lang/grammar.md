@@ -149,7 +149,8 @@ qualifier       = 'const' | 'volatile' | 'static'
 ```
 
 `const` placement follows C: before a `let` it qualifies the binding; within a
-type it qualifies the pointee (`const int*`) or pointer level (`int* const`).
+type it qualifies the pointee (`const *int`, or `const int*`) or the pointer level (`*int const`,
+or `int* const`).
 
 `static` is a storage qualifier valid only on a **local** variable: the variable
 has a single instance that persists across calls (like C). Its initializer must
@@ -175,8 +176,8 @@ scalar-type = 'int' | 'int8' | 'int16' | 'int32' | 'int64'
             | 'float' | 'double' | 'bool' | 'char' | 'string' | 'void'
 ```
 
-Pointers may be written either C-style (`int*`) or leading (`*int`); both are
-equivalent. An array suffix binds tighter than a leading pointer, so `*T[N]` is an array
+Pointers may be written leading (`*int`) or C-style (`int*`); both are equivalent, and the
+docs write the leading form. An array suffix binds tighter than a leading pointer, so `*T[N]` is an array
 of N pointers (each element a `*T`). There is no pointer-to-array type (`T[N]*` does not
 parse); use a `*T` to the first element. Suffixes chain for multidimensional arrays: `T[N][M]` is N
 arrays of M (C order, leftmost bracket outermost). Empty brackets make a **slice**: `T[]`

@@ -1422,7 +1422,7 @@ int main() {
 response; <code>http_serve</code> runs a pool of worker threads over <code>&lt;net&gt;</code> + <code>&lt;threading&gt;</code>.</p>
 <pre><code class="language-eskiu">import &lt;http&gt;;
 
-void handle(HttpRequest* req, HttpResponse* res) {
+void handle(*HttpRequest req, *HttpResponse res) {
     HttpResponse_header(res, &quot;Content-Type&quot;, &quot;text/plain&quot;);
     HttpResponse_set_body(res, &quot;Hello from Eskiu\n&quot;);
 }
@@ -1479,7 +1479,7 @@ import &lt;sort&gt;;
 
 struct Count { String path; int lines; }
 
-int main(int argc, string* argv) {
+int main(int argc, *string argv) {
     let p: ArgParser;
     ArgParser_init(&amp;p, &quot;count_lines&quot;, &quot;Count the lines of the .esk files under DIR.&quot;);
     ArgParser_argument(&amp;p, &quot;dir&quot;, &quot;where to look&quot;, ARGS_REQUIRED);
@@ -1887,7 +1887,7 @@ operation, or pointer dereference lowered the way you intended.</p>
 <p>These features are primarily useful for bare-metal and kernel programming. Both are available in any Eskiu program.</p>
 <h3 id="volatile">volatile</h3>
 <p>Mark a pointer variable <code>volatile</code> to prevent the compiler from optimising away loads and stores through it. This is essential for memory-mapped I/O (MMIO) registers:</p>
-<pre><code class="language-eskiu">volatile let uart: *uint8 = (uint8*) 0x3F8;
+<pre><code class="language-eskiu">volatile let uart: *uint8 = (*uint8) 0x3F8;
 
 // Both the read and the write are always emitted, never cached or removed
 uint8 status = *uart;

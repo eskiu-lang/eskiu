@@ -694,7 +694,7 @@ pre.code-block {
 <p>A global&#x27;s initializer is computed at compile time, as in C, so it must be a constant expression: literals, arithmetic and casts on them, ternaries, <code>sizeof</code>, enum members, <code>const</code> globals, and the address of another global. A function call or a read of an ordinary (non-<code>const</code>) global is a compile error. Initialize such a global inside <code>main</code> instead:</p>
 <pre class="code-block"> const int BASE = 10;
  int limit = BASE * 4;              // fine: folded to 40
- int* where = &amp;limit;               // fine: address of a global
+ *int where = &amp;limit;               // fine: address of a global
  // int start = compute();          // error: not a compile-time constant
  // int twice = limit * 2;          // error: limit is not const</pre>
 <p>A global exists from its definition onward, as in C. A global initializer or a function body written above the definition cannot name it (&quot;undefined variable&quot;), so define shared globals near the top of the file, before the functions that use them. Functions are different: they can be called before they are defined (section 3.5).</p>
@@ -705,9 +705,9 @@ pre.code-block {
 <pre class="code-block"> struct Ring { int[CAP] slots; }         // const in struct field</pre>
 <pre class="code-block"> const let base: int = 10;           // const with let form
  // base = 11;                   // compile error: const cannot be reassigned</pre>
-<p><code>const</code> applies to the binding: the variable cannot be reassigned. For pointer constness, see <code>const</code> T* (pointer to read-only data) and T* <code>const</code> (read-only pointer, writable data):</p>
+<p><code>const</code> applies to the binding: the variable cannot be reassigned. For pointer constness, see <code>const *T</code> (pointer to read-only data) and <code>*T const</code> (read-only pointer, writable data):</p>
 <pre class="code-block"> int[3] arr; arr[0] = 1; arr[1] = 2; arr[2] = 3;
- const int* r = &amp;arr[0];         // cannot write through r
+ const *int r = &amp;arr[0];         // cannot write through r
  // r[0] = 99;                   // compile error
  r = &amp;arr[1];                    // rebinding the pointer is fine</pre>
 <h2 class="section" id="sec-2-6b">2.6b static: locals that persist</h2>
@@ -847,7 +847,7 @@ pre.code-block {
 <h2 class="section" id="sec-3-6">3.6 Command-line arguments</h2>
 <p>To read what the user typed on the command line, give main two parameters: <code>argc</code>, the number of arguments, and <code>argv</code>, an array of strings. <code>argv</code>[0] is always the program&#x27;s own name, so the first real argument is <code>argv</code>[1]:</p>
 <pre class="code-block"> import &lt;io&gt;;</pre>
-<pre class="code-block"> int main(int argc, string* argv) {
+<pre class="code-block"> int main(int argc, *string argv) {
        printf(&quot;argc = %d\n&quot;, argc);
        for (int i = 0; i &lt; argc; i += 1) {
             printf(&quot;argv[%d] = %s\n&quot;, i, argv[i]);
@@ -1041,10 +1041,10 @@ pre.code-block {
 <p class="output"><em>Output:</em> Rect(4.0 x 3.0) area=12.0 perim=14.0</p>
 <p>A method written inside the struct receives <code>self</code> as a plain <code>*Rect</code>, which may modify the value. For that reason it cannot be called on a <code>const</code> value. A method that only reads can be written as a free function named <code>Type_method</code> whose receiver is <code>const T* self</code>; dot syntax finds it the same way, and it works on <code>const</code> and non-<code>const</code> values alike:</p>
 <pre class="code-block"> struct Counter { int n; }
- int Counter_peek(const Counter* self) { return self.n; }   // read-only receiver</pre>
+ int Counter_peek(const *Counter self) { return self.n; }   // read-only receiver</pre>
 <pre class="code-block"> const Counter c = Counter { n: 3 };
  printf(&quot;%d\n&quot;, c.peek());      // 3
- // a *Counter method on c is an error: declare it const Counter* self</pre>
+ // a *Counter method on c is an error: declare it const *Counter self</pre>
 <p>A field and a method with the same name, or two fields with the same name, are rejected.</p>
 <p>Eskiu has no namespaces and no <code>Type::method</code> or <code>Type.method</code> syntax: a function belongs to a type through its name. <code>Type_method</code> is the function&#39;s real name and the symbol C code links against, since there is no name mangling, so <code>nm</code>, a debugger and a stack trace show it as written. You call it with dot syntax on a value, <code>s.replace_all(&quot;-&quot;, &quot;+&quot;)</code>, and by its full name when you need the function itself: to pass it as a value or to call it from C. The VS Code extension and the IntelliJ plugin offer these functions after <code>x.</code>, and their hover shows the full signature.</p>
 <h2 class="section" id="sec-5-3a">5.3a Operator overloading</h2>
@@ -1235,22 +1235,22 @@ pre.code-block {
  if (r == null) { printf(&quot;miss\n&quot;); }         // miss</pre>
 <p class="output"><em>Output:</em> 7 miss</p>
 <h2 class="section" id="sec-6-8">6.8 Pointer constness</h2>
-<p><code>const</code> T* is a pointer to read-only data: you can read through it and rebind it, but cannot write through it. T* <code>const</code> is a read-only pointer: you can write through it but cannot rebind it. Adding <code>const</code> is always safe; removing it is a compile error:</p>
+<p><code>const *T</code> is a pointer to read-only data: you can read through it and rebind it, but cannot write through it. <code>*T const</code> is a read-only pointer: you can write through it but cannot rebind it. The C spellings, <code>const T*</code> and <code>T* const</code>, mean the same. Adding <code>const</code> is always safe; removing it is a compile error:</p>
 <pre class="code-block"> int x = 10;        int y = 20;
- const int* r = &amp;x;         // pointer to const int
+ const *int r = &amp;x;         // pointer to const int
  // r[0] = 99;              // compile error: write through const pointer
  r = &amp;y;                    // ok: rebinding is allowed</pre>
-<pre class="code-block"> int sum(const int* p, int n) {         // caller&#x27;s data is read-only
+<pre class="code-block"> int sum(const *int p, int n) {         // caller&#x27;s data is read-only
        int s = 0;
        for (i in 0..n) { s = s + p[i]; }
        return s;
  }</pre>
-<p>Use <code>const</code> T* parameters to communicate that a function will not modify the caller&#x27;s data. It is a contract enforced by the compiler. The address of a <code>const</code> variable has type <code>const T*</code>, so passing <code>&amp;x</code> of a <code>const int x</code> to a function taking <code>*int</code> is an error (&quot;discards a const qualifier&quot;). The same rule decides which methods a <code>const</code> struct can call (section 5.3).</p>
+<p>Use <code>const *T</code> parameters to communicate that a function will not modify the caller&#x27;s data. It is a contract enforced by the compiler. The address of a <code>const</code> variable has type <code>const T*</code>, so passing <code>&amp;x</code> of a <code>const int x</code> to a function taking <code>*int</code> is an error (&quot;discards a const qualifier&quot;). The same rule decides which methods a <code>const</code> struct can call (section 5.3).</p>
 <h2 class="section" id="sec-6-9">6.9 volatile</h2>
 <p>The <code>volatile</code> qualifier prevents the compiler from optimising away, caching, or reordering loads and stores to a pointer. Required for memory-mapped hardware registers, whose value can change independently of your program:</p>
-<pre class="code-block"> volatile let uart_dr: *uint8 = (uint8*) 0x09000000;
+<pre class="code-block"> volatile let uart_dr: *uint8 = (*uint8) 0x09000000;
  *uart_dr = &#x27;A&#x27;;          // always emitted: never optimised away</pre>
-<pre class="code-block"> volatile let status: *uint8 = (uint8*) 0x09000018;
+<pre class="code-block"> volatile let status: *uint8 = (*uint8) 0x09000018;
  while ((*status &amp; 0x20) == 0) {}        // re-reads the register every iteration</pre>
 <p><code>volatile</code> applies to every access reached from the variable, not only to reads of the variable itself: <code>*p</code>, <code>p[i]</code>, <code>p.field</code>, <code>++</code>/<code>--</code> and compound assignment all emit volatile loads and stores, for locals and globals, and so does the variable&#x27;s initializing store. A bitfield reached through a <code>volatile</code> variable is read and written with volatile accesses to its whole storage word, which is what a hardware register with packed fields needs:</p>
 <pre class="code-block"> struct Ctrl { uint32 mode : 3; uint32 enable : 1; }
@@ -1359,7 +1359,7 @@ pre.code-block {
 <pre class="code-block"> printf(&quot;%d\n&quot;, max(3, 5));           // 5   : T inferred as int
  printf(&quot;%d\n&quot;, identity(42));        // 42</pre>
 <p>A generic call is checked like any other call: the number of arguments, the number of type arguments (<code>identity&lt;int, int&gt;</code> is an error), and each argument&#x27;s type once <code>T</code> is known. When a type parameter cannot be inferred from the arguments, for example because it appears only in the return type, the compiler asks you to write it explicitly.</p>
-<p>When several arguments bind the same type parameter, they have to agree. A composite parameter such as <code>*T</code> or <code>List&lt;T&gt;*</code> binds first. Two by-value arguments that deduce different integer types meet at their common type, the one C arithmetic would use: with <code>int64 big</code>, <code>max(1, big)</code> is <code>max&lt;int64&gt;</code>, so <code>big</code> is not truncated. Any other disagreement is an error that names both types:</p>
+<p>When several arguments bind the same type parameter, they have to agree. A composite parameter such as <code>*T</code> or <code>*List&lt;T&gt;</code> binds first. Two by-value arguments that deduce different integer types meet at their common type, the one C arithmetic would use: with <code>int64 big</code>, <code>max(1, big)</code> is <code>max&lt;int64&gt;</code>, so <code>big</code> is not truncated. Any other disagreement is an error that names both types:</p>
 <pre class="code-block"> int64 big = 5000000000;
  printf(&quot;%lld\n&quot;, max(1, big));             // 5000000000: T is int64
  // max(1.5, (float)2.5);                     // error: T is deduced as 'double' from
@@ -1393,7 +1393,7 @@ pre.code-block {
        void push(T x) { self.items[self.n] = x; self.n++; }
        T pop() { self.n--; return self.items[self.n]; }
  }</pre>
-<pre class="code-block"> T Stack_peek&lt;T&gt;(Stack&lt;T&gt;* self) { return self.items[self.n - 1]; }</pre>
+<pre class="code-block"> T Stack_peek&lt;T&gt;(*Stack&lt;T&gt; self) { return self.items[self.n - 1]; }</pre>
 <pre class="code-block"> Stack&lt;int&gt; s = Stack&lt;int&gt; { n: 0 };
  s.push(3);
  s.push(9);
@@ -1420,15 +1420,15 @@ pre.code-block {
 <p class="output"><em>Output:</em> 10 / 2 = 5 error: division by zero</p>
 <h2 class="section" id="sec-8-4">8.4 Bounded type parameters (constraints)</h2>
 <p>A type parameter may carry one or more interface constraints, written after a colon: T f&lt;T: Iface&gt;(...). The constraint requires that every concrete type argument satisfy the named interface. Multiple constraints use +: &lt;T: A + B&gt;. The check happens at the call site, not deep in codegen, so the error message names the constraint that failed, not an obscure method-missing error:</p>
-<pre class="code-block"> interface Ord { int cmp(Ord* o); }</pre>
-<pre class="code-block"> T pick&lt;T: Ord&gt;(T* a, T* b) {
+<pre class="code-block"> interface Ord { int cmp(*Ord o); }</pre>
+<pre class="code-block"> T pick&lt;T: Ord&gt;(*T a, *T b) {
        if (a.cmp(b) &lt; 0) { return a[0]; }
        return b[0];
  }</pre>
 <pre class="code-block"> struct Box&lt;T: Ord&gt; { T item; }</pre>
 <pre class="code-block"> struct Num {
        int v;
-       int cmp(Num* o) {
+       int cmp(*Num o) {
             if (self.v &lt; o.v) { return -1; }
             return 1;
        }
@@ -1440,8 +1440,8 @@ pre.code-block {
  let b: Box&lt;Num&gt;;       b.item.v = 42;</pre>
 <p>Multiple constraints separate with +:</p>
 <pre class="code-block"> interface Show { int show(); }
- interface Eq      { int eq(Eq* o); }</pre>
-<pre class="code-block"> int dump&lt;T: Show + Eq&gt;(T* x) { return x.show(); }</pre>
+ interface Eq      { int eq(*Eq o); }</pre>
+<pre class="code-block"> int dump&lt;T: Show + Eq&gt;(*T x) { return x.show(); }</pre>
 <p>Structs satisfy a constraint by defining its methods. Primitives such as <code>int</code> have no methods. Instead they satisfy a constraint via a <code>free</code> function named like the interface method, with the primitive as the first parameter. Inside the generic body, a constrained call t.cmp(x) on a primitive t lowers to cmp(t, x):</p>
 <p>The sample below continues the same program, so it reuses the <code>Ord</code> interface declared above. The by-value generic gets its own name, <code>smaller</code>, because <code>pick</code> already exists:</p>
 <pre class="code-block"> // Free function makes int satisfy Ord:
@@ -1452,7 +1452,7 @@ pre.code-block {
  }</pre>
 <pre class="code-block"> printf(&quot;%d\n&quot;, smaller&lt;int&gt;(3, 7));        // 3
  printf(&quot;%d\n&quot;, pick&lt;Num&gt;(&amp;y, &amp;x).v);     // 3: structs use the pointer form</pre>
-<p><code>Num.cmp</code> takes a <code>Num*</code>, so a struct goes through <code>pick</code>, which passes pointers. Calling <code>smaller&lt;Num&gt;</code> with values is rejected.</p>
+<p><code>Num.cmp</code> takes a <code>*Num</code>, so a struct goes through <code>pick</code>, which passes pointers. Calling <code>smaller&lt;Num&gt;</code> with values is rejected.</p>
 <pre class="code-block"> The function-pointer HashMap&lt;K,V&gt; from &lt;map&gt; remains useful when you want to thread hash/eq
  explicitly without declaring an interface. Scalar primitives only; pointer types are not yet supported.</pre>
 <div class="chapter-start" id="chapter-9"><span class="chapter-label">Chapter 9</span>
@@ -1519,7 +1519,7 @@ pre.code-block {
 <h2 class="section" id="sec-9-7">9.7 Closures inside generic functions</h2>
 <p>A lambda declared inside a generic function body captures correctly across all instantiations. The closure environment is monomorphized alongside the outer template: a field typed by the type parameter gets the concrete type at each instantiation:</p>
 <pre class="code-block"> int call_it(escaping fn()-&gt;int op) { return op(); }</pre>
-<pre class="code-block"> // box&lt;T&gt; captures a T-typed value and an int* in its closure
+<pre class="code-block"> // box&lt;T&gt; captures a T-typed value and an *int in its closure
  int box&lt;T&gt;(T v, int bump) {
        *int hits = alloc&lt;int&gt;(1);    *hits = 0;
        let f: fn()-&gt;int = int() {
@@ -2089,13 +2089,13 @@ pre.code-block {
 <h2 class="section" id="sec-15-2">15.2 list: dynamic arrays</h2>
 <p><code>List</code>&lt;T&gt; is a growable array. Capacity doubles when full. The struct layout is { *T data; <code>int</code> size; <code>int</code> cap; }. All fields are public.</p>
 <pre class="code-block"> // list.esk: the complete interface
- void List_init&lt;T&gt;(List&lt;T&gt;* self, int cap)         // call before use
- void List_push&lt;T&gt;(List&lt;T&gt;* self, T item)          // append an element
- T      List_get&lt;T&gt;(List&lt;T&gt;* self, int i)          // read element i
- void List_set&lt;T&gt;(List&lt;T&gt;* self, int i, T item)   // overwrite element i
- void List_remove&lt;T&gt;(List&lt;T&gt;* self, int i)        // remove element i, shift the tail down
- int    List_len&lt;T&gt;(List&lt;T&gt;* self)                 // returns self-&gt;size
- void List_free&lt;T&gt;(List&lt;T&gt;* self)                  // free the buffer</pre>
+ void List_init&lt;T&gt;(*List&lt;T&gt; self, int cap)         // call before use
+ void List_push&lt;T&gt;(*List&lt;T&gt; self, T item)          // append an element
+ T      List_get&lt;T&gt;(*List&lt;T&gt; self, int i)          // read element i
+ void List_set&lt;T&gt;(*List&lt;T&gt; self, int i, T item)   // overwrite element i
+ void List_remove&lt;T&gt;(*List&lt;T&gt; self, int i)        // remove element i, shift the tail down
+ int    List_len&lt;T&gt;(*List&lt;T&gt; self)                 // returns self-&gt;size
+ void List_free&lt;T&gt;(*List&lt;T&gt; self)                  // free the buffer</pre>
 <p>The compiler infers T from the <code>List</code>&lt;T&gt;* argument; no explicit type argument needed:</p>
 <pre class="code-block"> import &lt;list&gt;;</pre>
 <pre class="code-block"> List&lt;int&gt; nums;
@@ -2120,30 +2120,30 @@ pre.code-block {
 <h2 class="section" id="sec-15-3">15.3 string: mutable text</h2>
 <p>The built-in <code>string</code> type is an immutable C-<code>string</code> literal. For text you need to build or modify at runtime, use <code>String</code>, a struct with an owned, growable buffer. The standard library is broad. The complete <code>String</code> API:</p>
 <pre class="code-block"> // string.esk: the complete interface
- void     String_init(String* self, int64 cap)         // initialise with capacity
- void     String_from(String* self, string s)          // initialise from a literal
- void     String_append(String* self, string s)        // append a string literal
- void     String_concat(String* self, String* other)   // append another String
- void     String_push(String* self, char c)            // append a single character
- void     String_clear(String* self)                   // reset to empty (keep buffer)
- void     String_reverse(String* self)                 // reverse in place
- void     String_free(String* self)                    // free the buffer</pre>
-<pre class="code-block"> *char String_cstr(String* self)                       // null-terminated C string
- int64    String_len(String* self)                     // length in bytes
- char     String_char_at(String* self, int64 i)        // read character at index i
- void     String_set(String* self, int64 i, char c)    // overwrite character at i
- int64    String_index_of(String* self, char c)        // first index of c, or -1
- int      String_eq(String* self, String* other)       // 1 if equal, else 0
- int      String_eq_cstr(String* self, string s)       // compare to C string literal
- void     String_substring(String* self, String* out, int64 start, int64 count)
- void     String_from_int(String* self, int n)            // render integer as text
- int      String_to_int(String* self)                     // parse leading integer
- int      String_starts_with(String* self, string prefix) // 1 if prefix matches
- int      String_ends_with(String* self, string suffix)    // 1 if suffix matches
- void     String_trim(String* self)                    // strip whitespace
- int      String_next_token(String* self, char sep, *int pos, String* out)
- void     String_split(String* self, char sep, List&lt;String&gt;* out) // split into list
- void     String_split_free(List&lt;String&gt;* parts)           // free parts from split</pre>
+ void     String_init(*String self, int64 cap)         // initialise with capacity
+ void     String_from(*String self, string s)          // initialise from a literal
+ void     String_append(*String self, string s)        // append a string literal
+ void     String_concat(*String self, *String other)   // append another String
+ void     String_push(*String self, char c)            // append a single character
+ void     String_clear(*String self)                   // reset to empty (keep buffer)
+ void     String_reverse(*String self)                 // reverse in place
+ void     String_free(*String self)                    // free the buffer</pre>
+<pre class="code-block"> *char String_cstr(*String self)                       // null-terminated C string
+ int64    String_len(*String self)                     // length in bytes
+ char     String_char_at(*String self, int64 i)        // read character at index i
+ void     String_set(*String self, int64 i, char c)    // overwrite character at i
+ int64    String_index_of(*String self, char c)        // first index of c, or -1
+ int      String_eq(*String self, *String other)       // 1 if equal, else 0
+ int      String_eq_cstr(*String self, string s)       // compare to C string literal
+ void     String_substring(*String self, *String out, int64 start, int64 count)
+ void     String_from_int(*String self, int n)            // render integer as text
+ int      String_to_int(*String self)                     // parse leading integer
+ int      String_starts_with(*String self, string prefix) // 1 if prefix matches
+ int      String_ends_with(*String self, string suffix)    // 1 if suffix matches
+ void     String_trim(*String self)                    // strip whitespace
+ int      String_next_token(*String self, char sep, *int pos, *String out)
+ void     String_split(*String self, char sep, *List&lt;String&gt; out) // split into list
+ void     String_split_free(*List&lt;String&gt; parts)           // free parts from split</pre>
 <pre class="code-block"> import &lt;string&gt;;</pre>
 <pre class="code-block"> let s: String;
  String_from(&amp;s, &quot;hello&quot;);
@@ -2263,7 +2263,7 @@ pre.code-block {
 <pre class="code-block"> import &lt;http&gt;;
  import &lt;multipart&gt;;
  import &lt;string&gt;;</pre>
-<pre class="code-block"> int find_photo(HttpReq* req, **uint8 out, *int64 out_len) {
+<pre class="code-block"> int find_photo(*HttpReq req, **uint8 out, *int64 out_len) {
        int found = 0;
        String ct;   String_init(&amp;ct, 64);
        HttpReq_header(req, &quot;Content-Type&quot;, &amp;ct);    // Content-Type header value
@@ -2315,7 +2315,7 @@ pre.code-block {
  double u = Rng_double(&amp;r);        // uniform in [0.0, 1.0)
  int    b = Rng_bool(&amp;r);          // 0 or 1</pre>
 <p><code>Rng_range</code> and <code>Rng_below</code> are unbiased: they redraw whenever they land on the handful of values a plain modulo would skew, so every outcome is equally likely. <code>Rng_fill(&amp;r, buf, n)</code> fills a byte buffer. For a nondeterministic stream, seed from the clock: <code>import &lt;time&gt;; Rng_seed(&amp;r, (uint64)time_now_ms());</code></p>
-<p>Because the functions follow the <code>Type_method</code> naming convention, dot syntax works too: <code>r.next()</code> is <code>Rng_next(&amp;r)</code>. The same holds for the generic containers. On a <code>List&lt;int&gt; l</code>, <code>l.push(8)</code> is <code>List_push&lt;int&gt;(&amp;l, 8)</code> and <code>l.get(0)</code> is <code>List_get&lt;int&gt;(&amp;l, 0)</code>: the type arguments of a generic <code>Type_method</code> function are taken from the receiver, so <code>ch.send(v)</code> on a <code>Chan&lt;int&gt;*</code> and <code>m.get(key, &amp;out)</code> on a <code>Map&lt;V&gt;</code> need no explicit <code>&lt;...&gt;</code>. Functions that create a value keep their lowercase names: <code>regex_compile</code>, <code>el_new</code>, <code>executor_new</code>, <code>chan_new</code>.</p>
+<p>Because the functions follow the <code>Type_method</code> naming convention, dot syntax works too: <code>r.next()</code> is <code>Rng_next(&amp;r)</code>. The same holds for the generic containers. On a <code>List&lt;int&gt; l</code>, <code>l.push(8)</code> is <code>List_push&lt;int&gt;(&amp;l, 8)</code> and <code>l.get(0)</code> is <code>List_get&lt;int&gt;(&amp;l, 0)</code>: the type arguments of a generic <code>Type_method</code> function are taken from the receiver, so <code>ch.send(v)</code> on a <code>*Chan&lt;int&gt;</code> and <code>m.get(key, &amp;out)</code> on a <code>Map&lt;V&gt;</code> need no explicit <code>&lt;...&gt;</code>. Functions that create a value keep their lowercase names: <code>regex_compile</code>, <code>el_new</code>, <code>executor_new</code>, <code>chan_new</code>.</p>
 <h2 class="section" id="sec-15-11">15.11 regex: pattern matching</h2>
 <p>The &lt;regex&gt; module is a regular-expression engine built as a Thompson NFA, run as a Pike VM. It explores every path in lockstep, so matching is linear in the length of the input with no catastrophic backtracking: the pathological patterns that hang backtracking engines (the basis of a ReDoS attack) cannot occur here.</p>
 <p>For a quick yes/no, <code>regex_match</code> compiles the pattern and searches the text for you:</p>
@@ -2450,7 +2450,7 @@ pre.code-block {
 <p>An <code>asm</code> may have several outputs. Each one must be something you could assign to (a variable, a field, an element or a dereference) of an integer type other than <code>bool</code>, a floating-point type or a pointer type, and it may not be a bitfield. A <code>const</code> or a literal there is a compile error, and so is an input constraint that starts with <code>=</code> or <code>+</code>, or an output constraint that does not.</p>
 <h2 class="section" id="sec-16-3">16.3 volatile: a reminder</h2>
 <p>Hardware registers accessed via inline assembly almost always need <code>volatile</code> (covered fully in section 6.9). Without it, the compiler may eliminate a store it considers redundant:</p>
-<pre class="code-block"> volatile let uart_dr: *uint8 = (uint8*) 0x09000000;
+<pre class="code-block"> volatile let uart_dr: *uint8 = (*uint8) 0x09000000;
  *uart_dr = &#x27;A&#x27;;     // always emitted</pre>
 <div class="chapter-start" id="chapter-17"><span class="chapter-label">Chapter 17</span>
 <h1 class="chapter-title">Cross-compilation</h1><hr class="chapter-rule"></div>
@@ -2794,11 +2794,11 @@ pre.code-block {
 <p>When a struct holds a pointer field it owns what it points to. Pair every heap-owning struct with init and <code>free</code> functions:</p>
 <pre class="code-block"> import &lt;mem&gt;;
  struct Buffer { *uint8 data; int len; int cap; }</pre>
-<pre class="code-block"> void Buffer_init(Buffer* self, int cap) {
+<pre class="code-block"> void Buffer_init(*Buffer self, int cap) {
        self.data = alloc&lt;uint8&gt;(cap);
        self.len   = 0;    self.cap = cap;
  }
- void Buffer_free(Buffer* self) {
+ void Buffer_free(*Buffer self) {
        free((*void)self.data);
        self.data = null;     self.len = 0;      self.cap = 0;
  }</pre>
@@ -2872,8 +2872,8 @@ pre.code-block {
  (void)status();            // ok: discarded on purpose</pre>
 <h2 class="section" id="sec-19-6">19.6 deprecated: retiring a function</h2>
 <p>When you rename a function in a library, the old name can stay for a while and point people to the new one. <code>deprecated(&quot;message&quot;)</code> before the declaration keeps the function working and makes every use print a warning with your message:</p>
-<pre class="code-block"> int Rect_area(const Rect* self) { return self.w * self.h; }
- deprecated(&quot;use Rect_area&quot;) int rect_area(const Rect* r) { return Rect_area(r); }
+<pre class="code-block"> int Rect_area(const *Rect self) { return self.w * self.h; }
+ deprecated(&quot;use Rect_area&quot;) int rect_area(const *Rect r) { return Rect_area(r); }
 
  int a = rect_area(&amp;r);    // warning: 'rect_area' is deprecated: use Rect_area</pre>
 <p>Uses inside an imported module are not reported, and <code>-Wno-deprecated</code> turns the warnings off. The standard library follows the same rule: a renamed function keeps its old name, marked <code>deprecated</code>, for one minor release.</p>
@@ -3250,8 +3250,8 @@ pre.code-block {
 <pre class="code-block"> import &lt;future&gt;;
  import &lt;mem&gt;;
  import &lt;io&gt;;</pre>
-<pre class="code-block"> Future&lt;int&gt;* produce() {
-       Future&lt;int&gt;* f = future_new&lt;int&gt;();
+<pre class="code-block"> *Future&lt;int&gt; produce() {
+       *Future&lt;int&gt; f = future_new&lt;int&gt;();
        Future_complete&lt;int&gt;(f, 41);
        return f;
  }</pre>
@@ -3260,7 +3260,7 @@ pre.code-block {
        return n + 1;              // resumes with n = 41, returns 42
  }</pre>
 <pre class="code-block"> int main() {
-       Future&lt;int&gt;* r = one();
+       *Future&lt;int&gt; r = one();
        printf(&quot;%d&quot;, r.value);     // 42
        Future_free&lt;int&gt;(r);
        return 0;
@@ -3268,7 +3268,7 @@ pre.code-block {
 <p>The compiler transforms an async function into a state machine. Each await is a suspension point: the function can be paused there and resumed later without blocking any OS thread. Every control-flow form can contain an await: <code>if</code>, <code>while</code>, <code>do</code>/<code>while</code>, <code>for</code>, <code>for</code>-in, <code>switch</code>, <code>match</code> and <code>try</code>/<code>catch</code>. A <code>defer</code> in an async function runs when its block exits, even if the block awaited in between, and a lambda inside it can capture the function&#x27;s locals. Labeled <code>break</code>/<code>continue</code> is not supported inside an async function.</p>
 <p>An <code>await</code> can sit anywhere in an expression: a <code>let</code> initializer, a <code>return</code>, an assignment or compound assignment (<code>r += await f();</code>), a call argument, an operand (<code>a + await f()</code>), a condition (<code>while (await more())</code>), a <code>switch</code> or <code>match</code> subject, a <code>for</code>-in iterable and a range bound (<code>for (i in 0..await f())</code>). The order of evaluation is the one the synchronous expression would have: a call written before the await runs before it, the target of <code>a[i()] += await f()</code> is computed once, before the await, and an await on the right of <code>&amp;&amp;</code> or <code>||</code>, or in an arm of <code>?:</code>, runs only when that operand does.</p>
 <p>Inside <code>try</code>, an await may sit in the body, in a <code>catch</code> and in the <code>finally</code>. An exception thrown before or after the suspension goes to the handler of the try it was thrown in, and the <code>finally</code> runs exactly once however the try is left: normally, by an exception, by <code>return</code>, <code>break</code> or <code>continue</code>, or because the future was cancelled. A <code>finally</code> or a <code>defer</code> may await too: the cleanup suspends like the rest of the function, a <code>return</code> value is kept until it finishes, and an exception passing through the try is thrown again once the <code>finally</code> is done. A future dropped while it waits runs the <code>finally</code> blocks and <code>defer</code>s pending at its await, after the future it was waiting on has been dropped. When that cleanup awaits, it carries on by itself, like a task given to <code>spawn</code>: <code>Future_drop</code> returns, the event loop resumes the cleanup, and the memory is freed when it ends. Keep the loop running until then.</p>
-<pre class="code-block"> async int fetch(EventLoop* lp) {
+<pre class="code-block"> async int fetch(*EventLoop lp) {
        try {
            int n = await timer_after(lp, 10);
            return n + check(await next_value(lp));  // check may throw
@@ -3283,8 +3283,8 @@ pre.code-block {
        int n = await produce();
        return v + v;
  }
- Future&lt;int&gt;* a = twice&lt;int&gt;(21);        // a.value == 42
- Future&lt;double&gt;* b = twice(1.25);        // T inferred as double; b.value == 2.5</pre>
+ *Future&lt;int&gt; a = twice&lt;int&gt;(21);        // a.value == 42
+ *Future&lt;double&gt; b = twice(1.25);        // T inferred as double; b.value == 2.5</pre>
 <p>An await in a generic async function may sit in any position a plain one allows, such as a <code>match</code> arm that binds a payload or an arm of <code>?:</code>.</p>
 <h2 class="section" id="sec-24-2">24.2 The event loop</h2>
 <p>Async tasks need something to run them. The event loop is a reactor that watches file descriptors for readiness and resumes the tasks waiting on them:</p>
@@ -3294,7 +3294,7 @@ pre.code-block {
  import &lt;future&gt;;
  import &lt;mem&gt;;
  import &lt;io&gt;;</pre>
-<pre class="code-block"> async int read_line(EventLoop* lp, int fd) {
+<pre class="code-block"> async int read_line(*EventLoop lp, int fd) {
        *uint8 buf = alloc&lt;uint8&gt;(256);
        int n = await net_read_async(lp, fd, buf, 255);
        buf[n] = 0;
@@ -3303,9 +3303,9 @@ pre.code-block {
        return n;
  }</pre>
 <pre class="code-block"> int main() {
-       EventLoop* lp = el_new(64);
+       *EventLoop lp = el_new(64);
        int fd = net_tcp_connect(&quot;127.0.0.1&quot;, 7000);
-       Future&lt;int&gt;* f = read_line(lp, fd);
+       *Future&lt;int&gt; f = read_line(lp, fd);
        EventLoop_run(lp);    // drives the event loop until all tasks complete
        Future_free&lt;int&gt;(f);
        EventLoop_free(lp);   net_close(fd);
@@ -3321,14 +3321,14 @@ pre.code-block {
  import &lt;future&gt;;
  import &lt;mem&gt;;
  import &lt;io&gt;;</pre>
-<pre class="code-block"> void hello(HttpRequest* req, HttpResponse* res) {
+<pre class="code-block"> void hello(*HttpRequest req, *HttpResponse res) {
        HttpResponse_header(res, &quot;Content-Type&quot;, &quot;text/plain&quot;);
        HttpResponse_set_body(res, &quot;Hello from Eskiu async\n&quot;);
  }</pre>
 <pre class="code-block"> int main() {
        int fd = net_tcp_listen(8080);
-       EventLoop* lp = el_new(256);
-       Future&lt;uint8&gt;* f = http_serve_async(lp, fd, hello, 1000);
+       *EventLoop lp = el_new(256);
+       *Future&lt;uint8&gt; f = http_serve_async(lp, fd, hello, 1000);
        EventLoop_run(lp);
        Future_free&lt;uint8&gt;(f);
        EventLoop_free(lp);   net_close(fd);
@@ -3356,24 +3356,24 @@ pre.code-block {
 <p>Dropping a combinator before it resolves cascades the same way. When a <code>select2</code>, <code>join2</code>, <code>select2v</code> or <code>join2v</code> future is itself cancelled (for example by an outer timeout that wins its own <code>select2</code>), it drops both of its inputs, so their producers are cancelled and their wakers unhooked. A late completion of an input can no longer write into the freed combinator.</p>
 <p>The value-returning forms are in <code>&lt;futureval&gt;</code>: <code>select2v</code> completes with the winner's value as an <code>Either&lt;A,B&gt;</code> (<code>Left</code> if the first future won, <code>Right</code> if the second did) and consumes both inputs, and <code>join2v</code> completes with both values as a <code>Pair&lt;A,B&gt;</code>:</p>
 <pre class="code-block"> import &lt;futureval&gt;;
- Future&lt;Either&lt;int,int&gt;&gt;* race = select2v&lt;int,int&gt;(fa, fb);
- Future&lt;Pair&lt;int,int&gt;&gt;* both = join2v&lt;int,int&gt;(fc, fd);</pre>
+ *Future&lt;Either&lt;int,int&gt;&gt; race = select2v&lt;int,int&gt;(fa, fb);
+ *Future&lt;Pair&lt;int,int&gt;&gt; both = join2v&lt;int,int&gt;(fc, fd);</pre>
 <h2 class="section" id="sec-24-5">24.5 Channels</h2>
 <p>A channel passes values between async tasks. Chan_send enqueues a value; Chan_recv returns a future that completes with the next value:</p>
 <pre class="code-block"> import &lt;channel&gt;;
  import &lt;future&gt;;
  import &lt;mem&gt;;
  import &lt;io&gt;;</pre>
-<pre class="code-block"> async int consume(Chan&lt;int&gt;* ch) {
+<pre class="code-block"> async int consume(*Chan&lt;int&gt; ch) {
        int a = await Chan_recv&lt;int&gt;(ch);
        int b = await Chan_recv&lt;int&gt;(ch);
        return a + b;
  }</pre>
 <pre class="code-block"> int main() {
-       Chan&lt;int&gt;* ch = chan_new&lt;int&gt;(8);
+       *Chan&lt;int&gt; ch = chan_new&lt;int&gt;(8);
        Chan_send&lt;int&gt;(ch, 10);
        Chan_send&lt;int&gt;(ch, 20);
-       Future&lt;int&gt;* f = consume(ch);
+       *Future&lt;int&gt; f = consume(ch);
        // drive on event loop or poll directly
        printf(&quot;%d\n&quot;, f.value);       // 30
        Future_free&lt;int&gt;(f);
@@ -3389,7 +3389,7 @@ pre.code-block {
 <pre class="code-block"> #!/usr/bin/env -S eskiuc run
  import &lt;io&gt;;
 
- int main(int argc, string* argv) {
+ int main(int argc, *string argv) {
        if (argc &lt; 2) {
            println_err(&quot;usage: greet NAME...&quot;);
            return 2;
@@ -3582,11 +3582,11 @@ pre.code-block {
  import &lt;eventloop&gt;;
  import &lt;io&gt;;
 
- async int both(EventLoop* lp, FetchOptions* o) {
+ async int both(*EventLoop lp, *FetchOptions o) {
        let a: Response;
        let b: Response;
-       Future&lt;int&gt;* fa = fetch_async(lp, &quot;https://api.github.com/repos/llvm/llvm-project&quot;, o, &amp;a);
-       Future&lt;int&gt;* fb = fetch_async(lp, &quot;https://api.github.com/repos/rust-lang/rust&quot;, o, &amp;b);
+       *Future&lt;int&gt; fa = fetch_async(lp, &quot;https://api.github.com/repos/llvm/llvm-project&quot;, o, &amp;a);
+       *Future&lt;int&gt; fb = fetch_async(lp, &quot;https://api.github.com/repos/rust-lang/rust&quot;, o, &amp;b);
        await join2(fa, fb);                  // the two requests are in flight together
        int rc = fa.value != 0 ? fa.value : fb.value;
        if (rc == 0) { printf(&quot;%d and %d, %lld + %lld bytes\n&quot;, a.status, b.status, a.body.len, b.body.len); }
@@ -3599,8 +3599,8 @@ pre.code-block {
 
  int main() {
        let o: FetchOptions;  FetchOptions_init(&amp;o);
-       EventLoop* lp = el_new(64);
-       Future&lt;int&gt;* f = both(lp, &amp;o);
+       *EventLoop lp = el_new(64);
+       *Future&lt;int&gt; f = both(lp, &amp;o);
        if (Future_poll&lt;int&gt;(f, void() { EventLoop_stop(lp); }) == 0) { EventLoop_run(lp); }
        int rc = f.value;
        if (rc != 0) { printf(&quot;failed: %s\n&quot;, fetch_last_error()); }
@@ -3680,7 +3680,7 @@ pre.code-block {
  import &lt;term&gt;;
  import &lt;log&gt;;
 
- int main(int argc, string* argv) {
+ int main(int argc, *string argv) {
        let p: ArgParser;
        ArgParser_init(&amp;p, &quot;countdown&quot;, &quot;Count down to zero.&quot;);
        defer ArgParser_free(&amp;p);
@@ -3929,7 +3929,7 @@ pre.code-block {
 <pre class="code-block">            double     double      64 bits   IEEE 754 double-precision</pre>
 <pre class="code-block">            bool       i1          1 bit     true or false</pre>
 <pre class="code-block">            char       i8          8 bits    Unsigned; widens to int via zero-extend</pre>
-<pre class="code-block">            string     i8*         pointer   Immutable C-string literal</pre>
+<pre class="code-block">            string     *i8         pointer   Immutable C-string literal</pre>
 <pre class="code-block">            void       void        -         No value; valid only as return type</pre>
 <h3 class="subsection">Compound Types</h3>
 <pre class="code-block">        Type            Syntax               Notes</pre>
@@ -4101,16 +4101,16 @@ pre.code-block {
 <h3 class="subsection">http: import &lt;http&gt;</h3>
 <pre class="code-block"> http_serve(port, workers, handler)              // threaded worker pool
  http_serve_with(port, workers, handler, lim)    // same, with HttpLimits lim (http_limits() = defaults)
- handler type: fn(HttpRequest*, HttpResponse*)-&gt;void
+ handler type: fn(*HttpRequest, *HttpResponse)-&gt;void
  HttpRequest:       method / path / version / headers / body (String fields)
  HttpResponse: HttpResponse_header / HttpResponse_set_body / HttpResponse_render</pre>
 <pre class="code-block"> // Binary-safe full-body reader (use for uploads and binary data)
  struct HttpReq { String method; String path; String headers;
                      *uint8 body; int64 body_len; }
  HttpReq_init / HttpReq_free
- int HttpReq_header(HttpReq* r, string name, String* out)   // 1 if found; value copied to out
- int http_recv(int fd, HttpReq* r, int64 max_body)                      // loop recv full body
- void http_reply(int fd, int status, string ctype, string extra, String* body)
+ int HttpReq_header(*HttpReq r, string name, *String out)   // 1 if found; value copied to out
+ int http_recv(int fd, *HttpReq r, int64 max_body)                      // loop recv full body
+ void http_reply(int fd, int status, string ctype, string extra, *String body)
  void http_reply_error(int fd, int status, string extra, string msg)</pre>
 <h3 class="subsection">json: import &lt;json&gt;</h3>
 <pre class="code-block"> // Builder
@@ -4149,7 +4149,7 @@ pre.code-block {
  int Map_get&lt;V&gt;(&amp;m, key, *V out) -&gt; 1/0       // lookup only
  Map_free&lt;V&gt;(&amp;m)                              // free keys and value array</pre>
 <p>multipart: <code>import</code></p>
-<pre class="code-block"> multipart_boundary(String* ctype, String* out) -&gt; int        // 1 = boundary found
+<pre class="code-block"> multipart_boundary(*String ctype, *String out) -&gt; int        // 1 = boundary found
  multipart_part(body, blen, boundary, name, &amp;ptr, &amp;plen) -&gt; int</pre>
 <h3 class="subsection">bytes: import &lt;bytes&gt;</h3>
 <pre class="code-block"> Bytes: binary-safe *uint8 + length buffer (unlike String: NUL-safe, length-authoritative)
