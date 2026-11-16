@@ -1,0 +1,554 @@
+// fetch_request.esk: rendering, connecting, the blocking and async drivers and the result forms (part of fetch.esk, imported in order)
+
+// Render the request for the current URL into c.req.
+void _fetch_render(_FetchCall* c) {
+    Bytes* b = &c.req;
+    b.len = 0;
+    _fetch_put_str(b, &c.method);
+    _fetch_put(b, " ");
+    let t: String;
+    String_init(&t, 64);
+    Url_target(&c.url, &t);
+    _fetch_put_str(b, &t);
+    _fetch_put(b, " HTTP/1.1\r\nHost: ");
+    String_clear(&t);
+    Url_host_port(&c.url, &t);
+    _fetch_put_str(b, &t);
+    String_free(&t);
+    _fetch_put(b, "\r\n");
+    if (c.user_agent.len > 0 && _http_header_count(&c.headers, "user-agent") == 0) {
+        _fetch_put(b, "User-Agent: ");
+        _fetch_put_str(b, &c.user_agent);
+        _fetch_put(b, "\r\n");
+    }
+    if (_http_header_count(&c.headers, "accept") == 0) {
+        _fetch_put(b, "Accept: */*\r\n");
+    }
+    const int64 n = c.headers.len;
+    int64 i = 0;
+    while (i < n) {
+        int64 e = i;
+        while (e < n && c.headers.data[e] != '\n') {
+            e++;
+        }
+        bool skip = _http_line_named(&c.headers, i, e, "host") == 1
+                 || _http_line_named(&c.headers, i, e, "content-length") == 1
+                 || _http_line_named(&c.headers, i, e, "connection") == 1
+                 || _http_line_named(&c.headers, i, e, "transfer-encoding") == 1;
+        if (c.cross_origin == 1 && (_http_line_named(&c.headers, i, e, "authorization") == 1
+                                    || _http_line_named(&c.headers, i, e, "cookie") == 1)) {
+            skip = true;
+        }
+        if (!skip && e > i) {
+            Bytes_append_raw(b, (*uint8)(c.headers.data + i), e - i);
+            _fetch_put(b, "\r\n");
+        }
+        i = e + 1;
+    }
+    const bool wants_length = String_eq_cstr(&c.method, "POST") == 1 || String_eq_cstr(&c.method, "PUT") == 1
+                           || String_eq_cstr(&c.method, "PATCH") == 1;
+    if (c.send_body == 1 || wants_length) {
+        let cl: String;
+        String_init(&cl, 32);
+        String_appendf(&cl, "Content-Length: %lld\r\n", c.send_body == 1 ? c.body.len : (int64)0);
+        _fetch_put_str(b, &cl);
+        String_free(&cl);
+    }
+    _fetch_put(b, "Connection: close\r\n\r\n");
+    c.body_at = b.len;
+    if (c.send_body == 1) {
+        Bytes_append_raw(b, c.body.data, c.body.len);
+    }
+    c.sent = 0;
+}
+
+// Resolve the host into c.addrs: 0, FETCH_ERR_DNS, or _FETCH_WANT_DNS while
+// fetch_async's lookup thread runs (fetch_async polls; call again).
+int _fetch_resolve(_FetchCall* c) {
+    int rc = 0;
+    if (c.dns_async == 1) {
+        _FetchDns* j = c.dns_job;
+        if (j == null) {
+            _dns_wsa_init();
+            j = alloc<_FetchDns>(1);
+            String_from(&j.host, c.url.host.cstr());
+            String_init(&j.port, 8);
+            String_appendf(&j.port, "%d", c.url.port);
+            c.dns_job = j;
+            // The lookup thread detaches itself: thread_create's handle is opaque (the
+            // EIR backends' is not a pthread_t), but pthread_self is the thread's own.
+            thread_create(void() {
+                pthread_detach(pthread_self());
+                _fetch_dns_work(j);
+            });
+        }
+        if (atomic_load(&j.state) == 0) {
+            return _FETCH_WANT_DNS;
+        }
+        rc = j.rc;
+        _dns_last = rc;
+        c.addrs = j.addrs;
+        j.addrs = null;
+        _fetch_dns_free(j);
+        c.dns_job = null;
+    } else {
+        let port: String;
+        String_init(&port, 8);
+        String_appendf(&port, "%d", c.url.port);
+        rc = _dns_lookup(c.url.host.cstr(), port.cstr(), &c.addrs);
+        String_free(&port);
+    }
+    if (rc != 0 || c.addrs == null) {
+        if (c.addrs != null) {
+            freeaddrinfo(c.addrs);
+        }
+        c.addrs = null;
+        _fetch_fail(FETCH_ERR_DNS, "cannot resolve host '");
+        String_append(&_fetch_err, c.url.host.cstr());
+        String_append(&_fetch_err, "': ");
+        String_append(&_fetch_err, dns_last_error());
+        return FETCH_ERR_DNS;
+    }
+    c.next = c.addrs;
+    c.conn_err = 0;
+    return 0;
+}
+
+int _fetch_connect_failed(_FetchCall* c) {
+    _fetch_fail(FETCH_ERR_CONNECT, "cannot connect to ");
+    let hp: String;
+    String_init(&hp, 32);
+    Url_host_port(&c.url, &hp);
+    String_append(&_fetch_err, hp.cstr());
+    String_free(&hp);
+    if (c.conn_err != 0) {
+#ifdef _WIN32
+        if (c.conn_err == 10061) {
+            String_append(&_fetch_err, ": Connection refused");
+        }
+        else {
+            String_appendf(&_fetch_err, ": socket error %d", c.conn_err);
+        }
+#else
+        String_append(&_fetch_err, ": ");
+        String_append(&_fetch_err, strerror(c.conn_err));
+#endif
+    }
+    return FETCH_ERR_CONNECT;
+}
+
+// Start a connection to the next address: 0 when connected, _FETCH_WANT_WRITE
+// while it is in progress, or FETCH_ERR_CONNECT when no address is left.
+int _fetch_connect_next(_FetchCall* c) {
+    while (c.next != null) {
+        *_dns_addrinfo ai = c.next;
+        c.next = ai.ai_next;
+        const int s = socket(ai.ai_family, ai.ai_socktype, ai.ai_protocol);
+        if (s < 0) {
+            continue;
+        }
+        net_set_nonblocking(s);
+        _net_nosigpipe(s);
+        if (connect(s, ai.ai_addr, (int)ai.ai_addrlen) == 0) {
+            c.fd = s;
+            return 0;
+        }
+        const int e = _net_errno();
+        if (e == _FETCH_EINPROGRESS || e == _NET_EAGAIN) {
+            c.fd = s;
+            return _FETCH_WANT_WRITE;
+        }
+        c.conn_err = e;
+        net_close(s);
+    }
+    return _fetch_connect_failed(c);
+}
+
+int _fetch_timed_out(_FetchCall* c) {
+    _fetch_fail(FETCH_ERR_TIMEOUT, "");
+    String_appendf(&_fetch_err, "timed out after %lld ms (", c.timeout_ms);
+    if (c.phase == _FC_RESOLVE) {
+        String_append(&_fetch_err, "resolving the host");
+    }
+    else if (c.phase == _FC_CONNECTING) {
+        String_append(&_fetch_err, "connecting");
+    }
+    else if (c.phase == _FC_TLS) {
+        String_append(&_fetch_err, "TLS handshake");
+    }
+    else if (c.phase == _FC_SEND) {
+        String_append(&_fetch_err, "sending the request");
+    }
+    else {
+        String_append(&_fetch_err, "waiting for the response");
+    }
+    String_append(&_fetch_err, ")");
+    return FETCH_ERR_TIMEOUT;
+}
+
+int _fetch_io_failed(string what) {
+    _fetch_fail(FETCH_ERR_IO, "connection failed while ");
+    String_append(&_fetch_err, what);
+    return FETCH_ERR_IO;
+}
+
+// After a complete response: 1 to follow a redirect (the call now targets
+// the new URL), 0 when this is the final response, or an error.
+int _fetch_redirect(_FetchCall* c) {
+    Response* r = c.out;
+    const int s = r.status;
+    if (c.follow == 0 || (s != 301 && s != 302 && s != 303 && s != 307 && s != 308)) {
+        return 0;
+    }
+    let loc: String;
+    String_init(&loc, 64);
+    defer String_free(&loc);
+    if (Response_header(r, "location", &loc) == 0) {
+        return 0;
+    }
+    if (r.redirects >= c.max_redirects) {
+        _fetch_fail(FETCH_ERR_REDIRECTS, "");
+        String_appendf(&_fetch_err, "too many redirects (more than %d)", c.max_redirects);
+        return FETCH_ERR_REDIRECTS;
+    }
+    let next: Url;
+    if (Url_resolve(&c.url, loc.cstr(), &next) == 0) {
+        Url_free(&next);
+        _fetch_fail(FETCH_ERR_RESPONSE, "malformed response: invalid Location '");
+        String_append(&_fetch_err, loc.cstr());
+        String_append(&_fetch_err, "'");
+        return FETCH_ERR_RESPONSE;
+    }
+    if (String_eq(&next.scheme, &c.url.scheme) == 0 || String_eq(&next.host, &c.url.host) == 0
+        || next.port != c.url.port) {
+        c.cross_origin = 1;
+    }
+    if (s == 301 || s == 302 || s == 303) {
+        if (String_eq_cstr(&c.method, "HEAD") == 0) {
+            String_clear(&c.method);
+            String_append(&c.method, "GET");
+        }
+        c.send_body = 0;
+    }
+    r.redirects++;
+    _fetch_response_clear(r);
+    const int rc = _fetch_target(c, &next);
+    return rc < 0 ? rc : 1;
+}
+
+// Run the call until it completes, fails or must wait (see above).
+int _fetch_step(_FetchCall* c) {
+    while (true) {
+        if (c.phase == _FC_RESOLVE) {
+            const int rc = _fetch_resolve(c);
+            if (rc != 0) {
+                return rc;
+            }
+            c.phase = _FC_NEXT_ADDR;
+        } else if (c.phase == _FC_NEXT_ADDR) {
+            const int rc = _fetch_connect_next(c);
+            if (rc < 0) {
+                return rc;
+            }
+            if (rc == _FETCH_WANT_WRITE) {
+                c.phase = _FC_CONNECTING;
+                return rc;
+            }
+            c.phase = _FC_CONNECTED;
+        } else if (c.phase == _FC_CONNECTING) {
+            int err = 0;
+            int len = 4;
+            if (getsockopt(c.fd, _FETCH_SOL_SOCKET, _FETCH_SO_ERROR, (*void)&err, &len) != 0) {
+                err = _net_errno();
+            }
+            if (err == 0) {
+                c.phase = _FC_CONNECTED;
+            }
+            else {
+                c.conn_err = err;
+                net_close(c.fd);
+                c.fd = -1;
+                c.phase = _FC_NEXT_ADDR;
+            }
+        } else if (c.phase == _FC_CONNECTED) {
+            freeaddrinfo(c.addrs);
+            c.addrs = null;
+            c.next = null;
+            _fetch_render(c);
+            if (c.https == 1) {
+                c.ctx = _ftls_ctx(c.verify, c.ca_file.cstr());
+                if (c.ctx != null) {
+                    c.ssl = _ftls_new(c.ctx, c.fd, c.url.host.cstr(), c.verify);
+                }
+                if (c.ssl == null) {
+                    if (c.ca_file.len > 0 && c.ctx == null) {
+                        _fetch_fail(FETCH_ERR_TLS, "cannot load the CA file '");
+                        String_append(&_fetch_err, c.ca_file.cstr());
+                        String_append(&_fetch_err, "'");
+                        return FETCH_ERR_TLS;
+                    }
+                    return _fetch_fail(FETCH_ERR_TLS, "cannot set up the TLS connection");
+                }
+                c.phase = _FC_TLS;
+            } else {
+                c.phase = _FC_SEND;
+            }
+        } else if (c.phase == _FC_TLS) {
+            const int h = _ftls_handshake(c.ssl);
+            if (h == _FTLS_WANT_READ) {
+                return _FETCH_WANT_READ;
+            }
+            if (h == _FTLS_WANT_WRITE) {
+                return _FETCH_WANT_WRITE;
+            }
+            if (h < 0) {
+                _fetch_fail(FETCH_ERR_TLS, "TLS handshake with ");
+                String_append(&_fetch_err, c.url.host.cstr());
+                String_append(&_fetch_err, " failed");
+                let why: String;
+                String_init(&why, 64);
+                if (_ftls_verify_error(c.ssl, &why) == 1) {
+                    String_append(&_fetch_err, ": ");
+                    String_append(&_fetch_err, why.cstr());
+                }
+                String_free(&why);
+                return FETCH_ERR_TLS;
+            }
+            c.phase = _FC_SEND;
+        } else if (c.phase == _FC_SEND) {
+            while (c.sent < c.req.len) {
+                int64 w = 0;
+                if (c.ssl != null) {
+                    w = _ftls_write(c.ssl, c.req.data + c.sent, c.req.len - c.sent);
+                }
+                else {
+                    w = net_send(c.fd, (*void)(c.req.data + c.sent), c.req.len - c.sent);
+                    if (w < 0 && net_would_block() == 1) {
+                        w = -3;
+                    }
+                    else if (w <= 0) {
+                        w = -1;
+                    }
+                }
+                if (w == -2) {
+                    return _FETCH_WANT_READ;
+                }
+                if (w == -3) {
+                    return _FETCH_WANT_WRITE;
+                }
+                if (w < 0) {
+                    return _fetch_io_failed("sending the request");
+                }
+                c.sent += w;
+                if (c.body_sent != null && c.sent > c.body_at) {
+                    atomic_store64(c.body_sent, c.sent - c.body_at);
+                }
+            }
+            FetchParser_init(&c.parser, c.max_body, String_eq_cstr(&c.method, "HEAD"));
+            c.parser_live = 1;
+            c.phase = _FC_RECV;
+        } else if (c.phase == _FC_RECV) {
+            int done = 0;
+            while (done == 0) {
+                int64 n = 0;
+                if (c.ssl != null) {
+                    n = _ftls_read(c.ssl, c.rbuf, _FETCH_RBUF);
+                }
+                else {
+                    n = net_recv(c.fd, (*void)c.rbuf, _FETCH_RBUF);
+                    if (n < 0 && net_would_block() == 1) {
+                        n = -2;
+                    }
+                    else if (n < 0) {
+                        n = -1;
+                    }
+                }
+                if (n == -2) {
+                    return _FETCH_WANT_READ;
+                }
+                if (n == -3) {
+                    return _FETCH_WANT_WRITE;
+                }
+                if (n == -1) {
+                    return _fetch_io_failed("receiving the response");
+                }
+                int st = 0;
+                if (n == 0) {
+                    st = FetchParser_finish(&c.parser, c.out);
+                }
+                else {
+                    st = FetchParser_feed(&c.parser, c.out, c.rbuf, n);
+                }
+                if (st < 0) {
+                    return st;
+                }
+                if (st == 1) {
+                    done = 1;
+                }
+            }
+            _fetch_close(c);
+            const int rd = _fetch_redirect(c);
+            if (rd < 0) {
+                return rd;
+            }
+            if (rd == 0) {
+                c.phase = _FC_DONE;
+                return 0;
+            }
+        } else {
+            return 0;
+        }
+    }
+    return 0;
+}
+
+// Set up the call for `url` with options `o` and run its first step.
+int _fetch_begin(_FetchCall* c, string url, FetchOptions* o, Response* out) {
+    c.fd = -1;
+    c.out = out;
+    String_init(&c.method, 8);
+    String_append(&c.method, o.method.cstr());
+    String_from(&c.headers, o.headers.cstr());
+    Bytes_init(&c.body, o.body.len + 1);
+    Bytes_append_raw(&c.body, o.body.data, o.body.len);
+    c.send_body = o.has_body;
+    c.timeout_ms = o.timeout_ms;
+    c.deadline = net_deadline(o.timeout_ms);
+    c.follow = o.follow_redirects;
+    c.max_redirects = o.max_redirects;
+    c.max_body = o.max_body;
+    c.body_sent = o.body_sent;
+    String_from(&c.user_agent, o.user_agent.cstr());
+    c.verify = o.verify_tls;
+    String_from(&c.ca_file, o.ca_file.cstr());
+    Url_init(&c.url);
+    Bytes_init(&c.req, 512);
+    c.rbuf = alloc<uint8>(_FETCH_RBUF);
+    if (o.bad_header == 1 || _http_headers_valid(&c.headers) == 0 || _fetch_has_cr(&c.headers) == 1
+        || _fetch_has_cr(&c.user_agent) == 1 || String_index_of(&c.user_agent, '\n') >= 0) {
+        return _fetch_fail(FETCH_ERR_REQUEST, "invalid request header (a name must be a token; a value may not hold CR or LF)");
+    }
+    if (_fetch_is_token(&c.method) == 0) {
+        return _fetch_fail(FETCH_ERR_REQUEST, "invalid request method");
+    }
+    let u: Url;
+    if (url_parse(url, &u) == 0) {
+        Url_free(&u);
+        _fetch_fail(FETCH_ERR_URL, "invalid URL '");
+        if (url == null) {
+            String_append(&_fetch_err, "(null)");
+        }
+        else {
+            for (int i = 0; url[i] != 0 && i < 200; i++) {
+                const int ch = (int)((uint8)url[i]);
+                String_push(&_fetch_err, ch < 32 || ch == 127 ? '?' : (char)ch);
+            }
+        }
+        String_append(&_fetch_err, "'");
+        return FETCH_ERR_URL;
+    }
+    const int rc = _fetch_target(c, &u);
+    if (rc < 0) {
+        return rc;
+    }
+    return _fetch_step(c);
+}
+
+// Fetch `url` with the options in `o` into *out (see the top of the file): 0,
+// or a FETCH_ERR_* code.
+int fetch_with(string url, FetchOptions* o, Response* out) {
+    Response_init(out);
+    _FetchCall* c = alloc<_FetchCall>(1);
+    int rc = _fetch_begin(c, url, o, out);
+    while (rc > 0) {
+        const int w = net_wait_ready(c.fd, rc == _FETCH_WANT_WRITE ? 1 : 0, c.deadline);
+        if (w == NET_TIMED_OUT) {
+            rc = _fetch_timed_out(c);
+        }
+        else if (w < 0) {
+            rc = _fetch_io_failed("waiting for the socket");
+        }
+        else {
+            rc = _fetch_step(c);
+        }
+    }
+    _fetch_call_free(c);
+    free((*void)c);
+    if (rc < 0) {
+        _fetch_response_clear(out);
+    }
+    return rc;
+}
+
+// Fetch `url` with the default options (a GET; see the top of the file).
+int fetch(string url, Response* out) {
+    let o: FetchOptions;
+    FetchOptions_init(&o);
+    const int rc = fetch_with(url, &o, out);
+    FetchOptions_free(&o);
+    return rc;
+}
+
+// fetch_with over the event loop `lp`: the future completes with the same
+// code. `url` and `out` must stay valid until then; `o` is copied at once.
+async int fetch_async(EventLoop* lp, string url, FetchOptions* o, Response* out) {
+    Response_init(out);
+    _FetchCall* c = alloc<_FetchCall>(1);
+    defer {
+        _fetch_call_free(c);
+        free((*void)c);
+    }
+    c.dns_async = 1;
+    int rc = _fetch_begin(c, url, o, out);
+    int64 nap = 1;
+    while (rc > 0) {
+        if (rc == _FETCH_WANT_DNS) {
+            if (c.deadline > 0 && time_monotonic_ms() >= c.deadline) {
+                rc = _fetch_timed_out(c);
+            }
+            else {
+                await timer_after(lp, nap);
+                if (nap < 16) {
+                    nap = nap * 2;
+                }
+                rc = _fetch_step(c);
+            }
+        } else {
+            nap = 1;
+            const int w = await net_ready_deadline_async(lp, c.fd, rc == _FETCH_WANT_WRITE ? 1 : 0, c.deadline);
+            if (w == NET_TIMED_OUT) {
+                rc = _fetch_timed_out(c);
+            }
+            else {
+                rc = _fetch_step(c);
+            }
+        }
+    }
+    if (rc < 0) {
+        _fetch_response_clear(out);
+    }
+    return rc;
+}
+
+// ── Result forms ───────────────────────────────────────────────────────────
+
+// fetch as a Result: the response (whatever its status: a 404 is a response), or the
+// failure described by fetch_last_error. Free the response with Response_free.
+Result<Response, string> fetch_result(string url) {
+    let r: Response;
+    if (fetch(url, &r) != 0) {
+        Response_free(&r);
+        return Err<Response, string>(fetch_last_error());
+    }
+    return Ok<Response, string>(r);
+}
+
+// fetch_with as a Result, like fetch_result.
+Result<Response, string> fetch_with_result(string url, FetchOptions* o) {
+    let r: Response;
+    if (fetch_with(url, o, &r) != 0) {
+        Response_free(&r);
+        return Err<Response, string>(fetch_last_error());
+    }
+    return Ok<Response, string>(r);
+}

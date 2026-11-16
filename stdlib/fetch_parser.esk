@@ -1,0 +1,503 @@
+// fetch_parser.esk: the response parser and the request machine (part of fetch.esk, imported in order)
+
+// ── Response parser ──────────────────────────────────────────────────────────
+//
+// An incremental parser for one HTTP/1.x response: feed it bytes as they
+// arrive (FetchParser_feed), and call FetchParser_finish when the connection
+// closes. It fills a Response (cleared by the caller). Interim 1xx responses
+// are skipped; a 101 is an error.
+
+const int _FP_HEAD = 0;
+const int _FP_LENGTH = 1;
+const int _FP_CHUNKED = 2;
+const int _FP_CLOSE = 3;
+const int _FP_DONE = 4;
+const int FETCH_MAX_HEAD = 65536;
+
+struct FetchParser {
+    Bytes buf;        // input not consumed yet (the head, a chunked body)
+    int stage;
+    int64 need;       // Content-Length bytes still to come
+    int64 max_body;
+    int no_body;    // 1: the request was a HEAD
+    int64 scan;       // bytes already searched for the end of the head
+    int64 bpos;       // chunked decoder state (see <http>'s _http_chunked_run)
+    int trailer;
+    int64 tbytes;
+    HttpChunkOut chunks;
+}
+
+void FetchParser_init(FetchParser* p, int64 max_body, int no_body) {
+    Bytes_init(&p.buf, 4096);
+    p.stage = _FP_HEAD;
+    p.need = 0;
+    p.max_body = max_body;
+    p.no_body = no_body;
+    p.scan = 0;
+    p.bpos = 0;
+    p.trailer = 0;
+    p.tbytes = 0;
+    p.chunks.data = null;
+    p.chunks.len = 0;
+    p.chunks.cap = 0;
+}
+
+void FetchParser_free(FetchParser* p) {
+    Bytes_free(&p.buf);
+    if (p.chunks.data != null) {
+        free(p.chunks.data);
+        p.chunks.data = null;
+    }
+}
+
+int _fp_bad(string msg) {
+    _fetch_fail(FETCH_ERR_RESPONSE, "malformed response: ");
+    String_append(&_fetch_err, msg);
+    return FETCH_ERR_RESPONSE;
+}
+
+int _fp_too_large(int64 max) {
+    _fetch_fail(FETCH_ERR_TOO_LARGE, "");
+    String_appendf(&_fetch_err, "response body larger than %lld bytes", max);
+    return FETCH_ERR_TOO_LARGE;
+}
+
+// 1 if the last coding of the last non-empty Transfer-Encoding line is
+// "chunked" (or there is no coding at all), else 0.
+int _fp_te_final_chunked(String* h) {
+    int last = 1;
+    const int64 n = h.len;
+    int64 i = 0;
+    while (i < n) {
+        int64 e = i;
+        while (e < n && h.data[e] != '\n') {
+            e++;
+        }
+        if (_http_line_named(h, i, e, "transfer-encoding") == 1) {
+            int64 t = e;
+            while (t > i && (h.data[t - 1] == ' ' || h.data[t - 1] == '\t' || h.data[t - 1] == ',')) {
+                t--;
+            }
+            int64 b = t;
+            while (b > i && h.data[b - 1] != ',' && h.data[b - 1] != ':' && h.data[b - 1] != ' ' && h.data[b - 1] != '\t') {
+                b--;
+            }
+            if (t > b) {
+                let item: String;
+                item.init(16);
+                for (k in b..t) {
+                    item.push(_http_lc(h.data[k]));
+                }
+                last = String_eq_cstr(&item, "chunked");
+                item.free();
+            }
+        }
+        i = e + 1;
+    }
+    return last;
+}
+
+// Parse the head b[0..hend) into r and pick the body framing.
+int _fp_head(FetchParser* p, Response* r, int hend) {
+    *uint8 b = p.buf.data;
+    String_clear(&r.reason);
+    String_clear(&r.headers);
+    if (hend < 14) {
+        return _fp_bad("status line too short");
+    }
+    const int version = _http_parse_version(b, 0, 8);
+    if (version < 10 || version >= 20) {
+        return _fp_bad("not an HTTP/1.x status line");
+    }
+    if (b[8] != ' ') {
+        return _fp_bad("bad status line");
+    }
+    int status = 0;
+    for (k in 9..12) {
+        if (b[k] < '0' || b[k] > '9') {
+            return _fp_bad("bad status code");
+        }
+        status = status * 10 + ((int)b[k] - '0');
+    }
+    if (status < 100) {
+        return _fp_bad("bad status code");
+    }
+    int pos = 12;
+    if (b[pos] == ' ') {
+        pos++;
+        while (pos < hend && b[pos] != '\r' && b[pos] != '\n') {
+            if (b[pos] < 32 && b[pos] != '\t') {
+                return _fp_bad("control byte in the reason phrase");
+            }
+            String_push(&r.reason, (char)b[pos]);
+            pos++;
+        }
+    }
+    if (_http_crlf_at(b, pos, hend) == 0) {
+        return _fp_bad("status line not ended by CRLF");
+    }
+    pos += 2;
+    while (pos < hend && _http_crlf_at(b, pos, hend) == 0) {
+        for (; pos < hend && _http_is_crlf_byte(b[pos]) == 0; pos++) {
+            String_push(&r.headers, (char)b[pos]);
+        }
+        String_push(&r.headers, '\n');
+        if (_http_crlf_at(b, pos, hend) == 0) {
+            return _fp_bad("a header line not ended by CRLF");
+        }
+        pos += 2;
+    }
+    if (_http_headers_valid(&r.headers) == 0) {
+        return _fp_bad("invalid header line");
+    }
+    r.status = status;
+    if (status == 101) {
+        return _fp_bad("unexpected protocol switch (101)");
+    }
+    if (status < 200) {                      // interim: the caller skips it
+        return 0;
+    }
+    if (p.no_body == 1 || status == 204 || status == 304) {
+        p.stage = _FP_DONE;
+        return 0;
+    }
+    const int te = _http_transfer_encoding(&r.headers);
+    if (te == 1 || te == 501) {
+        p.stage = _FP_CHUNKED;
+        p.bpos = 0;
+        return 0;
+    }
+    if (te != 0) {
+        // A response whose final transfer coding is not chunked runs to the end
+        // of the connection (RFC 9112 6.3); the body is returned undecoded.
+        if (_fp_te_final_chunked(&r.headers) == 0) {
+            p.stage = _FP_CLOSE;
+            return 0;
+        }
+        return _fp_bad("invalid Transfer-Encoding");
+    }
+    const int64 cl = _http_content_length(&r.headers);
+    if (cl == -1) {
+        return _fp_bad("invalid Content-Length");
+    }
+    if (cl == -2) {
+        p.stage = _FP_CLOSE;
+        return 0;
+    }
+    if (cl > p.max_body) {
+        return _fp_too_large(p.max_body);
+    }
+    p.need = cl;
+    p.stage = cl == 0 ? _FP_DONE : _FP_LENGTH;
+    return 0;
+}
+
+// Body bytes of a Content-Length or close-delimited body.
+int _fp_body(FetchParser* p, Response* r, *uint8 data, int64 n) {
+    if (p.stage == _FP_LENGTH) {
+        const int64 take = n < p.need ? n : p.need;
+        Bytes_append_raw(&r.body, data, take);
+        p.need -= take;
+        if (p.need == 0) {
+            p.stage = _FP_DONE;
+            return 1;
+        }
+        return 0;
+    }
+    if (r.body.len + n > p.max_body) {
+        return _fp_too_large(p.max_body);
+    }
+    Bytes_append_raw(&r.body, data, n);
+    return 0;
+}
+
+int _fp_run(FetchParser* p, Response* r) {
+    while (p.stage == _FP_HEAD) {
+        const int64 from = p.scan > 3 ? p.scan - 3 : 0;
+        const int64 lim = p.buf.len < FETCH_MAX_HEAD + 4 ? p.buf.len : FETCH_MAX_HEAD + 4;
+        const int hend = _http_idx_header_end_from(p.buf.data, (int)from, (int)lim);
+        if (hend < 0) {
+            if (p.buf.len > FETCH_MAX_HEAD) {
+                return _fp_bad("response head too large");
+            }
+            p.scan = p.buf.len;
+            return 0;
+        }
+        const int rc = _fp_head(p, r, hend);
+        if (rc < 0) {
+            return rc;
+        }
+        const int64 rest = p.buf.len - hend;
+        memmove(p.buf.data, p.buf.data + hend, rest);
+        p.buf.len = rest;
+        p.scan = 0;
+    }
+    if (p.stage == _FP_LENGTH || p.stage == _FP_CLOSE) {
+        const int64 n = p.buf.len;
+        p.buf.len = 0;
+        return _fp_body(p, r, p.buf.data, n);
+    }
+    if (p.stage == _FP_CHUNKED) {
+        int64 n = p.buf.len;
+        const int st = _http_chunked_feed(p.buf.data, &n, &p.bpos, 0, &p.chunks, p.max_body, &p.trailer, &p.tbytes);
+        p.buf.len = n;
+        if (st == 1) {
+            Bytes_append_raw(&r.body, p.chunks.data, p.chunks.len);
+            p.stage = _FP_DONE;
+            return 1;
+        }
+        if (st == -2) {
+            return _fp_too_large(p.max_body);
+        }
+        if (st < 0) {
+            return _fp_bad("bad chunked body");
+        }
+        return 0;
+    }
+    return 1;
+}
+
+// Feed the next `n` bytes of the response: 1 once the response is complete
+// (bytes past its end are ignored), 0 when more are needed, or a FETCH_ERR_*
+// code (FETCH_ERR_RESPONSE for a malformed response, FETCH_ERR_TOO_LARGE for a
+// body over the limit).
+int FetchParser_feed(FetchParser* p, Response* r, *uint8 data, int64 n) {
+    if (p.stage == _FP_DONE) {
+        return 1;
+    }
+    if (p.stage == _FP_LENGTH || p.stage == _FP_CLOSE) {
+        return _fp_body(p, r, data, n);
+    }
+    Bytes_append_raw(&p.buf, data, n);
+    return _fp_run(p, r);
+}
+
+// The connection closed: 1 if the response is complete (a body that runs to
+// the end of the connection ends here), else a FETCH_ERR_* code.
+int FetchParser_finish(FetchParser* p, Response* r) {
+    if (p.stage == _FP_DONE) {
+        return 1;
+    }
+    if (p.stage == _FP_CLOSE) {
+        p.stage = _FP_DONE;
+        return 1;
+    }
+    if (p.stage == _FP_HEAD && p.buf.len == 0 && r.status == 0) {
+        return _fetch_fail(FETCH_ERR_IO, "the server closed the connection without a response");
+    }
+    if (p.stage == _FP_LENGTH) {
+        _fetch_fail(FETCH_ERR_RESPONSE, "");
+        String_appendf(&_fetch_err, "connection closed after %lld body bytes, %lld short of the Content-Length",
+                       r.body.len, p.need);
+        return FETCH_ERR_RESPONSE;
+    }
+    return _fetch_fail(FETCH_ERR_RESPONSE, "connection closed before the end of the response");
+}
+
+// ── The request machine ──────────────────────────────────────────────────────
+//
+// One fetch is a state machine over a non-blocking socket. _fetch_step runs it
+// as far as it can and returns 0 when the response is complete, a negative
+// FETCH_ERR_* code, or what it waits for: _FETCH_WANT_READ / _FETCH_WANT_WRITE
+// on call.fd. fetch_with waits with poll (net_wait_ready), fetch_async on the
+// event loop; both then call _fetch_step again.
+
+const int _FETCH_WANT_READ = 1;
+const int _FETCH_WANT_WRITE = 2;
+const int _FETCH_WANT_DNS = 3;   // fetch_async: the lookup runs on a thread
+
+const int _FC_RESOLVE = 0;
+const int _FC_NEXT_ADDR = 1;
+const int _FC_CONNECTING = 2;
+const int _FC_CONNECTED = 3;
+const int _FC_TLS = 4;
+const int _FC_SEND = 5;
+const int _FC_RECV = 6;
+const int _FC_DONE = 7;
+
+#ifdef _WIN32
+const int _FETCH_EINPROGRESS = 10035;   // WSAEWOULDBLOCK
+const int _FETCH_SOL_SOCKET = 65535;
+const int _FETCH_SO_ERROR = 4103;
+#else
+#ifdef __APPLE__
+const int _FETCH_EINPROGRESS = 36;
+const int _FETCH_SOL_SOCKET = 65535;
+const int _FETCH_SO_ERROR = 4103;
+#else
+const int _FETCH_EINPROGRESS = 115;
+const int _FETCH_SOL_SOCKET = 1;
+const int _FETCH_SO_ERROR = 4;
+#endif
+#endif
+
+// A lookup for fetch_async on a thread of its own, so getaddrinfo does not block
+// the event loop. state: 0 running, 1 done, 2 abandoned by a dropped fetch. The
+// side that comes second frees the job.
+struct _FetchDns {
+    String host;
+    String port;
+    *_dns_addrinfo addrs;
+    int rc;
+    int state;
+}
+
+extern int pthread_detach(*void t);
+extern *void pthread_self();
+
+void _fetch_dns_free(_FetchDns* j) {
+    if (j.addrs != null) {
+        freeaddrinfo(j.addrs);
+    }
+    String_free(&j.host);
+    String_free(&j.port);
+    free((*void)j);
+}
+
+void _fetch_dns_work(_FetchDns* j) {
+    j.rc = _dns_getaddrinfo(j.host.cstr(), j.port.cstr(), &j.addrs);
+    if (atomic_swap(&j.state, 1) == 2) {
+        _fetch_dns_free(j);
+    }
+}
+
+// Leave a running lookup to its thread, or free a finished one.
+void _fetch_dns_drop(_FetchDns* j) {
+    if (atomic_swap(&j.state, 2) == 1) {
+        _fetch_dns_free(j);
+    }
+}
+
+struct _FetchCall {
+    // From the options (copied when the call starts).
+    String method;
+    String headers;
+    Bytes body;
+    int send_body;
+    int64 deadline;
+    int64 timeout_ms;
+    int follow;
+    int max_redirects;
+    int64 max_body;
+    String user_agent;
+    int verify;
+    String ca_file;
+    int cross_origin;
+    // The current request.
+    Url url;
+    int https;
+    int phase;
+    int fd;
+    *void ctx;
+    *void ssl;
+    *_dns_addrinfo addrs;
+    *_dns_addrinfo next;
+    int dns_async;
+    _FetchDns* dns_job;
+    int conn_err;
+    Bytes req;
+    int64 sent;
+    // FetchOptions.body_sent, and where the body starts in req
+    *int64 body_sent;
+    int64 body_at;
+    FetchParser parser;
+    int parser_live;
+    *uint8 rbuf;
+    Response* out;
+}
+
+const int64 _FETCH_RBUF = 16384;
+
+int _fetch_is_token(String* s) {
+    if (s.len == 0) {
+        return 0;
+    }
+    for (i in 0..s.len) {
+        if (_http_is_tchar((uint8)s.data[i]) == 0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+// 1 if `s` holds a CR (a header value set through the fields, not
+// FetchOptions_header, could otherwise end its line early on the wire).
+int _fetch_has_cr(String* s) {
+    return String_index_of(s, '\r') >= 0 ? 1 : 0;
+}
+
+// Close the connection of the current request (the call stays usable).
+void _fetch_close(_FetchCall* c) {
+    if (c.ssl != null) {
+        _ftls_free(c.ssl);
+        c.ssl = null;
+    }
+    if (c.ctx != null) {
+        _ftls_ctx_free(c.ctx);
+        c.ctx = null;
+    }
+    if (c.fd >= 0) {
+        net_close(c.fd);
+        c.fd = -1;
+    }
+    if (c.addrs != null) {
+        freeaddrinfo(c.addrs);
+        c.addrs = null;
+        c.next = null;
+    }
+    if (c.parser_live == 1) {
+        FetchParser_free(&c.parser);
+        c.parser_live = 0;
+    }
+}
+
+void _fetch_call_free(_FetchCall* c) {
+    _fetch_close(c);
+    if (c.dns_job != null) {
+        _fetch_dns_drop(c.dns_job);
+        c.dns_job = null;
+    }
+    String_free(&c.method);
+    String_free(&c.headers);
+    Bytes_free(&c.body);
+    String_free(&c.user_agent);
+    String_free(&c.ca_file);
+    Url_free(&c.url);
+    Bytes_free(&c.req);
+    if (c.rbuf != null) {
+        free((*void)c.rbuf);
+        c.rbuf = null;
+    }
+}
+
+// Point the call at `u` (taken over), checking the scheme.
+int _fetch_target(_FetchCall* c, Url* u) {
+    Url_free(&c.url);
+    c.url = *u;
+    c.https = String_eq_cstr(&c.url.scheme, "https");
+    if (c.https == 0 && String_eq_cstr(&c.url.scheme, "http") == 0) {
+        _fetch_fail(FETCH_ERR_URL, "unsupported scheme '");
+        String_append(&_fetch_err, c.url.scheme.cstr());
+        String_append(&_fetch_err, "' (only http and https)");
+        return FETCH_ERR_URL;
+    }
+    if (c.https == 1 && fetch_tls_available() == 0) {
+#ifdef ESKIU_FETCH_NO_TLS
+        return _fetch_fail(FETCH_ERR_NO_TLS, "https is not available: the program was built with ESKIU_FETCH_NO_TLS");
+#else
+        return _fetch_fail(FETCH_ERR_NO_TLS, "https needs OpenSSL (libssl 3 or 1.1), which could not be loaded (set ESKIU_LIBSSL to its path)");
+#endif
+    }
+    String_clear(&c.out.url);
+    Url_to_string(&c.url, &c.out.url);
+    c.phase = _FC_RESOLVE;
+    return 0;
+}
+
+void _fetch_put(Bytes* b, string s) {
+    Bytes_append_raw(b, (*uint8)s, strlen(s));
+}
+
+void _fetch_put_str(Bytes* b, String* s) {
+    Bytes_append_raw(b, (*uint8)s.data, s.len);
+}
