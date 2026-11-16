@@ -1,0 +1,453 @@
+// codegen_base_generics.esk: mangling, type substitution and struct instances (part of codegen_base.esk, imported in order)
+
+*StmtNode cgb_for(*StmtNode init, *ExprNode cond, *ExprNode step, *StmtNode body) {
+    *StmtNode s = alloc<StmtNode>(1);
+    s.kind = SK_FOR;
+    s.s1 = init;
+    s.expr = cond;
+    s.expr2 = step;
+    s.s2 = body;
+    return s;
+}
+
+*StmtNode cgb_block2(*StmtNode a, *StmtNode b) {
+    *StmtNode s = alloc<StmtNode>(1);
+    s.kind = SK_BLOCK;
+    List_init<*StmtNode>(&s.items, 2);
+    List_push<*StmtNode>(&s.items, a);
+    if (b != null) {
+        List_push<*StmtNode>(&s.items, b);
+    }
+    return s;
+}
+
+// Mangle a generic type/call spelling into an LLVM-safe name: "Box<int>" -> "Box_int",
+// "Map<string, int>" -> "Map_string__int", "List<*int>" -> "List_pint". Internally
+// consistent (defs and refs agree), which is all clang needs.
+string cg_mangle(string s) {
+    int n = 0;
+    while (s[n] != 0) {
+        n = n + 1;
+    }
+    *uint8 buf = alloc<uint8>(n + 1);
+    int o = 0;
+    int i = 0;
+    while (i < n) {
+        int c = (int)s[i];
+        if ((c >= 97 && c <= 122) || (c >= 65 && c <= 90) || (c >= 48 && c <= 57) || c == 95) {
+            buf[o] = (uint8)c;
+            o = o + 1;
+        } else if (c == 42) {   // '*' -> 'p'
+            buf[o] = 112;
+            o = o + 1;
+        }
+        else if (c == 62 || c == 32) {}                   // '>' / ' ' dropped
+        else {                   // '<' ',' etc. -> '_'
+            buf[o] = 95;
+            o = o + 1;
+        }
+        i = i + 1;
+    }
+    buf[o] = 0;
+    return (string)buf;
+}
+
+// Replace each identifier run of `t` named in `subs` by its spelling (*changed = 1 when
+// one was), keeping the grouping of a pointer to, or an array of, an array or slice
+// spelling: a star before one goes after it (`*T`, T = int[3], is `int[3]*`) and extra
+// dimensions go in front of its own (`T[2]`, T = int[], is `int[2][]`). Shared by the
+// generic substitution (cg_apply_sub) and alias expansion (cg_dealias_d).
+string cg_subst_ids(string t, List<CgSub>* subs, int* changed) {
+    int n = 0;
+    while (t[n] != 0) {
+        n = n + 1;
+    }
+    String out;
+    String_init(&out, n + 8);
+    int i = 0;
+    while (i < n) {
+        int c = (int)t[i];
+        if ((c >= 97 && c <= 122) || (c >= 65 && c <= 90) || (c >= 48 && c <= 57) || c == 95) {
+            int s = i;
+            while (i < n) {
+                int d = (int)t[i];
+                if ((d >= 97 && d <= 122) || (d >= 65 && d <= 90) || (d >= 48 && d <= 57) || d == 95) {
+                    i = i + 1;
+                }
+                else {
+                    break;
+                }
+            }
+            string id = cg_sub_str(t, s, i);
+            string rep = id;
+            int k = 0;
+            int m = List_len<CgSub>(subs);
+            while (k < m) {
+                CgSub sb = List_get<CgSub>(subs, k);
+                if (cg_streq(sb.param, id) == 1) {
+                    rep = sb.arg;
+                    changed[0] = 1;
+                }
+                k = k + 1;
+            }
+            // A pointer to an alias of an array (`*AI`, `type AI = int[3]`) is `int[3]*`: a
+            // leading star would bind looser than the array suffix (an array of pointers).
+            int rn = 0;
+            while (rep[rn] != 0) {
+                rn = rn + 1;
+            }
+            // An alias of an array or slice given more dimensions (`IS[2]`, `type IS = int[]`):
+            // the new ones are outer, so they go in front of the alias's own brackets (C
+            // order), `int[2][]`.
+            int dimsed = 0;
+            int lead = 0;
+            while (s - lead > 0 && (int)t[s - lead - 1] == 42) {
+                lead = lead + 1;
+            }
+            if (rep != id && rn > 0 && (int)rep[rn - 1] == 93 && i < n && (int)t[i] == 91 && lead > 0) {
+                // `*T[2]`, T = int[3]: 2 pointers to int[3], `int[3]*[2]`
+                out.len = out.len - (int64)lead;
+                out.data[out.len] = (char)0;
+                while (lead > 0) {
+                    rep = cg_cat(rep, "*");
+                    lead = lead - 1;
+                }
+                rn = 0;
+                while (rep[rn] != 0) {
+                    rn = rn + 1;
+                }
+                dimsed = 1;
+            } else if (rep != id && rn > 0 && (int)rep[rn - 1] == 93 && i < n && (int)t[i] == 91) {
+                int ds = i;
+                while (i < n && (int)t[i] == 91) {
+                    while (i < n && (int)t[i] != 93) {
+                        i = i + 1;
+                    }
+                    if (i < n) {
+                        i = i + 1;
+                    }
+                }
+                int rb = 0;
+                int rdep = 0;
+                while (rb < rn && !((int)rep[rb] == 91 && rdep == 0)) {
+                    int rc = (int)rep[rb];
+                    if (rc == 60 || rc == 40) {
+                        rdep = rdep + 1;
+                    }
+                    else if ((rc == 62 && (rb == 0 || (int)rep[rb - 1] != 45)) || rc == 41) {
+                        rdep = rdep - 1;
+                    }
+                    rb = rb + 1;
+                }
+                rep = cg_cat(cg_cat(cg_sub_str(rep, 0, rb), cg_sub_str(t, ds, i)), cg_sub_str(rep, rb, rn));
+                rn = 0;
+                while (rep[rn] != 0) {
+                    rn = rn + 1;
+                }
+                dimsed = 1;
+            }
+            int stars = 0;
+            // (a pointer to an array, `int[3]*`, is grouped the same way: `*T` is `int[3]**`)
+            int rt = rn;
+            while (rt > 0 && (int)rep[rt - 1] == 42) {
+                rt = rt - 1;
+            }
+            if (dimsed == 0 && rep != id && rt < rn && rt > 0 && (int)rep[rt - 1] == 93) {
+                while (s - stars > 0 && (int)t[s - stars - 1] == 42) {
+                    stars = stars + 1;
+                }
+                out.len = out.len - (int64)stars;
+                out.data[out.len] = (char)0;
+            } else if (dimsed == 0 && rep != id && rn > 0 && (int)rep[rn - 1] == 93) {
+                while (s - stars > 0 && (int)t[s - stars - 1] == 42) {
+                    stars = stars + 1;
+                }
+                out.len = out.len - (int64)stars;
+                out.data[out.len] = (char)0;
+                // An array of an array alias (`type Arr = int[3]; Arr[2]`) is 2 arrays of 3:
+                // the outer dimensions go in front of the alias's (leftmost is outermost).
+                if (stars == 0 && i < n && (int)t[i] == 91) {
+                    int e = i;
+                    while (e < n && (int)t[e] == 91) {
+                        int dd = 0;
+                        while (e < n) {
+                            if ((int)t[e] == 91) {
+                                dd = dd + 1;
+                            }
+                            else if ((int)t[e] == 93) {
+                                dd = dd - 1;
+                                if (dd == 0) {
+                                    e = e + 1;
+                                    break;
+                                }
+                            }
+                            e = e + 1;
+                        }
+                    }
+                    int rb = cg_arr_open(rep);
+                    if (rb > 0) {
+                        rep = cg_cat(cg_cat(cg_sub_str(rep, 0, rb), cg_sub_str(t, i, e)), cg_sub_str(rep, rb, rn));
+                        i = e;
+                    }
+                }
+            }
+            String_append(&out, rep);
+            while (stars > 0) {
+                String_push(&out, '*');
+                stars = stars - 1;
+            }
+        } else {
+            String_push(&out, (char)c);
+            i = i + 1;
+        }
+    }
+    return (string)String_cstr(&out);
+}
+
+// Apply the active substitution to a type spelling: identifier runs equal to a type
+// parameter are replaced by its concrete type. "*T" -> "*int", "List<T>" -> "List<int>",
+// "*T" with T = int[] -> "int[]*" (a pointer to the slice).
+string cg_apply_sub(Codegen* g, string t) {
+    if (List_len<CgSub>(&g.cursub) == 0) {
+        return t;
+    }
+    int changed = 0;
+    return cg_subst_ids(t, &g.cursub, &changed);
+}
+
+// Resolve type aliases in a type spelling, token-wise (each identifier that names an
+// alias is replaced by its underlying type, recursively up to `depth` for chained
+// aliases). Always-on (unlike cg_apply_sub's generic substitution); a no-op when no
+// aliases are registered. `type u8 = uint8` → "u8" becomes "uint8"; "*u8" → "*uint8".
+string cg_dealias_d(Codegen* g, string t, int depth) {
+    if (depth > 8) {
+        return t;
+    }
+    if (List_len<CgSub>(&g.aliases) == 0) {
+        return t;
+    }
+    int changed = 0;
+    string r = cg_subst_ids(t, &g.aliases, &changed);
+    if (changed == 1) {
+        return cg_dealias_d(g, r, depth + 1);
+    }
+    return r;
+}
+
+string cg_dealias(Codegen* g, string t) {
+    return cg_dealias_d(g, t, 0);
+}
+
+// Does a type/call spelling carry generic args ("Name<...>")?
+int cg_has_targs(string s) {
+    int i = 0;
+    while (s[i] != 0) {   // '<'
+        if ((int)s[i] == 60) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Base name of a generic spelling: "Box<int>" -> "Box", "List_init<int>" -> "List_init".
+string cg_gen_base(string s) {
+    int n = 0;
+    while (s[n] != 0 && (int)s[n] != 60) {   // up to '<'
+        n = n + 1;
+    }
+    *uint8 buf = alloc<uint8>(n + 1);
+    int k = 0;
+    while (k < n) {
+        buf[k] = (uint8)s[k];
+        k = k + 1;
+    }
+    buf[n] = 0;
+    return (string)buf;
+}
+
+// Parse the comma-separated args inside the outermost <...> of a generic spelling,
+// honoring nesting ("Map<List<int>, int>" -> ["List<int>", "int"]).
+void cg_gen_args(string s, List<string>* out) {
+    int i = 0;
+    while (s[i] != 0 && (int)s[i] != 60) {   // to '<'
+        i = i + 1;
+    }
+    if (s[i] == 0) {
+        return;
+    }
+    i = i + 1;                                            // past '<'
+    int depth = 1;
+    int start = i;
+    while (s[i] != 0 && depth > 0) {
+        int c = (int)s[i];
+        if (c == 60 || c == 40) {             // '<' or '(' (nested generic / fn params)
+            depth = depth + 1;
+        }
+        else if (c == 41) {   // ')'
+            if (depth > 0) {
+                depth = depth - 1;
+            }
+        }
+        else if (c == 62 && (i == 0 || (int)s[i - 1] != 45)) {      // '>' closing a generic, NOT the "->" arrow
+            depth = depth - 1;
+            if (depth == 0) {
+                break;
+            }
+        }
+        else if (c == 44 && depth == 1) {                          // top-level ','
+            string a = cg_sub_str(s, start, i);
+            List_push<string>(out, cg_trim(a));
+            i = i + 1;
+            start = i;
+            continue;
+        }
+        i = i + 1;
+    }
+    if (i > start) {
+        List_push<string>(out, cg_trim(cg_sub_str(s, start, i)));
+    }
+}
+
+// Trim leading/trailing spaces.
+string cg_trim(string s) {
+    int a = 0;
+    while ((int)s[a] == 32) {
+        a = a + 1;
+    }
+    int b = 0;
+    while (s[b] != 0) {
+        b = b + 1;
+    }
+    while (b > a && (int)s[b - 1] == 32) {
+        b = b - 1;
+    }
+    return cg_sub_str(s, a, b);
+}
+
+int cg_in_strlist(List<string>* l, string s) {
+    int i = 0;
+    int n = List_len<string>(l);
+    while (i < n) {
+        if (cg_streq(List_get<string>(l, i), s) == 1) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+int cg_seen_inst(Codegen* g, string mangled) {
+    return NameIdx_first(&g.inst_ix, mangled) >= 0;
+}
+
+*DeclNode cg_find_gstruct(Codegen* g, string name) {
+    int i = NameIdx_first(&g.gstructs_ix, name);
+    if (i < 0) {
+        return null;
+    }
+    return List_get<*DeclNode>(&g.gstructs, i);
+}
+
+// Monomorphize a generic struct spelling ("Box<int>") into a concrete named type
+// `%Box_int = type {…}` with the type params substituted in its field types. Returns
+// the mangled name. Idempotent (deduped via inst_seen).
+void cg_emit_tydecl(Codegen* g, *DeclNode d);
+int cg_struct_has_bf(*DeclNode d);
+int cg_c_align(Codegen* g, string t);            // fwd: the C alignment of an LLVM type
+int cg_ll_align_of(Codegen* g, string t);        // fwd
+string cg_ensure_struct_inst(Codegen* g, string spelling) {
+    spelling = cg_apply_sub(g, spelling);                 // resolve T→concrete before mangling
+    string mangled = cg_mangle(cg_dealias(g, spelling));  // an alias arg is its target (one instance)
+    if (cg_seen_inst(g, mangled) == 1) {
+        return mangled;
+    }
+    string base = cg_gen_base(spelling);
+    *DeclNode gd = cg_find_gstruct(g, base);
+    if (gd == null) {                   // unknown generic — leave as-is
+        return mangled;
+    }
+    cg_push_inst(g, mangled);             // mark before building (recursion)
+
+    List<string> args;
+    List_init<string>(&args, 4);
+    cg_gen_args(spelling, &args);
+
+    List<CgSub> oldsub = g.cursub;                        // save/restore the active sub
+    List_init<CgSub>(&g.cursub, 4);
+    int tp = 0;
+    int ntp = List_len<TypeParam>(&gd.type_params);
+    while (tp < ntp && tp < List_len<string>(&args)) {
+        let sb: CgSub;
+        sb.param = List_get<TypeParam>(&gd.type_params, tp).name;
+        sb.arg = List_get<string>(&args, tp);
+        List_push<CgSub>(&g.cursub, sb);
+        tp = tp + 1;
+    }
+
+    let s: CgStruct;
+    s.name = mangled;
+    List_init<string>(&s.fnames, 4);
+    List_init<string>(&s.fetys, 4);
+    // Assemble the field-type list into a local buffer first: a field whose type is
+    // itself generic triggers a nested instantiation that appends to g.globals, so the
+    // nested type must land BEFORE this one's line (not interleaved mid-line).
+    String body;
+    String_init(&body, 32);
+    int fi = 0;
+    int nf = List_len<Param>(&gd.params);
+    while (fi < nf) {
+        Param fp = List_get<Param>(&gd.params, fi);
+        string fety = cg_apply_sub(g, fp.ty);             // T -> concrete spelling
+        List_push<string>(&s.fnames, fp.name);
+        List_push<string>(&s.fetys, fety);
+        if (fi > 0) {
+            String_append(&body, ", ");
+        }
+        String_append(&body, cg_lltype(g, fety));
+        fi = fi + 1;
+    }
+    cg_push_struct(g, s);                   // register before emitting the line
+    int manual = 0;
+    if (gd.is_packed == 0) {
+        int mi = 0;
+        while (mi < nf) {
+            string mlt = cg_lltype(g, List_get<string>(&s.fetys, mi));
+            if (cg_c_align(g, mlt) != cg_ll_align_of(g, mlt)) {
+                manual = 1;
+            }
+            mi = mi + 1;
+        }
+    }
+    if (cg_struct_has_bf(gd) == 1 || gd.is_packed == 1 || gd.pack_align >= 2 || manual == 1) {
+        // Bitfields / packing (or a field holding a pack(N) struct): lay the instance out
+        // like a plain struct of the concrete field types (same widths and packing as the
+        // generic decl).
+        *DeclNode cd = alloc<DeclNode>(1);
+        cd.kind = DK_STRUCT;
+        cd.name = mangled;
+        cd.is_packed = gd.is_packed;
+        cd.pack_align = gd.pack_align;
+        cd.field_bits = gd.field_bits;
+        cd.pad_tys = gd.pad_tys;
+        cd.pad_bits = gd.pad_bits;
+        cd.pad_at = gd.pad_at;
+        List_init<Param>(&cd.params, nf);
+        int ci = 0;
+        while (ci < nf) {
+            let cp: Param;
+            cp.name = List_get<string>(&s.fnames, ci);
+            cp.ty = List_get<string>(&s.fetys, ci);
+            List_push<Param>(&cd.params, cp);
+            ci = ci + 1;
+        }
+        cg_push_tydecl(g, cd);
+        cg_emit_tydecl(g, cd);
+    } else {
+        cg_deftype(g, mangled, cg_cat("{ ", cg_cat((string)String_cstr(&body), " }")));
+        cg_note_nonhomog(g, mangled, gd, &s.fetys);
+    }
+
+    g.cursub = oldsub;                                    // restore
+    return mangled;
+}

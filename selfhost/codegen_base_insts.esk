@@ -1,0 +1,423 @@
+// codegen_base_insts.esk: function and method instances (part of codegen_base.esk, imported in order)
+
+// A generic function by name: its definition, not a body-less prototype (`T f<T>(T x);`)
+// that may precede it.
+*DeclNode cg_find_gfn(Codegen* g, string name) {
+    *DeclNode proto = null;
+    int i = NameIdx_first(&g.gfns_ix, name);
+    while (i >= 0) {
+        *DeclNode d = List_get<*DeclNode>(&g.gfns, i);
+        if (d.body != null) {
+            return d;
+        }
+        if (proto == null) {
+            proto = d;
+        }
+        i = NameIdx_next(&g.gfns_ix, i);
+    }
+    return proto;
+}
+
+// Build the active T→concrete substitution for a generic decl + its type args, saving
+// and returning the previous one (restore by assigning it back to g.cursub).
+List<CgSub> cg_push_sub(Codegen* g, *DeclNode gd, List<string>* args) {
+    List<CgSub> old = g.cursub;
+    List_init<CgSub>(&g.cursub, 4);
+    int tp = 0;
+    int ntp = List_len<TypeParam>(&gd.type_params);
+    while (tp < ntp && tp < List_len<string>(args)) {
+        let sb: CgSub;
+        sb.param = List_get<TypeParam>(&gd.type_params, tp).name;
+        sb.arg = List_get<string>(args, tp);
+        List_push<CgSub>(&g.cursub, sb);
+        tp = tp + 1;
+    }
+    return old;
+}
+
+// Monomorphize a generic function call spelling ("id<int>") — register its concrete
+// signature now (so the call site is typed) and queue its body for emission. Returns
+// the mangled name. Idempotent.
+string cg_ensure_fn_inst(Codegen* g, string spelling) {
+    // Resolve type args through the active substitution FIRST: a call like `alloc<T>`
+    // inside a `List_push<T>` body has the literal param `T`, which must become the
+    // concrete type (`alloc<Param>`) before mangling — else we'd emit a bogus `alloc_T`.
+    spelling = cg_apply_sub(g, spelling);
+    // A type alias among the args is its target (`unbox<F>` with `type F = int` is
+    // `unbox<int>`), so both spellings share one instance: the name is mangled from the
+    // dealiased spelling. The args keep their spelling for substitution (an alias of an
+    // array keeps its grouping there: `*T` with `T = IS` is a pointer to the slice).
+    string mangled = cg_mangle(cg_dealias(g, spelling));
+    if (cg_seen_inst(g, mangled) == 1) {
+        return mangled;
+    }
+    string base = cg_gen_base(spelling);
+    *DeclNode gd = cg_find_gfn(g, base);
+    if (gd == null) {                   // unknown generic — leave as-is
+        return mangled;
+    }
+    cg_push_inst(g, mangled);
+
+    List<string> args;
+    List_init<string>(&args, 4);
+    cg_gen_args(spelling, &args);
+
+    let inst: CgInst;
+    inst.decl = gd;
+    inst.mangled = mangled;
+    inst.is_struct = 0;
+    List_init<string>(&inst.args, 4);
+    int ai = 0;
+    while (ai < List_len<string>(&args)) {
+        List_push<string>(&inst.args, List_get<string>(&args, ai));
+        ai = ai + 1;
+    }
+    List_push<CgInst>(&g.worklist, inst);
+
+    List<CgSub> oldsub = cg_push_sub(g, gd, &args);       // signature types under sub
+    let f: CgFn;
+    f.name = mangled;
+    f.retty = cg_lltype(g, gd.ret_type);
+    f.rety = cg_apply_sub(g, gd.ret_type);
+    f.variadic = 0;
+    string fixed = "";
+    int np = List_len<Param>(&gd.params);
+    int pi = 0;
+    int first = 1;
+    List_init<string>(&f.ptys, np);
+    List_init<string>(&f.petys, np);
+    while (pi < np) {
+        Param pm = List_get<Param>(&gd.params, pi);
+        if (cg_streq(pm.ty, "...") == 1) {   // generic variadic
+            f.variadic = 1;
+            pi = pi + 1;
+            continue;
+        }
+        string plt = cg_lltype(g, pm.ty);
+        List_push<string>(&f.ptys, plt);
+        List_push<string>(&f.petys, cg_apply_sub(g, pm.ty));
+        if (first == 0) {
+            fixed = cg_cat(fixed, ", ");
+        }
+        fixed = cg_cat(fixed, plt);
+        first = 0;
+        pi = pi + 1;
+    }
+    f.fixedtypes = fixed;
+    cg_push_fn(g, f);
+    g.cursub = oldsub;
+    return mangled;
+}
+
+// An inline method of a generic struct instance (`Box<int>` + `get` → `Box_int_get`):
+// register its concrete signature (self first) and queue its body, like a generic
+// function instance. Returns the LLVM name, or "" when `sname` is not such an instance.
+string cg_ensure_method_inst(Codegen* g, string sname, string method) {
+    string sp = cg_apply_sub(g, sname);
+    if (cg_has_targs(sp) == 0) {
+        return "";
+    }
+    *DeclNode gd = cg_find_gstruct(g, cg_gen_base(sp));
+    if (gd == null) {
+        return "";
+    }
+    *DeclNode m = null;
+    int mi = 0;
+    int mn = List_len<*DeclNode>(&gd.methods);
+    while (mi < mn) {
+        *DeclNode c = List_get<*DeclNode>(&gd.methods, mi);
+        if (cg_streq(c.name, method) == 1) {
+            m = c;
+        }
+        mi = mi + 1;
+    }
+    if (m == null) {
+        return "";
+    }
+    string smangled = cg_ensure_struct_inst(g, sp);
+    string llname = cg_cat(cg_cat(smangled, "_"), method);
+    if (cg_seen_inst(g, llname) == 1) {
+        return llname;
+    }
+    cg_push_inst(g, llname);
+
+    List<string> args;
+    List_init<string>(&args, 4);
+    cg_gen_args(sp, &args);
+    let inst: CgInst;
+    inst.decl = m;
+    inst.mangled = llname;
+    inst.is_struct = 2;
+    inst.owner = gd;
+    inst.self_sp = sp;
+    List_init<string>(&inst.args, 4);
+    int ai = 0;
+    while (ai < List_len<string>(&args)) {
+        List_push<string>(&inst.args, List_get<string>(&args, ai));
+        ai = ai + 1;
+    }
+    List_push<CgInst>(&g.worklist, inst);
+
+    List<CgSub> oldsub = cg_push_sub(g, gd, &args);
+    let f: CgFn;
+    f.name = llname;
+    f.retty = cg_lltype(g, m.ret_type);
+    f.rety = cg_apply_sub(g, m.ret_type);
+    f.variadic = 0;
+    f.fixedtypes = "";
+    int np = List_len<Param>(&m.params);
+    List_init<string>(&f.ptys, np + 1);
+    List_init<string>(&f.petys, np + 1);
+    List_push<string>(&f.ptys, "ptr");                    // implicit self
+    List_push<string>(&f.petys, cg_cat("*", sp));
+    int pi = 0;
+    while (pi < np) {
+        Param pm = List_get<Param>(&m.params, pi);
+        List_push<string>(&f.ptys, cg_lltype(g, pm.ty));
+        List_push<string>(&f.petys, cg_apply_sub(g, pm.ty));
+        pi = pi + 1;
+    }
+    cg_push_fn(g, f);
+    g.cursub = oldsub;
+    return llname;
+}
+
+// The function a method call `recv.m(...)` targets, for a receiver of struct `sname`:
+// a generic struct instance's method (instantiated on demand), else `Struct_m`.
+// The flat name of a generic instance spelling as the user writes it in a function name
+// (`List<string>` -> `List_string`, `M<string, int>` -> `M_string_int`), the C++ mangleTemplate
+// rule (cg_mangle differs: it is only for the emitted IR names).
+string cg_flat_name(string t) {
+    int n = 0;
+    while (t[n] != 0) {
+        n = n + 1;
+    }
+    *uint8 buf = alloc<uint8>(n + 1);
+    int o = 0;
+    int i = 0;
+    while (i < n) {
+        int c = (int)t[i];
+        if ((c >= 97 && c <= 122) || (c >= 65 && c <= 90) || (c >= 48 && c <= 57) || c == 95) {
+            buf[o] = (uint8)c;
+            o = o + 1;
+        }
+        else if (c == 42) {            // '*' -> 'p'
+            buf[o] = 112;
+            o = o + 1;
+        }
+        else if (c == 60 || c == 44) {   // '<' ',' -> '_'
+            buf[o] = 95;
+            o = o + 1;
+        }
+        i = i + 1;
+    }
+    buf[o] = 0;
+    return (string)buf;
+}
+
+string cg_method_fn(Codegen* g, string sname, string method) {
+    string gm = cg_ensure_method_inst(g, sname, method);
+    if (gm[0] != 0) {
+        return gm;
+    }
+    // On a generic instance, a non-generic `G_int_m(G<int>* self, ...)` serves the call.
+    if (cg_has_targs(sname) == 1) {
+        string flat = cg_cat(cg_cat(cg_flat_name(sname), "_"), method);
+        if (cg_is_fn(g, flat) == 1) {
+            return flat;
+        }
+    }
+    return cg_cat(cg_cat(sname, "_"), method);
+}
+
+// Emit every queued generic-function instantiation. Bodies may queue further
+// instantiations (transitive generics), so iterate until the worklist is exhausted.
+void cg_drain_worklist(Codegen* g) {
+    while (g.wl_i < List_len<CgInst>(&g.worklist)) {
+        int wi = g.wl_i;
+        CgInst inst = List_get<CgInst>(&g.worklist, wi);
+        if (inst.is_struct == 0) {
+            List<CgSub> oldsub = cg_push_sub(g, inst.decl, &inst.args);
+            cg_emit_fn(g, inst.decl, inst.mangled, "");
+            g.cursub = oldsub;
+        } else if (inst.is_struct == 2) {
+            List<CgSub> oldsub = cg_push_sub(g, inst.owner, &inst.args);
+            cg_emit_fn(g, inst.decl, inst.mangled, inst.self_sp);
+            g.cursub = oldsub;
+        }
+        g.wl_i = g.wl_i + 1;
+    }
+}
+
+// Value of a plain-enum constant, or "" if `name` isn't one.
+string cg_enum_val(Codegen* g, string name) {
+    int i = NameIdx_last(&g.econsts_ix, name);           // the LAST definition wins, matching the
+    if (i < 0) {                              // C++ back-end (a later `const int X`
+        return "";
+    }
+    return List_get<CgEnumC>(&g.econsts, i).val;           // shadows an earlier one)
+}
+
+// How many top-level globals with base name `name` have already been registered — used to
+// give a duplicate a unique emitted name (@X, @X.1, …) so clang does not reject a redefinition.
+int cg_count_global(Codegen* g, string name) {
+    int c = 0;
+    int i = NameIdx_first(&g.gvars_ix, name);
+    while (i >= 0) {
+        c = c + 1;
+        i = NameIdx_next(&g.gvars_ix, i);
+    }
+    return c;
+}
+
+// Variant name of a match-arm label "Circle(r)" -> "Circle" (or the whole label if no '(').
+string cg_arm_var(string label) {
+    int n = 0;
+    while (label[n] != 0 && (int)label[n] != 40) {   // up to '('
+        n = n + 1;
+    }
+    return cg_sub_str(label, 0, n);
+}
+
+// Binding names inside a match-arm label: "Rect(w, h)" -> ["w","h"]; "Empty" -> [].
+void cg_arm_binds(string label, List<string>* out) {
+    int i = 0;
+    while (label[i] != 0 && (int)label[i] != 40) {   // to '('
+        i = i + 1;
+    }
+    if (label[i] == 0) {
+        return;
+    }
+    i = i + 1;
+    int start = i;
+    while (label[i] != 0) {
+        int c = (int)label[i];
+        if (c == 41) {   // ')'
+            if (i > start) {
+                List_push<string>(out, cg_trim(cg_sub_str(label, start, i)));
+            }
+            break;
+        }
+        if (c == 44) {
+            List_push<string>(out, cg_trim(cg_sub_str(label, start, i)));
+            i = i + 1;
+            start = i;
+            continue;
+        }
+        i = i + 1;
+    }
+}
+
+// Comma-separated items between the first '(' and its matching ')' (paren- and
+// '<>'-depth aware, the '>' of a `->` not closing an angle, so a fn-type param
+// `fn(int)->int f` and a template arg `Pair<int,double>` stay one item). Each trimmed.
+void cg_paren_list(string s, List<string>* out) {
+    int i = 0;
+    while (s[i] != 0 && (int)s[i] != 40) {   // to '('
+        i = i + 1;
+    }
+    if (s[i] == 0) {
+        return;
+    }
+    i = i + 1;
+    int depth = 1;
+    int start = i;
+    int angle = 0;
+    while (s[i] != 0 && depth > 0) {
+        int c = (int)s[i];
+        if (c == 40) {
+            depth = depth + 1;
+        }
+        else if (c == 41) {
+            depth = depth - 1;
+            if (depth == 0) {
+                if (i > start) {
+                    List_push<string>(out, cg_trim(cg_sub_str(s, start, i)));
+                }
+                break;
+            }
+        }
+        else if (c == 60) {
+            angle = angle + 1;
+        }
+        else if (c == 62 && (int)s[i - 1] != 45) {
+            if (angle > 0) {
+                angle = angle - 1;
+            }
+        }
+        else if (c == 44 && depth == 1 && angle == 0) {
+            List_push<string>(out, cg_trim(cg_sub_str(s, start, i)));
+            i = i + 1;
+            start = i;
+            continue;
+        }
+        i = i + 1;
+    }
+}
+
+// Last whitespace-separated word of "int x" -> "x"; the rest -> "int" (the declared type).
+string cg_last_word(string s) {
+    int n = 0;
+    while (s[n] != 0) {
+        n = n + 1;
+    }
+    int i = n;
+    while (i > 0 && (int)s[i - 1] != 32) {
+        i = i - 1;
+    }
+    return cg_sub_str(s, i, n);
+}
+
+string cg_drop_last_word(string s) {
+    int n = 0;
+    while (s[n] != 0) {
+        n = n + 1;
+    }
+    int i = n;
+    while (i > 0 && (int)s[i - 1] != 32) {
+        i = i - 1;
+    }
+    while (i > 0 && (int)s[i - 1] == 32) {
+        i = i - 1;
+    }
+    return cg_sub_str(s, 0, i);
+}
+
+// Return type of a fn-type spelling: the text after the `->` that follows the
+// parameter list's matching ')' ("fn(fn(int)->int)->int64" -> "int64").
+string cg_fnty_ret(string t) {
+    int n = 0;
+    while (t[n] != 0) {
+        n = n + 1;
+    }
+    int i = 0;
+    while (i < n && (int)t[i] != 40) {
+        i = i + 1;
+    }
+    int depth = 0;
+    while (i < n) {
+        int c = (int)t[i];
+        if (c == 40) {
+            depth = depth + 1;
+        }
+        else if (c == 41) {
+            depth = depth - 1;
+            if (depth == 0) {
+                if (i + 2 < n && (int)t[i + 1] == 45 && (int)t[i + 2] == 62) {
+                    return cg_trim(cg_sub_str(t, i + 3, n));
+                }
+                return "void";
+            }
+        }
+        i = i + 1;
+    }
+    return "void";
+}
+
+int cg_is_adt(Codegen* g, string name) {
+    return NameIdx_first(&g.adt_ix, name) >= 0;
+}
+
+int cg_is_union(Codegen* g, string name) {
+    return NameIdx_first(&g.union_ix, name) >= 0;
+}
