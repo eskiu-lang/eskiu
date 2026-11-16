@@ -2,7 +2,7 @@
 
 Where the C++ `eskiuc` spends its time on a real program, how to measure it again, and what
 has been done about it. The reference program is `examples/kit-gallery` of the `ui`
-package (eskiu-lang/ui): 153 lines of its own, about 47,000 lines of LLVM IR once the `ui`
+package (eskiu-packages/ui): 153 lines of its own, about 47,000 lines of LLVM IR once the `ui`
 library and the standard library it imports are in, so it stands for an app whose compile
 time is the library's. The measured command is the `ui serve` rebuild, an `-O0` object:
 

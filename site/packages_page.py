@@ -78,7 +78,7 @@ PKG_TEXT = {
                  "reuse it without touching the network. There is no registry: a dependency is a "
                  "git URL with a rev (a tag, branch or commit) or a local path.",
         "how_cmd": ["eskiuc new myapp", "cd myapp",
-                    "eskiuc add compress --git https://github.com/eskiu-lang/compress --rev v0.1.0",
+                    "eskiuc add compress --git https://github.com/eskiu-packages/compress --rev v0.1.0",
                     "eskiuc run"],
         "how_p2": "A package's modules are imported by the package name and the file name, as in "
                   "<code>import &lt;gpu/model&gt;;</code>. Chapter 13 of the "
@@ -110,7 +110,7 @@ PKG_TEXT = {
                  "dependencia es una URL de git con un rev (un tag, una rama o un commit) o una ruta "
                  "local.",
         "how_cmd": ["eskiuc new myapp", "cd myapp",
-                    "eskiuc add compress --git https://github.com/eskiu-lang/compress --rev v0.1.0",
+                    "eskiuc add compress --git https://github.com/eskiu-packages/compress --rev v0.1.0",
                     "eskiuc run"],
         "how_p2": "Los módulos de un paquete se importan con el nombre del paquete y el del archivo, "
                   "por ejemplo <code>import &lt;gpu/model&gt;;</code>. El capítulo 13 del "

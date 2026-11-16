@@ -1442,11 +1442,11 @@ older than 0.15.1 rejects the table (`unknown table [web]`), so a package that a
 needs 0.15.1 or newer.
 
 The [eskiu-lang](https://github.com/eskiu-lang) organization publishes packages that are
-added this way: [gpu](https://github.com/eskiu-lang/gpu) (WebGPU compute, 3D and machine learning),
-[onnx](https://github.com/eskiu-lang/onnx), [tflite](https://github.com/eskiu-lang/tflite),
-[compress](https://github.com/eskiu-lang/compress), [audio](https://github.com/eskiu-lang/audio),
-[font](https://github.com/eskiu-lang/font), [nds](https://github.com/eskiu-lang/nds) and
-[quickjs](https://github.com/eskiu-lang/quickjs) (JavaScript inside an Eskiu program).
+added this way: [gpu](https://github.com/eskiu-packages/gpu) (WebGPU compute, 3D and machine learning),
+[onnx](https://github.com/eskiu-packages/onnx), [tflite](https://github.com/eskiu-packages/tflite),
+[compress](https://github.com/eskiu-packages/compress), [audio](https://github.com/eskiu-packages/audio),
+[font](https://github.com/eskiu-packages/font), [nds](https://github.com/eskiu-packages/nds) and
+[quickjs](https://github.com/eskiu-packages/quickjs) (JavaScript inside an Eskiu program).
 
 The package commands:
 

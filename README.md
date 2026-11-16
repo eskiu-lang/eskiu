@@ -144,10 +144,10 @@ completion, signatures and quick fixes through the
 [IntelliJ plugin](editor/intellij).
 
 The [eskiu-lang](https://github.com/eskiu-lang) organization publishes packages:
-[gpu](https://github.com/eskiu-lang/gpu) (WebGPU compute, 3D and machine learning),
-[onnx](https://github.com/eskiu-lang/onnx), [tflite](https://github.com/eskiu-lang/tflite),
-[compress](https://github.com/eskiu-lang/compress), [audio](https://github.com/eskiu-lang/audio),
-[font](https://github.com/eskiu-lang/font) and [nds](https://github.com/eskiu-lang/nds).
+[gpu](https://github.com/eskiu-packages/gpu) (WebGPU compute, 3D and machine learning),
+[onnx](https://github.com/eskiu-packages/onnx), [tflite](https://github.com/eskiu-packages/tflite),
+[compress](https://github.com/eskiu-packages/compress), [audio](https://github.com/eskiu-packages/audio),
+[font](https://github.com/eskiu-packages/font) and [nds](https://github.com/eskiu-packages/nds).
 
 ## Stability
 

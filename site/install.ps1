@@ -12,7 +12,7 @@
 #   ESKIU_VERSION       the release tag to install (default: the latest), e.g. v0.14.0
 #   ESKIU_PREFIX        where to unpack it (default: %USERPROFILE%\.eskiu)
 #   ESKIU_TOOLCHAIN     1: install llvm-mingw even with a C driver on PATH; 0: never
-#   ESKIU_WITH_UI       1: also install the ui tool (eskiu-lang/ui) as bin\ui.exe
+#   ESKIU_WITH_UI       1: also install the ui tool (eskiu-packages/ui) as bin\ui.exe
 #   UI_VERSION          the ui release tag to install (default: the latest)
 
 $ErrorActionPreference = 'Stop'
@@ -84,11 +84,11 @@ $env:Path = "$bin;$env:Path"
 $installed = & $exe --version
 Write-Host "Installed $installed to $exe"
 
-# The ui tool (eskiu-lang/ui): one binary, bin\ui.exe, next to eskiuc.
+# The ui tool (eskiu-packages/ui): one binary, bin\ui.exe, next to eskiuc.
 if ($env:ESKIU_WITH_UI -eq '1') {
     $uiVersion = if ($env:UI_VERSION) { $env:UI_VERSION } else { 'latest' }
-    $uiBase = if ($uiVersion -eq 'latest') { 'https://github.com/eskiu-lang/ui/releases/latest/download' }
-              else { "https://github.com/eskiu-lang/ui/releases/download/$uiVersion" }
+    $uiBase = if ($uiVersion -eq 'latest') { 'https://github.com/eskiu-packages/ui/releases/latest/download' }
+              else { "https://github.com/eskiu-packages/ui/releases/download/$uiVersion" }
     $uiAsset = 'ui-windows-x86_64.zip'
     $tmp = Join-Path ([IO.Path]::GetTempPath()) ('eskiu-ui-' + [Guid]::NewGuid())
     New-Item -ItemType Directory -Path $tmp | Out-Null

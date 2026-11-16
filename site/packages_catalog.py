@@ -9,7 +9,7 @@
 # example comes from, a short note and the requirements, in English and Spanish,
 # and the Spanish tagline.
 
-PKG_ORG = "eskiu-lang"
+PKG_ORG = "eskiu-packages"
 PKG_REV = "v0.1.0"   # the release a package is shown at, unless its entry has "rev"
 
 PACKAGES_CATALOG = [
@@ -256,7 +256,7 @@ PACKAGES_CATALOG = [
         "repo": "ui-location",
         "rev": "v0.1.3",
         "section": None,
-        "tag_es": "Dónde está el dispositivo, para apps hechas con eskiu-lang/ui.",
+        "tag_es": "Dónde está el dispositivo, para apps hechas con eskiu-packages/ui.",
         "note_en": "A component calls <code>use_location</code> and gets the latest position while "
                    "it is mounted, measured by the platform's own service: CoreLocation on iOS, "
                    "LocationManager on Android and the browser's geolocation on the web. The first "
@@ -267,8 +267,8 @@ PACKAGES_CATALOG = [
                    "LocationManager en Android y la geolocalización del navegador en la web. El primer "
                    "uso pide permiso, y el paquete trae el framework, el texto de uso y los permisos de "
                    "Android en su <code>ui.toml</code>.",
-        "needs_en": "An app made with eskiu-lang/ui (ui new).",
-        "needs_es": "Una app hecha con eskiu-lang/ui (ui new).",
+        "needs_en": "An app made with eskiu-packages/ui (ui new).",
+        "needs_es": "Una app hecha con eskiu-packages/ui (ui new).",
         "setup": ["ui new myapp && cd myapp"],
         "build": ["ui run ios"],
     },
@@ -277,7 +277,7 @@ PACKAGES_CATALOG = [
         "repo": "ui-notifications",
         "rev": "v0.1.3",
         "section": None,
-        "tag_es": "Notificaciones locales para apps hechas con eskiu-lang/ui.",
+        "tag_es": "Notificaciones locales para apps hechas con eskiu-packages/ui.",
         "note_en": "The app schedules a notification with a title and a body for a number of seconds "
                    "from now; the system shows it then, also when the app is closed, and tells the app "
                    "when the user opens it. UNUserNotificationCenter on iOS, AlarmManager and "
@@ -286,8 +286,8 @@ PACKAGES_CATALOG = [
                    "el sistema la muestra entonces, también con la app cerrada, y le avisa a la app cuando "
                    "el usuario la abre. UNUserNotificationCenter en iOS, AlarmManager y NotificationManager "
                    "en Android, la API Notification en la web.",
-        "needs_en": "An app made with eskiu-lang/ui (ui new).",
-        "needs_es": "Una app hecha con eskiu-lang/ui (ui new).",
+        "needs_en": "An app made with eskiu-packages/ui (ui new).",
+        "needs_es": "Una app hecha con eskiu-packages/ui (ui new).",
         "setup": ["ui new myapp && cd myapp"],
         "build": ["ui run android"],
     },
@@ -296,7 +296,7 @@ PACKAGES_CATALOG = [
         "repo": "ui-camera",
         "rev": "v0.2.1",
         "section": None,
-        "tag_es": "Fotos para apps hechas con eskiu-lang/ui: la galería, la cámara y una vista en vivo.",
+        "tag_es": "Fotos para apps hechas con eskiu-packages/ui: la galería, la cámara y una vista en vivo.",
         "note_en": "Pick a photo from the library, take one with the system's camera, or show the camera "
                    "live in a <code>CameraView</code> and capture it. Each photo comes back upright as a "
                    "JPEG that <code>Image</code> shows. PHPicker and AVFoundation on iOS, the photo picker "
@@ -310,8 +310,8 @@ PACKAGES_CATALOG = [
                    "<code>use_camera_frames</code> le presta a Eskiu cada cuadro en vivo por puntero (planos "
                    "YUV, gana el más nuevo) para código de visión o para dibujarlo con "
                    "<code>&lt;gpu/yuv&gt;</code>.",
-        "needs_en": "An app made with eskiu-lang/ui (ui new).",
-        "needs_es": "Una app hecha con eskiu-lang/ui (ui new).",
+        "needs_en": "An app made with eskiu-packages/ui (ui new).",
+        "needs_es": "Una app hecha con eskiu-packages/ui (ui new).",
         "setup": ["ui new myapp && cd myapp"],
         "build": ["ui run android"],
     },
@@ -320,7 +320,7 @@ PACKAGES_CATALOG = [
         "rev": "v0.1.1",
         "ui": True,
         "section": "Use it",
-        "tag_es": "Reproducción de video para apps hechas con eskiu-lang/ui, con los cuadros decodificados en Eskiu.",
+        "tag_es": "Reproducción de video para apps hechas con eskiu-packages/ui, con los cuadros decodificados en Eskiu.",
         "note_en": "<code>use_video</code> plays files, URLs and app assets with the platform's own player "
                    "(AVPlayer on iOS, MediaPlayer on Android, the video element on the web), "
                    "<code>VideoView</code> shows it, and <code>use_video_frames</code> lends the decoded "
@@ -331,8 +331,8 @@ PACKAGES_CATALOG = [
                    "<code>VideoView</code> lo muestra, y <code>use_video_frames</code> le presta a Eskiu los "
                    "cuadros decodificados con el mismo formato que los de la cámara, para dibujarlos con "
                    "<code>&lt;gpu/yuv&gt;</code>.",
-        "needs_en": "An app made with eskiu-lang/ui (ui new).",
-        "needs_es": "Una app hecha con eskiu-lang/ui (ui new).",
+        "needs_en": "An app made with eskiu-packages/ui (ui new).",
+        "needs_es": "Una app hecha con eskiu-packages/ui (ui new).",
         "setup": ["ui new myapp && cd myapp"],
         "build": ["ui run ios"],
     },
@@ -341,7 +341,7 @@ PACKAGES_CATALOG = [
         "rev": "v0.2.0",
         "ui": True,
         "section": None,
-        "tag_es": "Realidad aumentada para apps hechas con eskiu-lang/ui: ARKit en iOS, ARCore en Android y WebXR en la web.",
+        "tag_es": "Realidad aumentada para apps hechas con eskiu-packages/ui: ARKit en iOS, ARCore en Android y WebXR en la web.",
         "note_en": "<code>use_ar_session</code> (<code>&lt;ar/ui&gt;</code>) gives each frame's camera pose, planes, anchors, hit tests, "
                    "image targets, light and depth, and the camera image in the same layout as the camera's frames, so "
                    "<code>&lt;gpu/yuv&gt;</code> draws the background and <a href=\"#scene\">scene</a> the "
@@ -354,8 +354,8 @@ PACKAGES_CATALOG = [
                    "<a href=\"#scene\">scene</a> el contenido. ARCore corre sin contexto de OpenGL, la "
                    "proyección se calcula en Eskiu igual en todas las plataformas, y en Chrome en Android "
                    "una sesión de WebXR da los mismos datos.",
-        "needs_en": "An app made with eskiu-lang/ui (ui new), on a phone with ARKit or ARCore.",
-        "needs_es": "Una app hecha con eskiu-lang/ui (ui new), en un teléfono con ARKit o ARCore.",
+        "needs_en": "An app made with eskiu-packages/ui (ui new), on a phone with ARKit or ARCore.",
+        "needs_es": "Una app hecha con eskiu-packages/ui (ui new), en un teléfono con ARKit o ARCore.",
         "setup": ["ui new myapp && cd myapp"],
         "build": ["ui run ios"],
     },
@@ -374,8 +374,8 @@ PACKAGES_CATALOG = [
                    "mundo real ocultando el contenido virtual. <code>ArPlacer</code> coloca contenido donde "
                    "el usuario toca (ViroARPlaneSelector), <code>ArMarkers</code> sigue imágenes y "
                    "<code>ArWorldMesh</code> convierte la malla de LiDAR en oclusores y cuerpos físicos.",
-        "needs_en": "An app made with eskiu-lang/ui (ui new), on a phone with ARKit or ARCore; it brings ar and scene.",
-        "needs_es": "Una app hecha con eskiu-lang/ui (ui new), en un teléfono con ARKit o ARCore; trae ar y scene.",
+        "needs_en": "An app made with eskiu-packages/ui (ui new), on a phone with ARKit or ARCore; it brings ar and scene.",
+        "needs_es": "Una app hecha con eskiu-packages/ui (ui new), en un teléfono con ARKit o ARCore; trae ar y scene.",
         "setup": ["ui new myapp && cd myapp"],
         "build": ["ui run ios"],
     },
@@ -394,8 +394,8 @@ PACKAGES_CATALOG = [
                    "una pila de transformaciones, en lotes de una llamada de dibujo por imagen. WebGPU "
                    "con gpu en iOS y Android, el Canvas 2D del navegador en la web; PNG, JPEG y, en "
                    "teléfonos, WebP.",
-        "needs_en": "An app made with eskiu-lang/ui (ui new); the first build downloads wgpu-native.",
-        "needs_es": "Una app hecha con eskiu-lang/ui (ui new); el primer build descarga wgpu-native.",
+        "needs_en": "An app made with eskiu-packages/ui (ui new); the first build downloads wgpu-native.",
+        "needs_es": "Una app hecha con eskiu-packages/ui (ui new); el primer build descarga wgpu-native.",
         "setup": ["ui new myapp && cd myapp"],
         "build": ["ui run ios"],
     },
@@ -404,7 +404,7 @@ PACKAGES_CATALOG = [
         "rev": "v0.1.1",
         "repo": "ui-svg",
         "section": None,
-        "tag_es": "Dibujos vectoriales desde texto SVG, para apps hechas con eskiu-lang/ui.",
+        "tag_es": "Dibujos vectoriales desde texto SVG, para apps hechas con eskiu-packages/ui.",
         "note_en": "<code>Svg</code> draws an SVG document scaled to its box: paths with every command "
                    "and arcs, the basic shapes, groups, transforms, fill and stroke, and "
                    "<code>currentColor</code> from the style, so one icon takes any tint. The document "
@@ -414,8 +414,8 @@ PACKAGES_CATALOG = [
                    "<code>currentColor</code> desde el estilo, así que un ícono toma cualquier tinte. El "
                    "documento se interpreta en Eskiu; lo dibuja Core Graphics, el Canvas de Android o el "
                    "navegador.",
-        "needs_en": "An app made with eskiu-lang/ui (ui new).",
-        "needs_es": "Una app hecha con eskiu-lang/ui (ui new).",
+        "needs_en": "An app made with eskiu-packages/ui (ui new).",
+        "needs_es": "Una app hecha con eskiu-packages/ui (ui new).",
         "setup": ["ui new myapp && cd myapp"],
         "build": ["ui run web"],
     },
@@ -433,8 +433,8 @@ PACKAGES_CATALOG = [
                    "<code>use_steps_between</code> los que hay entre dos momentos, también los que se "
                    "dieron con la app cerrada. CMPedometer en iOS; en Android el sensor de pasos, con las "
                    "muestras que el paquete guarda para responder por momentos pasados.",
-        "needs_en": "An app made with eskiu-lang/ui (ui new), on a device.",
-        "needs_es": "Una app hecha con eskiu-lang/ui (ui new), en un dispositivo.",
+        "needs_en": "An app made with eskiu-packages/ui (ui new), on a device.",
+        "needs_es": "Una app hecha con eskiu-packages/ui (ui new), en un dispositivo.",
         "setup": ["ui new myapp && cd myapp"],
         "build": ["ui run ios"],
     },
@@ -443,15 +443,15 @@ PACKAGES_CATALOG = [
         "rev": "v0.1.1",
         "repo": "ui-barcode",
         "section": None,
-        "tag_es": "Códigos QR y de barras leídos en vivo con la cámara, para apps hechas con eskiu-lang/ui.",
+        "tag_es": "Códigos QR y de barras leídos en vivo con la cámara, para apps hechas con eskiu-packages/ui.",
         "note_en": "A <code>BarcodeScanner</code> shows the back camera and hands each code it reads to "
                    "its handler: QR, Aztec, Data Matrix, PDF417 and the 1D formats. AVFoundation on iOS, "
                    "ML Kit bundled with the app on Android, the browser's BarcodeDetector on the web.",
         "note_es": "Un <code>BarcodeScanner</code> muestra la cámara trasera y le pasa cada código que lee "
                    "a su handler: QR, Aztec, Data Matrix, PDF417 y los formatos 1D. AVFoundation en iOS, "
                    "ML Kit empaquetado con la app en Android, el BarcodeDetector del navegador en la web.",
-        "needs_en": "An app made with eskiu-lang/ui (ui new), on a device with a camera.",
-        "needs_es": "Una app hecha con eskiu-lang/ui (ui new), en un dispositivo con cámara.",
+        "needs_en": "An app made with eskiu-packages/ui (ui new), on a device with a camera.",
+        "needs_es": "Una app hecha con eskiu-packages/ui (ui new), en un dispositivo con cámara.",
         "setup": ["ui new myapp && cd myapp"],
         "build": ["ui run android"],
     },
@@ -469,8 +469,8 @@ PACKAGES_CATALOG = [
                    "un token de sesión o una llave: en el Keychain en iOS, cifrados con una llave del "
                    "Android Keystore en Android, y en <code>localStorage</code> en la web, que no tiene "
                    "almacenamiento seguro (<code>secure_is_secure</code> lo dice).",
-        "needs_en": "An app made with eskiu-lang/ui (ui new).",
-        "needs_es": "Una app hecha con eskiu-lang/ui (ui new).",
+        "needs_en": "An app made with eskiu-packages/ui (ui new).",
+        "needs_es": "Una app hecha con eskiu-packages/ui (ui new).",
         "setup": ["ui new myapp && cd myapp"],
         "build": ["ui run ios"],
     },

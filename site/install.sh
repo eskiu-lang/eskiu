@@ -11,14 +11,14 @@
 # Environment overrides:
 #   ESKIU_VERSION   release tag to install (default: latest), e.g. v0.8.0
 #   ESKIU_PREFIX    install prefix (default: /usr/local if writable, else ~/.eskiu)
-#   ESKIU_WITH_UI   1 also installs the ui tool (eskiu-lang/ui), as --with-ui does
+#   ESKIU_WITH_UI   1 also installs the ui tool (eskiu-packages/ui), as --with-ui does
 #   UI_VERSION      ui release tag to install (default: latest)
 #
 set -eu
 
 REPO="eskiu-lang/eskiu"
 VERSION="${ESKIU_VERSION:-latest}"
-UI_REPO="eskiu-lang/ui"
+UI_REPO="eskiu-packages/ui"
 UI_VERSION="${UI_VERSION:-latest}"
 WITH_UI="${ESKIU_WITH_UI:-0}"
 for a in "$@"; do
@@ -111,7 +111,7 @@ bin="$prefix/bin/eskiuc"
 ver="$("$bin" --version 2>/dev/null || true)"
 info "Installed ${ver:-eskiuc} to $bin"
 
-# The ui tool (eskiu-lang/ui): one binary, bin/ui, next to eskiuc.
+# The ui tool (eskiu-packages/ui): one binary, bin/ui, next to eskiuc.
 if [ "$WITH_UI" = "1" ]; then
   fetch "$UI_REPO" "$UI_VERSION" "ui-$plat.tar.gz"
   tar -xzf "$tmp/ui-$plat.tar.gz" -C "$prefix"

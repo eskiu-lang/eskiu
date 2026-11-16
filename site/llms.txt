@@ -27,19 +27,19 @@ MCP server: `https://eskiu-mcp-9450.orvex.cloud/mcp` (remote, no key). It search
 
 - [ui overview](https://eskiu-lang.org/ui.html)
 - [Components and APIs](https://eskiu-lang.org/ui-components.html)
-- [Getting started with ui](https://github.com/eskiu-lang/ui/blob/main/docs/getting-started.md)
-- [ui agent](https://github.com/eskiu-lang/ui/blob/main/docs/agents.md): every operation (tree, layout, screenshot, tap, type, scroll, back, clock, state, logs, perf) and its JSON answer
-- [ui test](https://github.com/eskiu-lang/ui/blob/main/docs/testing.md): `.uitest` steps and expectations
-- [ui web apps](https://github.com/eskiu-lang/ui/blob/main/docs/webapp.md): an Eskiu program as the backend of a web front end in the desktop webview, with `@eskiu/webapp`
+- [Getting started with ui](https://github.com/eskiu-packages/ui/blob/main/docs/getting-started.md)
+- [ui agent](https://github.com/eskiu-packages/ui/blob/main/docs/agents.md): every operation (tree, layout, screenshot, tap, type, scroll, back, clock, state, logs, perf) and its JSON answer
+- [ui test](https://github.com/eskiu-packages/ui/blob/main/docs/testing.md): `.uitest` steps and expectations
+- [ui web apps](https://github.com/eskiu-packages/ui/blob/main/docs/webapp.md): an Eskiu program as the backend of a web front end in the desktop webview, with `@eskiu/webapp`
 
 ## Packages
 
 - [Package catalog](https://eskiu-lang.org/packages.html): gpu, scene, ar, video, camera, onnx, tflite, audio, font, yaml, jni, quickjs and more, each with its API reference
-- [gpu](https://github.com/eskiu-lang/gpu): WebGPU compute and rendering, glTF models, image-based lighting, YUV frames
-- [scene](https://github.com/eskiu-lang/scene): a scene graph and material renderer on gpu, with input, physics, animation, particles and headset rendering (Meta Quest, Apple Vision Pro)
-- [ar](https://github.com/eskiu-lang/ar): ARKit, ARCore and WebXR sessions: planes, images, depth, meshes, faces, bodies, cloud and Earth anchors
-- [arscene](https://github.com/eskiu-lang/arscene): an ar session drawn with scene, as ViroReact's AR navigator: the camera behind the scene, occlusion by the real world, tap to place, image markers and the world mesh
-- [quickjs](https://github.com/eskiu-lang/quickjs): JavaScript inside Eskiu programs, over QuickJS (ES modules, host functions, limits)
+- [gpu](https://github.com/eskiu-packages/gpu): WebGPU compute and rendering, glTF models, image-based lighting, YUV frames
+- [scene](https://github.com/eskiu-packages/scene): a scene graph and material renderer on gpu, with input, physics, animation, particles and headset rendering (Meta Quest, Apple Vision Pro)
+- [ar](https://github.com/eskiu-packages/ar): ARKit, ARCore and WebXR sessions: planes, images, depth, meshes, faces, bodies, cloud and Earth anchors
+- [arscene](https://github.com/eskiu-packages/arscene): an ar session drawn with scene, as ViroReact's AR navigator: the camera behind the scene, occlusion by the real world, tap to place, image markers and the world mesh
+- [quickjs](https://github.com/eskiu-packages/quickjs): JavaScript inside Eskiu programs, over QuickJS (ES modules, host functions, limits)
 
 ## Optional
 

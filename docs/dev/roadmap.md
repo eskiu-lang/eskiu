@@ -21,7 +21,7 @@ first-class in the language without giving up general systems use.
   `add` / `build` / `test` for packages, `eskiuc fmt`, and editor support in VS Code-based
   editors and JetBrains IDEs through the same compiler modes.
 
-- **Apps.** [ui](https://github.com/eskiu-lang/ui) draws native views on iOS and Android,
+- **Apps.** [ui](https://github.com/eskiu-packages/ui) draws native views on iOS and Android,
   the DOM on the web and a webview window on macOS from one Eskiu codebase. `ui serve`
   shows a change in under a second, `ui open` makes Xcode and Android Studio projects whose
   Run builds the Eskiu code, and `ui release` builds for the App Store and Google Play.
