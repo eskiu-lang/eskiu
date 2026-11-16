@@ -15,7 +15,7 @@ PKG_REV = "v0.1.0"   # the release a package is shown at, unless its entry has "
 PACKAGES_CATALOG = [
     {
         "name": "gpu",
-        "rev": "v0.6.0",
+        "rev": "v0.7.0",
         "section": "Compute",
         "tag_es": "Cómputo en GPU, renderizado, modelos 3D y machine learning para Eskiu, sobre WebGPU.",
         "note_en": "One API runs on Metal (macOS, iOS), Vulkan (Linux, Android) and DirectX 12 (Windows) through "
@@ -52,16 +52,18 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "scene",
+        "rev": "v0.2.0",
         "section": "A lit sphere",
         "tag_es": "Un grafo de escena y un renderizador de materiales para Eskiu, sobre gpu.",
         "note_en": "Nodes, cameras, shapes and glTF scenes, drawn with Constant, Lambert, Phong, Blinn or "
                    "PBR materials under ambient, directional, point and spot lights, transparency sorted "
                    "back to front, HDR with tone mapping and bloom, skyboxes, image-based lighting and "
-                   "shadow maps. Checked against analytic values on Metal, Vulkan and DirectX 12.",
+                   "shadow maps, plus input, physics, animation, particles and headset rendering for Meta Quest and Apple Vision Pro. Checked against analytic values on Metal, Vulkan and DirectX 12.",
         "note_es": "Nodos, cámaras, figuras y escenas glTF, dibujados con materiales Constant, Lambert, Phong, "
                    "Blinn o PBR bajo luces ambiental, direccional, puntual y spot, transparencias ordenadas "
                    "de atrás hacia adelante, HDR con tone mapping y bloom, skyboxes, iluminación basada en "
-                   "imágenes y mapas de sombras. Probado contra valores analíticos en Metal, Vulkan y "
+                   "imágenes y mapas de sombras, además de input, física, animación, partículas y render "
+                   "para Meta Quest y Apple Vision Pro. Probado contra valores analíticos en Metal, Vulkan y "
                    "DirectX 12.",
         "needs_en": "The first build downloads wgpu-native through gpu.",
         "needs_es": "El primer build descarga wgpu-native a través de gpu.",
@@ -334,16 +336,17 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "ar",
+        "rev": "v0.2.0",
         "ui": True,
         "section": None,
         "tag_es": "Realidad aumentada para apps hechas con eskiu-lang/ui: ARKit en iOS, ARCore en Android y WebXR en la web.",
-        "note_en": "<code>use_ar_session</code> gives each frame's camera pose, planes, anchors, hit tests, "
+        "note_en": "<code>use_ar_session</code> (<code>&lt;ar/ui&gt;</code>) gives each frame's camera pose, planes, anchors, hit tests, "
                    "image targets, light and depth, and the camera image in the same layout as the camera's frames, so "
                    "<code>&lt;gpu/yuv&gt;</code> draws the background and <a href=\"#scene\">scene</a> the "
                    "content. ARCore runs with no OpenGL context, the projection is computed in Eskiu "
                    "the same way on every platform, and in Chrome on Android a WebXR session gives the "
                    "same data.",
-        "note_es": "<code>use_ar_session</code> da en cada cuadro la pose de la cámara, planos, anclas, hit "
+        "note_es": "<code>use_ar_session</code> (<code>&lt;ar/ui&gt;</code>) da en cada cuadro la pose de la cámara, planos, anclas, hit "
                    "tests, imágenes objetivo, luz y profundidad, y la imagen de la cámara con el mismo formato que los cuadros "
                    "de la cámara, así que <code>&lt;gpu/yuv&gt;</code> dibuja el fondo y "
                    "<a href=\"#scene\">scene</a> el contenido. ARCore corre sin contexto de OpenGL, la "
@@ -351,6 +354,26 @@ PACKAGES_CATALOG = [
                    "una sesión de WebXR da los mismos datos.",
         "needs_en": "An app made with eskiu-lang/ui (ui new), on a phone with ARKit or ARCore.",
         "needs_es": "Una app hecha con eskiu-lang/ui (ui new), en un teléfono con ARKit o ARCore.",
+        "setup": ["ui new myapp && cd myapp"],
+        "build": ["ui run ios"],
+    },
+    {
+        "name": "arscene",
+        "section": None,
+        "ui": True,
+        "tag_es": "Une una sesión de ar con una escena de scene, como el navegador de AR de ViroReact.",
+        "note_en": "<code>ArStage</code> puts each AR frame into a scene: the camera picture behind it, "
+                   "the device as the camera with the session's projection, and the real world's depth "
+                   "hiding virtual content. <code>ArPlacer</code> places content where the user taps "
+                   "(ViroARPlaneSelector), <code>ArMarkers</code> follows tracked images and "
+                   "<code>ArWorldMesh</code> turns the LiDAR mesh into occluders and physics bodies.",
+        "note_es": "<code>ArStage</code> lleva cada cuadro de AR a una escena: la imagen de la cámara "
+                   "detrás, el dispositivo como cámara con la proyección de la sesión, y la profundidad del "
+                   "mundo real ocultando el contenido virtual. <code>ArPlacer</code> coloca contenido donde "
+                   "el usuario toca (ViroARPlaneSelector), <code>ArMarkers</code> sigue imágenes y "
+                   "<code>ArWorldMesh</code> convierte la malla de LiDAR en oclusores y cuerpos físicos.",
+        "needs_en": "An app made with eskiu-lang/ui (ui new), on a phone with ARKit or ARCore; it brings ar and scene.",
+        "needs_es": "Una app hecha con eskiu-lang/ui (ui new), en un teléfono con ARKit o ARCore; trae ar y scene.",
         "setup": ["ui new myapp && cd myapp"],
         "build": ["ui run ios"],
     },
