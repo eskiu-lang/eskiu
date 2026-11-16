@@ -57,6 +57,7 @@ set(SOURCES
     ast/ast.cpp
     ast/ast_printer.cpp
     sema/type.cpp
+    sema/type_dim.cpp
     sema/type_checker.cpp
     sema/type_checker_generic.cpp
     sema/type_checker_scope.cpp
