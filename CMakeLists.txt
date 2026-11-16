@@ -97,6 +97,14 @@ set(SOURCES
     codegen/codegen_repl.cpp
     eir/eir.cpp
     eir/eir_builder.cpp
+    eir/eir_builder_layout.cpp
+    eir/eir_builder_decl.cpp
+    eir/eir_builder_stmt.cpp
+    eir/eir_builder_call.cpp
+    eir/eir_builder_access.cpp
+    eir/eir_builder_ops.cpp
+    eir/eir_builder_match.cpp
+    eir/eir_builder_lambda.cpp
     eir/eir_vm.cpp
     eir/eir_asm_arm64.cpp
     eir/eir_c.cpp
