@@ -15,7 +15,7 @@ PKG_REV = "v0.1.0"   # the release a package is shown at, unless its entry has "
 PACKAGES_CATALOG = [
     {
         "name": "gpu",
-        "rev": "v0.7.0",
+        "rev": "v0.7.1",
         "section": "Compute",
         "tag_es": "Cómputo en GPU, renderizado, modelos 3D y machine learning para Eskiu, sobre WebGPU.",
         "note_en": "One API runs on Metal (macOS, iOS), Vulkan (Linux, Android) and DirectX 12 (Windows) through "
@@ -52,7 +52,7 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "scene",
-        "rev": "v0.2.0",
+        "rev": "v0.2.1",
         "section": "A lit sphere",
         "tag_es": "Un grafo de escena y un renderizador de materiales para Eskiu, sobre gpu.",
         "note_en": "Nodes, cameras, shapes and glTF scenes, drawn with Constant, Lambert, Phong, Blinn or "
@@ -72,7 +72,7 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "onnx",
-        "rev": "v0.2.1",
+        "rev": "v0.2.2",
         "section": "Inference",
         "tag_es": "Inferencia de modelos ONNX para Eskiu, sobre ONNX Runtime.",
         "note_en": "A model exported from PyTorch, TensorFlow or scikit-learn runs on the CPU "
@@ -96,7 +96,7 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "tflite",
-        "rev": "v0.1.1",
+        "rev": "v0.1.2",
         "section": "Inference",
         "tag_es": "Inferencia de modelos de TensorFlow Lite para Eskiu.",
         "note_en": "A <code>.tflite</code> model converted from TensorFlow, Keras, JAX or PyTorch runs "
@@ -116,6 +116,7 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "compress",
+        "rev": "v0.1.1",
         "section": "gzip and zlib",
         "tag_es": "zlib, gzip, DEFLATE crudo y archivos ZIP para Eskiu, escrito en Eskiu.",
         "note_en": "DEFLATE at levels 0 to 9, zlib and gzip in both directions, and ZIP archives "
@@ -131,6 +132,7 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "yaml",
+        "rev": "v0.1.1",
         "section": "Reading a file",
         "tag_es": "Archivos de configuración YAML para Eskiu, leídos al árbol JSON de la biblioteca estándar.",
         "note_en": "One YAML document under the YAML 1.2 core schema (block and flow collections, every "
@@ -147,7 +149,7 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "audio",
-        "rev": "v0.4.0",
+        "rev": "v0.4.1",
         "section": "Playing a sound",
         "tag_es": "Sonido para Eskiu: archivos WAV y Ogg Vorbis, un mezclador y salida con SDL3.",
         "note_en": "Reads WAV files in every common encoding (PCM, float, IMA and Microsoft ADPCM) "
@@ -175,6 +177,7 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "font",
+        "rev": "v0.1.1",
         "section": "Drawing text",
         "tag_es": "Fuentes TrueType para Eskiu: contornos de glifos, renderizado con antialiasing, "
                   "acomodo de texto y atlas.",
@@ -191,6 +194,7 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "jni",
+        "rev": "v0.1.1",
         "section": None,
         "tag_es": "Métodos nativos para Android y la JVM, escritos en Eskiu.",
         "note_en": "A native method of a Java or Kotlin class is an Eskiu function with the JNI "
@@ -208,6 +212,7 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "quickjs",
+        "rev": "v0.1.1",
         "section": "A game loop",
         "tag_es": "JavaScript para programas de Eskiu, sobre QuickJS.",
         "note_en": "Embeds QuickJS, the engine rquickjs 0.6.2 bundles with the same patches, for games "
@@ -229,7 +234,7 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "nds",
-        "rev": "v0.3.0",
+        "rev": "v0.3.1",
         "section": "Example",
         "tag_es": "Formatos de archivo de la Nintendo DS para Eskiu: ROMs, archivos NARC, sonido, "
                   "gráficos 2D, modelos 3D y partículas, y texto de juegos.",
@@ -254,7 +259,7 @@ PACKAGES_CATALOG = [
     {
         "name": "location",
         "repo": "ui-location",
-        "rev": "v0.1.3",
+        "rev": "v0.1.4",
         "section": None,
         "tag_es": "Dónde está el dispositivo, para apps hechas con eskiu-packages/ui.",
         "note_en": "A component calls <code>use_location</code> and gets the latest position while "
@@ -275,7 +280,7 @@ PACKAGES_CATALOG = [
     {
         "name": "notifications",
         "repo": "ui-notifications",
-        "rev": "v0.1.3",
+        "rev": "v0.1.4",
         "section": None,
         "tag_es": "Notificaciones locales para apps hechas con eskiu-packages/ui.",
         "note_en": "The app schedules a notification with a title and a body for a number of seconds "
@@ -294,7 +299,7 @@ PACKAGES_CATALOG = [
     {
         "name": "camera",
         "repo": "ui-camera",
-        "rev": "v0.2.1",
+        "rev": "v0.2.2",
         "section": None,
         "tag_es": "Fotos para apps hechas con eskiu-packages/ui: la galería, la cámara y una vista en vivo.",
         "note_en": "Pick a photo from the library, take one with the system's camera, or show the camera "
@@ -317,7 +322,7 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "video",
-        "rev": "v0.1.1",
+        "rev": "v0.1.2",
         "ui": True,
         "section": "Use it",
         "tag_es": "Reproducción de video para apps hechas con eskiu-packages/ui, con los cuadros decodificados en Eskiu.",
@@ -338,7 +343,7 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "ar",
-        "rev": "v0.2.0",
+        "rev": "v0.2.1",
         "ui": True,
         "section": None,
         "tag_es": "Realidad aumentada para apps hechas con eskiu-packages/ui: ARKit en iOS, ARCore en Android y WebXR en la web.",
@@ -361,6 +366,7 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "arscene",
+        "rev": "v0.1.1",
         "section": None,
         "ui": True,
         "tag_es": "Une una sesión de ar con una escena de scene, como el navegador de AR de ViroReact.",
@@ -381,7 +387,7 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "canvas",
-        "rev": "v0.1.1",
+        "rev": "v0.1.2",
         "repo": "ui-canvas",
         "section": None,
         "tag_es": "Un canvas 2D para Eskiu, en una app de ui (la GPU en teléfonos, Canvas 2D en la web) o fuera de pantalla.",
@@ -401,7 +407,7 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "svg",
-        "rev": "v0.1.1",
+        "rev": "v0.1.2",
         "repo": "ui-svg",
         "section": None,
         "tag_es": "Dibujos vectoriales desde texto SVG, para apps hechas con eskiu-packages/ui.",
@@ -421,7 +427,7 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "pedometer",
-        "rev": "v0.1.1",
+        "rev": "v0.1.2",
         "repo": "ui-pedometer",
         "section": None,
         "tag_es": "Pasos caminados, en vivo y entre dos momentos, para apps de ui en iOS y Android.",
@@ -440,7 +446,7 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "barcode",
-        "rev": "v0.1.1",
+        "rev": "v0.1.2",
         "repo": "ui-barcode",
         "section": None,
         "tag_es": "Códigos QR y de barras leídos en vivo con la cámara, para apps hechas con eskiu-packages/ui.",
@@ -457,7 +463,7 @@ PACKAGES_CATALOG = [
     },
     {
         "name": "securestore",
-        "rev": "v0.1.1",
+        "rev": "v0.1.2",
         "repo": "ui-securestore",
         "section": None,
         "tag_es": "Secretos pequeños guardados por el almacenamiento seguro de la plataforma, para apps de ui.",
