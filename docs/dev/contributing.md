@@ -48,7 +48,7 @@ Changes to the stdlib, the docs or the C++ driver alone usually do not touch `se
 
 1. Lexer and parser (`lexer/`, `parser/parse_{decl,stmt,expr}.cpp`). New type spellings go
    through `ty::Type::parse` in `sema/type.cpp`; do not add a second type-string parser.
-2. A new AST node goes in `ast/ast.h` with a `visit` method on `ASTVisitor`; the build then
+2. A new AST node goes in `ast/ast_expr.h`, `ast_stmt.h` or `ast_decl.h` with a `visit` method on `ASTVisitor`; the build then
    fails until `ASTPrinter`, `TypeChecker` and `CodeGen` handle it.
 3. Type checking in `sema/typecheck_*.cpp`, code generation in `codegen/codegen_*.cpp`.
 4. The same steps in `selfhost/` (`parser.esk`, `sema.esk`, `codegen.esk`).

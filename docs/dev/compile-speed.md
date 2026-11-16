@@ -96,7 +96,7 @@ before and after.
    tokens leave a doubt, so the AST is the same (`--test-parser` is byte-identical over
    every test, example, stdlib, self-host and `ui` file).
 3. **One type-checker run for a program without `async`** (`programHasAsync` in
-   `main.cpp`): 43 ms. The async lowering rewrites each `async` function into a frame
+   `main_modes.h`): 43 ms. The async lowering rewrites each `async` function into a frame
    struct, a resume function and a constructor, which must be checked before codegen reads
    their types, so the checker ran a second time over the whole program. A program with no
    `async` function is left as it was, and the first run's results are what codegen needs.

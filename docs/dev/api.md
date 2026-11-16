@@ -273,7 +273,7 @@ returning `true` on success.
 
 ## Driver Support
 
-Header: `main_support.h` (the `cl::opt`-free half of the driver, in `main_support.cpp`)
+Header: `main_support.h` (the `cl::opt`-free half of the driver, in `main_support.cpp`, `fmt.cpp` and `main_build.cpp`)
 
 ```cpp
 std::shared_ptr<Program> loadProgram(const std::vector<std::string>& inputs, const std::string& triple,
