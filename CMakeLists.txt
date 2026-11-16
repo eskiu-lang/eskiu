@@ -90,6 +90,7 @@ set(SOURCES
     codegen/codegen_call_expr.cpp
     codegen/codegen_template_call.cpp
     codegen/codegen_closure.cpp
+    codegen/codegen_try.cpp
     codegen/codegen_adt.cpp
     codegen/codegen_cabi.cpp
     codegen/codegen_repl.cpp
