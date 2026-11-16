@@ -61,6 +61,8 @@ set(SOURCES
     sema/type_checker_generic.cpp
     sema/type_checker_scope.cpp
     sema/typecheck_decl.cpp
+    sema/typecheck_uninit.cpp
+    sema/typecheck_decl_data.cpp
     sema/typecheck_stmt.cpp
     sema/typecheck_control.cpp
     sema/typecheck_expr.cpp
