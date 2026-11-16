@@ -1,0 +1,475 @@
+// Part of codegen.esk (the expression kinds of cg_expr_i), imported in order; compile codegen.esk, not this file alone.
+
+CgVal cg_expr_literal(Codegen* g, *ExprNode e, CgVal v) {
+    if (e.lit_kind == LIT_STRING) {
+        v.op = cg_string_global_n(g, e.sval, e.slen);
+        v.ty = "ptr";
+        return v;
+    }
+    // Literals carry their Eskiu type too, so an operation mixing one with an unsigned
+    // operand gets C's conversions (`1 - u` is unsigned; a char literal is unsigned).
+    if (e.lit_kind == LIT_CHAR) {
+        v.op = cg_itoa((int)(uint8)e.sval[0]);
+        v.ty = "i8";
+        v.ety = "char";
+        return v;
+    }
+    v.op = e.sval;
+    if (e.lit_kind == LIT_BOOL) {
+        v.ty = "i1";
+        v.ety = "bool";
+    }
+    else if (e.lit_kind == LIT_NULL) {
+        v.op = "null";
+        v.ty = "ptr";
+    }
+    else if (e.lit_kind == LIT_FLOAT) {   // float literal defaults to double
+        v.op = cg_double_lit(e.sval);
+        v.ty = "double";
+        v.ety = "double";
+    }
+    else {                            // integer literal: normalize base, i64 if it won't fit signed i32
+        int neg = 0;
+        if (e.sval[0] == 45) {
+            neg = 1;
+        }
+        let mag: uint64 = cg_int_lit_mag(e.sval);
+        string dec = cg_u64toa(mag);
+        if (neg == 1) {
+            v.op = cg_cat("-", dec);
+        } else {
+            v.op = dec;
+        }
+        v.ty = "i32";
+        v.ety = "int";
+        let lim: uint64 = 2147483647;                 // INT32_MAX; INT32_MIN is one larger in magnitude
+        if (neg == 1) {
+            lim = 2147483648;
+        }
+        if (mag > lim) {
+            v.ty = "i64";
+            v.ety = "int64";
+        }
+        if (neg == 0 && mag > (uint64)9223372036854775807) {
+            v.ety = "uint64";
+        }
+    }
+    return v;
+}
+
+CgVal cg_expr_ident(Codegen* g, *ExprNode e, CgVal v) {
+    CgLocal l = cg_find_local(g, e.sval);
+    if (l.slot[0] != 0) {
+        string t = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, t);
+        cg_emit(g, " = load ");
+        cg_emit(g, cg_vol(g, e));
+        cg_emit(g, l.ty);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, l.slot);
+        cg_emit(g, "\n");
+        v.op = t;
+        v.ty = l.ty;
+        v.ety = l.ety;
+        return v;
+    }
+    string ev = cg_enum_val(g, e.sval);            // a plain-enum constant?
+    if (ev[0] != 0) {
+        v.op = ev;
+        v.ty = "i32";
+        v.ety = "int";
+        return v;
+    }
+    CgLocal gv = cg_find_global(g, e.sval);        // a global variable?
+    if (gv.slot[0] != 0) {
+        string t = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, t);
+        cg_emit(g, " = load ");
+        cg_emit(g, cg_vol(g, e));
+        cg_emit(g, gv.ty);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, gv.slot);
+        cg_emit(g, "\n");
+        v.op = t;
+        v.ty = gv.ty;
+        v.ety = gv.ety;
+        return v;
+    }
+    CgVariant var = cg_find_variant(g, e.sval);    // a payload-less ADT variant (e.g. None)?
+    if (var.ename[0] != 0) {
+        return cg_build_variant(g, var, null);
+    }
+    if (cg_is_fn(g, e.sval) == 1) {                // a top-level function used as a value
+        v.op = cg_cat("@", e.sval);   // raw fn ptr; → closure via cg_coerce
+        v.ty = "ptr";
+        v.ety = "";
+        return v;
+    }
+    v.op = e.sval;         // fallback
+    v.ty = "i32";
+    return v;
+}
+
+CgVal cg_expr_incdec(Codegen* g, *ExprNode e, CgVal v) {
+    // ++x / x++ / --x / x--
+    int L0 = cg_strlen(e.sval);
+    if (e.a != null && e.a.kind == EK_MEMBER) {     // a bitfield: masked read-modify-write
+        string bet = cg_etype(g, e.a.a);
+        string bsn = bet;
+        if (cg_is_ptr_ty(bet) == 1) {
+            bsn = cg_strip_ptr(bet);
+        }
+        CgBF bslot = cg_bf(g, bsn, e.a.sval);
+        if (bslot.bw > 0) {
+            string bsn2 = "";
+            string bbase = cg_member_baseptr(g, e.a.a, &bsn2);
+            string wa = cg_bf_wordptr(g, bbase, bsn2, bslot);
+            g.bf_vol = cg_vol(g, e.a);
+            CgVal bold = cg_bf_load(g, wa, bslot);
+            string bnw = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, bnw);
+            cg_emit(g, " = ");
+            if ((int)e.sval[L0 - 1] == 45) {
+                cg_emit(g, "sub ");
+            } else {
+                cg_emit(g, "add ");
+            }
+            cg_emit(g, bslot.sty);
+            cg_emit(g, " ");
+            cg_emit(g, bold.op);
+            cg_emit(g, ", 1\n");
+            cg_bf_store(g, wa, bslot, bnw);
+            if ((int)e.sval[1] == 114) {                  // prefix: the stored (wrapped) value
+                CgVal bnv = cg_bf_promote(g, cg_bf_load(g, wa, bslot), bslot);
+                g.bf_vol = "";
+                return bnv;
+            }
+            g.bf_vol = "";
+            return bold;                              // postfix: the declared type, unpromoted (as clang)
+        }
+    }
+    CgVal lv = cg_lval(g, e.a);
+    string ety = lv.ety;
+    string llty = cg_lltype(g, ety);
+    string old = cg_tmp(g);
+    string ivol = cg_vol(g, e.a);
+    cg_emit(g, "  ");
+    cg_emit(g, old);
+    cg_emit(g, " = load ");
+    cg_emit(g, ivol);
+    cg_emit(g, llty);
+    cg_emit(g, ", ptr ");
+    cg_emit(g, lv.op);
+    cg_emit(g, "\n");
+    int L = cg_strlen(e.sval);
+    int dec = 0;   // last char '-'
+    if ((int)e.sval[L - 1] == 45) {
+        dec = 1;
+    }
+    int pre = 0;      // "pre..." (index 1 is 'r')
+    if ((int)e.sval[1] == 114) {
+        pre = 1;
+    }
+    string nw = cg_tmp(g);
+    if (cg_is_ptr_ty(ety) == 1 || cg_streq(llty, "ptr") == 1) {   // pointer / string: step one element
+        string ellt = "i8";                         // a string (char pointer) or *void steps a byte
+        if (cg_is_ptr_ty(ety) == 1) {
+            ellt = cg_lltype(g, cg_strip_ptr(ety));
+        }
+        if (cg_streq(ellt, "void") == 1) {
+            ellt = "i8";
+        }
+        cg_emit(g, "  ");
+        cg_emit(g, nw);
+        cg_emit(g, " = getelementptr ");
+        cg_emit(g, ellt);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, old);
+        cg_emit(g, ", i64 ");
+        if (dec == 1) {
+            cg_emit(g, "-1");
+        } else {
+            cg_emit(g, "1");
+        }
+        cg_emit(g, "\n");
+    } else {
+        cg_emit(g, "  ");
+        cg_emit(g, nw);
+        cg_emit(g, " = ");
+        if (dec == 1) {
+            cg_emit(g, "sub ");
+        } else {
+            cg_emit(g, "add ");
+        }
+        cg_emit(g, llty);
+        cg_emit(g, " ");
+        cg_emit(g, old);
+        cg_emit(g, ", 1\n");
+    }
+    cg_emit(g, "  store ");
+    cg_emit(g, ivol);
+    cg_emit(g, llty);
+    cg_emit(g, " ");
+    cg_emit(g, nw);
+    cg_emit(g, ", ptr ");
+    cg_emit(g, lv.op);
+    cg_emit(g, "\n");
+    if (pre == 1) {
+        v.op = nw;
+    } else {
+        v.op = old;
+    }
+    v.ty = llty;
+    v.ety = ety;
+    return v;
+}
+
+CgVal cg_expr_slice(Codegen* g, *ExprNode e, CgVal v) {
+    string lo = cg_coerce(g, cg_expr(g, e.b), "i64");
+    string hi = cg_coerce(g, cg_expr(g, List_get<*ExprNode>(&e.kids, 0)), "i64");
+    string data = cg_slice_elem_addr(g, e.a, lo, hi, "i64");
+    string len = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, len);
+    cg_emit(g, " = sub i64 ");
+    cg_emit(g, hi);
+    cg_emit(g, ", ");
+    cg_emit(g, lo);
+    cg_emit(g, "\n");
+    string s0 = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, s0);
+    cg_emit(g, " = insertvalue { ptr, i64 } undef, ptr ");
+    cg_emit(g, data);
+    cg_emit(g, ", 0\n");
+    string s1 = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, s1);
+    cg_emit(g, " = insertvalue { ptr, i64 } ");
+    cg_emit(g, s0);
+    cg_emit(g, ", i64 ");
+    cg_emit(g, len);
+    cg_emit(g, ", 1\n");
+    v.op = s1;
+    v.ty = "{ ptr, i64 }";
+    v.ety = cg_etype(g, e);
+    return v;
+}
+
+CgVal cg_expr_slice_len(Codegen* g, *ExprNode e, CgVal v) {
+    CgVal fat = cg_expr(g, e.a);
+    string t = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, t);
+    cg_emit(g, " = extractvalue { ptr, i64 } ");
+    cg_emit(g, fat.op);
+    cg_emit(g, ", 1\n");
+    v.op = t;
+    v.ty = "i64";
+    v.ety = "int64";
+    return v;
+}
+
+CgVal cg_expr_field_read(Codegen* g, *ExprNode e, CgVal v) {
+    // field/element read: GEP + load
+    CgVal lv = cg_lval(g, e);
+    string llty = cg_lltype(g, lv.ety);
+    string t = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, t);
+    cg_emit(g, " = load ");
+    cg_emit(g, cg_vol(g, e));
+    cg_emit(g, llty);
+    cg_emit(g, ", ptr ");
+    cg_emit(g, lv.op);
+    cg_emit(g, "\n");
+    v.op = t;
+    v.ty = llty;
+    v.ety = lv.ety;
+    return v;
+}
+
+CgVal cg_expr_unary(Codegen* g, *ExprNode e, CgVal v) {
+    if (cg_streq(e.sval, "&") == 1) {               // address-of
+        // (an rvalue operand is only a synthesized receiver, `mk().get(0)` as
+        // `List_get(&mk(), 0)`: it is held in a temporary)
+        CgVal lv = cg_addr(g, e.a);
+        v.op = lv.op;
+        v.ty = "ptr";
+        v.ety = cg_cat("*", lv.ety);
+        return v;
+    }
+    if (cg_streq(e.sval, "*") == 1) {               // deref (rvalue)
+        CgVal p = cg_expr(g, e.a);
+        string ety = cg_deref_ty(cg_etype(g, e.a));
+        string llty = cg_lltype(g, ety);
+        string t = cg_tmp(g);
+        string pnn = cg_safe_nonnull(g, p.op);
+        cg_emit(g, "  ");
+        cg_emit(g, t);
+        cg_emit(g, " = load ");
+        cg_emit(g, cg_vol(g, e));
+        cg_emit(g, llty);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, pnn);
+        cg_emit(g, "\n");
+        v.op = t;
+        v.ty = llty;
+        v.ety = ety;
+        return v;
+    }
+    if (cg_streq(e.sval, "-") == 1 || cg_streq(e.sval, "!") == 1 || cg_streq(e.sval, "~") == 1) {
+        return cg_unary_chain(g, e);
+    }
+    return cg_expr(g, e.a);
+}
+
+CgVal cg_expr_binary(Codegen* g, *ExprNode e, CgVal v) {
+    if (cg_streq(e.sval, "=") == 1) {              // assignment
+        int is_bf = 0;
+        if (e.a != null && e.a.kind == EK_MEMBER) {
+            string bet0 = cg_etype(g, e.a.a);
+            string sn0 = bet0;
+            if (cg_is_ptr_ty(bet0) == 1) {
+                sn0 = cg_strip_ptr(bet0);
+            }
+            if (cg_bf(g, sn0, e.a.sval).bw > 0) {
+                is_bf = 1;
+            }
+        }
+        // `lv op= v` (parsed as `lv = lv op v` sharing the lvalue node) where evaluating
+        // `lv` has side effects (`a[f()] += 1`, `a[i++] += 1`): compute its address ONCE
+        // into a temporary pointer, then run the ordinary `*p = *p op v` (mirrors
+        // CodeGen::emitCompoundAssign), so overloads/coercions/--safe checks still apply.
+        if (e.b != null && e.b.kind == EK_BINARY && e.b.a == e.a && cg_is_pure(e.a) == 0) {
+            string ctmp = cg_cat("__cmpd", cg_itoa(g.lam_seq));
+            g.lam_seq = g.lam_seq + 1;
+            string cslot = cg_entry_alloca(g, "ptr");
+            int clmark = List_len<CgLocal>(&g.locals);
+            if (cg_vol(g, e.a)[0] != 0) {
+                List_push<string>(&g.vols, ctmp);
+            }
+            *ExprNode cder = alloc<ExprNode>(1);
+            cder.kind = EK_UNARY;
+            cder.sval = "*";
+            cder.a = cgb_ident(ctmp);
+            *ExprNode ctarget = cder;
+            if (is_bf == 1) {
+                // A bitfield has no address of its own: evaluate the struct's address
+                // once instead, and read-modify-write `(*p).field`.
+                string bbt = cg_etype(g, e.a.a);
+                string bop = "";
+                string bety = bbt;
+                if (cg_is_ptr_ty(bbt) == 1) {
+                    bop = cg_expr(g, e.a.a).op;
+                }
+                else {
+                    bop = cg_addr(g, e.a.a).op;
+                    bety = cg_cat("*", bbt);
+                }
+                cg_emit(g, "  store ptr ");
+                cg_emit(g, bop);
+                cg_emit(g, ", ptr ");
+                cg_emit(g, cslot);
+                cg_emit(g, "\n");
+                cg_add_local(g, ctmp, cslot, "ptr", bety);
+                ctarget = cgb_member(cder, e.a.sval);
+            } else {
+                CgVal clv = cg_lval(g, e.a);
+                string clety = clv.ety;
+                if (clety[0] == 0) {
+                    clety = cg_etype(g, e.a);
+                }
+                cg_emit(g, "  store ptr ");
+                cg_emit(g, clv.op);
+                cg_emit(g, ", ptr ");
+                cg_emit(g, cslot);
+                cg_emit(g, "\n");
+                cg_add_local(g, ctmp, cslot, "ptr", cg_cat("*", clety));
+            }
+            CgVal crv = cg_expr(g, cgb_bin("=", ctarget, cgb_bin(e.b.sval, ctarget, e.b.b)));
+            cg_locals_trunc(g, clmark);
+            return crv;
+        }
+        // Assignment to a bitfield member → read-modify-write the storage word.
+        if (e.a != null && e.a.kind == EK_MEMBER) {
+            string bet = cg_etype(g, e.a.a);
+            string sn = bet;
+            if (cg_is_ptr_ty(bet) == 1) {
+                sn = cg_strip_ptr(bet);
+            }
+            CgBF slot = cg_bf(g, sn, e.a.sval);
+            if (slot.bw > 0) {
+                string sn2 = "";
+                string baseptr = cg_member_baseptr(g, e.a.a, &sn2);   // target first
+                CgVal rv = cg_expr(g, e.b);
+                string rop = cg_coerce(g, rv, slot.sty);
+                g.bf_vol = cg_vol(g, e.a);
+                cg_bf_write(g, baseptr, sn2, slot, rop);
+                g.bf_vol = "";
+                return rv;
+            }
+        }
+        // Evaluation order (mirrors CodeGen::emitAssignment): the target's address
+        // first, then the right-hand side, then the store.
+        if (e.a != null && e.a.kind == EK_IDENT && cg_find_local(g, e.a.sval).slot[0] != 0) {
+            cg_hint_iface(g, e.b, cg_find_local(g, e.a.sval).ety);
+            CgVal rhs = cg_expr(g, e.b);
+            CgLocal l = cg_find_local(g, e.a.sval);
+            string rop = cg_coerce(g, rhs, l.ty);   // coerce RHS to the variable's type
+            if (cg_is_iface(g, l.ety) == 1) {
+                rop = cg_iface_conv(g, l.ety, rhs, e.b);
+            }
+            cg_emit(g, "  store ");
+            cg_emit(g, cg_vol(g, e.a));
+            cg_emit(g, l.ty);
+            cg_emit(g, " ");
+            cg_emit(g, rop);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, l.slot);
+            cg_emit(g, "\n");
+            // The assignment's value is the stored (converted) one: `l = s = 200` with
+            // an int8 `s` gives `l` -56, not 200.
+            v.op = rop;
+            v.ty = l.ty;
+            v.ety = l.ety;
+            return v;
+        }
+        CgVal lv = cg_lval(g, e.a);                 // member / deref / index lvalue
+        cg_hint_iface(g, e.b, lv.ety);
+        CgVal rhs = cg_expr(g, e.b);
+        string lty = cg_lltype(g, lv.ety);
+        string rop = cg_coerce(g, rhs, lty);        // coerce RHS to the field/element type
+        if (cg_is_iface(g, cg_dealias(g, lv.ety)) == 1) {
+            rop = cg_iface_conv(g, lv.ety, rhs, e.b);
+        }
+        cg_emit(g, "  store ");
+        cg_emit(g, cg_vol(g, e.a));
+        cg_emit(g, lty);
+        cg_emit(g, " ");
+        cg_emit(g, rop);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, lv.op);
+        cg_emit(g, "\n");
+        v.op = rop;
+        v.ty = lty;
+        v.ety = lv.ety;
+        return v;
+    }
+    // Open the type stamps for the outermost binary expression (an expression declares
+    // no local and function bodies are emitted from queues, so they hold until it is done).
+    int bopen = 0;
+    if (g.bactive == 0) {
+        g.mstamp = g.mstamp + 1;
+        g.bactive = g.mstamp;
+        bopen = 1;
+    }
+    CgVal bv = cg_binary_chain(g, e);
+    if (bopen == 1) {
+        g.bactive = 0;
+    }
+    return bv;
+}

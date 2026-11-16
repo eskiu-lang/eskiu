@@ -305,6 +305,10 @@ CgVal cg_expr(Codegen* g, *ExprNode e) {
 
 // The rest of codegen_expr.esk, in these parts (imported in order):
 import "codegen_expr_walk.esk";
+import "codegen_expr_walk_values.esk";
+import "codegen_expr_walk_calls.esk";
+import "codegen_expr_walk_ops.esk";
+import "codegen_expr_walk_lambda.esk";
 import "codegen_expr_calls.esk";
 import "codegen_expr_generic.esk";
 import "codegen_expr_bitfield.esk";

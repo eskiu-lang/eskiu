@@ -1,0 +1,210 @@
+// Part of codegen.esk (the expression kinds of cg_expr_i), imported in order; compile codegen.esk, not this file alone.
+
+CgVal cg_expr_freeclosure(Codegen* g, *ExprNode e, CgVal v) {
+    // free_closure(f) → free the closure's heap env (slot 1); free(null) is a safe no-op.
+    CgVal fat = cg_expr(g, e.a);
+    string fatop = cg_coerce(g, fat, "%closure");     // a bare fn decays to {@__fnptr, null} (env null)
+    string env = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, env);
+    cg_emit(g, " = extractvalue %closure ");
+    cg_emit(g, fatop);
+    cg_emit(g, ", 1\n");
+    string hf = cg_heap_free(g);
+    cg_ensure_extern(g, hf, cg_cat(cg_cat("declare void @", hf), "(ptr)\n"));
+    cg_emit(g, "  call void @");
+    cg_emit(g, hf);
+    cg_emit(g, "(ptr ");
+    cg_emit(g, env);
+    cg_emit(g, ")\n");
+    v.op = "";
+    v.ty = "void";
+    return v;
+}
+
+CgVal cg_expr_structinit(Codegen* g, *ExprNode e, CgVal v) {
+    // A struct literal `P{ … }` used as an rvalue (e.g. `x = P{…}`): materialize into a
+    // temp, fill its fields, and load the struct value. (Var-decls fill in place.)
+    string sname = e.sval;
+    string llty = cg_lltype(g, sname);
+    string slot = cg_entry_alloca(g, llty);
+    cg_struct_init(g, slot, sname, e);
+    string r = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, r);
+    cg_emit(g, " = load ");
+    cg_emit(g, llty);
+    cg_emit(g, ", ptr ");
+    cg_emit(g, slot);
+    cg_emit(g, "\n");
+    v.op = r;
+    v.ty = llty;
+    v.ety = sname;
+    return v;
+}
+
+CgVal cg_expr_lambda(Codegen* g, *ExprNode e, CgVal v) {
+    // Free-variable analysis: capture the enclosing locals the body references (not its
+    // own params). The env is on the stack when sema proved the closure does not outlive
+    // the call, else on the heap. Build a fat pointer { @lambdaN, env } and queue the body
+    // for emission.
+    string lname = cg_cat("__lambda", cg_itoa(g.lam_seq));
+    g.lam_seq = g.lam_seq + 1;
+    List<string> pp;
+    List_init<string>(&pp, 4);
+    cg_paren_list(e.sval, &pp);
+    List<string> ids;
+    List_init<string>(&ids, 16);
+    cg_collect_idents_s(e.stmt, &ids);
+    List<string> capn;
+    List_init<string>(&capn, 4);
+    List<string> capt;
+    List_init<string>(&capt, 4);
+    List<CgLocal> statics;
+    List_init<CgLocal>(&statics, 1);
+    int ii = 0;
+    while (ii < List_len<string>(&ids)) {
+        string nm = List_get<string>(&ids, ii);
+        ii = ii + 1;
+        if (cg_in_strlist(&capn, nm) == 1) {      // already captured
+            continue;
+        }
+        int isparam = 0;
+        int pj = 0;
+        while (pj < List_len<string>(&pp)) {
+            if (cg_streq(cg_last_word(List_get<string>(&pp, pj)), nm) == 1) {
+                isparam = 1;
+            }
+            pj = pj + 1;
+        }
+        if (isparam == 1) {
+            continue;
+        }
+        CgLocal l = cg_find_local(g, nm);
+        // A `static` local has static storage (its slot is a global, "@…"): the body
+        // refers to that one cell, like a global, instead of capturing a copy.
+        if (l.slot[0] == 64) {
+            List_push<CgLocal>(&statics, l);
+            continue;
+        }
+        if (l.slot[0] != 0) {
+            List_push<string>(&capn, nm);
+            List_push<string>(&capt, l.ety);
+        }
+    }
+    let lam: CgLambda;
+    lam.name = lname;
+    lam.node = e;
+    lam.capn = capn;
+    lam.capt = capt;
+    lam.statics = statics;
+    lam.sub = cg_copy_sub(&g.cursub);   // freeze the generic substitution for deferred emission
+    // Return type: the fn-type from the assignment context wins over the written one
+    // (e.g. a lambda written `int(int x)` assigned to `fn(int)->float` returns float).
+    if (g.lam_expret[0] != 0) {
+        lam.rety = g.lam_expret;
+    } else {
+        lam.rety = cg_arm_var(e.sval);
+    }
+    List_push<CgLambda>(&g.lambdas, lam);
+
+    string env = "null";
+    int nc = List_len<string>(&capn);
+    if (nc > 0) {
+        string envty = cg_env_lltype(g, &capt);
+        if (e.stack_env == 1) {
+            // Sema proved the closure does not outlive this call (an argument to a
+            // non-escaping param, or a local that is only called): the env is a stack slot.
+            env = cg_entry_alloca(g, envty);
+        } else {
+            // Heap-allocate the env: the closure may escape (be stored/returned and called
+            // after this frame returns, e.g. an event-loop callback), so the env must outlive
+            // the frame. Its owner frees it with free_closure (an async frame frees its
+            // closure locals itself).
+            g.uses_heap_env = 1;
+            string szg = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, szg);
+            cg_emit(g, " = getelementptr ");
+            cg_emit(g, envty);
+            cg_emit(g, ", ptr null, i32 1\n");
+            string szi = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, szi);
+            cg_emit(g, " = ptrtoint ptr ");
+            cg_emit(g, szg);
+            cg_emit(g, cg_cat(" to ", cg_cat(cg_heap_size_ty(g), "\n")));
+            env = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, env);
+            cg_emit(g, " = call ptr @");
+            cg_emit(g, cg_heap_alloc(g));
+            cg_emit(g, cg_cat("(", cg_cat(cg_heap_size_ty(g), " ")));
+            cg_emit(g, szi);
+            cg_emit(g, ")\n");
+        }
+        int j = 0;
+        while (j < nc) {
+            CgLocal l = cg_find_local(g, List_get<string>(&capn, j));
+            string ld = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, ld);
+            cg_emit(g, " = load ");
+            cg_emit(g, l.ty);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, l.slot);
+            cg_emit(g, "\n");
+            string fp = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, fp);
+            cg_emit(g, " = getelementptr ");
+            cg_emit(g, envty);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, env);
+            cg_emit(g, ", i32 0, i32 ");
+            cg_emit(g, cg_itoa(j));
+            cg_emit(g, "\n");
+            cg_emit(g, "  store ");
+            cg_emit(g, l.ty);
+            cg_emit(g, " ");
+            cg_emit(g, ld);
+            cg_emit(g, ", ptr ");
+            cg_emit(g, fp);
+            cg_emit(g, "\n");
+            j = j + 1;
+        }
+    }
+    string c = cg_entry_alloca(g, "%closure");
+    string c0 = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, c0);
+    cg_emit(g, " = getelementptr %closure, ptr ");
+    cg_emit(g, c);
+    cg_emit(g, ", i32 0, i32 0\n");
+    cg_emit(g, "  store ptr @");
+    cg_emit(g, lname);
+    cg_emit(g, ", ptr ");
+    cg_emit(g, c0);
+    cg_emit(g, "\n");
+    string c1 = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, c1);
+    cg_emit(g, " = getelementptr %closure, ptr ");
+    cg_emit(g, c);
+    cg_emit(g, ", i32 0, i32 1\n");
+    cg_emit(g, "  store ptr ");
+    cg_emit(g, env);
+    cg_emit(g, ", ptr ");
+    cg_emit(g, c1);
+    cg_emit(g, "\n");
+    string r = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, r);
+    cg_emit(g, " = load %closure, ptr ");
+    cg_emit(g, c);
+    cg_emit(g, "\n");
+    v.op = r;
+    v.ty = "%closure";
+    v.ety = "";
+    return v;
+}

@@ -1,0 +1,429 @@
+// Part of codegen.esk (the expression kinds of cg_expr_i), imported in order; compile codegen.esk, not this file alone.
+
+CgVal cg_expr_call(Codegen* g, *ExprNode e, CgVal v) {
+    // Atomic intrinsics → LLVM atomic instructions (cell is *int, values i32).
+    if (e.a != null && e.a.kind == EK_IDENT && cg_is_atomic(g, e.a.sval) == 1) {
+        return cg_emit_atomic(g, e.a.sval, e);
+    }
+    if (e.dbg_builtin == 1) {
+        return cg_emit_dbg(g, e);
+    }
+    // Variadic access: va_start(ap)/va_end(ap) → the llvm.va_{start,end} intrinsic on the
+    // va_list's address (its alloca). `ap` is a local va_list.
+    if (e.a != null && e.a.kind == EK_IDENT
+        && (cg_streq(e.a.sval, "va_start") == 1 || cg_streq(e.a.sval, "va_end") == 1)) {
+        string ap = cg_lval(g, List_get<*ExprNode>(&e.kids, 0)).op;
+        string intr = "llvm.va_start.p0";
+        if (cg_streq(e.a.sval, "va_end") == 1) {
+            intr = "llvm.va_end.p0";
+        }
+        cg_ensure_extern(g, intr, cg_cat(cg_cat("declare void @", intr), "(ptr)\n"));
+        cg_emit(g, "  call void @");
+        cg_emit(g, intr);
+        cg_emit(g, "(ptr ");
+        cg_emit(g, ap);
+        cg_emit(g, ")\n");
+        v.op = "";
+        v.ty = "void";
+        return v;
+    }
+    // `__exception_text_into(buf)`, from the async lowering only: the text copied (512
+    // bytes with its NUL) into a frame field that outlives the handler's stack.
+    if (e.a != null && e.a.kind == EK_IDENT && cg_streq(e.a.sval, "__exception_text_into") == 1
+        && List_len<*ExprNode>(&e.kids) == 1 && List_len<string>(&g.catch_text) > 0) {
+        string dst = cg_expr(g, List_get<*ExprNode>(&e.kids, 0)).op;
+        string tslot = List_get<string>(&g.catch_text, List_len<string>(&g.catch_text) - 1);
+        string src = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, src);
+        cg_emit(g, " = load ptr, ptr ");
+        cg_emit(g, tslot);
+        cg_emit(g, "\n");
+        // llvm.memcpy is declared with the exception runtime, which a catch implies.
+        cg_emit(g, "  call void @llvm.memcpy.p0.p0.i64(ptr ");
+        cg_emit(g, dst);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, src);
+        cg_emit(g, ", i64 512, i1 false)\n");
+        v.op = "";
+        v.ty = "void";
+        return v;
+    }
+    // The builtin, unless the program defines a function or variable of that name.
+    if (e.a != null && e.a.kind == EK_IDENT && cg_streq(e.a.sval, "exception_text") == 1
+        && List_len<*ExprNode>(&e.kids) == 0 && List_len<string>(&g.catch_text) > 0
+        && cg_find_local(g, "exception_text").slot[0] == 0 && cg_is_fn(g, "exception_text") == 0) {
+        string tslot = List_get<string>(&g.catch_text, List_len<string>(&g.catch_text) - 1);
+        string tx = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, tx);
+        cg_emit(g, " = load ptr, ptr ");
+        cg_emit(g, tslot);
+        cg_emit(g, "\n");
+        v.op = tx;
+        v.ty = "ptr";
+        v.ety = "string";
+        return v;
+    }
+    // An ADT variant constructor `Circle(4)` parses as a call with a bare-ident callee;
+    // a local or global of that name shadows the variant.
+    if (e.a != null && e.a.kind == EK_IDENT && cg_find_local(g, e.a.sval).slot[0] == 0
+        && cg_find_global(g, e.a.sval).slot[0] == 0) {
+        // A bare generic variant (`Some(v)`, in a generic body too): each type parameter
+        // is the type of the argument whose payload slot is that parameter (C++
+        // visit(CallExpr)), so every instance builds its own enum instance.
+        CgVariant gvar = cg_find_gvariant(g, e.a.sval);
+        *DeclNode gen = null;
+        if (gvar.ename[0] != 0) {
+            gen = cg_find_genum(g, gvar.ename);
+        }
+        if (gen != null) {
+            String sp;
+            String_init(&sp, 16);
+            String_append(&sp, gvar.ename);
+            String_append(&sp, "<");
+            int ti = 0;
+            int found = 0;
+            while (ti < List_len<TypeParam>(&gen.type_params)) {
+                string tp = List_get<TypeParam>(&gen.type_params, ti).name;
+                string at = "int";
+                int pi = 0;
+                while (pi < List_len<string>(&gvar.ptys) && pi < List_len<*ExprNode>(&e.kids)) {
+                    if (cg_streq(List_get<string>(&gvar.ptys, pi), tp) == 1) {
+                        at = cg_apply_sub(g, cg_etype(g, List_get<*ExprNode>(&e.kids, pi)));
+                        found = 1;
+                        break;
+                    }
+                    pi = pi + 1;
+                }
+                if (ti > 0) {
+                    String_append(&sp, ", ");
+                }
+                String_append(&sp, at);
+                ti = ti + 1;
+            }
+            String_append(&sp, ">");
+            if (found == 1) {
+                string menum = cg_ensure_enum_inst(g, (string)String_cstr(&sp));
+                CgVariant cv = cg_find_variant_in(g, e.a.sval, menum);
+                if (cv.ename[0] != 0) {
+                    return cg_build_variant(g, cv, e);
+                }
+            }
+        }
+        CgVariant var = cg_find_variant(g, e.a.sval);
+        if (var.ename[0] != 0) {
+            return cg_build_variant(g, var, e);
+        }
+    }
+    // Indirect call through a closure value: the callee is a local/param of fn type
+    // (a `%closure` fat pointer). Extract { fn, env } and call fn(env, args...).
+    if (e.a != null && e.a.kind == EK_IDENT) {
+        CgLocal lf = cg_find_local(g, e.a.sval);
+        if (lf.slot[0] != 0 && cg_is_fnty(lf.ety) == 1) {
+            string cval = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, cval);
+            cg_emit(g, " = load %closure, ptr ");
+            cg_emit(g, lf.slot);
+            cg_emit(g, "\n");
+            return cg_indirect_call(g, cval, lf.ety, e);
+        }
+    }
+    // Same, but the callee is a GLOBAL variable of fn type (`let f: fn(int)->int = ...`
+    // at module scope, then `f(x)`): load the %closure from the global's address.
+    if (e.a != null && e.a.kind == EK_IDENT) {
+        CgLocal gf = cg_find_global(g, e.a.sval);
+        if (gf.slot[0] != 0 && cg_is_fnty(gf.ety) == 1) {
+            string cval = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, cval);
+            cg_emit(g, " = load %closure, ptr ");
+            cg_emit(g, gf.slot);
+            cg_emit(g, "\n");
+            return cg_indirect_call(g, cval, gf.ety, e);
+        }
+    }
+    // A call through a closure-typed FIELD (e.g. `fr.ret.waker()`): not a method.
+    if (e.a != null && e.a.kind == EK_MEMBER && cg_is_fnty(cg_etype(g, e.a)) == 1) {
+        CgVal cv = cg_expr(g, e.a);                 // load the %closure field value
+        return cg_indirect_call(g, cv.op, cg_etype(g, e.a), e);
+    }
+    // Any other callee expression yielding a closure (a call returning a fn value,
+    // `pick(0)(3, 4)`, or an indexed/derefed closure): evaluate it, then call through it.
+    if (e.a != null && e.a.kind != EK_IDENT && e.a.kind != EK_MEMBER) {
+        string cft = cg_etype(g, e.a);
+        if (cg_is_fnty(cft) == 1) {
+            CgVal cv = cg_expr(g, e.a);
+            return cg_indirect_call(g, cg_coerce(g, cv, "%closure"), cft, e);
+        }
+    }
+    // A generic free function called WITHOUT explicit type args (`chan_recv(ch)`):
+    // infer `chan_recv<int>` from the argument types, then instantiate + call.
+    if (e.a != null && e.a.kind == EK_IDENT) {
+        *DeclNode gd = cg_find_gfn(g, e.a.sval);
+        if (gd != null) {
+            string spelling = cg_infer_generic(g, gd, e);
+            if (spelling[0] != 0) {
+                return cg_call_mangled(g, cg_ensure_fn_inst(g, spelling), e);
+            }
+            dprintf(2, "error: cannot infer the type arguments of generic function '%s' from the call; write them explicitly, e.g. %s<...>(...)\n", gd.name, gd.name);
+            exit(1);
+        }
+    }
+    // A method call whose receiver is an interface value → dynamic vtable dispatch.
+    // The receiver's *value* is the fat pointer {data, vtable}.
+    if (e.a != null && e.a.kind == EK_MEMBER && cg_is_iface(g, cg_etype(g, e.a.a)) == 1) {
+        string ifn = cg_etype(g, e.a.a);
+        string fatop = cg_expr(g, e.a.a).op;
+        return cg_dispatch_iface(g, ifn, fatop, e.a.sval, e);
+    }
+    // Through a pointer to an interface value (`*I pi; pi.f()`): load the fat value.
+    if (e.a != null && e.a.kind == EK_MEMBER) {
+        string rty = cg_etype(g, e.a.a);
+        if (cg_is_ptr_ty(rty) == 1 && cg_is_iface(g, cg_dealias(g, cg_deref_ty(rty))) == 1) {
+            string ifn2 = cg_dealias(g, cg_deref_ty(rty));
+            string pop = cg_expr(g, e.a.a).op;
+            string fv = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, fv);
+            cg_emit(g, " = load %iface_fat, ptr ");
+            cg_emit(g, pop);
+            cg_emit(g, "\n");
+            return cg_dispatch_iface(g, ifn2, fv, e.a.sval, e);
+        }
+    }
+    // `l.push(x)` on a generic struct instance whose `List_push<T>` is a generic free
+    // function: emit it as that (type-inferred) call.
+    *ExprNode gmc = cg_generic_method_call(g, e);
+    if (gmc != null) {
+        return cg_expr(g, gmc);
+    }
+    // Resolve the callee. A bare ident is a free function; a MemberExpr is a method
+    // call `recv.m(...)` → `Struct_m(self, ...)` with `self` a pointer to the receiver.
+    string fname = "";
+    string args = "";
+    int pbase = 0;                                  // 1 when an implicit self precedes args
+    if (e.a != null && e.a.kind == EK_MEMBER) {
+        string recv_ety = cg_etype(g, e.a.a);
+        string sname = recv_ety;
+        if (cg_is_ptr_ty(recv_ety) == 1) {
+            sname = cg_strip_ptr(recv_ety);
+        }
+        // A primitive receiver satisfying a constraint via a free function: `a.cmp(b)`
+        // where `a: int` lowers to `cmp(a, b)` (receiver passed BY VALUE as arg 0). The
+        // struct-method path would index a non-existent struct's fields and crash.
+        if (cg_is_struct(g, sname) == 0 && cg_is_adt(g, sname) == 0 && cg_is_fn(g, e.a.sval) == 1) {
+            fname = e.a.sval;
+            CgVal selfv = cg_expr(g, e.a.a);
+            args = cg_cat(cg_cat(selfv.ty, " "), selfv.op);   // receiver by value
+            pbase = 1;
+        } else {
+            string sptr = "";
+            if (cg_is_ptr_ty(recv_ety) == 1) {
+                sptr = cg_expr(g, e.a.a).op;
+            }
+            else {
+                sptr = cg_addr(g, e.a.a).op;
+            }
+            fname = cg_method_fn(g, sname, e.a.sval);
+            args = cg_cat("ptr ", sptr);                // self is the first argument
+            pbase = 1;
+        }
+    } else if (e.a != null && e.a.kind == EK_IDENT) {
+        fname = e.a.sval;
+    }
+    CgFn f = cg_find_fn(g, fname);
+    if (pbase == 0 && List_len<CgCabi>(&g.cabis) > 0) {
+        CgCabi cab = cg_find_cabi(g, fname);
+        if (cab.name[0] != 0) {                     // a C-ABI-lowered extern
+            List<CgVal> cargs;
+            List_init<CgVal>(&cargs, 4);
+            int ci = 0;
+            while (ci < List_len<*ExprNode>(&e.kids)) {
+                CgVal a = cg_call_arg(g, &f, ci, List_get<*ExprNode>(&e.kids, ci));
+                string cpty = cg_pty(&f, ci);
+                let ca: CgVal;
+                ca.op = a.op;
+                ca.ty = a.ty;
+                ca.ety = a.ety;
+                if (cpty[0] != 0) {
+                    ca.op = cg_coerce(g, a, cpty);
+                    ca.ty = cpty;
+                }
+                else if (cg_streq(a.ty, "float") == 1) {
+                    ca.op = cg_coerce(g, a, "double");
+                    ca.ty = "double";
+                }
+                else if (cg_int_w(a.ty) > 0 && cg_int_w(a.ty) < 32) {
+                    ca.op = cg_coerce(g, a, "i32");
+                    ca.ty = "i32";
+                }
+                List_push<CgVal>(&cargs, ca);
+                ci = ci + 1;
+            }
+            return cg_widen_cret(g, &f, cg_cabi_call(g, &cab, &f, &cargs));
+        }
+    }
+    // Evaluate the declared args (left to right), coercing each to the callee's
+    // declared parameter type (so e.g. an i32 count widens to an `int64` parameter).
+    int i = 0;
+    int n = List_len<*ExprNode>(&e.kids);
+    while (i < n) {
+        *ExprNode ax = List_get<*ExprNode>(&e.kids, i);
+        CgVal a = cg_call_arg(g, &f, i + pbase, ax);
+        string pety = cg_pety(&f, i + pbase);
+        // Param expects an interface but we have a struct pointer → box it as a fat pointer.
+        if (pety[0] != 0 && cg_is_iface(g, cg_dealias(g, pety)) == 1) {
+            string boxed = cg_iface_conv(g, pety, a, ax);
+            if (args[0] != 0) {
+                args = cg_cat(args, ", ");
+            }
+            args = cg_cat(args, cg_cat("%iface_fat ", boxed));
+            i = i + 1;
+        } else {
+            string pty = cg_pty(&f, i + pbase);
+            string aop = a.op;
+            string aty = a.ty;
+            if (pty[0] != 0) {
+                aop = cg_coerce(g, a, pty);
+                aty = pty;
+            }
+            else if (cg_streq(a.ty, "float") == 1) {     // C vararg promotion: float → double
+                aop = cg_coerce(g, a, "double");
+                aty = "double";
+            }
+            else if (cg_int_w(a.ty) > 0 && cg_int_w(a.ty) < 32) {   // C default arg promotion: small int → i32 (signedness-aware)
+                aop = cg_coerce(g, a, "i32");
+                aty = "i32";
+            }
+            if (args[0] != 0) {
+                args = cg_cat(args, ", ");
+            }
+            args = cg_cat(args, cg_cat(aty, cg_cat(" ", aop)));
+            i = i + 1;
+        }
+    }
+    // A variadic callee needs the explicit function type: `call i32 (ptr, ...) @printf`.
+    string callty = f.retty;
+    if (f.variadic == 1) {
+        callty = cg_cat(f.retty, cg_cat(" (", cg_cat(cg_va(f.fixedtypes), ")")));
+    }
+    int isvoid = cg_streq(f.retty, "void");
+    string t = cg_emit_callish(g, callty, cg_cat("@", fname), args, isvoid);
+    if (isvoid == 1) {
+        v.op = "";
+        v.ty = "void";
+        return v;
+    }
+    v.op = t;
+    v.ty = f.retty;
+    v.ety = f.rety;
+    return cg_widen_cret(g, &f, v);
+}
+
+CgVal cg_expr_templatecall(Codegen* g, *ExprNode e, CgVal v) {
+    // Variadic access: va_arg<T>(ap) → the LLVM `va_arg` instruction reading the next
+    // argument of type T from the va_list's address.
+    if (cg_streq(cg_gen_base(e.sval), "va_arg") == 1) {
+        List<string> ta;
+        List_init<string>(&ta, 1);
+        cg_gen_args(e.sval, &ta);
+        string ety = cg_apply_sub(g, List_get<string>(&ta, 0));
+        string llty = cg_lltype(g, ety);
+        string ap = cg_lval(g, List_get<*ExprNode>(&e.kids, 0)).op;
+        v.op = cg_va_arg(g, ap, llty);
+        v.ty = llty;
+        v.ety = ety;
+        return v;
+    }
+    // A generic ADT variant constructor: `Some<int>(42)` / `None<int>()`. Resolve the
+    // concrete enum from the variant's generic enum + the explicit type args, ensure the
+    // instance, then build the value through its concrete (substituted) variant.
+    string vb = cg_gen_base(e.sval);
+    CgVariant gvar = cg_find_gvariant(g, vb);
+    if (gvar.ename[0] != 0) {
+        List<string> targs;
+        List_init<string>(&targs, 4);
+        cg_gen_args(e.sval, &targs);
+        String sp;
+        String_init(&sp, 16);
+        String_append(&sp, gvar.ename);
+        String_append(&sp, "<");
+        int ti = 0;
+        while (ti < List_len<string>(&targs)) {
+            if (ti > 0) {
+                String_append(&sp, ", ");
+            }
+            String_append(&sp, List_get<string>(&targs, ti));
+            ti = ti + 1;
+        }
+        String_append(&sp, ">");
+        string menum = cg_ensure_enum_inst(g, (string)String_cstr(&sp));
+        CgVariant cv = cg_find_variant_in(g, vb, menum);
+        return cg_build_variant(g, cv, e);
+    }
+    string mangled = cg_ensure_fn_inst(g, e.sval);     // "id<int>" -> "id_int" (queued)
+    return cg_call_mangled(g, mangled, e);
+}
+
+CgVal cg_expr_sizeof(Codegen* g, *ExprNode e, CgVal v) {
+    // sizeof(T) without hardcoded sizes: ptrtoint of `gep T, null, 1`.
+    string llty = cg_lltype(g, cg_sizeof_operand(g, e));   // applies the active sub
+    string g1 = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, g1);
+    cg_emit(g, " = getelementptr ");
+    cg_emit(g, llty);
+    cg_emit(g, ", ptr null, i32 1\n");
+    string t = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, t);
+    cg_emit(g, " = ptrtoint ptr ");
+    cg_emit(g, g1);
+    cg_emit(g, " to i64\n");
+    v.op = t;
+    v.ty = "i64";
+    v.ety = "int64";
+    return v;
+}
+
+CgVal cg_expr_cast(Codegen* g, *ExprNode e, CgVal v) {
+    string dstety = cg_apply_sub(g, e.sval);
+    if (cg_streq(dstety, "void") == 1) {   // `(void)e`: evaluate for side effects, discard
+        cg_expr(g, e.a);
+        v.op = "";
+        v.ty = "void";
+        return v;
+    }
+    string dll = cg_lltype(g, dstety);
+    // A top-level function cast to a pointer is the raw address C calls: through its
+    // C-ABI thunk when it takes or returns a struct by value.
+    if (cg_streq(dll, "ptr") == 1 && e.a != null && e.a.kind == EK_IDENT
+        && cg_find_local(g, e.a.sval).slot[0] == 0 && cg_find_global(g, e.a.sval).slot[0] == 0
+        && cg_is_fn(g, e.a.sval) == 1) {
+        v.op = cg_cabi_callback(g, e.a.sval);
+        v.ty = "ptr";
+        v.ety = dstety;
+        return v;
+    }
+    CgVal src = cg_expr(g, e.a);
+    // float → unsigned int saturates to the unsigned range (cg_coerce saturates to the
+    // signed one: (uint32)3e9 would be 2147483647 instead of 3e9).
+    if (cg_is_float(src.ty) == 1 && cg_int_w(dll) > 1 && cg_is_unsigned(dstety) == 1) {
+        string t = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, t);
+        cg_emit(g, " = ");
+        cg_emit_fp_sat(g, 1, src.ty, src.op, dll);
+        cg_emit(g, "\n");
+        v.op = t;
+        v.ty = dll;
+        v.ety = dstety;
+        return v;
+    }
+    v.op = cg_coerce(g, src, dll);    // int/float/ptr conversions (sitofp/fptosi/…)
+    v.ty = dll;
+    v.ety = dstety;
+    return v;
+}
