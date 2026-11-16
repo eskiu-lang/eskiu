@@ -7,12 +7,13 @@ import <http_async>;
 import <future>;
 import <eventloop>;
 import <net>;
+import <atomic>;
 extern int    printf(string fmt, ...);
 extern int    usleep(uint32 usec);
 extern int64  recv(int fd, *void buf, int64 n, int flags);
 
 EventLoop* g_lp;
-int g_ok = 0;     // shared success counter (incremented by client threads)
+int g_ok = 0;     // shared success counter (incremented atomically by the client threads)
 
 void hello(HttpRequest* req, HttpResponse* res) {
     HttpResponse_header(res, "Content-Type", "text/plain");
@@ -27,7 +28,7 @@ void client() {
     int64 n = recv(c, (*void)&resp[0], (int64)1023, 0);
     if (n > 0) {
         resp[(int)n] = (uint8)0;
-        if (strstr((string)&resp[0], "hello-concurrent") != (*char)0) { g_ok = g_ok + 1; }
+        if (strstr((string)&resp[0], "hello-concurrent") != (*char)0) { atomic_fetch_add(&g_ok, 1); }
     }
     net_close(c);
 }
