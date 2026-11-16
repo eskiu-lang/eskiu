@@ -1,0 +1,14 @@
+// A printf-style function the program declares, a variadic one whose last fixed parameter
+// is `string fmt`, is checked like printf (here declared as externs).
+extern string textf(string fmt, ...);
+extern void Log_f(int level, string fmt, ...);
+extern void plain(string text, ...);
+int main() {
+    textf("%d items", "x");
+    Log_f(1, "%s here", 5);
+    textf("%d ok, %s", 3, "fine");
+    plain("%d", "not a format");
+    return 0;
+}
+// EXPECT-WARNING: format_declared.esk:7:10: warning: format '%d' expects an int, but argument 2 has type 'string' [-Wformat]
+// EXPECT-WARNING: format_declared.esk:8:10: warning: format '%s' expects a string, but argument 3 has type 'int' [-Wformat]
