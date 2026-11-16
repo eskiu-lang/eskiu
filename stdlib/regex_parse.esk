@@ -1,0 +1,590 @@
+// regex_parse.esk: parsing (part of regex.esk, imported in order)
+
+// =========================== parsing =======================================
+
+int _re_peek(_ReComp* c) {
+    return c.pos >= c.len ? -1 : (int)((uint8)c.pat[c.pos]);
+}
+
+int _re_peek_at(_ReComp* c, int off) {
+    const int p = c.pos + off;
+    return p >= c.len ? -1 : (int)((uint8)c.pat[p]);
+}
+
+// Read the code point at c.pos and step past it: -1 at the end of the pattern,
+// -2 (with c.err set) for bytes that are not valid UTF-8.
+int _re_next_rune(_ReComp* c) {
+    if (c.pos >= c.len) {
+        return -1;
+    }
+    int[1] w;
+    const int r = _re_decode(c.pat, c.len, c.pos, &w[0]);
+    if (r < 0) {
+        if (c.err == null) {
+            c.err = "invalid UTF-8";
+        }
+        return -2;
+    }
+    c.pos += w[0];
+    return r;
+}
+
+_ReNode* _re_node(_ReComp* c, int kind) {
+    if (c.nnode >= RE_MAX_NODES) {
+        if (c.err == null) {
+            c.err = "regex pattern too complex";
+        }
+        return &c.nodes[0];
+    }
+    _ReNode* n = &c.nodes[c.nnode++];
+    n.kind = kind;
+    n.ch = 0;
+    n.cls = 0;
+    n.grp = 0;
+    n.rmin = 0;
+    n.rmax = 0;
+    n.greedy = 1;
+    n.fold = 0;
+    n.left = null;
+    n.right = null;
+    return n;
+}
+
+// A literal code point under the current flags.
+_ReNode* _re_lit(_ReComp* c, int r) {
+    _ReNode* n = _re_node(c, N_LIT);
+    n.ch = r;
+    n.fold = (c.flags & RF_FOLD) != 0 && _re_simple_fold(r) != r ? 1 : 0;
+    return n;
+}
+
+// Add a class to the current program; returns its id. Fill ranges and props after.
+int _re_class_begin(_ReComp* c, int negate) {
+    Regex* re = c.re;
+    if (re.nclass >= RE_MAX_CLASS) {
+        if (c.err == null) {
+            c.err = "too many character classes";
+        }
+        return 0;
+    }
+    const int id = re.nclass++;
+    re.classes[id].start = re.nrange;
+    re.classes[id].count = 0;
+    re.classes[id].negate = negate;
+    re.classes[id].fold = (c.flags & RF_FOLD) != 0 ? 1 : 0;
+    re.classes[id].pstart = re.nprop;
+    re.classes[id].pcount = 0;
+    return id;
+}
+
+void _re_range(_ReComp* c, int id, int lo, int hi) {
+    Regex* re = c.re;
+    if (re.nrange >= RE_MAX_RANGE) {
+        if (c.err == null) {
+            c.err = "too many class ranges";
+        }
+        return;
+    }
+    re.ranges[re.nrange].lo = lo;
+    re.ranges[re.nrange].hi = hi;
+    re.nrange++;
+    re.classes[id].count++;
+}
+
+void _re_prop(_ReComp* c, int id, int kind, int val, int neg) {
+    Regex* re = c.re;
+    if (re.nprop >= RE_MAX_PROP) {
+        if (c.err == null) {
+            c.err = "too many class ranges";
+        }
+        return;
+    }
+    re.props[re.nprop].kind = kind;
+    re.props[re.nprop].val = val;
+    re.props[re.nprop].neg = neg;
+    re.nprop++;
+    re.classes[id].pcount++;
+}
+
+// The POSIX class names of a bracket expression ([:alpha:]), in the order of
+// their kinds RE_POSIX + 0 .. RE_POSIX + 13.
+const int RE_POSIX = 256;
+const int RE_NPOSIX = 14;
+const string[14] RE_POSIX_NAMES = {"alnum", "alpha", "ascii", "blank", "cntrl", "digit", "graph",
+                                   "lower", "print", "punct", "space", "upper", "word", "xdigit"};
+
+// 1 if code point `i` is in the class `kind`: 'd' 'w' 's' (the Perl shorthands;
+// \s is [\t\n\f\r ] as in RE2, without \v) or RE_POSIX + k for the POSIX class
+// RE_POSIX_NAMES[k]. All of them are ASCII only, as in RE2.
+int _re_class_has(int kind, int i) {
+    if (i < 0 || i >= 128) {
+        return 0;
+    }
+    const bool digit = i >= '0' && i <= '9';
+    const bool upper = i >= 'A' && i <= 'Z';
+    const bool lower = i >= 'a' && i <= 'z';
+    const bool alpha = upper || lower;
+    const bool punct = (i >= '!' && i <= '/') || (i >= ':' && i <= '@') || (i >= '[' && i <= '`') || (i >= '{' && i <= '~');
+    bool r = false;
+    switch (kind) {
+        case 'd': r = digit;
+        break;
+        case 'w': r = digit || alpha || i == '_';
+        break;
+        case 's': r = i == '\t' || i == '\n' || i == '\f' || i == '\r' || i == ' ';
+        break;
+        case RE_POSIX + 0: r = digit || alpha;
+        break;
+        case RE_POSIX + 1: r = alpha;
+        break;
+        case RE_POSIX + 2: r = true;
+        break;
+        case RE_POSIX + 3: r = i == '\t' || i == ' ';
+        break;
+        case RE_POSIX + 4: r = i < 32 || i == 127;
+        break;
+        case RE_POSIX + 5: r = digit;
+        break;
+        case RE_POSIX + 6: r = i >= '!' && i <= '~';
+        break;
+        case RE_POSIX + 7: r = lower;
+        break;
+        case RE_POSIX + 8: r = i >= ' ' && i <= '~';
+        break;
+        case RE_POSIX + 9: r = punct;
+        break;
+        case RE_POSIX + 10: r = (i >= '\t' && i <= '\r') || i == ' ';
+        break;
+        case RE_POSIX + 11: r = upper;
+        break;
+        case RE_POSIX + 12: r = digit || alpha || i == '_';
+        break;
+        case RE_POSIX + 13: r = digit || (i >= 'A' && i <= 'F') || (i >= 'a' && i <= 'f');
+        break;
+    }
+    return r ? 1 : 0;
+}
+
+// At a '[' inside a bracket class: a POSIX class [:name:] or [:^name:] is
+// added to class `id` and consumed, returning 1. Returns 0 (nothing consumed)
+// if no ":]" follows, so the '[' is a literal member, as in RE2; an unknown
+// name is an error (-1 with c.err set).
+int _re_posix_class(_ReComp* c, int id) {
+    if (_re_peek_at(c, 1) != ':') {
+        return 0;
+    }
+    int e = c.pos + 2;
+    while (e + 1 < c.len && !(c.pat[e] == ':' && c.pat[e + 1] == ']')) {
+        e++;
+    }
+    if (e + 1 >= c.len) {
+        return 0;
+    }
+    int s = c.pos + 2;
+    const bool negate = s < e && c.pat[s] == '^';
+    if (negate) {
+        s++;
+    }
+    for (k in 0..RE_NPOSIX) {
+        const string name = RE_POSIX_NAMES[k];
+        int j = 0;
+        while (s + j < e && name[j] != 0 && c.pat[s + j] == name[j]) {
+            j++;
+        }
+        if (s + j == e && name[j] == 0) {
+            _re_prop(c, id, P_ASCII, RE_POSIX + k, negate ? 1 : 0);
+            c.pos = e + 2;
+            return 1;
+        }
+    }
+    if (c.err == null) {
+        c.err = "invalid character class range";
+    }
+    return -1;
+}
+
+// 1 if pat[s..e) spells `name`.
+int _re_span_is(string pat, int s, int e, string name) {
+    int j = 0;
+    while (s + j < e && name[j] != 0 && pat[s + j] == name[j]) {
+        j++;
+    }
+    return s + j == e && name[j] == 0 ? 1 : 0;
+}
+
+// At "\p" or "\P": read the Unicode class name (one letter, or braced) and add
+// it to class `id`. Returns 0, or -1 with c.err set for an unknown name.
+int _re_unicode_class(_ReComp* c, int id) {
+    int neg = _re_peek_at(c, 1) == 'P' ? 1 : 0;
+    c.pos += 2;
+    int s = c.pos;
+    int e = c.pos;
+    if (_re_peek(c) == '{') {
+        int p = c.pos;
+        while (p < c.len && c.pat[p] != '}') {
+            p++;
+        }
+        if (p >= c.len) {
+            if (c.err == null) {
+                c.err = "invalid character class range";
+            }
+            return -1;
+        }
+        s = c.pos + 1;
+        e = p;
+        c.pos = p + 1;
+    } else {
+        if (_re_next_rune(c) < 0) {
+            if (c.err == null) {
+                c.err = "invalid character class range";
+            }
+            return -1;
+        }
+        e = c.pos;
+    }
+    if (s < e && c.pat[s] == '^') {
+        neg = 1 - neg;
+        s++;
+    }
+    if (_re_span_is(c.pat, s, e, "Any") == 1) {
+        _re_prop(c, id, P_ANY, 0, neg);
+        return 0;
+    }
+    if (e == s + 1) {
+        // A one-letter name is the group of the categories that start with it.
+        int mask = 0;
+        for (k in 0..RE_NCAT) {
+            if (RE_CAT_NAMES[k][0] == c.pat[s]) {
+                mask = mask | (1 << k);
+            }
+        }
+        if (mask != 0) {
+            _re_prop(c, id, P_CAT, mask, neg);
+            return 0;
+        }
+    }
+    for (k in 0..RE_NCAT) {
+        if (_re_span_is(c.pat, s, e, RE_CAT_NAMES[k]) == 1) {
+            _re_prop(c, id, P_CAT, 1 << k, neg);
+            return 0;
+        }
+    }
+    for (k in 0..RE_NSCRIPT) {
+        if (_re_span_is(c.pat, s, e, RE_SCRIPT_NAMES[k]) == 1) {
+            _re_prop(c, id, P_SCRIPT, k, neg);
+            return 0;
+        }
+    }
+    if (c.err == null) {
+        c.err = "invalid character class range";
+    }
+    return -1;
+}
+
+// 1 if `e` names a class shorthand (\d \w \s \D \W \S).
+int _re_is_shorthand(int e) {
+    return (e == 'd' || e == 'w' || e == 's' || e == 'D' || e == 'W' || e == 'S') ? 1 : 0;
+}
+
+// Add the shorthand `e` (\d \w \s, or their negations \D \W \S) to class `id`.
+void _re_shorthand(_ReComp* c, int id, int e) {
+    const bool lower = e == 'd' || e == 'w' || e == 's';
+    _re_prop(c, id, P_ASCII, lower ? e : e + 32, lower ? 0 : 1);
+}
+
+int _re_hex_digit(int ch) {
+    if (ch >= '0' && ch <= '9') {
+        return ch - '0';
+    }
+    if (ch >= 'a' && ch <= 'f') {
+        return ch - 'a' + 10;
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return ch - 'A' + 10;
+    }
+    return -1;
+}
+
+int _re_bad_escape(_ReComp* c) {
+    if (c.err == null) {
+        c.err = "invalid escape sequence";
+    }
+    return -1;
+}
+
+// Decode the escape whose letter `e` was just consumed to its code point, reading
+// any further digits: \a \f \t \n \r \v, octal (\0 plus up to two octal digits,
+// or \1-\7 followed by one or two more), hex \xHH or \x{H...} (up to 10FFFF),
+// and ASCII punctuation as itself (\. is '.', \\ is '\'). Anything else (another
+// letter or digit, a non-ASCII character) is an error, as in RE2: -1 with c.err
+// set.
+int _re_escape_char(_ReComp* c, int e) {
+    switch (e) {
+        case 'a': return 7;
+        case 'f': return '\f';
+        case 't': return '\t';
+        case 'n': return '\n';
+        case 'r': return '\r';
+        case 'v': return '\v';
+        default: break;
+    }
+    if (e >= '0' && e <= '7') {
+        // \1-\7 alone would be a backreference, which RE2 does not have.
+        if (e != '0' && (_re_peek(c) < '0' || _re_peek(c) > '7')) {
+            return _re_bad_escape(c);
+        }
+        int v = e - '0';
+        for (int k = 0; k < 2 && _re_peek(c) >= '0' && _re_peek(c) <= '7'; k++) {
+            v = v * 8 + (_re_peek(c) - '0');
+            c.pos++;
+        }
+        return v;
+    }
+    if (e == 'x') {
+        if (_re_peek(c) == '{') {
+            c.pos++;
+            int v = 0;
+            int nd = 0;
+            while (_re_hex_digit(_re_peek(c)) >= 0) {
+                if (v <= 0x10FFFF) {
+                    v = v * 16 + _re_hex_digit(_re_peek(c));
+                }
+                c.pos++;
+                nd++;
+            }
+            if (nd == 0 || _re_peek(c) != '}' || v > 0x10FFFF) {
+                return _re_bad_escape(c);
+            }
+            c.pos++;
+            return v;
+        }
+        const int h1 = _re_hex_digit(_re_peek(c));
+        const int h2 = _re_hex_digit(_re_peek_at(c, 1));
+        if (h1 < 0 || h2 < 0) {
+            return _re_bad_escape(c);
+        }
+        c.pos += 2;
+        return h1 * 16 + h2;
+    }
+    const bool alnum = (e >= '0' && e <= '9') || (e >= 'a' && e <= 'z') || (e >= 'A' && e <= 'Z');
+    if (e < 0 || e >= 128 || alnum) {
+        return _re_bad_escape(c);
+    }
+    return e;
+}
+
+// One class member character: an escape or a code point. -1 on error.
+int _re_class_char(_ReComp* c) {
+    if (_re_peek(c) == '\\') {
+        c.pos++;
+        const int e = _re_peek(c);
+        if (e == -1) {
+            if (c.err == null) {
+                c.err = "unterminated character class";
+            }
+            return -1;
+        }
+        c.pos++;
+        return _re_escape_char(c, e);
+    }
+    const int r = _re_next_rune(c);
+    return r < 0 ? -1 : r;
+}
+
+// [ ... ] returns a N_CLASS node.
+_ReNode* _re_parse_class(_ReComp* c) {
+    c.pos++;   // consume '['
+    int negate = 0;
+    if (_re_peek(c) == '^') {
+        c.pos++;
+        negate = 1;
+    }
+    const int id = _re_class_begin(c, negate);
+
+    // A ']' right after '[' or '[^' is a literal member (POSIX), not the end.
+    bool first = true;
+    while (_re_peek(c) != ']' || first) {
+        first = false;
+        if (_re_peek(c) == -1) {
+            if (c.err == null) {
+                c.err = "unterminated character class";
+            }
+            return _re_node(c, N_CLASS);
+        }
+        if (_re_peek(c) == '[' && _re_posix_class(c, id) != 0) {
+            // A '-' after a POSIX class is the next member, as after \d.
+            if (c.err != null) {
+                return _re_node(c, N_CLASS);
+            }
+            continue;
+        }
+        if (_re_peek(c) == '\\' && (_re_peek_at(c, 1) == 'p' || _re_peek_at(c, 1) == 'P')) {
+            if (_re_unicode_class(c, id) < 0) {
+                return _re_node(c, N_CLASS);
+            }
+            continue;
+        }
+        if (_re_peek(c) == '\\' && _re_is_shorthand(_re_peek_at(c, 1)) == 1) {
+            // A '-' after a shorthand does not make a range: it is read as the
+            // next member, so [\d-z] is digits, '-' and 'z' (RE2).
+            _re_shorthand(c, id, _re_peek_at(c, 1));
+            c.pos += 2;
+            continue;
+        }
+        const int lo = _re_class_char(c);
+        if (lo < 0) {
+            return _re_node(c, N_CLASS);
+        }
+        // range 'a-z'?  ('-' not immediately before the closing ']')
+        if (_re_peek(c) == '-' && _re_peek_at(c, 1) != ']' && _re_peek_at(c, 1) != -1) {
+            c.pos++;   // consume '-'
+            if (_re_peek(c) == '\\' && (_re_is_shorthand(_re_peek_at(c, 1)) == 1 || _re_peek_at(c, 1) == 'p' || _re_peek_at(c, 1) == 'P')) {
+                if (c.err == null) {
+                    c.err = "invalid character class range";
+                }
+                return _re_node(c, N_CLASS);
+            }
+            const int hi = _re_class_char(c);
+            if (hi < 0) {
+                return _re_node(c, N_CLASS);
+            }
+            // A range whose end is below its start ([z-a]) is an error (RE2).
+            if (hi < lo) {
+                if (c.err == null) {
+                    c.err = "invalid character class range";
+                }
+                return _re_node(c, N_CLASS);
+            }
+            _re_range(c, id, lo, hi);
+        } else {
+            _re_range(c, id, lo, lo);
+        }
+    }
+    c.pos++;   // consume ']'
+    _ReNode* n = _re_node(c, N_CLASS);
+    n.cls = id;
+    return n;
+}
+
+// A backslash escape as an atom: \d \w \s \D \W \S and \p \P become classes, \A
+// \z anchors, \b \B word-boundary assertions, \Q starts literal text, the rest
+// (_re_escape_char) a literal.
+_ReNode* _re_parse_escape(_ReComp* c) {
+    const int e = _re_peek_at(c, 1);
+    if (e == -1) {
+        c.pos++;
+        if (c.err == null) {
+            c.err = "trailing backslash";
+        }
+        return _re_node(c, N_EMPTY);
+    }
+    if (e == 'p' || e == 'P' || _re_is_shorthand(e) == 1) {
+        const int id = _re_class_begin(c, 0);
+        if (e == 'p' || e == 'P') {
+            _re_unicode_class(c, id);
+        }
+        else {
+            _re_shorthand(c, id, e);
+            c.pos += 2;
+        }
+        _ReNode* n = _re_node(c, N_CLASS);
+        n.cls = id;
+        return n;
+    }
+    c.pos += 2;
+    if (e == 'A') {
+        return _re_node(c, N_BOL);
+    }
+    if (e == 'z') {
+        return _re_node(c, N_EOL);
+    }
+    if (e == 'b' || e == 'B') {
+        _ReNode* n = _re_node(c, N_WORDB);
+        n.ch = e == 'B' ? 1 : 0;
+        return n;
+    }
+    if (e == 'Q') {
+        // Non-empty (_re_skip_nops consumed the empty ones): the first quoted
+        // character is this atom, the rest follow as their own atoms.
+        c.inquote = 1;
+        const int r = _re_next_rune(c);
+        if (r < 0) {
+            return _re_node(c, N_EMPTY);
+        }
+        return _re_lit(c, r);
+    }
+    const int ch = _re_escape_char(c, e);
+    if (ch < 0) {
+        return _re_node(c, N_EMPTY);
+    }
+    return _re_lit(c, ch);
+}
+
+// 1 if "(?" at c.pos starts a named group, (?P<name> or (?<name>.
+int _re_named_ahead(_ReComp* c) {
+    const int left = c.len - c.pos;
+    if (left > 4 && c.pat[c.pos + 2] == 'P' && c.pat[c.pos + 3] == '<') {
+        return 1;
+    }
+    if (left > 3 && c.pat[c.pos + 2] == '<') {
+        return 1;
+    }
+    return 0;
+}
+
+// At "(?" (not a named group): read the flags up to ':' or ')' and return that
+// terminator, with the resulting flags in out[0]; -1 with c.err set when the
+// syntax is invalid ((?z), (?-), (?i-), an unterminated group).
+int _re_parse_flags(_ReComp* c, *int out) {
+    c.pos += 2;
+    int add = 0;
+    int del = 0;
+    bool neg = false;
+    bool saw = false;
+    while (c.pos < c.len) {
+        const int ch = (int)((uint8)c.pat[c.pos]);
+        c.pos++;
+        int f = 0;
+        if (ch == 'i') {
+            f = RF_FOLD;
+        }
+        else if (ch == 'm') {
+            f = RF_MULTI;
+        }
+        else if (ch == 's') {
+            f = RF_DOTNL;
+        }
+        else if (ch == 'U') {
+            f = RF_UNGREEDY;
+        }
+        if (f != 0) {
+            if (neg) {
+                del = del | f;
+            } else {
+                add = add | f;
+            }
+            saw = true;
+            continue;
+        }
+        if (ch == '-') {
+            if (neg) {
+                break;
+            }
+            neg = true;
+            saw = false;
+            continue;
+        }
+        if (ch == ':' || ch == ')') {
+            if (neg && !saw) {
+                break;
+            }
+            out[0] = (c.flags | add) & ~del;
+            return ch;
+        }
+        break;
+    }
+    if (c.err == null) {
+        c.err = "invalid or unsupported Perl syntax";
+    }
+    return -1;
+}

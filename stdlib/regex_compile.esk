@@ -1,0 +1,576 @@
+// regex_compile.esk: compilation (part of regex.esk, imported in order)
+
+// Skip what matches nothing and takes no quantifier of its own: empty \Q\E
+// quotes, and flag groups (?flags), which set the flags for the rest of the
+// enclosing group. Returns how many were skipped. As in RE2, a quantifier after
+// them applies to the atom before (a(?i)* is a*).
+int _re_skip_nops(_ReComp* c) {
+    int n = 0;
+    while (c.err == null && c.inquote == 0) {
+        const int pk = _re_peek(c);
+        if (pk == '\\' && _re_peek_at(c, 1) == 'Q') {
+            if (c.pos + 2 >= c.len) {
+                c.pos = c.len;
+                n++;
+                continue;
+            }
+            if (_re_peek_at(c, 2) == '\\' && _re_peek_at(c, 3) == 'E') {
+                c.pos += 4;
+                n++;
+                continue;
+            }
+            break;
+        }
+        if (pk == '(' && _re_peek_at(c, 1) == '?' && _re_named_ahead(c) == 0) {
+            const int save = c.pos;
+            int[1] nf;
+            const int t = _re_parse_flags(c, &nf[0]);
+            if (t == ')') {
+                c.flags = nf[0];
+                n++;
+                continue;
+            }
+            if (t == ':') {
+                c.pos = save;
+            }
+            break;
+        }
+        break;
+    }
+    return n;
+}
+
+_ReNode* _re_parse_alt(_ReComp* c);
+
+// A group at '(': capturing, named, or (?flags:...) non-capturing. The flags in
+// effect before the group come back at its ')'.
+_ReNode* _re_parse_group(_ReComp* c) {
+    // Nesting is bounded so a pattern of many '(' fails cleanly instead of
+    // recursing until the stack overflows.
+    if (c.depth >= RE_MAX_DEPTH) {
+        if (c.err == null) {
+            c.err = "regex nesting too deep";
+        }
+        return _re_node(c, N_EMPTY);
+    }
+    const int saved = c.flags;
+    int g = 0;
+    if (_re_peek_at(c, 1) == '?') {
+        if (_re_named_ahead(c) == 1) {
+            const int s = c.pos + (c.pat[c.pos + 2] == 'P' ? 4 : 3);
+            int e = s;
+            while (e < c.len && c.pat[e] != '>') {
+                e++;
+            }
+            bool valid = e < c.len && e > s;
+            for (int k = s; valid && k < e; k++) {
+                const int ch = (int)((uint8)c.pat[k]);
+                valid = ch == '_' || (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
+            }
+            if (!valid) {
+                if (c.err == null) {
+                    c.err = "invalid named capture";
+                }
+                return _re_node(c, N_EMPTY);
+            }
+            c.pos = e + 1;
+            g = ++c.ngroup;
+        } else {
+            int[1] nf;
+            if (_re_parse_flags(c, &nf[0]) != ':') {
+                return _re_node(c, N_EMPTY);
+            }
+            c.flags = nf[0];
+        }
+    } else {
+        c.pos++;
+        g = ++c.ngroup;
+    }
+    c.depth++;
+    _ReNode* inner = _re_parse_alt(c);
+    c.depth--;
+    c.flags = saved;
+    if (c.err != null) {
+        return inner;
+    }
+    if (_re_peek(c) != ')') {
+        if (c.err == null) {
+            c.err = "missing )";
+        }
+        return _re_node(c, N_EMPTY);
+    }
+    c.pos++;
+    if (g == 0) {
+        return inner;
+    }
+    _ReNode* n = _re_node(c, N_GROUP);
+    n.grp = g;
+    n.left = inner;
+    return n;
+}
+
+_ReNode* _re_parse_atom(_ReComp* c) {
+    if (c.inquote == 1) {
+        const int r = _re_next_rune(c);
+        if (r < 0) {
+            return _re_node(c, N_EMPTY);
+        }
+        return _re_lit(c, r);
+    }
+    const int pk = _re_peek(c);
+    if (pk == '(') {
+        return _re_parse_group(c);
+    }
+    if (pk == '[') {
+        return _re_parse_class(c);
+    }
+    if (pk == '.') {
+        c.pos++;
+        _ReNode* n = _re_node(c, N_ANY);
+        n.ch = (c.flags & RF_DOTNL) != 0 ? 1 : 0;
+        return n;
+    }
+    if (pk == '^' || pk == '$') {
+        c.pos++;
+        _ReNode* n = _re_node(c, pk == '^' ? N_BOL : N_EOL);
+        n.ch = (c.flags & RF_MULTI) != 0 ? 1 : 0;
+        return n;
+    }
+    if (pk == '\\') {
+        return _re_parse_escape(c);
+    }
+    if (pk == '*' || pk == '+' || pk == '?' || (pk == '{' && _re_repeat_ahead(c) == 1)) {
+        if (c.err == null) {
+            c.err = "nothing to repeat";
+        }
+        return _re_node(c, N_EMPTY);
+    }
+    if (pk == -1) {
+        if (c.err == null) {
+            c.err = "unexpected end of pattern";
+        }
+        return _re_node(c, N_EMPTY);
+    }
+    // ordinary literal
+    const int r = _re_next_rune(c);
+    if (r < 0) {
+        return _re_node(c, N_EMPTY);
+    }
+    return _re_lit(c, r);
+}
+
+// Read a repeat count: -1 when there are no digits, -2 when it exceeds
+// RE_MAX_REPEAT (the value is clamped while reading, so it cannot wrap).
+int _re_read_int(_ReComp* c) {
+    const int start = c.pos;
+    int v = 0;
+    while (_re_peek(c) >= '0' && _re_peek(c) <= '9') {
+        if (v <= RE_MAX_REPEAT) {
+            v = v * 10 + (_re_peek(c) - '0');
+        }
+        c.pos++;
+    }
+    if (c.pos == start) {
+        return -1;
+    }
+    return v > RE_MAX_REPEAT ? -2 : v;
+}
+
+// 1 if the '{' at c.pos starts a repeat: {n}, {n,} or {n,m}. Any other '{'
+// ('{', 'a{', 'a{,2}', 'a{x}') is a literal, as in RE2.
+int _re_repeat_ahead(_ReComp* c) {
+    int p = c.pos + 1;
+    const int s = p;
+    while (p < c.len && c.pat[p] >= '0' && c.pat[p] <= '9') {
+        p++;
+    }
+    if (p == s) {
+        return 0;
+    }
+    if (p < c.len && c.pat[p] == ',') {
+        p++;
+        while (p < c.len && c.pat[p] >= '0' && c.pat[p] <= '9') {
+            p++;
+        }
+    }
+    return p < c.len && c.pat[p] == '}' ? 1 : 0;
+}
+
+// Read the quantifier at c.pos into out[0..2] (min, max with -1 unbounded,
+// greedy). Returns 1 if one was read, 0 if none is there, -1 on error.
+int _re_quantifier(_ReComp* c, *int out) {
+    const int pk = _re_peek(c);
+    int rmin = 0;
+    int rmax = 0;
+    if (pk == '*') {
+        c.pos++;
+        rmin = 0;
+        rmax = -1;
+    }
+    else if (pk == '+') {
+        c.pos++;
+        rmin = 1;
+        rmax = -1;
+    }
+    else if (pk == '?') {
+        c.pos++;
+        rmin = 0;
+        rmax = 1;
+    }
+    else if (pk == '{' && _re_repeat_ahead(c) == 1) {
+        c.pos++;
+        const int m1 = _re_read_int(c);
+        if (m1 == -2) {
+            if (c.err == null) {
+                c.err = "invalid repeat count";
+            }
+            return -1;
+        }
+        rmin = m1;
+        if (_re_peek(c) == ',') {
+            c.pos++;
+            if (_re_peek(c) == '}') {
+                rmax = -1;
+            }
+            else {
+                const int m2 = _re_read_int(c);
+                if (m2 == -2) {
+                    if (c.err == null) {
+                        c.err = "invalid repeat count";
+                    }
+                    return -1;
+                }
+                rmax = m2;
+            }
+        } else {
+            rmax = rmin;
+        }
+        if (rmax != -1 && rmax < rmin) {
+            if (c.err == null) {
+                c.err = "invalid {n,m}: max below min";
+            }
+            return -1;
+        }
+        c.pos++;   // '}' (_re_repeat_ahead checked it is there)
+    } else {
+        return 0;
+    }
+    int greedy = 1;
+    if (_re_peek(c) == '?') {
+        c.pos++;
+        greedy = 0;
+    }
+    if ((c.flags & RF_UNGREEDY) != 0) {
+        greedy = 1 - greedy;
+    }
+    out[0] = rmin;
+    out[1] = rmax;
+    out[2] = greedy;
+    return 1;
+}
+
+_ReNode* _re_parse_repeat(_ReComp* c) {
+    _ReNode* a = _re_parse_atom(c);
+    if (c.err != null) {
+        return a;
+    }
+    if (c.inquote == 1) {
+        // Only the last quoted character takes a quantifier (\Qab\E* is ab*).
+        if (_re_peek(c) == '\\' && _re_peek_at(c, 1) == 'E') {
+            c.pos += 2;
+            c.inquote = 0;
+        }
+        else if (c.pos >= c.len) {
+            c.inquote = 0;
+        }
+        else {
+            return a;
+        }
+    }
+    bool applied = false;
+    while (true) {
+        const int skipped = _re_skip_nops(c);
+        if (c.err != null) {
+            return a;
+        }
+        // a** is an error (RE2): the second '*' is left for _re_parse_atom.
+        if (applied && skipped == 0) {
+            break;
+        }
+        int[3] q;
+        const int got = _re_quantifier(c, &q[0]);
+        if (got < 0) {
+            return a;
+        }
+        if (got == 0) {
+            break;
+        }
+        _ReNode* n = _re_node(c, N_REPEAT);
+        n.left = a;
+        n.rmin = q[0];
+        n.rmax = q[1];
+        n.greedy = q[2];
+        a = n;
+        applied = true;
+    }
+    return a;
+}
+
+_ReNode* _re_parse_concat(_ReComp* c) {
+    _ReNode* left = null;
+    while (c.err == null) {
+        _re_skip_nops(c);
+        if (c.err != null) {
+            break;
+        }
+        const int pk = _re_peek(c);
+        if (pk == -1) {
+            break;
+        }
+        if (c.inquote == 0 && (pk == '|' || pk == ')')) {
+            break;
+        }
+        _ReNode* atom = _re_parse_repeat(c);
+        if (left == null) {
+            left = atom;
+        }
+        else {
+            _ReNode* n = _re_node(c, N_CONCAT);
+            n.left = left;
+            n.right = atom;
+            left = n;
+        }
+    }
+    return left == null ? _re_node(c, N_EMPTY) : left;
+}
+
+_ReNode* _re_parse_alt(_ReComp* c) {
+    _ReNode* left = _re_parse_concat(c);
+    while (_re_peek(c) == '|' && c.err == null) {
+        c.pos++;
+        _ReNode* right = _re_parse_concat(c);
+        _ReNode* n = _re_node(c, N_ALT);
+        n.left = left;
+        n.right = right;
+        left = n;
+    }
+    return left;
+}
+
+// =========================== compilation ===================================
+
+int _re_emit(_ReComp* c, int op, int a, int b) {
+    if (c.err != null) {
+        return 0;
+    }
+    Regex* re = c.re;
+    if (re.ninst >= RE_MAX_INST) {
+        c.err = "regex program too large";
+        return 0;
+    }
+    const int idx = re.ninst++;
+    re.inst[idx].op = op;
+    re.inst[idx].a = a;
+    re.inst[idx].b = b;
+    return idx;
+}
+
+void _re_compile_node(_ReComp* c, _ReNode* n);
+
+// Can `n` match the empty string?
+bool _re_nullable(_ReNode* n) {
+    if (n == null) {
+        return true;
+    }
+    switch (n.kind) {
+        case N_LIT: return false;
+        case N_ANY: return false;
+        case N_CLASS: return false;
+        case N_CONCAT: return _re_nullable(n.left) && _re_nullable(n.right);
+        case N_ALT: return _re_nullable(n.left) || _re_nullable(n.right);
+        case N_GROUP: return _re_nullable(n.left);
+        case N_REPEAT: return n.rmin == 0 || _re_nullable(n.left);
+        default: return true;
+    }
+}
+
+void _re_compile_repeat(_ReComp* c, _ReNode* n) {
+    const int rmin = n.rmin;
+    const int rmax = n.rmax;
+    const bool greedy = n.greedy == 1;
+    _ReNode* child = n.left;
+
+    // Unbounded repeats follow RE2: x{n,} is n-1 copies of x then x+, and x*
+    // is a loop, or (x+)? when x can match empty (the loop form would reach
+    // its already-visited split after an empty iteration and drop that path).
+    const int copies = rmax == -1 && rmin > 0 ? rmin - 1 : rmin;
+    for (int i = 0; i < copies && c.err == null; i++) {
+        _re_compile_node(c, child);
+    }
+    if (c.err != null) {
+        return;
+    }
+
+    if (rmax == -1 && (rmin > 0 || _re_nullable(child))) {
+        // x+:     body: child; l: split(body, end); end:
+        // (x+)?:  q: split(body, end); then x+
+        int q = -1;
+        if (rmin == 0) {
+            q = _re_emit(c, OP_SPLIT, 0, 0);
+        }
+        const int body = c.re.ninst;
+        _re_compile_node(c, child);
+        const int l = _re_emit(c, OP_SPLIT, 0, 0);
+        const int end = c.re.ninst;
+        if (c.err != null) {
+            return;
+        }
+        if (greedy) {
+            c.re.inst[l].a = body;
+            c.re.inst[l].b = end;
+        }
+        else {
+            c.re.inst[l].a = end;
+            c.re.inst[l].b = body;
+        }
+        if (q >= 0) {
+            if (greedy) {
+                c.re.inst[q].a = body;
+                c.re.inst[q].b = end;
+            }
+            else {
+                c.re.inst[q].a = end;
+                c.re.inst[q].b = body;
+            }
+        }
+        return;
+    }
+    if (rmax == -1) {
+        // x*: L: split(body,end); body: child; jmp L; end:
+        const int lsplit = _re_emit(c, OP_SPLIT, 0, 0);
+        const int body = c.re.ninst;
+        _re_compile_node(c, child);
+        _re_emit(c, OP_JMP, lsplit, 0);
+        const int end = c.re.ninst;
+        if (greedy) {
+            c.re.inst[lsplit].a = body;
+            c.re.inst[lsplit].b = end;
+        }
+        else {
+            c.re.inst[lsplit].a = end;
+            c.re.inst[lsplit].b = body;
+        }
+        return;
+    }
+
+    // Each optional copy: split(body, end); body: child. All splits exit to end.
+    const int reps = rmax - rmin;
+    if (reps <= 0) {
+        return;
+    }
+    if (reps > RE_MAX_INST) {
+        c.err = "regex program too large";
+        return;
+    }
+    *int splits = alloc<int>(reps);
+    defer free(splits);
+    for (int i = 0; i < reps && c.err == null; i++) {
+        const int s = _re_emit(c, OP_SPLIT, 0, 0);
+        splits[i] = s;
+        const int body = c.re.ninst;
+        _re_compile_node(c, child);
+        if (greedy) {
+            c.re.inst[s].a = body;
+        }
+        else {
+            c.re.inst[s].b = body;
+        }
+    }
+    const int end = c.re.ninst;
+    for (i in 0..reps) {
+        const int s = splits[i];
+        if (greedy) {
+            c.re.inst[s].b = end;
+        }
+        else {
+            c.re.inst[s].a = end;
+        }
+    }
+}
+
+void _re_compile_node(_ReComp* c, _ReNode* n) {
+    if (n == null || c.err != null) {
+        return;
+    }
+    switch (n.kind) {
+        case N_LIT: _re_emit(c, OP_CHAR, n.ch, n.fold);
+        break;
+        case N_ANY: _re_emit(c, OP_ANY, n.ch, 0);
+        break;
+        case N_CLASS: _re_emit(c, OP_CLASS, n.cls, 0);
+        break;
+        case N_BOL: _re_emit(c, OP_BOL, n.ch, 0);
+        break;
+        case N_EOL: _re_emit(c, OP_EOL, n.ch, 0);
+        break;
+        case N_WORDB: _re_emit(c, OP_WORDB, n.ch, 0);
+        break;
+        case N_CONCAT:
+        if (c.rev == 1) {
+            _re_compile_node(c, n.right);
+            _re_compile_node(c, n.left);
+        } else {
+            _re_compile_node(c, n.left);
+            _re_compile_node(c, n.right);
+        }
+        break;
+        case N_GROUP:
+        if (c.rev == 1) {
+            _re_compile_node(c, n.left);
+            break;
+        }
+        _re_emit(c, OP_SAVE, 2 * n.grp, 0);
+        _re_compile_node(c, n.left);
+        _re_emit(c, OP_SAVE, 2 * n.grp + 1, 0);
+        break;
+        case N_ALT: {
+            // split(a, b); a: left; jmp end; b: right; end:
+            const int s = _re_emit(c, OP_SPLIT, 0, 0);
+            const int a = c.re.ninst;
+            _re_compile_node(c, n.left);
+            const int j = _re_emit(c, OP_JMP, 0, 0);
+            const int b = c.re.ninst;
+            _re_compile_node(c, n.right);
+            const int end = c.re.ninst;
+            c.re.inst[s].a = a;
+            c.re.inst[s].b = b;
+            c.re.inst[j].a = end;
+        }
+        break;
+        case N_REPEAT: _re_compile_repeat(c, n);
+        break;
+        default: break;                // N_EMPTY emits nothing
+    }
+}
+
+// Allocate a search scratch block for a compiled program. Each thread list
+// holds at most one thread per instruction (visited dedups a pc per
+// generation), so ninst + 2 capture slots per list always suffice.
+*_ReScratch _re_scratch_new(Regex* re) {
+    const int ninst = re.ninst;
+    const int ncap = 2 * (re.ngroup + 1);
+    const int64 slots = (int64)(ninst + 2) * ncap;
+    *_ReScratch sc = alloc<_ReScratch>(1);
+    sc.visited = alloc<int>(ninst + 1);
+    for (i in 0..ninst) {
+        sc.visited[i] = -1;
+    }
+    sc.la = alloc<_ReThread>(ninst + 2);
+    sc.lb = alloc<_ReThread>(ninst + 2);
+    sc.capsA = alloc<int>(slots);
+    sc.capsB = alloc<int>(slots);
+    sc.work = alloc<int>(2 * ncap);
+    return sc;
+}
+
+void _re_dfa_free(*_ReDfa d);

@@ -1,0 +1,509 @@
+// regex_search.esk: the backtracker, searching and the public matching API (part of regex.esk, imported in order)
+
+// Set to make every search run the Pike VM alone (tests compare it with the DFA).
+bool _re_force_vm = false;
+
+// The groups of the match the DFAs found over [b, e], by a bounded backtracker
+// (RE2's BitState): the paths from b in priority order, each (pc, position)
+// followed once and none past e; the first to reach MATCH is the Pike VM's
+// thread, and it ends at e. For a short span it costs far less than the VM's
+// thread lists. False when the span is over the budget, or when that match does
+// not end at e (the DFA and the VM would disagree): the caller runs the VM.
+#define RE_BT_BITS 32768
+
+bool _re_bt_push(*_ReScratch sc, *int n, int a, int v) {
+    if (*n == sc.bt_cap) {
+        const int nc = sc.bt_cap == 0 ? 64 : sc.bt_cap * 2;
+        *int ns = alloc<int>(2 * nc);
+        for (i in 0..2 * *n) {
+            ns[i] = sc.bt_stack[i];
+        }
+        free(sc.bt_stack);
+        sc.bt_stack = ns;
+        sc.bt_cap = nc;
+    }
+    sc.bt_stack[2 * *n] = a;
+    sc.bt_stack[2 * *n + 1] = v;
+    *n = *n + 1;
+    return true;
+}
+
+// Mark (pc, sp) as tried: false when it already was.
+bool _re_bt_mark(*_ReScratch sc, int span, int b, int pc, int sp) {
+    const int bit = pc * span + (sp - b);
+    const uint32 mask = (uint32)1 << (uint32)(bit & 31);
+    if ((sc.bt_vis[bit >> 5] & mask) != (uint32)0) {
+        return false;
+    }
+    sc.bt_vis[bit >> 5] = sc.bt_vis[bit >> 5] | mask;
+    return true;
+}
+
+bool _re_backtrack(Regex* re, *_ReScratch sc, string text, int len, int b, int e, *int caps) {
+    const int span = e - b + 1;
+    if ((int64)re.ninst * span > (int64)RE_BT_BITS) {
+        return false;
+    }
+    if (sc.bt_vis == null) {
+        sc.bt_vis = alloc<uint32>(RE_BT_BITS / 32);
+    }
+    const int words = (re.ninst * span + 31) / 32;
+    for (i in 0..words) {
+        sc.bt_vis[i] = (uint32)0;
+    }
+    const int ncap = 2 * (re.ngroup + 1);
+    for (k in 0..ncap) {
+        caps[k] = -1;
+    }
+    *uint64 am = re._amask;
+    int n = 0;
+    int[1] w;
+    _re_bt_push(sc, &n, 0, b);
+    while (n > 0) {
+        n--;
+        const int a = sc.bt_stack[2 * n];
+        const int v = sc.bt_stack[2 * n + 1];
+        if (a < 0) {
+            caps[-a - 1] = v;
+            continue;
+        }
+        int pc = a;
+        int sp = v;
+        // Follow the path's first choice, pushing the others; leave it at a
+        // dead end or a (pc, position) already tried. A point is marked when
+        // the path reaches it, as the VM does, not when it is pushed.
+        bool alive = _re_bt_mark(sc, span, b, pc, sp);
+        while (alive) {
+            _ReInst* ins = &re.inst[pc];
+            const int op = ins.op;
+            int npc = pc + 1;
+            int nsp = sp;
+            if (op == OP_MATCH) {
+                caps[0] = b;
+                caps[1] = sp;
+                return sp == e;
+            } else if (op == OP_JMP) {
+                npc = ins.a;
+            } else if (op == OP_SPLIT) {
+                _re_bt_push(sc, &n, ins.b, sp);
+                npc = ins.a;
+            } else if (op == OP_SAVE) {
+                _re_bt_push(sc, &n, -ins.a - 1, caps[ins.a]);
+                caps[ins.a] = sp;
+            } else if (op == OP_BOL) {
+                alive = sp == 0 || (ins.a == 1 && text[sp - 1] == '\n');
+            } else if (op == OP_EOL) {
+                alive = sp == len || (ins.a == 1 && text[sp] == '\n');
+            } else if (op == OP_WORDB) {
+                const bool before = sp > 0 && _re_is_word((int)((uint8)text[sp - 1]));
+                const bool after = sp < len && _re_is_word((int)((uint8)text[sp]));
+                alive = (before != after) != (ins.a == 1);
+            } else {
+                // CHAR / ANY / CLASS: the code point at sp, inside the span.
+                alive = false;
+                if (sp < e) {
+                    w[0] = 1;
+                    int ch = _re_decode(text, len, sp, &w[0]);
+                    if (ch < 0) {
+                        ch = 0xFFFD;
+                    }
+                    if (ch < 128) {
+                        alive = ((am[2 * pc + (ch >> 6)] >> (uint64)(ch & 63)) & (uint64)1) != (uint64)0;
+                    } else if (op == OP_CHAR) {
+                        alive = _re_char_eq(ins.a, ins.b, ch) == 1;
+                    } else if (op == OP_ANY) {
+                        alive = ch != '\n' || ins.a == 1;
+                    } else {
+                        alive = _re_in_class(re, ins.a, ch) == 1;
+                    }
+                    nsp = sp + w[0];
+                    alive = alive && nsp <= e;
+                }
+            }
+            if (alive) {
+                alive = _re_bt_mark(sc, span, b, npc, nsp);
+                pc = npc;
+                sp = nsp;
+            }
+        }
+    }
+    return false;
+}
+
+// Regex_search_at, writing the groups of a match into `buf` (2 * (ngroup + 1)
+// ints, or null to allocate them). `buf` is not freed when there is no match.
+int _re_search(Regex* re, string text, int64 len, int64 start, Match* m, *int buf) {
+    m.ok = 0;
+    m.ngroup = re.ngroup;
+    m.start = -1;
+    m.end = -1;
+    m.cap = null;
+    if (re.ok == 0 || start < 0 || start > len || len > 2147483646) {
+        return 0;
+    }
+    if (re._bolonly == 1 && start > 0) {
+        return 0;
+    }
+    // The Regex's scratch when no other search holds it, else one for this call.
+    *_ReScratch sc = re._scratch;
+    const bool own = !atomic_cas(&sc.busy, 0, 1);
+    if (own) {
+        sc = _re_scratch_new(re);
+    }
+    const int ncap = 2 * (re.ngroup + 1);
+    *int caps = &sc.work[ncap];
+    bool matched = false;
+    bool done = false;
+    // The DFAs find where the match ends and where it starts; the Pike VM then
+    // runs over that span only, for the groups (none to find: no run at all).
+    if (sc.dfa_off == 0 && re._rinst != null && !_re_force_vm) {
+        if (sc.fdfa == null) {
+            sc.fdfa = _re_dfa_new(re, 0);
+            sc.rdfa = _re_dfa_new(re, 1);
+        }
+        int[1] e;
+        const int f = _re_dfa_forward(re, sc.fdfa, text, (int)len, (int)start, &e[0]);
+        if (f == 0) {
+            done = true;
+        } else if (f == 1) {
+            const int b = _re_dfa_reverse(sc.rdfa, text, (int)len, (int)start, e[0]);
+            if (b >= 0) {
+                done = true;
+                matched = true;
+                if (re.ngroup == 0) {
+                    caps[0] = b;
+                    caps[1] = e[0];
+                } else {
+                    matched = _re_backtrack(re, sc, text, (int)len, b, e[0], caps)
+                        || _re_pike(re, sc, text, len, (int64)b, true, caps);
+                }
+            }
+        }
+        if (!done) {
+            sc.dfa_off = 1;
+        }
+    }
+    if (!done) {
+        matched = _re_pike(re, sc, text, len, start, false, caps);
+    }
+    if (matched) {
+        m.ok = 1;
+        m.cap = buf != null ? buf : alloc<int>(ncap);
+        for (j in 0..ncap) {
+            m.cap[j] = caps[j];
+        }
+        m.start = m.cap[0];
+        m.end = m.cap[1];
+    }
+    if (own) {
+        _re_scratch_free(sc);
+    } else {
+        atomic_store(&sc.busy, 0);
+    }
+    return m.ok;
+}
+
+// The Pike VM from `start` (only there when `anchored`): true and the groups of
+// the leftmost-first match in `out` (2 * (ngroup + 1) ints), or false.
+bool _re_pike(Regex* re, *_ReScratch sc, string text, int64 len, int64 start, bool anchored, *int out) {
+    let vm: _ReVm;
+    vm.prog = re;
+    vm.text = text;
+    vm.len = (int)len;
+    vm.ncap = 2 * (re.ngroup + 1);
+    const int ninst = re.ninst;
+    vm.visited = sc.visited;
+    vm.la = sc.la;
+    vm.lb = sc.lb;
+    vm.capsA = sc.capsA;
+    vm.capsB = sc.capsB;
+    vm.nA = 0;
+    vm.nB = 0;
+    *int workcaps = sc.work;
+    *int bestcaps = &sc.work[vm.ncap];
+
+    // Generations count up across searches; a search uses at most two per
+    // step, and the stamps restart when the count could overflow.
+    int glob = sc.visited[ninst];
+    if ((int64)glob + 2 * (len - start) + 8 > (int64)2147483647) {
+        for (i in 0..ninst) {
+            sc.visited[i] = -1;
+        }
+        glob = 0;
+    }
+    glob++;
+
+    bool matched = false;
+    int cur = 0;
+    int curgen = glob;
+    int[1] w;
+
+    // One step per code point: every thread reads the one at sp, whose width
+    // (1 for a byte that is not valid UTF-8, read as U+FFFD) moves sp.
+    *uint64 am = re._amask;
+    *uint8 fb = re._first;
+    const bool pf = re._pf == 1;
+    const int req = re._req;
+    int reqpos = -1;
+    int reqmin = 0;
+    int sp = (int)start;
+    while (sp <= vm.len) {
+        if (!matched && (cur == 0 ? vm.nA : vm.nB) == 0) {
+            // No thread is alive: a match can only start where the prefilter
+            // allows (and only at offset 0 when every match starts there).
+            if (re._bolonly == 1 && sp > 0) {
+                break;
+            }
+            if (anchored) {
+                if (sp > (int)start) {
+                    break;
+                }
+            }
+            int nsp = sp;
+            if (req >= 0 && !anchored) {
+                // A match holds a `req` byte at or after its start, so none
+                // starts at sp or later if no `req` byte follows. With _reqscan,
+                // every byte of a match is in _inmatch, so a match starting
+                // before the first `req` byte must cover the run of _inmatch
+                // bytes that ends there: none starts before that run (reqmin).
+                if (sp > reqpos) {
+                    *uint8 base = (*uint8)text;
+                    *void p = memchr((*void)(base + sp), req, (size_t)(vm.len - sp));
+                    if (p == null) {
+                        break;
+                    }
+                    reqpos = (int)((*uint8)p - base);
+                    reqmin = sp;
+                    if (re._reqscan == 1) {
+                        reqmin = reqpos;
+                        while (reqmin > sp && re._inmatch[(int)((uint8)text[reqmin - 1])] != (uint8)0) {
+                            reqmin--;
+                        }
+                    }
+                }
+                if (reqmin > nsp) {
+                    nsp = reqmin;
+                }
+            }
+            if (pf && !anchored) {
+                nsp = _re_skip(re, text, vm.len, nsp);
+                if (nsp >= vm.len) {
+                    break;
+                }
+            }
+            if (nsp != sp) {
+                sp = nsp;
+                curgen = ++glob;
+            }
+        }
+        int ch = -1;
+        w[0] = 1;
+        if (sp < vm.len) {
+            ch = _re_decode(text, vm.len, sp, &w[0]);
+            if (ch < 0) {
+                ch = 0xFFFD;
+            }
+        }
+        // Until a match is found, start a new thread at every position where a
+        // match can start (a thread started elsewhere would die at once).
+        if (!matched && (!pf || (sp < vm.len && fb[(int)((uint8)text[sp])] != (uint8)0)) && (re._bolonly == 0 || sp == 0)
+            && (!anchored || sp == (int)start)) {
+            for (k in 0..vm.ncap) {
+                workcaps[k] = -1;
+            }
+            _re_addthread(&vm, cur, curgen, 0, workcaps, sp);
+        }
+        const int cn = cur == 0 ? vm.nA : vm.nB;
+        if (cn == 0 && matched) {
+            break;
+        }
+        const int oth = 1 - cur;
+        const int nextgen = ++glob;
+        if (oth == 0) {
+            vm.nA = 0;
+        } else {
+            vm.nB = 0;
+        }
+
+        for (ci in 0..cn) {
+            const int tpc = cur == 0 ? vm.la[ci].pc : vm.lb[ci].pc;
+            *int tcaps = cur == 0 ? vm.la[ci].caps : vm.lb[ci].caps;
+            _ReInst* ins = &re.inst[tpc];
+            const int op = ins.op;
+            if (op == OP_MATCH) {
+                for (j in 0..vm.ncap) {
+                    bestcaps[j] = tcaps[j];
+                }
+                matched = true;
+                break;                          // cut lower-priority threads
+            }
+            if (sp >= vm.len) {
+                continue;
+            }
+            bool step = false;
+            if (ch < 128) {
+                step = ((am[2 * tpc + (ch >> 6)] >> (uint64)(ch & 63)) & (uint64)1) != (uint64)0;
+            }
+            else if (op == OP_CHAR) {
+                step = _re_char_eq(ins.a, ins.b, ch) == 1;
+            }
+            else if (op == OP_ANY) {
+                step = ch != '\n' || ins.a == 1;
+            }
+            else if (op == OP_CLASS) {
+                step = _re_in_class(re, ins.a, ch) == 1;
+            }
+            if (step) {
+                _re_addthread(&vm, oth, nextgen, tpc + 1, tcaps, sp + w[0]);
+            }
+        }
+        cur = oth;
+        curgen = nextgen;
+        sp += w[0];
+    }
+    sc.visited[ninst] = glob;
+    if (matched) {
+        for (j in 0..vm.ncap) {
+            out[j] = bestcaps[j];
+        }
+    }
+    return matched;
+}
+
+// Search the `len` bytes of `text` for the leftmost match of `re` that starts
+// at byte offset `start` or later. The bytes before `start` are left context:
+// `^` matches at `start` only when it is 0 (or, with (?m), after a newline),
+// and `\b` / `\B` look at the byte before it. Match offsets are offsets into
+// `text`, not from `start`. `text` needs no terminating NUL. On success fills
+// `m` and returns 1; otherwise returns 0 (also for `start` outside 0..len).
+// `m` must be freed with Match_free.
+int Regex_search_at(Regex* re, string text, int64 len, int64 start, Match* m) {
+    return _re_search(re, text, len, start, m, null);
+}
+
+// Search the NUL-terminated `text` for the leftmost match of `re`. On success
+// fills `m` and returns 1; otherwise returns 0. `m` must be freed with
+// Match_free. To search from an offset, or to find every match, use
+// Regex_search_at or Regex_iter: searching `text + off` loses the left context
+// that `^`, `\b` and `\B` read.
+int Regex_search(Regex* re, string text, Match* m) {
+    return Regex_search_at(re, text, (int64)strlen(text), 0, m);
+}
+
+// Iterates over the successive non-overlapping matches of a Regex in a text,
+// left to right, as Go's FindAll and RE2: after an empty match the search goes
+// on one code point later, and an empty match right where the previous match
+// ended is skipped.
+//
+//   RegexIter it = Regex_iter(&re, text, len);
+//   let m: Match;
+//   while (RegexIter_next(&it, &m) == 1) {
+//       // m.start, m.end, Match_group(&m, text, 1, &out) ...
+//   }
+//   Match_free(&m);
+struct RegexIter {
+    Regex* re;
+    string text;
+    int64 len;
+    int64 pos;        // where the next search starts; len + 1 when done
+    int64 prev_end;   // end of the last match, -1 before the first
+    *int last_cap;    // the groups handed out by the last RegexIter_next
+}
+
+// An iterator over the matches of `re` in the `len` bytes of `text`.
+RegexIter Regex_iter(Regex* re, string text, int64 len) {
+    let it: RegexIter;
+    it.re = re;
+    it.text = text;
+    it.len = len;
+    it.pos = 0;
+    it.prev_end = -1;
+    it.last_cap = null;
+    return it;
+}
+
+// Find the next match: fills `m` and returns 1, or returns 0 when there are no
+// more. The groups of the match the previous call left in `m` are freed here,
+// so only the last one needs a Match_free.
+int RegexIter_next(RegexIter* it, Match* m) {
+    // The groups buffer handed out last time is reused for this match.
+    *int buf = null;
+    if (it.last_cap != null && m.cap == it.last_cap) {
+        buf = m.cap;
+    }
+    it.last_cap = null;
+    while (it.pos <= it.len) {
+        if (_re_search(it.re, it.text, it.len, it.pos, m, buf) == 0) {
+            free(buf);
+            it.pos = it.len + 1;
+            return 0;
+        }
+        buf = m.cap;
+        bool accept = true;
+        if ((int64)m.end == it.pos) {
+            // An empty match: the next search starts one code point later.
+            if ((int64)m.start == it.prev_end) {
+                accept = false;
+            }
+            if (it.pos < it.len) {
+                int[1] w;
+                _re_decode(it.text, (int)it.len, (int)it.pos, &w[0]);
+                it.pos += (int64)w[0];
+            } else {
+                it.pos = it.len + 1;
+            }
+        } else {
+            it.pos = (int64)m.end;
+        }
+        it.prev_end = (int64)m.end;
+        if (accept) {
+            it.last_cap = m.cap;
+            return 1;
+        }
+    }
+    free(buf);
+    m.cap = null;
+    m.ok = 0;
+    return 0;
+}
+
+void Match_free(Match* m) {
+    if (m.cap != null) {
+        free(m.cap);
+        m.cap = null;
+    }
+}
+
+// Append capture group `i` (0 = whole match) of the last search into `out`,
+// which must already be String_init'd. Does nothing if the group is unset.
+void Match_group(Match* m, string text, int i, String* out) {
+    if (m.ok == 0) {
+        return;
+    }
+    if (i < 0 || i > m.ngroup) {
+        return;
+    }
+    const int s = m.cap[2 * i];
+    const int e = m.cap[2 * i + 1];
+    if (s < 0 || e < 0 || e < s) {
+        return;
+    }
+    for (k in s..e) {
+        out.push(text[k]);
+    }
+}
+
+// Convenience: does `pattern` match anywhere in `text`? Returns 1/0. Compiles
+// and frees internally, so for repeated use prefer regex_compile + Regex_search.
+int regex_match(string pattern, string text) {
+    Regex re = regex_compile(pattern);
+    if (re.ok == 0) {
+        Regex_free(&re);
+        return 0;
+    }
+    let m: Match;
+    const int r = Regex_search(&re, text, &m);
+    Match_free(&m);
+    Regex_free(&re);
+    return r;
+}

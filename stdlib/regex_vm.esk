@@ -1,0 +1,580 @@
+// regex_vm.esk: the Pike VM and the search prefilter (part of regex.esk, imported in order)
+
+void _re_scratch_free(*_ReScratch sc) {
+    if (sc == null) {
+        return;
+    }
+    _re_dfa_free(sc.fdfa);
+    _re_dfa_free(sc.rdfa);
+    free(sc.visited);
+    free(sc.la);
+    free(sc.lb);
+    free(sc.capsA);
+    free(sc.capsB);
+    free(sc.work);
+    free(sc.bt_vis);
+    free(sc.bt_stack);
+    free(sc);
+}
+
+void _re_analyze(Regex* re);
+bool _re_assert_loops(Regex* re);
+
+// Mark in req the ASCII bytes that every match of `n` contains: those of its
+// case-sensitive literals that it cannot skip (outside optional repeats, and in
+// both sides of an alternation).
+void _re_required(_ReNode* n, *uint8 req) {
+    if (n == null) {
+        return;
+    }
+    if (n.kind == N_LIT) {
+        if (n.fold == 0 && n.ch < 128) {
+            req[n.ch] = (uint8)1;
+        }
+    } else if (n.kind == N_CONCAT) {
+        _re_required(n.left, req);
+        _re_required(n.right, req);
+    } else if (n.kind == N_GROUP) {
+        _re_required(n.left, req);
+    } else if (n.kind == N_REPEAT) {
+        if (n.rmin > 0) {
+            _re_required(n.left, req);
+        }
+    } else if (n.kind == N_ALT) {
+        *uint8 a = alloc<uint8>(128);
+        *uint8 b = alloc<uint8>(128);
+        _re_required(n.left, a);
+        _re_required(n.right, b);
+        for (i in 0..128) {
+            if (a[i] != (uint8)0 && b[i] != (uint8)0) {
+                req[i] = (uint8)1;
+            }
+        }
+        free(a);
+        free(b);
+    }
+}
+
+// Choose the required byte the search checks for first: one that cannot start
+// a match (the start prefilter already looks for those) and that is not a
+// letter or digit (punctuation tends to be rarer in text). -1 for none.
+int _re_pick_required(Regex* re, _ReNode* ast) {
+    *uint8 req = alloc<uint8>(128);
+    defer free(req);
+    _re_required(ast, req);
+    int best = -1;
+    int best_rank = 0;
+    for (i in 0..128) {
+        if (req[i] == (uint8)0 || i == re._pfbyte) {
+            continue;
+        }
+        const bool alnum = (i >= '0' && i <= '9') || (i >= 'a' && i <= 'z') || (i >= 'A' && i <= 'Z');
+        const int rank = (re._first[i] == (uint8)0 ? 2 : 0) + (alnum ? 1 : 2);
+        if (rank > best_rank) {
+            best = i;
+            best_rank = rank;
+        }
+    }
+    return best;
+}
+
+// Compile a pattern. Check the returned Regex.ok before matching; on failure
+// Regex.err holds the reason. Free with Regex_free either way.
+Regex regex_compile(string pattern) {
+    let re: Regex;
+    re.inst = alloc<_ReInst>(RE_MAX_INST);
+    re.ninst = 0;
+    re.classes = alloc<_ReClassInfo>(RE_MAX_CLASS);
+    re.nclass = 0;
+    re.ranges = alloc<_ReRange>(RE_MAX_RANGE);
+    re.nrange = 0;
+    re.props = alloc<_ReProp>(RE_MAX_PROP);
+    re.nprop = 0;
+    re.ngroup = 0;
+    re.ok = 0;
+    re.err = null;
+    re._rinst = null;
+    re._rninst = 0;
+    re._ramask = null;
+
+    let c: _ReComp;
+    c.pat = pattern;
+    c.len = (int)strlen(pattern);
+    c.pos = 0;
+    c.ngroup = 0;
+    c.err = null;
+    c.re = &re;
+    c.nodes = alloc<_ReNode>(RE_MAX_NODES);
+    c.nnode = 0;
+    c.depth = 0;
+    c.flags = 0;
+    c.inquote = 0;
+    c.rev = 0;
+    defer free(c.nodes);
+
+    _ReNode* ast = _re_parse_alt(&c);
+    if (c.err == null && c.pos != c.len) {
+        c.err = "unexpected trailing characters";
+    }
+    if (c.err != null) {
+        re.err = c.err;
+        return re;
+    }
+    re.ngroup = c.ngroup;
+
+    _re_emit(&c, OP_SAVE, 0, 0);
+    _re_compile_node(&c, ast);
+    _re_emit(&c, OP_SAVE, 1, 0);
+    _re_emit(&c, OP_MATCH, 0, 0);
+
+    if (c.err != null) {
+        re.err = c.err;
+        return re;
+    }
+    // The reversed program: ast right to left, then MATCH. A pattern whose
+    // reversed program does not fit only loses the DFA.
+    *_ReInst fwd = re.inst;
+    const int nfwd = re.ninst;
+    re.inst = alloc<_ReInst>(RE_MAX_INST);
+    re.ninst = 0;
+    c.rev = 1;
+    _re_compile_node(&c, ast);
+    _re_emit(&c, OP_MATCH, 0, 0);
+    c.rev = 0;
+    if (c.err == null) {
+        re._rinst = re.inst;
+        re._rninst = re.ninst;
+    } else {
+        free(re.inst);
+        c.err = null;
+    }
+    re.inst = fwd;
+    re.ninst = nfwd;
+    if (re._rinst != null && _re_assert_loops(&re)) {
+        free(re._rinst);
+        re._rinst = null;
+    }
+
+    re._scratch = _re_scratch_new(&re);
+    _re_analyze(&re);
+    if (re._rinst != null) {
+        re._ramask = _re_masks(&re, re._rinst, re._rninst);
+    }
+    re._req = _re_pick_required(&re, ast);
+    re.ok = 1;
+    return re;
+}
+
+// True when a zero-width assertion can lead back into its own loop without
+// consuming (`(?:^|a)*`). The VM decides the assertion where it reaches it and
+// cuts that path at the loop's head; the DFA decides it one character later,
+// after the head was passed again, and may then keep a path the VM cuts. Such a
+// pattern runs on the VM alone. Programs only jump back at a loop, so the test
+// is a path of non-consuming instructions from the assertion to a pc at or
+// before it.
+bool _re_assert_loops(Regex* re) {
+    const int ninst = re.ninst;
+    *int seen = alloc<int>(ninst);
+    *int stack = alloc<int>(2 * ninst + 2);
+    bool found = false;
+    for (a in 0..ninst) {
+        const int op = re.inst[a].op;
+        if (found || (op != OP_BOL && op != OP_EOL && op != OP_WORDB)) {
+            continue;
+        }
+        int n = 0;
+        stack[n] = a + 1;
+        n++;
+        while (n > 0 && !found) {
+            n--;
+            const int pc = stack[n];
+            if (pc >= ninst || seen[pc] == a + 1) {
+                continue;
+            }
+            if (pc <= a) {
+                found = true;
+                break;
+            }
+            seen[pc] = a + 1;
+            _ReInst* ins = &re.inst[pc];
+            if (ins.op == OP_JMP) {
+                stack[n] = ins.a;
+                n++;
+            } else if (ins.op == OP_SPLIT) {
+                stack[n] = ins.a;
+                stack[n + 1] = ins.b;
+                n += 2;
+            } else if (ins.op == OP_SAVE || ins.op == OP_BOL || ins.op == OP_EOL || ins.op == OP_WORDB) {
+                stack[n] = pc + 1;
+                n++;
+            }
+        }
+    }
+    free(seen);
+    free(stack);
+    return found;
+}
+
+void Regex_free(Regex* re) {
+    free(re.inst);
+    free(re.classes);
+    free(re.ranges);
+    free(re.props);
+    free(re._amask);
+    free(re._first);
+    free(re._inmatch);
+    _re_scratch_free(re._scratch);
+    free(re._rinst);
+    free(re._ramask);
+    re._rinst = null;
+    re._ramask = null;
+    re.inst = null;
+    re.classes = null;
+    re.ranges = null;
+    re.props = null;
+    re._amask = null;
+    re._first = null;
+    re._inmatch = null;
+    re._scratch = null;
+}
+
+// =========================== matching (Pike VM) ============================
+
+// An ASCII word byte (\w): the side test of \b and \B.
+bool _re_is_word(int ch) {
+    return (ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '_';
+}
+
+bool _re_prop_has(_ReProp* p, int ch) {
+    switch (p.kind) {
+        case P_ASCII: return _re_class_has(p.val, ch) == 1;
+        case P_CAT: {
+            const int id = _re_cat_of(ch);
+            return id != 255 && ((p.val >> id) & 1) == 1;
+        }
+        case P_SCRIPT: return _re_script_of(ch) == p.val;
+        default: return true;          // P_ANY
+    }
+}
+
+int _re_in_class(Regex* re, int id, int ch) {
+    const _ReClassInfo ci = re.classes[id];
+    int[8] orb;
+    const int no = _re_orbit(ch, ci.fold, &orb[0]);
+    bool found = false;
+    for (k in 0..no) {
+        for (i in ci.start..ci.start + ci.count) {
+            if (orb[k] >= re.ranges[i].lo && orb[k] <= re.ranges[i].hi) {
+                found = true;
+                break;
+            }
+        }
+        if (found) {
+            break;
+        }
+    }
+    for (int i = ci.pstart; !found && i < ci.pstart + ci.pcount; i++) {
+        bool any = false;
+        for (k in 0..no) {
+            if (_re_prop_has(&re.props[i], orb[k])) {
+                any = true;
+                break;
+            }
+        }
+        found = any != (re.props[i].neg == 1);
+    }
+    return found != (ci.negate == 1) ? 1 : 0;
+}
+
+// 1 if code point `ch` matches the literal `lit`, folded when `fold` is set.
+int _re_char_eq(int lit, int fold, int ch) {
+    if (ch == lit) {
+        return 1;
+    }
+    if (fold == 0) {
+        return 0;
+    }
+    int f = _re_simple_fold(lit);
+    while (f != lit) {
+        if (f == ch) {
+            return 1;
+        }
+        f = _re_simple_fold(f);
+    }
+    return 0;
+}
+
+// Copy `src` into the capture slot of thread `slot` in list `which`.
+*int _re_slotcaps(_ReVm* vm, int which, int slot, *int src) {
+    *int dst = which == 0 ? &vm.capsA[slot * vm.ncap] : &vm.capsB[slot * vm.ncap];
+    for (i in 0..vm.ncap) {
+        dst[i] = src[i];
+    }
+    return dst;
+}
+
+// Epsilon-closure add of pc (and its reachable pcs) into list `which`. `caps` is
+// a working array: SAVE writes it in place and restores it on the way back, and
+// only a thread that is enqueued gets its own copy.
+void _re_addthread(_ReVm* vm, int which, int gen, int pc, *int caps, int sp) {
+    if (vm.visited[pc] == gen) {
+        return;
+    }
+    vm.visited[pc] = gen;
+    _ReInst* ins = &vm.prog.inst[pc];
+    switch (ins.op) {
+        case OP_JMP:
+        _re_addthread(vm, which, gen, ins.a, caps, sp);
+        break;
+        case OP_SPLIT:
+        _re_addthread(vm, which, gen, ins.a, caps, sp);
+        _re_addthread(vm, which, gen, ins.b, caps, sp);
+        break;
+        case OP_SAVE: {
+            const int old = caps[ins.a];
+            caps[ins.a] = sp;
+            _re_addthread(vm, which, gen, pc + 1, caps, sp);
+            caps[ins.a] = old;
+        }
+        break;
+        case OP_BOL:
+        if (sp == 0 || (ins.a == 1 && vm.text[sp - 1] == '\n')) {
+            _re_addthread(vm, which, gen, pc + 1, caps, sp);
+        }
+        break;
+        case OP_EOL:
+        if (sp == vm.len || (ins.a == 1 && vm.text[sp] == '\n')) {
+            _re_addthread(vm, which, gen, pc + 1, caps, sp);
+        }
+        break;
+        case OP_WORDB: {
+            const bool before = sp > 0 && _re_is_word((int)((uint8)vm.text[sp - 1]));
+            const bool after = sp < vm.len && _re_is_word((int)((uint8)vm.text[sp]));
+            if ((before != after) != (ins.a == 1)) {
+                _re_addthread(vm, which, gen, pc + 1, caps, sp);
+            }
+        }
+        break;
+        default:
+        // CHAR / ANY / CLASS / MATCH: a thread that consumes (or accepts). One
+        // that cannot consume what is at sp (the end, or an ASCII byte it does
+        // not accept) would die at the next step: it is not enqueued (its pc
+        // stays marked, which changes nothing since it adds no thread).
+        if (ins.op != OP_MATCH) {
+            if (sp >= vm.len) {
+                return;
+            }
+            const int b = (int)((uint8)vm.text[sp]);
+            if (b < 128 && ((vm.prog._amask[2 * pc + (b >> 6)] >> (uint64)(b & 63)) & (uint64)1) == (uint64)0) {
+                return;
+            }
+        }
+        if (which == 0) {
+            vm.la[vm.nA].pc = pc;
+            vm.la[vm.nA].caps = _re_slotcaps(vm, 0, vm.nA, caps);
+            vm.nA++;
+        } else {
+            vm.lb[vm.nB].pc = pc;
+            vm.lb[vm.nB].caps = _re_slotcaps(vm, 1, vm.nB, caps);
+            vm.nB++;
+        }
+    }
+}
+
+// =========================== search prefilter ==============================
+
+// The first byte of the UTF-8 encoding of r (r >= 0x80).
+int _re_lead_byte(int r) {
+    if (r < 0x800) {
+        return 0xC0 | (r >> 6);
+    }
+    if (r < 0x10000) {
+        return 0xE0 | (r >> 12);
+    }
+    return 0xF0 | (r >> 18);
+}
+
+// Mark in fb the bytes from 0x80 up that can begin a code point the consuming
+// instruction `ins` accepts. A byte that is not valid UTF-8 reads as U+FFFD, so
+// an instruction that may accept U+FFFD marks all of them; so does one whose
+// non-ASCII members are not simply known (a negated or case-folded class, a
+// Unicode property, `.`).
+void _re_high_bytes(Regex* re, _ReInst* ins, *uint8 fb) {
+    bool all = false;
+    if (ins.op == OP_CHAR) {
+        int[8] orb;
+        const int no = _re_orbit(ins.a, ins.b, &orb[0]);
+        for (k in 0..no) {
+            if (orb[k] == 0xFFFD) {
+                all = true;
+            } else if (orb[k] >= 0x80) {
+                fb[_re_lead_byte(orb[k])] = (uint8)1;
+            }
+        }
+    } else if (ins.op == OP_CLASS) {
+        const _ReClassInfo ci = re.classes[ins.a];
+        all = ci.negate == 1 || ci.fold == 1;
+        for (int i = ci.pstart; !all && i < ci.pstart + ci.pcount; i++) {
+            all = re.props[i].kind != P_ASCII || re.props[i].neg == 1;
+        }
+        for (int i = ci.start; !all && i < ci.start + ci.count; i++) {
+            const int lo = re.ranges[i].lo < 0x80 ? 0x80 : re.ranges[i].lo;
+            const int hi = re.ranges[i].hi;
+            if (hi < 0x80) {
+                continue;
+            }
+            if (lo <= 0xFFFD && hi >= 0xFFFD) {
+                all = true;
+            } else {
+                for (int b = _re_lead_byte(lo); b <= _re_lead_byte(hi); b++) {
+                    fb[b] = (uint8)1;
+                }
+            }
+        }
+    } else {
+        all = true;
+    }
+    if (all) {
+        for (b in 0x80..0x100) {
+            fb[b] = (uint8)1;
+        }
+    }
+}
+
+// Walk the instructions reachable from pc without consuming, marking in fb the
+// bytes the consuming ones can start with. flags[0] is set when a MATCH is
+// reachable (the pattern can match empty), flags[1] when a consuming
+// instruction or a MATCH is reachable without passing a `^` that holds only at
+// offset 0 (bol is 1 once the path has passed one). seen holds, per pc, a bit
+// for each bol state already walked.
+void _re_first_walk(Regex* re, int pc, int bol, *int seen, *uint8 fb, *int flags) {
+    const int bit = bol == 1 ? 2 : 1;
+    if ((seen[pc] & bit) != 0) {
+        return;
+    }
+    seen[pc] = seen[pc] | bit;
+    _ReInst* ins = &re.inst[pc];
+    const int op = ins.op;
+    if (op == OP_JMP) {
+        _re_first_walk(re, ins.a, bol, seen, fb, flags);
+    } else if (op == OP_SPLIT) {
+        _re_first_walk(re, ins.a, bol, seen, fb, flags);
+        _re_first_walk(re, ins.b, bol, seen, fb, flags);
+    } else if (op == OP_BOL) {
+        _re_first_walk(re, pc + 1, ins.a == 0 ? 1 : bol, seen, fb, flags);
+    } else if (op == OP_SAVE || op == OP_EOL || op == OP_WORDB) {
+        _re_first_walk(re, pc + 1, bol, seen, fb, flags);
+    } else {
+        if (op == OP_MATCH) {
+            flags[0] = 1;
+        } else {
+            for (ch in 0..128) {
+                if (((re._amask[2 * pc + (ch >> 6)] >> (uint64)(ch & 63)) & (uint64)1) != (uint64)0) {
+                    fb[ch] = (uint8)1;
+                }
+            }
+            _re_high_bytes(re, ins, fb);
+        }
+        if (bol == 0) {
+            flags[1] = 1;
+        }
+    }
+}
+
+// For each of the `n` instructions of `insts`, the ASCII code points it
+// consumes, as two words of bits.
+*uint64 _re_masks(Regex* re, *_ReInst insts, int n) {
+    *uint64 am = alloc<uint64>(2 * n + 2);
+    for (pc in 0..n) {
+        const _ReInst ins = insts[pc];
+        if (ins.op != OP_CHAR && ins.op != OP_ANY && ins.op != OP_CLASS) {
+            continue;
+        }
+        for (ch in 0..128) {
+            bool step = false;
+            if (ins.op == OP_CHAR) {
+                step = _re_char_eq(ins.a, ins.b, ch) == 1;
+            } else if (ins.op == OP_ANY) {
+                step = ch != '\n' || ins.a == 1;
+            } else {
+                step = _re_in_class(re, ins.a, ch) == 1;
+            }
+            if (step) {
+                am[2 * pc + (ch >> 6)] = am[2 * pc + (ch >> 6)] | ((uint64)1 << (uint64)(ch & 63));
+            }
+        }
+    }
+    return am;
+}
+
+// Fill the ASCII masks of the instructions and the start prefilter.
+void _re_analyze(Regex* re) {
+    const int ninst = re.ninst;
+    re._amask = _re_masks(re, re.inst, ninst);
+    re._inmatch = alloc<uint8>(256);
+    for (pc in 0..ninst) {
+        const int op = re.inst[pc].op;
+        if (op == OP_CHAR || op == OP_ANY || op == OP_CLASS) {
+            for (ch in 0..128) {
+                if (((re._amask[2 * pc + (ch >> 6)] >> (uint64)(ch & 63)) & (uint64)1) != (uint64)0) {
+                    re._inmatch[ch] = (uint8)1;
+                }
+            }
+            _re_high_bytes(re, &re.inst[pc], re._inmatch);
+        }
+    }
+    re._reqscan = 1;
+    for (b in 0x80..0x100) {
+        if (re._inmatch[b] != (uint8)0) {
+            re._reqscan = 0;
+        }
+    }
+    re._first = alloc<uint8>(256);
+    *int seen = alloc<int>(ninst);
+    defer free(seen);
+    int[2] flags;
+    flags[0] = 0;
+    flags[1] = 0;
+    _re_first_walk(re, 0, 0, seen, re._first, &flags[0]);
+    int count = 0;
+    int last = -1;
+    for (b in 0..256) {
+        if (re._first[b] != (uint8)0) {
+            count++;
+            last = b;
+        }
+    }
+    re._bolonly = flags[1] == 0 ? 1 : 0;
+    re._pf = flags[0] == 0 && count < 256 ? 1 : 0;
+    re._pfbyte = count == 1 && last < 0x80 ? last : -1;
+}
+
+// The first offset from sp on (sp itself included) where a match can start,
+// by the prefilter (_pf is 1); len when there is none. Only offsets the search
+// would step to are returned: an ASCII byte always starts a code point, and
+// other bytes are passed a whole code point at a time.
+int _re_skip(Regex* re, string text, int len, int sp) {
+    if (re._pfbyte >= 0) {
+        *uint8 base = (*uint8)text;
+        *void p = memchr((*void)(base + sp), re._pfbyte, (size_t)(len - sp));
+        if (p == null) {
+            return len;
+        }
+        return (int)((*uint8)p - base);
+    }
+    *uint8 fb = re._first;
+    int[1] w;
+    while (sp < len) {
+        const int b = (int)((uint8)text[sp]);
+        if (fb[b] != (uint8)0) {
+            return sp;
+        }
+        if (b < 0x80) {
+            sp++;
+        } else {
+            _re_decode(text, len, sp, &w[0]);
+            sp += w[0];
+        }
+    }
+    return len;
+}
