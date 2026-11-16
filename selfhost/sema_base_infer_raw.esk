@@ -1,0 +1,514 @@
+// sema_base_infer_raw.esk: ternary types and raw type inference (part of sema_base.esk, imported in order)
+
+// The common type of a `?:`'s arms ("" when unknown), for sema_infer_type_raw.
+string sema_ternary_type(Sema* s, *ExprNode e) {
+    string tt = sema_infer_type(s, e.b);
+    string et = sema_infer_type(s, List_get<*ExprNode>(&e.kids, 0));
+    if (tt[0] == 0 || et[0] == 0) {
+        return "";
+    }
+    string tc = sema_canon(s, tt);
+    string ec = sema_canon(s, et);
+    if (sema_is_numeric_ty(tc) == 1 && sema_is_numeric_ty(ec) == 1 && sema_streq(tc, ec) == 0) {
+        if (sema_is_float_ty(tc) == 1 || sema_is_float_ty(ec) == 1) {
+            if (sema_streq(tc, "double") == 1 || sema_streq(ec, "double") == 1) {
+                return "double";
+            }
+            return "float";
+        }
+        return ast_range_var_type(sema_int_promote(tc), sema_int_promote(ec));
+    }
+    if (sema_streq(tc, "null") == 1) {
+        return et;
+    }
+    if (sema_streq(ec, "null") == 1) {
+        return tt;
+    }
+    if (sema_pointee_const(et) == 1 && sema_pointee_const(tt) == 0) {
+        return et;
+    }
+    if (sema_streq(tc, ec) == 1 || sema_c_ptr(tc) == 1) {
+        return tt;
+    }
+    return "";
+}
+
+string sema_infer_type_raw(Sema* s, *ExprNode e) {
+    if (e == null) {
+        return "";
+    }
+    if (e.kind == EK_IDENT) {
+        string vt = sema_lookup_type(s, e.sval);
+        if (vt[0] == 63 && sema_is_narrowed(s, e.sval) == 1) {   // proven non-null here
+            return sema_strip_nullable(vt);
+        }
+        if (vt[0] != 0) {                      // a variable / param with a known type
+            return vt;
+        }
+        int si = sema_sym_index(s, e.sval);
+        if (si >= 0 && List_get<Sym>(&s.syms, si).depth > 0) {   // a local of unknown type
+            return "";
+        }
+        *DeclNode ff = sema_find_fndecl(s, e.sval);         // else maybe a bare function used as a value
+        if (ff != null && ff.is_async == 0) {               // build its "fn(params)->ret" spelling (parser form)
+            string ft = "fn(";
+            int i = 0;
+            int np = List_len<Param>(&ff.params);
+            while (i < np) {
+                if (i > 0) {
+                    ft = sema_cat(ft, ",");
+                }
+                ft = sema_cat(ft, List_get<Param>(&ff.params, i).ty);
+                i = i + 1;
+            }
+            return sema_cat(sema_cat(ft, ")->"), ff.ret_type);
+        }
+        if (ff == null && si >= 0) {                        // an enum member: a classic one is an int
+            *DeclNode ed = sema_variant_enum(s, e.sval);
+            if (ed != null && List_len<TypeParam>(&ed.type_params) == 0) {
+                if (sema_is_plain_enum_decl(ed) == 1) {
+                    return "int";
+                }
+                return ed.name;
+            }
+        }
+        return "";
+    }
+    if (e.kind == EK_LITERAL) {
+        if (e.lit_kind == LIT_INT) {                       // int, or int64 when it does not fit
+            if (sema_int_lit_fits("int", e.sval) == 0) {
+                return "int64";
+            }
+            return "int";
+        }
+        if (e.lit_kind == LIT_FLOAT) {
+            return "double";
+        }
+        if (e.lit_kind == LIT_STRING) {
+            return "string";
+        }
+        if (e.lit_kind == LIT_CHAR) {
+            return "char";
+        }
+        if (e.lit_kind == LIT_BOOL) {
+            return "bool";
+        }
+        if (e.lit_kind == LIT_NULL) {
+            return "null";
+        }
+        return "";
+    }
+    if (e.kind == EK_CALL && e.a != null && e.a.kind == EK_IDENT && List_len<*ExprNode>(&e.kids) == 1
+        && sema_streq(e.a.sval, "dbg") == 1 && sema_lookup(s, "dbg") == 0 && sema_find_fndecl(s, "dbg") == null) {
+        return sema_infer_type(s, List_get<*ExprNode>(&e.kids, 0));
+    }
+    if (e.kind == EK_CALL && e.a != null && e.a.kind == EK_IDENT
+        && sema_streq(e.a.sval, "exception_text") == 1 && sema_lookup(s, "exception_text") == 0 && sema_find_fndecl(s, "exception_text") == null) {
+        return "string";
+    }
+    if (e.kind == EK_CALL && e.a != null && e.a.kind == EK_IDENT && sema_streq(e.a.sval, "__exception_text_into") == 1) {
+        return "void";
+    }
+    if (e.kind == EK_CALL && e.a != null && e.a.kind == EK_IDENT) {   // direct call → callee's return type
+        string cvt = sema_lookup_type(s, e.a.sval);
+        if (sema_local_bound(s, e.a.sval) == 1 || (cvt[0] != 0 && sema_find_fndecl(s, e.a.sval) == null)) {
+            if (sema_is_fn_type(cvt) == 1) {
+                return sema_fn_ret(cvt);
+            }
+            return "";
+        }
+        *DeclNode fd = sema_find_fndecl(s, e.a.sval);
+        if (fd != null) {
+            if (List_len<TypeParam>(&fd.type_params) > 0) {
+                List<string> btargs;
+                List_init<string>(&btargs, 2);
+                string unb = sema_uninferable_tparam(fd);
+                if (unb[0] != 0 || sema_bind_targs(s, fd, e, &btargs) == 0) {
+                    return "";
+                }
+                string gr = sema_subst_params(fd.ret_type, &fd.type_params, &btargs);
+                if (fd.is_async == 1) {
+                    return sema_async_type(gr);
+                }
+                return gr;
+            }
+            if (fd.is_async == 1) {
+                return sema_async_type(fd.ret_type);
+            }
+            return fd.ret_type;
+        }
+        *DeclNode ved = sema_variant_enum(s, e.a.sval);     // a payload variant constructor `A(1)`
+        if (ved != null && List_len<TypeParam>(&ved.type_params) == 0) {
+            return ved.name;
+        }
+        if (ved != null) {
+            return sema_variant_ctor_type(s, ved, e);
+        }
+        return "";
+    }
+    if (e.kind == EK_CALL && e.a != null && e.a.kind == EK_MEMBER) {
+        return sema_method_ret(s, e);
+    }
+    if (e.kind == EK_CALL && e.a != null) {                 // a call through a fn value: `mk()(1)`
+        string ct = sema_infer_type(s, e.a);
+        if (sema_is_fn_type(ct) == 1) {
+            return sema_fn_ret(ct);
+        }
+        return "";
+    }
+    if (e.kind == EK_TEMPLATECALL) {
+        string tb = sema_base_name(e.sval);
+        List<string> targs;
+        List_init<string>(&targs, 2);
+        sema_parse_targs(e.sval, &targs);
+        int ti = 0;
+        while (ti < List_len<string>(&targs)) {
+            List_set<string>(&targs, ti, sema_isub(s, List_get<string>(&targs, ti)));
+            ti = ti + 1;
+        }
+        *DeclNode tfd = sema_find_fndecl(s, tb);
+        if (tfd != null) {
+            if (List_len<TypeParam>(&tfd.type_params) != List_len<string>(&targs)) {
+                return "";
+            }
+            string tr = sema_subst_params(tfd.ret_type, &tfd.type_params, &targs);
+            if (tfd.is_async == 1) {
+                return sema_async_type(tr);
+            }
+            return tr;
+        }
+        *DeclNode ted = sema_variant_enum(s, tb);           // `Some<int>(5)`
+        if (ted != null && List_len<TypeParam>(&ted.type_params) == List_len<string>(&targs) && List_len<string>(&targs) > 0) {
+            string out = sema_cat(ted.name, "<");
+            int k = 0;
+            while (k < List_len<string>(&targs)) {
+                if (k > 0) {
+                    out = sema_cat(out, ",");
+                }
+                out = sema_cat(out, List_get<string>(&targs, k));
+                k = k + 1;
+            }
+            return sema_cat(out, ">");
+        }
+        return "";
+    }
+    if (e.kind == EK_UNARY) {
+        if (sema_streq(e.sval, "&") == 1) {                 // address-of → pointer, const-tracking
+            string bt = sema_infer_type(s, e.a);
+            if (bt[0] == 0) {
+                return "";
+            }
+            // A pointer to a closure is `*fn(...)->R`: a trailing `*` would read as part of R.
+            if (sema_is_fn_type(sema_strip_const(bt)) == 1) {
+                return sema_cat("*", sema_strip_const(bt));
+            }
+            // A pointer to a nullable pointer is `*?*T`: a trailing `*` would make `?*T*`,
+            // a nullable pointer to `*T`.
+            if ((int)bt[0] == 63) {
+                return sema_cat("*", bt);
+            }
+            if (sema_is_readonly_lvalue(s, e.a) == 1) {
+                return sema_cat("const ", sema_cat(sema_strip_const(bt), "*"));
+            }
+            return sema_cat(bt, "*");
+        }
+        if (sema_streq(e.sval, "!") == 1) {
+            return "bool";
+        }
+        string ot = sema_infer_type(s, e.a);
+        if (ot[0] == 0) {
+            return "";
+        }
+        if (sema_streq(e.sval, "*") == 1) {
+            string pt = sema_pointee(ot);
+            if (sema_streq(sema_canon(s, ot), "string") == 1) {
+                return "";
+            }
+            return pt;
+        }
+        string oc = sema_canon(s, ot);
+        if (sema_streq(e.sval, "-") == 1 || sema_streq(e.sval, "+") == 1 || sema_streq(e.sval, "~") == 1) {
+            if (sema_is_int_ty(oc) == 1) {
+                return sema_int_promote(oc);
+            }
+            if (sema_is_float_ty(oc) == 1 && sema_streq(e.sval, "~") == 0) {
+                return oc;
+            }
+            string uop = e.sval;
+            if (sema_streq(uop, "-") == 1) {
+                uop = "u-";
+            }
+            List<string> tys;
+            List_init<string>(&tys, 1);
+            List_push<string>(&tys, ot);
+            *DeclNode od = sema_find_op(s, uop, &tys);
+            if (od != null) {
+                return od.ret_type;
+            }
+        }
+        return "";
+    }
+    if (e.kind == EK_BINARY) {
+        if (sema_is_valop(e.sval) == 0) {
+            return sema_binary_type(s, e.sval, "", "");
+        }
+        // Memoized per node like `?:`: each level of `a + (a + (...))` asks for the type of
+        // its right operand, itself a binary expression (linear, not quadratic).
+        if (e.sm_epoch == g_sema_epoch && g_sema_epoch != 0) {
+            return e.sm_ety;
+        }
+        // An operator chain (`a + b + c ...`) is typed along its left spine with a loop:
+        // the leftmost operand, then each operator bottom-up over the running type.
+        List<*ExprNode> spine;
+        List_init<*ExprNode>(&spine, 8);
+        *ExprNode b = e;
+        while (b != null && b.kind == EK_BINARY && sema_is_valop(b.sval) == 1) {
+            List_push<*ExprNode>(&spine, b);
+            b = b.a;
+        }
+        string t = sema_infer_type(s, b);
+        int i = List_len<*ExprNode>(&spine) - 1;
+        while (i >= 0) {
+            *ExprNode n = List_get<*ExprNode>(&spine, i);
+            t = sema_binary_type(s, n.sval, t, sema_infer_type(s, n.b));
+            i = i - 1;
+        }
+        List_free<*ExprNode>(&spine);
+        e.sm_ety = t;
+        e.sm_epoch = g_sema_epoch;
+        return t;
+    }
+    if (e.kind == EK_MEMBER) {
+        return sema_member_type(s, sema_infer_type(s, e.a), e.sval);
+    }
+    if (e.kind == EK_INDEX) {
+        string bt = sema_infer_type(s, e.a);
+        if (bt[0] == 0) {
+            return "";
+        }
+        string bc = sema_canon(s, bt);
+        if (List_len<*ExprNode>(&e.kids) > 0) {           // a[lo..hi] → a slice of the elements
+            if (sema_arr_bracket(bc) > 0 && sema_slice_elem(bc)[0] == 0) {
+                return sema_cat(sema_arr_elem(bc), "[]");
+            }
+            if (sema_slice_elem(bc)[0] != 0) {
+                return bc;
+            }
+            if (sema_streq(bc, "string") == 1) {   // a string slices to its chars
+                return "char[]";
+            }
+            return "";
+        }
+        if (sema_slice_elem(bc)[0] != 0 && sema_arr_bracket(bc) == sema_slen(bc) - 2) {
+            return sema_slice_elem(bc);
+        }
+        // A pointer to an array or slice (`int[]*`, from `*IS`) indexes its pointee.
+        if (sema_slen(bc) > 0 && (int)bc[sema_slen(bc) - 1] == 42) {
+            return sema_sub_str(bc, 0, sema_slen(bc) - 1);
+        }
+        if (sema_arr_bracket(bc) > 0) {
+            return sema_arr_elem(bc);
+        }
+        if (sema_streq(bc, "string") == 1) {
+            return "char";
+        }
+        if ((int)bc[0] == 42) {
+            return sema_pointee(bt);
+        }
+        List<string> tys;
+        List_init<string>(&tys, 2);
+        List_push<string>(&tys, bt);
+        List_push<string>(&tys, sema_infer_type(s, e.b));
+        *DeclNode od = sema_find_op(s, "[]", &tys);
+        if (od != null) {
+            return od.ret_type;
+        }
+        return "";
+    }
+    if (e.kind == EK_CAST) {
+        return sema_isub(s, e.sval);
+    }
+    if (e.kind == EK_SIZEOF) {
+        return "int64";
+    }
+    if (e.kind == EK_STRUCTINIT) {
+        if (sema_known_type(s, e.sval) == 1) {
+            return e.sval;
+        }
+        return "";
+    }
+    if (e.kind == EK_TERNARY) {
+        // Memoized per node while no binding, scope or narrowing changes: each level of a
+        // nested `?:` asks for its arm's type, which is itself a `?:` (linear, not quadratic).
+        if (e.sm_epoch == g_sema_epoch && g_sema_epoch != 0) {
+            return e.sm_ety;
+        }
+        string r = sema_ternary_type(s, e);
+        e.sm_ety = r;
+        e.sm_epoch = g_sema_epoch;
+        return r;
+    }
+    if (e.kind == EK_AWAIT) {
+        return sema_future_inner(s, sema_infer_type(s, e.a));
+    }
+    if (e.kind == EK_LAMBDA) {
+        return sema_isub(s, sema_lambda_fn_type(e.sval));
+    }
+    if (e.kind == EK_INCDEC) {
+        // `b.f++` of a bitfield: the old value in its declared type (as clang).
+        if ((int)e.sval[1] != 114 && e.a != null && e.a.kind == EK_MEMBER) {
+            *DeclNode isd = sema_find_struct(s, sema_struct_of_type(sema_infer_type(s, e.a.a)));
+            if (isd != null) {
+                int ii = 0;
+                while (ii < List_len<Param>(&isd.params)) {
+                    if (sema_streq(List_get<Param>(&isd.params, ii).name, e.a.sval) == 1 && ii < List_len<int>(&isd.field_bits)
+                        && List_get<int>(&isd.field_bits, ii) > 0) {
+                        return List_get<Param>(&isd.params, ii).ty;
+                    }
+                    ii = ii + 1;
+                }
+            }
+        }
+        return sema_infer_type(s, e.a);
+    }
+    if (e.kind == EK_ALLOCWITH) {
+        return sema_cat("*", e.sval);
+    }
+    if (e.kind == EK_THREADCREATE) {    // the thread handle
+        return "*void";
+    }
+    return "";
+}
+
+// A type spelling with type aliases resolved and a classic enum collapsed to `int`.
+string sema_resolve_scalar(Sema* s, string t0) {
+    string t = sema_strip_const(t0);
+    int hops = 0;
+    while (hops < 16) {
+        *DeclNode ad = sema_find_tdecl(s, t);
+        if (ad != null && ad.kind == DK_TYPEALIAS) {
+            t = sema_strip_const(ad.ret_type);
+        }
+        else {
+            if (ad != null && ad.kind == DK_ENUM) {
+                t = "int";
+            }
+            hops = 16;
+        }
+        hops = hops + 1;
+    }
+    return t;
+}
+
+// The (resolved) type of a `for (i in A..B)` bound, "" when unknown. Beyond
+// sema_infer_type it types a bare integer literal by its value, a cast by its target,
+// and integer `+ - * / %` / unary `-` by the usual arithmetic conversions.
+string sema_range_bound_type(Sema* s, *ExprNode e) {
+    if (e == null) {
+        return "";
+    }
+    if (e.kind == EK_LITERAL && e.lit_kind == LIT_INT) {
+        return ast_range_lit_type(e.sval);
+    }
+    if (e.kind == EK_CAST) {
+        return sema_resolve_scalar(s, sema_isub(s, e.sval));
+    }
+    if (e.kind == EK_UNARY && sema_streq(e.sval, "-") == 1) {
+        string ut = sema_range_bound_type(s, e.a);
+        string pt = ast_range_var_type(ut, "int");
+        if (pt[0] != 0) {
+            return pt;
+        }
+        return ut;
+    }
+    if (e.kind == EK_BINARY && (e.op_fn == null || e.op_fn[0] == 0) && sema_is_arith_op(e.sval) == 1) {
+        string ct = ast_range_var_type(sema_range_bound_type(s, e.a), sema_range_bound_type(s, e.b));
+        if (ct[0] != 0) {
+            return ct;
+        }
+    }
+    string t = sema_infer_type(s, e);
+    if (t[0] == 0) {
+        return "";
+    }
+    return sema_resolve_scalar(s, t);
+}
+
+// An interface value refers to a struct through a pointer; converting a struct VALUE to
+// an interface-typed slot (param, variable, return) is an error, as in the C++ checker.
+void sema_check_iface_value(Sema* s, string tety, *ExprNode e) {
+    if (e == null || tety[0] == 0) {
+        return;
+    }
+    int isif = 0;
+    int i = 0;
+    while (i < List_len<*DeclNode>(&s.ifaces)) {
+        if (sema_streq(List_get<*DeclNode>(&s.ifaces, i).name, tety) == 1) {
+            isif = 1;
+        }
+        i = i + 1;
+    }
+    if (isif == 0) {
+        return;
+    }
+    string src = sema_infer_type(s, e);
+    if (src[0] == 0) {
+        return;
+    }
+    // An interface value refers to its target through a non-null pointer: a `?*T` needs a
+    // null-check first (mirrors the C++ nullable assignability rule).
+    if (src[0] == 63) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: assigning a nullable pointer '%s' to non-null '%s' requires a null-check (e.g. `if (x != null)`)\n",
+               s.filename, s.line, s.col, src, tety);
+        return;
+    }
+    string bare = sema_strip_const(src);
+    string sn = sema_struct_of_type(bare);
+    if (sema_has_star(bare) == 1 && NameIdx_first(&s.sdecls_ix, sn) >= 0) {
+        if (sema_ptr_depth(bare) != 1) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: cannot convert '%s' to interface '%s': only a pointer to a struct (a single '*') converts to an interface\n",
+                   s.filename, s.line, s.col, src, tety);
+            return;
+        }
+        // Boxing a pointer to const: every implementing method must take a const self.
+        if (sema_pointee_const(src) == 1) {
+            *DeclNode ifd = sema_find_iface(s, tety);
+            *DeclNode sd = sema_find_struct(s, sn);
+            int mi = 0;
+            while (ifd != null && mi < List_len<*DeclNode>(&ifd.methods)) {
+                string mname = List_get<*DeclNode>(&ifd.methods, mi).name;
+                int mutable_self = 0;
+                if (sd != null) {
+                    int j = 0;
+                    while (j < List_len<*DeclNode>(&sd.methods)) {
+                        if (sema_streq(List_get<*DeclNode>(&sd.methods, j).name, mname) == 1) {
+                            mutable_self = 1;
+                        }
+                        j = j + 1;
+                    }
+                }
+                *DeclNode ff = sema_find_fndecl(s, sema_cat(sema_cat(sn, "_"), mname));
+                if (mutable_self == 0 && ff != null && List_len<Param>(&ff.params) > 0
+                    && sema_pointee_const(List_get<Param>(&ff.params, 0).ty) == 0) {
+                    mutable_self = 1;
+                }
+                if (mutable_self == 1) {
+                    s.had_error = 1;
+                    dprintf(2, "error: %s:%d:%d: conversion discards a const qualifier ('%s' to '%s'): method '%s' of '%s' takes a mutable self\n",
+                           s.filename, s.line, s.col, src, tety, mname, sn);
+                    return;
+                }
+                mi = mi + 1;
+            }
+        }
+        return;
+    }
+    if (NameIdx_first(&s.sdecls_ix, src) < 0) {
+        return;
+    }
+    s.had_error = 1;
+    dprintf(2, "error: %s:%d:%d: cannot convert struct '%s' to interface '%s' by value; pass a pointer (&x)\n",
+           s.filename, s.line, s.col, src, tety);
+}

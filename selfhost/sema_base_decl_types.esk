@@ -1,0 +1,506 @@
+// sema_base_decl_types.esk: declared types, array dimensions and value cycles (part of sema_base.esk, imported in order)
+
+// Each fixed-array dimension `[N]` of `t` (a number, an enum member, or a `const` int)
+// must be positive (mirrors the C++ checkArrayDim).
+void sema_check_dims(Sema* s, string t) {
+    int i = 0;
+    while (t[i] != 0) {
+        if ((int)t[i] == 91 && (int)t[i + 1] != 93) {          // '[' not followed by ']'
+            int st = i + 1;
+            int j = st;
+            while (t[j] != 0 && (int)t[j] != 93) {
+                j = j + 1;
+            }
+            string dim = sema_trim_sub(t, st, j);
+            int64 v = (int64)0;
+            int known = 0;
+            if ((int)dim[0] == 45 || sema_all_digits(dim) == 1) {
+                v = sema_parse_int(dim);
+                known = 1;
+            }
+            else {
+                int64 ev = sema_dim_value(s, dim);
+                if (ev >= (int64)0) {
+                    v = ev;
+                    known = 1;
+                }
+                int si = sema_sym_index(s, dim);
+                if (known == 0 && si >= 0) {
+                    Sym sy = List_get<Sym>(&s.syms, si);
+                    int later = 0;                    // a global declared further down is not in scope yet
+                    if (sy.depth == 0 && StrTab_has(&s.late_globals, dim) == 1) {
+                        later = 1;
+                    }
+                    if (later == 0 && sy.is_const == 1 && sy.init != null && sema_fold_int(s, sy.init, &v) == 1) {
+                        known = 1;
+                    }
+                }
+                // An integer constant expression (`(uint8)258`, `N*2`), folded like a `const`
+                // (mirrors the C++ checkArrayDim).
+                if (known == 0 && si < 0) {
+                    known = ast_fold_dim(dim, int(string nm, *int64 out) {
+                        return sema_dim_name(s, nm, out);
+                    }, &v);
+                }
+            }
+            if (known == 1 && v <= (int64)0 && sema_dim_sized_later(s, dim) == 0) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: array size must be positive, got %lld\n", s.filename, s.line, s.col, v);
+            }
+            if (known == 0 && dim[0] != 0) {             // no variable-length arrays
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: array size must be a compile-time constant, got '%s'\n", s.filename, s.line, s.col, dim);
+            }
+            i = j;
+        } else {
+            i = i + 1;
+        }
+    }
+}
+
+// Whether `t` is one of `d`'s type parameters.
+int sema_names_tparam(*DeclNode d, string t) {
+    int k = 0;
+    while (k < List_len<TypeParam>(&d.type_params)) {
+        if (sema_streq(List_get<TypeParam>(&d.type_params, k).name, t) == 1) {
+            return 1;
+        }
+        k = k + 1;
+    }
+    return 0;
+}
+
+// A generic struct's bitfield typed by a type parameter is checked with the instance's
+// type argument (mirrors the C++ per-instance checkBitfield).
+void sema_check_inst_bitfields(Sema* s, *DeclNode d, List<string>* targs) {
+    if (d.kind != DK_STRUCT) {
+        return;
+    }
+    int i = 0;
+    while (i < List_len<Param>(&d.params) && i < List_len<int>(&d.field_bits)) {
+        Param f = List_get<Param>(&d.params, i);
+        int bw = List_get<int>(&d.field_bits, i);
+        int k = 0;
+        while (bw > 0 && k < List_len<TypeParam>(&d.type_params) && k < List_len<string>(targs)) {
+            if (sema_streq(List_get<TypeParam>(&d.type_params, k).name, f.ty) == 1) {
+                string at = List_get<string>(targs, k);
+                int tb = sema_int_bits(sema_bitfield_base(s, at));
+                if (tb == 0) {
+                    s.had_error = 1;
+                    dprintf(2, "error: %s:%d:%d: bitfield '%s' of '%s' must have an integer type, got '%s'\n", s.filename, s.line, s.col, f.name, d.name, at);
+                } else if (bw > tb) {
+                    s.had_error = 1;
+                    dprintf(2, "error: %s:%d:%d: bitfield '%s' of '%s' is %d bits wide, more than its type '%s' holds (%d)\n",
+                           s.filename, s.line, s.col, f.name, d.name, bw, at, tb);
+                }
+            }
+            k = k + 1;
+        }
+        i = i + 1;
+    }
+}
+
+// The spelling of an unknown type as the C++ checker names it: without pointer stars,
+// array suffixes, `?` and `const`, but with its type arguments (`Opy<int>`).
+string sema_unknown_spelling(string t0) {
+    string t = sema_strip_nullable(sema_strip_const(t0));
+    int b = 0;
+    int e = sema_slen(t);
+    while (b < e && (int)t[b] == 42) {                        // '*'
+        b = b + 1;
+    }
+    int changed = 1;
+    while (changed == 1) {
+        changed = 0;
+        while (e > b && (int)t[e - 1] == 42) {    // trailing '*'
+            e = e - 1;
+            changed = 1;
+        }
+        if (e > b && (int)t[e - 1] == 93) {                                   // ']'
+            int k = e - 1;
+            while (k > b && (int)t[k] != 91) {
+                k = k - 1;
+            }
+            e = k;
+            changed = 1;
+        }
+    }
+    string r = sema_sub_str(t, b, e);
+    if (sema_starts_with(r, "struct:") == 1) {
+        r = sema_sub_str(r, 7, sema_slen(r));
+    }
+    return r;
+}
+
+void sema_check_decl_type(Sema* s, string t) {
+    if (s.tool == 3) {
+        sema_tool_note_inst(s, t);
+    }
+    if (t == null || t[0] == 0 || sema_streq(t, "...") == 1 || sema_is_fn_type(t) == 1) {
+        return;
+    }
+    if ((int)t[0] == 63 && sema_known_type(s, t) == 1 && sema_c_ptr(sema_canon(s, t)) == 0) {   // `?` marks a pointer only
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: a nullable type must be a pointer ('?*T'), got '%s'\n", s.filename, s.line, s.col, t);
+        return;
+    }
+    sema_check_dims(s, t);
+    if (sema_is_arr_ty(t) == 1) {
+        int64 zal = (int64)1;
+        s.too_large = 0;
+        sema_const_layout(s, t, &zal, 0);
+        if (s.too_large == 1) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: array is too large: '%s' exceeds the largest object size\n", s.filename, s.line, s.col, t);
+        }
+        s.too_large = 0;
+    }
+    if (sema_known_type(s, t) == 0) {
+        s.had_error = 1;
+        string utn = sema_base_name(sema_struct_of_type(t));
+        dprintf(2, "error: %s:%d:%d: unknown type '%s'%s\n", s.filename, s.line, s.col, sema_unknown_spelling(t),
+                sema_did_you_mean(s, utn, 1, t));
+        return;
+    }
+    string b = sema_base_name(sema_struct_of_type(sema_strip_nullable(sema_strip_const(t))));
+    *DeclNode d = sema_find_tdecl(s, b);
+    List<string> targs;
+    List_init<string>(&targs, 2);
+    sema_parse_targs(t, &targs);
+    int want = 0;
+    if (d != null) {
+        want = List_len<TypeParam>(&d.type_params);
+    }
+    int got = List_len<string>(&targs);
+    if (d != null && (want > 0 || got > 0) && want != got) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: '%s' expects %d type argument(s), got %d\n", s.filename, s.line, s.col, b, want, got);
+        return;
+    }
+    int k = 0;
+    while (k < got) {
+        sema_check_decl_type(s, List_get<string>(&targs, k));
+        k = k + 1;
+    }
+    if (d != null && want > 0 && want == got) {
+        sema_check_constraints(s, &d.type_params, &targs);
+        sema_check_inst_bitfields(s, d, &targs);
+    }
+}
+
+// Name of the struct/union a field of type `ft` holds BY VALUE ("" for a pointer, slice,
+// fn, or non-struct): a fixed-size array of a struct still holds it by value.
+string sema_value_struct(Sema* s, string ft) {
+    if (sema_has_star(ft) == 1 || sema_is_fn_type(ft) == 1) {
+        return "";
+    }
+    int i = 0;   // "[]" slice
+    while (ft[i] != 0) {
+        if ((int)ft[i] == 91 && (int)ft[i + 1] == 93) {
+            return "";
+        }
+        i = i + 1;
+    }
+    string b0 = sema_strip_const(ft);
+    int n = 0;
+    while (b0[n] != 0 && (int)b0[n] != 91) {
+        n = n + 1;
+    }
+    string b = sema_base_name(sema_sub_str(b0, 0, n));
+    *DeclNode d = sema_find_tdecl(s, b);
+    int hops = 0;                          // through type aliases (`type SS = S;`)
+    while (d != null && d.kind == DK_TYPEALIAS && hops < 32) {
+        string at = d.ret_type;
+        if (sema_has_star(at) == 1 || sema_is_fn_type(at) == 1) {
+            return "";
+        }
+        int k = 0;
+        while (at[k] != 0) {
+            if ((int)at[k] == 91 && (int)at[k + 1] == 93) {
+                return "";
+            }
+            k = k + 1;
+        }
+        string a0 = sema_strip_const(at);
+        int an = 0;
+        while (a0[an] != 0 && (int)a0[an] != 91) {
+            an = an + 1;
+        }
+        b = sema_base_name(sema_sub_str(a0, 0, an));
+        d = sema_find_tdecl(s, b);
+        hops = hops + 1;
+    }
+    if (d == null || (d.kind != DK_STRUCT && d.kind != DK_UNION && d.kind != DK_ENUM)) {
+        return "";
+    }
+    if (List_len<TypeParam>(&d.type_params) > 0) {
+        return "";
+    }
+    return b;
+}
+
+// The by-value members of an aggregate (mirrors the C++ VNode): a struct/union's field
+// types, or an enum's variant payload types; `descs` gets "field 'x'" / "variant 'V'".
+void sema_value_members(*DeclNode d, List<string>* types, List<string>* descs) {
+    int i = 0;
+    int n = List_len<Param>(&d.params);
+    while (i < n) {
+        Param f = List_get<Param>(&d.params, i);
+        if (d.kind == DK_ENUM) {
+            if (i < List_len<List<string>>(&d.payloads)) {
+                List<string> pl = List_get<List<string>>(&d.payloads, i);
+                int j = 0;
+                while (j < List_len<string>(&pl)) {
+                    List_push<string>(types, List_get<string>(&pl, j));
+                    List_push<string>(descs, sema_cat(sema_cat("variant '", f.name), "'"));
+                    j = j + 1;
+                }
+            }
+        } else {
+            List_push<string>(types, f.ty);
+            List_push<string>(descs, sema_cat(sema_cat("field '", f.name), "'"));
+        }
+        i = i + 1;
+    }
+}
+
+string sema_value_kind(*DeclNode d) {
+    if (d != null && d.kind == DK_ENUM) {
+        return "enum";
+    }
+    return "struct";
+}
+
+// An aggregate with by-value members: a struct, a union, or a sum type (an enum with a
+// payload).
+int sema_is_value_aggr(*DeclNode d) {
+    if (d == null) {
+        return 0;
+    }
+    if (d.kind == DK_STRUCT || d.kind == DK_UNION) {
+        return 1;
+    }
+    if (d.kind != DK_ENUM) {
+        return 0;
+    }
+    int i = 0;
+    while (i < List_len<List<string>>(&d.payloads)) {
+        List<string> pl = List_get<List<string>>(&d.payloads, i);
+        if (List_len<string>(&pl) > 0) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// DFS for a struct/union that contains itself by value (no finite layout). `onstack` holds
+// the current path, `done` the finished nodes, `reported` the already-diagnosed structs.
+void sema_cycle_dfs(Sema* s, *DeclNode d, List<string>* onstack, StrTab* done, List<string>* reported) {
+    List_push<string>(onstack, d.name);
+    s.line = d.line;
+    s.col = d.col;
+    List<string> ftys;
+    List_init<string>(&ftys, 4);
+    List<string> fdescs;
+    List_init<string>(&fdescs, 4);
+    sema_value_members(d, &ftys, &fdescs);
+    int i = 0;
+    int n = List_len<string>(&ftys);
+    while (i < n) {
+        string m = sema_value_struct(s, List_get<string>(&ftys, i));
+        if (m[0] != 0) {
+            if (sema_in_list(onstack, m) == 1) {
+                if (sema_in_list(reported, m) == 0) {
+                    List_push<string>(reported, m);
+                    s.had_error = 1;
+                    *DeclNode md = sema_find_tdecl(s, m);
+                    dprintf(2, "error: %s:%d:%d: %s '%s' contains itself by value (through %s of '%s'); use a pointer\n",
+                           s.filename, md.line, md.col, sema_value_kind(md), m, List_get<string>(&fdescs, i), d.name);
+                }
+            } else if (StrTab_has(done, m) == 0) {
+                sema_cycle_dfs(s, sema_find_tdecl(s, m), onstack, done, reported);
+            }
+        }
+        i = i + 1;
+    }
+    sema_list_erase(onstack, d.name);
+    StrTab_set(done, d.name, 1);
+}
+
+// The struct spelling a field of type `ft` holds by value, through generic instances too
+// ("" for a pointer, slice, fn, or non-struct); array suffixes are peeled. Spaces dropped.
+string sema_value_core_n(Sema* s, string ft, int hops);
+string sema_value_core(Sema* s, string ft) {
+    return sema_value_core_n(s, ft, 0);
+}
+
+// An alias is resolved (`type RA = W<RB>` holds a `W<RB>`), then arrays peeled again.
+string sema_value_core_n(Sema* s, string ft, int hops) {
+    string t = sema_nospace(sema_strip_nullable(sema_strip_const(ft)));
+    if ((int)t[0] == 42 || (int)t[0] == 63 || sema_is_fn_type(t) == 1) {
+        return "";
+    }
+    int depth = 0;
+    int n = 0;
+    while (t[n] != 0) {
+        int c = (int)t[n];
+        if (c == 60) {
+            depth = depth + 1;
+        }
+        else if (c == 62) {
+            depth = depth - 1;
+        }
+        else if (c == 91 && depth == 0) {
+            break;
+        }
+        n = n + 1;
+    }
+    if (t[n] != 0 && (int)t[n + 1] == 93) {        // "T[]" slice
+        return "";
+    }
+    string core = sema_sub_str(t, 0, n);
+    int m = 0;
+    while (core[m] != 0) {
+        m = m + 1;
+    }
+    if (m == 0 || (int)core[m - 1] == 42) {         // trailing-star pointer
+        return "";
+    }
+    *DeclNode d = sema_find_tdecl(s, sema_base_name(core));
+    if (d != null && d.kind == DK_TYPEALIAS && hops < 32) {
+        return sema_value_core_n(s, d.ret_type, hops + 1);
+    }
+    if (sema_is_value_aggr(d) == 0) {
+        return "";
+    }
+    return core;
+}
+
+// Walk the by-value field spellings of struct spelling `sp` (a generic instance's type
+// arguments substituted), with `stack` the current path. A spelling that recurs on it is
+// a cycle through a generic instance; a path of ever-growing instances (`N<N<T>> next`)
+// has no finite layout either. Reports once per struct (`reported`); 1 = stop the walk.
+// Mirrors the generic part of the C++ TypeChecker::checkValueCycles.
+int sema_gen_cycle_walk(Sema* s, string sp, List<string>* stack, *DeclNode root, List<string>* reported) {
+    *DeclNode d = sema_find_tdecl(s, sema_base_name(sp));
+    if (d == null) {
+        return 0;
+    }
+    List<string> args;
+    List_init<string>(&args, 2);
+    ast_targs(sp, &args);
+    if (List_len<TypeParam>(&d.type_params) != List_len<string>(&args)) {
+        return 0;
+    }
+    List_push<string>(stack, sp);
+    List<string> ftys;
+    List_init<string>(&ftys, 4);
+    List<string> fdescs;
+    List_init<string>(&fdescs, 4);
+    sema_value_members(d, &ftys, &fdescs);
+    int i = 0;
+    int n = List_len<string>(&ftys);
+    while (i < n) {
+        string fdesc = List_get<string>(&fdescs, i);
+        string core = sema_value_core(s, sema_subst_params(List_get<string>(&ftys, i), &d.type_params, &args));
+        if (core[0] != 0) {
+            int hit = 0 - 1;
+            int k = 0;
+            while (k < List_len<string>(stack)) {
+                if (sema_streq(List_get<string>(stack, k), core) == 1) {
+                    hit = k;
+                }
+                k = k + 1;
+            }
+            string msg = "";
+            string key = "";
+            if (hit >= 0) {
+                int gen = 0;
+                k = hit;
+                while (k < List_len<string>(stack)) {
+                    if (sema_has_lt(List_get<string>(stack, k)) == 1) {
+                        gen = 1;
+                    }
+                    k = k + 1;
+                }
+                if (gen == 1) {
+                    key = sema_base_name(core);
+                    msg = "cycle";
+                }
+            } else if (List_len<string>(stack) >= 64) {
+                key = sema_base_name(List_get<string>(stack, 0));
+                msg = "deep";
+            } else if (sema_gen_cycle_walk(s, core, stack, root, reported) == 1) {
+                List_remove<string>(stack, List_len<string>(stack) - 1);
+                return 1;
+            }
+            if (msg[0] != 0) {
+                if (sema_in_list(reported, key) == 0) {
+                    List_push<string>(reported, key);
+                    s.had_error = 1;
+                    string kw = sema_value_kind(sema_find_tdecl(s, key));
+                    if (sema_streq(msg, "cycle") == 1) {
+                        dprintf(2, "error: %s:%d:%d: %s '%s' contains itself by value (through %s of '%s'); use a pointer\n",
+                               s.filename, root.line, root.col, kw, core, fdesc, sp);
+                    } else {
+                        dprintf(2, "error: %s:%d:%d: %s '%s' contains itself by value through ever-deeper generic instances (%s of '%s'); use a pointer\n",
+                               s.filename, root.line, root.col, kw, key, fdesc, sema_base_name(sp));
+                    }
+                }
+                List_remove<string>(stack, List_len<string>(stack) - 1);
+                return 1;
+            }
+        }
+        i = i + 1;
+    }
+    List_remove<string>(stack, List_len<string>(stack) - 1);
+    return 0;
+}
+
+void sema_check_value_cycles(Sema* s) {
+    List<string> onstack;
+    List_init<string>(&onstack, 4);
+    let done: StrTab;
+    memset((*void)&done, 0, sizeof(StrTab));
+    List<string> reported;
+    List_init<string>(&reported, 2);
+    int i = 0;
+    int n = List_len<*DeclNode>(&s.tdecls);
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&s.tdecls, i);
+        if (sema_is_value_aggr(d) == 1 && List_len<TypeParam>(&d.type_params) == 0
+            && StrTab_has(&done, d.name) == 0) {
+            sema_cycle_dfs(s, d, &onstack, &done, &reported);
+        }
+        i = i + 1;
+    }
+    // Through generic instances: from every struct (a generic one with its own type
+    // parameters, `N<T>`).
+    List<string> greported;
+    List_init<string>(&greported, 2);
+    i = 0;
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&s.tdecls, i);
+        if (sema_is_value_aggr(d) == 1) {
+            string sp = d.name;
+            int tp = 0;
+            while (tp < List_len<TypeParam>(&d.type_params)) {
+                if (tp == 0) {
+                    sp = sema_cat(sp, "<");
+                } else {
+                    sp = sema_cat(sp, ",");
+                }
+                sp = sema_cat(sp, List_get<TypeParam>(&d.type_params, tp).name);
+                tp = tp + 1;
+            }
+            if (tp > 0) {
+                sp = sema_cat(sp, ">");
+            }
+            List<string> stack;
+            List_init<string>(&stack, 8);
+            sema_gen_cycle_walk(s, sp, &stack, d, &greported);
+        }
+        i = i + 1;
+    }
+}

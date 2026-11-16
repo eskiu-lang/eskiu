@@ -1,0 +1,502 @@
+// sema_base_types.esk: known types and constant folding (part of sema_base.esk, imported in order)
+
+int sema_has_lt(string t) {
+    int i = 0;
+    while (t[i] != 0) {
+        if ((int)t[i] == 60) {
+            return 1;
+        }
+        if ((int)t[i] == 91) {
+            i = sema_dim_close(t, i);
+            if (t[i] == 0) {
+                return 0;
+            }
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Is `t` a spelling of a known type? Its base name (pointer stars, generic args and array
+// dims stripped) must be a primitive or a declared type. fn types are accepted as-is.
+int sema_known_type(Sema* s, string t) {
+    if (sema_is_fn_type(t) == 1) {
+        return 1;
+    }
+    string b0 = sema_struct_of_type(sema_strip_nullable(sema_strip_const(t)));
+    if (sema_is_fn_type(b0) == 1) {                          // a pointer to a fn value
+        return 1;
+    }
+    int n = 0;   // cut at '['
+    while (b0[n] != 0 && (int)b0[n] != 91) {
+        n = n + 1;
+    }
+    string b = sema_sub_str(b0, 0, n);
+    if (sema_is_fn_type(b) == 1) {         // a pointer to / array of fn(...)->R
+        return 1;
+    }
+    if (sema_is_numeric_ty(b) == 1 || sema_streq(b, "void") == 1 || sema_streq(b, "string") == 1
+        || sema_streq(b, "va_list") == 1) {
+        return 1;
+    }
+    if (sema_in_list(&s.tparams, b) == 1) {
+        return 1;
+    }
+    return NameIdx_first(&s.tdecls_ix, b) >= 0;
+}
+
+// The declaration of type `name` (struct/union/enum/interface/alias), or null.
+*DeclNode sema_find_tdecl(Sema* s, string name) {
+    int i = NameIdx_first(&s.tdecls_ix, name);
+    if (i < 0) {
+        return null;
+    }
+    return List_get<*DeclNode>(&s.tdecls, i);
+}
+
+// A declared type spelling (field / parameter / return / variable) must name known types,
+// and a generic instance must supply exactly the template's type-parameter count
+// (mirrors the C++ validateStructType).
+int sema_fold_int(Sema* s, *ExprNode e, int64* out);
+int sema_fold_num(Sema* s, *ExprNode e, int* is_int, int64* iv, double* dv);
+string sema_trim_sub(string s, int a, int b);
+void sema_check_decl_type(Sema* s, string t);
+string sema_resolve_scalar(Sema* s, string t0);
+string sema_isub(Sema* s, string t);
+// `sizeof(t)` for a scalar whose size is the same on every target (0 otherwise).
+int64 sema_fixed_scalar_size(string t) {
+    if (sema_streq(t, "int8") == 1 || sema_streq(t, "uint8") == 1 || sema_streq(t, "char") == 1
+        || sema_streq(t, "bool") == 1) {
+        return (int64)1;
+    }
+    if (sema_streq(t, "int16") == 1 || sema_streq(t, "uint16") == 1) {
+        return (int64)2;
+    }
+    if (sema_streq(t, "int") == 1 || sema_streq(t, "int32") == 1 || sema_streq(t, "uint") == 1
+        || sema_streq(t, "uint32") == 1 || sema_streq(t, "float") == 1) {
+        return (int64)4;
+    }
+    if (sema_streq(t, "int64") == 1 || sema_streq(t, "uint64") == 1 || sema_streq(t, "double") == 1) {
+        return (int64)8;
+    }
+    return (int64)0;
+}
+
+string sema_dealias(Sema* s, string t0);
+int sema_is_plain_enum_decl(*DeclNode d);
+int64 sema_const_layout(Sema* s, string t0, int64* al, int depth);
+// A name in a dimension that sema_const_layout folds: a classic enum member, a `const`
+// int, or `sizeof(T)` of a type whose layout is known.
+int sema_layout_dim_name(Sema* s, string nm, int64* out) {
+    if (ast_has_prefix(nm, "sizeof(") == 1) {
+        int64 zal = (int64)1;
+        *out = sema_const_layout(s, sema_sub_str(nm, 7, sema_slen(nm) - 1), &zal, 1);
+        return (int)(*out > (int64)0);
+    }
+    int64 ev = sema_dim_value(s, nm);
+    if (ev >= (int64)0) {
+        *out = ev;
+        return 1;
+    }
+    int si = sema_sym_index(s, nm);
+    if (si < 0) {
+        return 0;
+    }
+    Sym sy = List_get<Sym>(&s.syms, si);
+    if (sy.is_const == 1 && sy.init != null && sema_fold_int(s, sy.init, out) == 1) {
+        return 1;
+    }
+    return 0;
+}
+
+// Size (and ABI alignment in *al) of a concrete type as the target lays it out, mirroring
+// the C++ TypeChecker::constLayout and the codegen layout (cg_size): scalars, pointers,
+// closures, interfaces, slices, fixed arrays, and structs and unions of those (C layout,
+// `packed`). 0 for a layout only codegen knows here: a generic instance, a sum type, a
+// bitfield struct, `#pragma pack(N)` with N >= 2, `va_list`, a type parameter.
+int64 sema_const_layout(Sema* s, string t0, int64* al, int depth) {
+    al[0] = (int64)1;
+    if (depth > 64 || t0 == null) {
+        return (int64)0;
+    }
+    string t = sema_strip_const(sema_dealias(s, sema_strip_const(t0)));
+    if ((int)t[0] == 63) {                 // '?'
+        t = sema_sub_str(t, 1, sema_slen(t));
+    }
+    int n = sema_slen(t);
+    if (n == 0) {
+        return (int64)0;
+    }
+    int64 ps = (int64)s.ptrsz;
+    // The outermost array or slice is the first `[...]` outside any `<...>` or `(...)`.
+    int k = 0;
+    int dep = 0;
+    int ob = 0 - 1;
+    while (k < n && ob < 0) {
+        int c = (int)t[k];
+        if (c == 60 || c == 40) {
+            dep = dep + 1;
+        }
+        else if ((c == 62 && k > 0 && (int)t[k - 1] != 45) || c == 41) {
+            dep = dep - 1;
+        }
+        else if (c == 91 && dep == 0) {
+            ob = k;
+        }
+        k = k + 1;
+    }
+    if (ob > 0 && (int)t[n - 1] == 93) {
+        int cb = sema_dim_close(t, ob);
+        string rest = sema_cat(sema_sub_str(t, 0, ob), sema_sub_str(t, cb + 1, n));
+        if (cb == ob + 1) {                                                       // `T[]`: {ptr, i64}
+            int64 sal = (int64)s.i64al;
+            if (ps > sal) {
+                sal = ps;
+            }
+            al[0] = sal;
+            int64 off = ((ps + (int64)s.i64al - (int64)1) / (int64)s.i64al) * (int64)s.i64al + (int64)8;
+            return ((off + sal - (int64)1) / sal) * sal;
+        }
+        string dim = sema_trim_sub(t, ob + 1, cb);
+        int64 dv = (int64)0;
+        int known = 0;
+        if (sema_all_digits(dim) == 1) {
+            dv = sema_parse_int(dim);
+            known = 1;
+        }
+        else {
+            known = ast_fold_dim(dim, int(string nm, *int64 out) {
+                return sema_layout_dim_name(s, nm, out);
+            }, &dv);
+        }
+        if (known == 0 || dv <= (int64)0) {
+            return (int64)0;
+        }
+        int64 eal = (int64)1;
+        int64 esz = sema_const_layout(s, rest, &eal, depth + 1);
+        al[0] = eal;
+        // The target's largest object: 2^61-1 bytes with 64-bit pointers, 2^32-1 with
+        // 32-bit ones, as clang (mirrors the C++ layoutTooLarge).
+        int64 limit = (int64)4294967295;
+        if (s.ptrsz >= 8) {
+            limit = (int64)2305843009213693951;
+        }
+        if (esz > (int64)0 && dv > limit / esz) {
+            s.too_large = 1;
+            return (int64)0;
+        }
+        return esz * dv;
+    }
+    if ((int)t[0] == 42 || (int)t[n - 1] == 42 || sema_streq(t, "string") == 1) {
+        al[0] = ps;
+        return ps;
+    }
+    if (sema_is_fn_type(t) == 1) {
+        al[0] = ps;
+        return ps * (int64)2;
+    }
+    int64 fx = sema_fixed_scalar_size(t);
+    if (fx > (int64)0) {
+        al[0] = fx;
+        if (fx == (int64)8) {
+            al[0] = (int64)s.i64al;
+        }
+        return fx;
+    }
+    List<string> targs;
+    List_init<string>(&targs, 2);
+    string base = t;
+    int i = 0;
+    while (i < n && (int)t[i] != 60) {
+        i = i + 1;
+    }
+    if (i < n) {   // a generic instance
+        base = sema_base_name(t);
+        sema_parse_targs(t, &targs);
+    }
+    if (sema_in_list(&s.tparams, base) == 1) {
+        return (int64)0;
+    }
+    *DeclNode d = sema_find_tdecl(s, base);
+    if (d == null) {
+        return (int64)0;
+    }
+    if (List_len<TypeParam>(&d.type_params) != List_len<string>(&targs)) {
+        return (int64)0;
+    }
+    return sema_decl_layout(s, d, &targs, al, depth);
+}
+
+int64 sema_up(int64 x, int64 a) {
+    if (a <= (int64)0) {
+        return x;
+    }
+    return ((x + a - (int64)1) / a) * a;
+}
+
+// Size (and alignment in al[0]) of a declared type with its type arguments `targs`, as
+// codegen lays it out; 0 when only codegen knows it (a `pack(N>=2)` struct, a `: 0`
+// bitfield). Mirrors C++ TypeChecker::constLayout / bitfieldLayout.
+int64 sema_decl_layout(Sema* s, *DeclNode d, List<string>* targs, int64* al, int depth) {
+    int64 ps = (int64)s.ptrsz;
+    if (d.kind == DK_INTERFACE) {
+        al[0] = ps;
+        return ps * (int64)2;
+    }
+    if (d.kind == DK_ENUM) {
+        if (sema_is_plain_enum_decl(d) == 1) {
+            al[0] = (int64)4;
+            return (int64)4;
+        }
+        // { i32 tag, [N x i64] payload }, N the largest variant's bytes in i64s.
+        int64 maxb = (int64)0;
+        int vi = 0;
+        while (vi < List_len<List<string>>(&d.payloads)) {
+            List<string> pl = List_get<List<string>>(&d.payloads, vi);
+            int64 b = (int64)0;
+            int pi = 0;
+            while (pi < List_len<string>(&pl)) {
+                int64 pal = (int64)1;
+                int64 psz = sema_const_layout(s, sema_subst_params(List_get<string>(&pl, pi), &d.type_params, targs), &pal, depth + 1);
+                if (psz == (int64)0) {
+                    return (int64)0;
+                }
+                b = sema_up(b, pal) + psz;
+                pi = pi + 1;
+            }
+            if (b > maxb) {
+                maxb = b;
+            }
+            vi = vi + 1;
+        }
+        int64 nw = (maxb + (int64)7) / (int64)8;
+        if (nw == (int64)0) {
+            nw = (int64)1;
+        }
+        int64 ea = (int64)s.i64al;
+        if (ea < (int64)4) {
+            ea = (int64)4;
+        }
+        al[0] = ea;
+        return sema_up(sema_up((int64)4, (int64)s.i64al) + (int64)8 * nw, ea);
+    }
+    if (d.kind != DK_STRUCT && d.kind != DK_UNION) {
+        return (int64)0;
+    }
+    // `#pragma pack(N>=2)`: each alignment capped at N and bitfields packed back to back;
+    // the struct (or union) is as aligned as its most aligned (capped) field, as C
+    // (mirrors the C++ constLayout).
+    int64 packn = (int64)0;
+    if (d.is_packed == 0 && d.pack_align >= 2) {
+        packn = (int64)d.pack_align;
+    }
+    List<Param> lfs;
+    List<int> lbits;
+    List<int> lnamed;
+    ast_layout_fields(d, &lfs, &lbits, &lnamed);
+    int nf = List_len<Param>(&lfs);
+    int hasbits = 0;
+    if (List_len<string>(&d.pad_tys) > 0) {
+        hasbits = 1;
+    }
+    int fi = 0;
+    while (fi < nf) {
+        if (List_get<int>(&lbits, fi) != 0) {
+            hasbits = 1;
+        }
+        fi = fi + 1;
+    }
+    if (hasbits == 1 && d.kind == DK_UNION) {
+        return (int64)0;
+    }
+    int64 off = (int64)0;
+    int64 maxal = (int64)1;
+    int64 bitpos = (int64)0;                         // SysV bitfield cursor
+    int open = 0;   // MS open storage word
+    int64 curbits = (int64)0;
+    int64 curoff = (int64)0;
+    int after = 0;                                   // MS: the previous field is a bitfield
+    fi = 0;
+    while (fi < nf) {
+        int bw = List_get<int>(&lbits, fi);
+        int unnamed = 1 - List_get<int>(&lnamed, fi);
+        if (bw < 0) {
+            return (int64)0;
+        }
+        int64 fal = (int64)1;
+        int64 fsz = sema_const_layout(s, sema_subst_params(List_get<Param>(&lfs, fi).ty, &d.type_params, targs), &fal, depth + 1);
+        if (fsz == (int64)0) {
+            return (int64)0;
+        }
+        int64 nat = fal;
+        if (d.is_packed == 1) {
+            fal = (int64)1;
+        }
+        if (packn > (int64)0 && fal > packn) {
+            fal = packn;
+        }
+        if (hasbits == 0) {
+            if (fal > maxal) {
+                maxal = fal;
+            }
+            if (d.kind == DK_UNION) {
+                if (fsz > off) {
+                    off = fsz;
+                }
+            }
+            else {
+                off = sema_up(off, fal) + fsz;
+            }
+        } else if (s.msbf == 1) {                    // MS: each storage word is an element
+            if (unnamed == 1 && bw == 0) {
+                // A `: 0` right after a bitfield closes the word and aligns the next field
+                // to its type (capped by the packing on MSVC only); elsewhere it is ignored.
+                if (after == 1) {
+                    int64 za = nat;
+                    if (s.msvc == 1) {
+                        za = fal;
+                    }
+                    off = sema_up(off, za);
+                    if (za > maxal) {
+                        maxal = za;
+                    }
+                }
+                open = 0;
+                after = 0;
+            } else if (bw > 0) {
+                int64 stb = fsz * (int64)8;
+                if (open == 0 || curbits != stb || curoff + (int64)bw > stb) {
+                    off = sema_up(off, fal) + fsz;
+                    if (fal > maxal) {
+                        maxal = fal;
+                    }
+                    open = 1;
+                    curbits = stb;
+                    curoff = (int64)0;
+                }
+                curoff = curoff + (int64)bw;
+                after = 1;
+            } else {
+                open = 0;
+                after = 0;
+                off = sema_up(off, fal) + fsz;
+                if (fal > maxal) {
+                    maxal = fal;
+                }
+            }
+        } else if (unnamed == 1 && bw == 0) {        // SysV / AAPCS `: 0`: next boundary of its type
+            bitpos = sema_up(bitpos, nat * (int64)8);
+            if (s.bfal == 1 && nat > maxal) {
+                maxal = nat;
+            }
+        } else {                                     // SysV / AAPCS (an unnamed one aligns only on AAPCS)
+            if ((unnamed == 0 || s.bfal == 1) && fal > maxal) {
+                maxal = fal;
+            }
+            if (bw > 0) {
+                int64 ub = fsz * (int64)8;
+                if (d.is_packed == 0 && packn == (int64)0 && fal < fsz) {
+                    // Aligned below its size (int64 on 32-bit x86 SysV): may not cross its
+                    // size from an alignment boundary.
+                    if (bitpos % (fal * (int64)8) + (int64)bw > ub) {
+                        bitpos = sema_up(bitpos, fal * (int64)8);
+                    }
+                } else if (d.is_packed == 0 && packn == (int64)0 && bitpos / ub != (bitpos + (int64)bw - (int64)1) / ub) {
+                    bitpos = sema_up(bitpos, ub);
+                }
+                bitpos = bitpos + (int64)bw;
+            } else {
+                int64 fo = sema_up((bitpos + (int64)7) / (int64)8, fal);
+                bitpos = (fo + fsz) * (int64)8;
+            }
+        }
+        fi = fi + 1;
+    }
+    if (hasbits == 1 && s.msbf == 0) {
+        off = (bitpos + (int64)7) / (int64)8;
+    }
+    al[0] = maxal;
+    return sema_up(off, maxal);
+}
+
+int64 sema_const_sizeof(Sema* s, string t) {
+    int64 al = (int64)1;
+    return sema_const_layout(s, t, &al, 0);
+}
+
+// Does dimension text `dim` have a `sizeof(T)` whose size is target layout? Its value is
+// then left to codegen.
+int sema_dim_sized_later(Sema* s, string dim) {
+    int n = 0;
+    while (dim[n] != 0) {
+        n = n + 1;
+    }
+    int i = 0;
+    while (i + 7 <= n) {
+        if (sema_streq(sema_sub_str(dim, i, i + 7), "sizeof(") == 1) {
+            int j = i + 7;
+            int depth = 1;
+            while (j < n && depth > 0) {
+                if (dim[j] == '(') {
+                    depth = depth + 1;
+                } else if (dim[j] == ')') {
+                    depth = depth - 1;
+                }
+                j = j + 1;
+            }
+            if (sema_const_sizeof(s, sema_trim_sub(dim, i + 7, j - 1)) == (int64)0) {
+                return 1;
+            }
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// A name in a dimension expression: a classic enum member or an in-scope `const` int.
+// `sizeof(T)`: T must be a sized type; codegen, which knows the layout, folds the size
+// (mirrors the C++ checkArrayDim).
+int sema_dim_name(Sema* s, string nm, int64* out) {
+    if (ast_has_prefix(nm, "sizeof(") == 1) {
+        int nl = 0;
+        while (nm[nl] != 0) {
+            nl = nl + 1;
+        }
+        string t = sema_sub_str(nm, 7, nl - 1);
+        int e0 = s.had_error;
+        s.had_error = 0;
+        sema_check_decl_type(s, t);
+        if (s.had_error == 0 && sema_is_void_value(sema_resolve_scalar(s, sema_isub(s, t))) == 1) {
+            sema_error(s, "sizeof of 'void': a void value has no size");
+        }
+        int fine = 1 - s.had_error;
+        if (e0 == 1) {
+            s.had_error = 1;
+        }
+        *out = (int64)0;
+        if (fine == 1) {
+            *out = sema_const_sizeof(s, t);
+        }
+        if (*out == (int64)0) {
+            *out = (int64)8;
+        }
+        return 1;
+    }
+    int64 ev = sema_dim_value(s, nm);
+    if (ev >= (int64)0) {
+        *out = ev;
+        return 1;
+    }
+    int si = sema_sym_index(s, nm);
+    if (si < 0) {
+        return 0;
+    }
+    Sym sy = List_get<Sym>(&s.syms, si);
+    if (sy.depth == 0 && StrTab_has(&s.late_globals, nm) == 1) {
+        return 0;
+    }
+    if (sy.is_const == 1 && sy.init != null && sema_fold_int(s, sy.init, out) == 1) {
+        return 1;
+    }
+    return 0;
+}

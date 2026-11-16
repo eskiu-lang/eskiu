@@ -1,0 +1,501 @@
+// sema_base_scope.esk: scopes, symbols and struct lookups (part of sema_base.esk, imported in order)
+
+void sema_pop(Sema* s) {
+    sema_bump(s);
+    int d = s.depth;
+    sema_warn_unused(s, d);
+    while (List_len<Sym>(&s.syms) > 0) {
+        Sym last = List_get<Sym>(&s.syms, List_len<Sym>(&s.syms) - 1);
+        if (last.depth < d) {
+            break;
+        }
+        NameIdx_pop(&s.syms_ix, last.name);
+        List_remove<Sym>(&s.syms, List_len<Sym>(&s.syms) - 1);
+    }
+    s.depth = d - 1;
+}
+
+*DeclNode sema_find_tdecl(Sema* s, string name);
+
+// `type NP = ?*N;`: a use of NP is the nullable pointer itself, so the `?` the
+// null-safety checks read off the front of a type must be visible (mirrors the C++
+// nullableAliasTarget).
+string sema_nullable_alias(Sema* s, string t) {
+    string cur = t;
+    int hops = 0;
+    while (hops < 64) {
+        *DeclNode ad = sema_find_tdecl(s, cur);
+        if (ad == null || ad.kind != DK_TYPEALIAS) {
+            return t;
+        }
+        cur = ad.ret_type;
+        if ((int)cur[0] == 63) {
+            return cur;
+        }
+        hops = hops + 1;
+    }
+    return t;
+}
+
+void sema_define(Sema* s, string name, string type, int is_const) {
+    let sym: Sym;
+    sym.name = name;
+    sym.type = sema_nullable_alias(s, type);
+    sym.depth = s.depth;
+    sym.is_const = is_const;
+    sym.init = null;
+    sym.is_static = 0;
+    sym.addr_taken = 0;
+    sym.used = 0;
+    sym.line = 0;
+    sym.col = 0;
+    sym.is_param = 0;
+    List_push<Sym>(&s.syms, sym);
+    NameIdx_push(&s.syms_ix, name);
+    sema_bump(s);
+    if (s.tool == 3) {
+        sema_tool_note_inst(s, sym.type);
+    }
+}
+
+// sema_define, recording the binding's position (for -Wall) and whether it is a parameter.
+void sema_define_at(Sema* s, string name, string type, int is_const, int line, int col, int is_param) {
+    sema_define(s, name, type, is_const);
+    int n = List_len<Sym>(&s.syms);
+    Sym sym = List_get<Sym>(&s.syms, n - 1);
+    sym.line = line;
+    sym.col = col;
+    sym.is_param = is_param;
+    List_set<Sym>(&s.syms, n - 1, sym);
+    if (s.tool != 0 && line > 0 && is_param == 0) {
+        sema_tool_hsym(s, line, col, sema_slen(name), sema_display_ty(s, type));
+    }
+}
+
+// -Wall: `name`, read inside lambdas, is captured by every enclosing lambda it is outer
+// to (a local, not a global or `static`), as the C++ capture map records it.
+void sema_note_capture(Sema* s, string name) {
+    int nb = List_len<int>(&s.lam_bounds);
+    if (nb == 0 || s.in_inst == 1 || s.in_sizeof > 0) {
+        return;
+    }
+    int i = NameIdx_last(&s.syms_ix, name);
+    if (i < 0) {
+        return;
+    }
+    Sym sym = List_get<Sym>(&s.syms, i);
+    if (sym.depth < 1 || sym.is_static == 1 || sym.type == null || sym.type[0] == 0) {
+        return;
+    }
+    int j = 0;
+    while (j < nb) {
+        if (sym.depth <= List_get<int>(&s.lam_bounds, j)) {
+            *ExprNode lam = List_get<*ExprNode>(&s.lam_nodes, j);
+            int seen = 0;
+            int c = 0;
+            while (c < List_len<*ExprNode>(&s.cap_lams) && seen == 0) {
+                if (List_get<*ExprNode>(&s.cap_lams, c) == lam && sema_streq(List_get<string>(&s.cap_names, c), name) == 1) {
+                    seen = 1;
+                }
+                c = c + 1;
+            }
+            if (seen == 0) {
+                List_push<*ExprNode>(&s.cap_lams, lam);
+                List_push<string>(&s.cap_names, name);
+                List_push<string>(&s.cap_tys, sym.type);
+            }
+        }
+        j = j + 1;
+    }
+}
+
+// -Wall: the innermost binding of `name` is referenced (the C++ lookupSymbol).
+void sema_mark_used(Sema* s, string name) {
+    int i = NameIdx_last(&s.syms_ix, name);
+    if (i < 0) {
+        return;
+    }
+    Sym sym = List_get<Sym>(&s.syms, i);
+    if (sym.used == 1) {
+        return;
+    }
+    sym.used = 1;
+    List_set<Sym>(&s.syms, i, sym);
+}
+
+// Every binding of the scopes from depth `d` in counts as used (a prototype's parameter names).
+void sema_mark_all_used(Sema* s, int d) {
+    int i = List_len<Sym>(&s.syms) - 1;
+    while (i >= 0 && List_get<Sym>(&s.syms, i).depth >= d) {
+        Sym sym = List_get<Sym>(&s.syms, i);
+        sym.used = 1;
+        List_set<Sym>(&s.syms, i, sym);
+        i = i - 1;
+    }
+}
+
+// Record the initializer of the binding just defined, when it is a `const`.
+void sema_set_const_init(Sema* s, *ExprNode init) {
+    int n = List_len<Sym>(&s.syms);
+    if (n == 0) {
+        return;
+    }
+    Sym sym = List_get<Sym>(&s.syms, n - 1);
+    if (sym.is_const == 0) {
+        return;
+    }
+    sym.init = init;
+    List_set<Sym>(&s.syms, n - 1, sym);
+}
+
+// Index of the innermost binding of `name` in the symbol stack, or -1 if unbound.
+// The one reverse scan the symbol-table queries below share.
+int sema_sym_index(Sema* s, string name) {
+    if (s.global_only == 1) {
+        int i = NameIdx_last(&s.syms_ix, name);
+        while (i >= 0 && List_get<Sym>(&s.syms, i).depth != 0) {
+            i = NameIdx_prev(&s.syms_ix, i);
+        }
+        return i;
+    }
+    return NameIdx_last(&s.syms_ix, name);
+}
+
+// Retype the innermost binding of `name` (a `for (i in A..B)` decl widened to the
+// bounds' common type after both were declared).
+void sema_set_sym_type(Sema* s, string name, string type) {
+    int i = sema_sym_index(s, name);
+    if (i < 0) {
+        return;
+    }
+    Sym sym = List_get<Sym>(&s.syms, i);
+    sym.type = type;
+    List_set<Sym>(&s.syms, i, sym);
+    sema_bump(s);
+}
+
+// Is `name` a read-only (const) binding?
+int sema_sym_const(Sema* s, string name) {
+    int i = sema_sym_index(s, name);
+    if (i < 0) {
+        return 0;
+    }
+    return List_get<Sym>(&s.syms, i).is_const;
+}
+
+// Scope depth of the innermost binding of `name`, or -1. Depth 0 = a global; a
+// function-scope local or parameter is at depth >= 1.
+int sema_sym_depth(Sema* s, string name) {
+    int i = sema_sym_index(s, name);
+    if (i < 0) {
+        return -1;
+    }
+    return List_get<Sym>(&s.syms, i).depth;
+}
+
+int sema_lookup(Sema* s, string name) {
+    if (sema_sym_index(s, name) >= 0) {
+        return 1;
+    }
+    return 0;
+}
+
+// Declared type of `name` (innermost binding), or "" if unbound / untyped.
+string sema_lookup_type(Sema* s, string name) {
+    int i = sema_sym_index(s, name);
+    if (i < 0) {
+        return "";
+    }
+    return List_get<Sym>(&s.syms, i).type;
+}
+
+// Is `name` bound in a local (non-global) scope? The innermost binding wins, so a
+// local shadow of a global function means a call should NOT be arg-count-checked
+// against the function signature (it could be a fn-pointer variable).
+// A script's statement before the declaration of one of its globals (mirrors the C++
+// check in visit(IdentExpr)).
+int sema_script_late(Sema* s, string name, int line, int col) {
+    if (s.in_script == 0 || sema_local_bound(s, name) == 1 || StrTab_has(&s.script_lines, name) == 0) {
+        return 0;
+    }
+    int dl = StrTab_get(&s.script_lines, name, 0);
+    int dc = StrTab_get(&s.script_cols, name, 0);
+    if (dl > line || (dl == line && dc > col)) {
+        return 1;
+    }
+    return 0;
+}
+
+int sema_local_bound(Sema* s, string name) {
+    int i = sema_sym_index(s, name);
+    if (i < 0) {
+        return 0;
+    }
+    if (List_get<Sym>(&s.syms, i).depth > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+// Is `name` a member of a classic (payload-free, non-generic) enum?
+int sema_plain_member(Sema* s, string name) {
+    int i = NameIdx_first(&s.evars_ix, name);
+    while (i >= 0) {
+        if (List_get<EVar>(&s.evars, i).plain == 1) {
+            return 1;
+        }
+        i = NameIdx_next(&s.evars_ix, i);
+    }
+    return 0;
+}
+
+// The declared type of field `name` of struct/union `sn`, or null when it has no such
+// field (a method is not a field).
+// The index of the first field named `name` in declaration `d` (a struct or union), or
+// -1: a hash index (ast_fx_*) for a wide one, else a scan.
+int sema_field_index(*DeclNode d, string name) {
+    int i = 0;
+    int n = List_len<Param>(&d.params);
+    if (n > 8) {
+        string owner = sema_cat("s:", sema_i64_text((int64)d));
+        if (ast_fx_ready(owner, n) == 0) {
+            while (i < n) {
+                ast_fx_put(owner, List_get<Param>(&d.params, i).name, i);
+                i = i + 1;
+            }
+            ast_fx_done(owner, n);
+            i = 0;
+        }
+        int k = ast_fx_get(owner, name);
+        if (k >= 0 && k < n && sema_streq(List_get<Param>(&d.params, k).name, name) == 1) {
+            return k;
+        }
+        if (k < 0) {
+            return -1;
+        }
+    }
+    while (i < n) {
+        if (sema_streq(List_get<Param>(&d.params, i).name, name) == 1) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+string sema_field_type(Sema* s, string sn, string name) {
+    *DeclNode d = sema_find_tdecl(s, sn);
+    if (d == null || (d.kind != DK_STRUCT && d.kind != DK_UNION)) {
+        return null;
+    }
+    int i = sema_field_index(d, name);
+    if (i < 0) {
+        return null;
+    }
+    return List_get<Param>(&d.params, i).ty;
+}
+
+// Is `name` a function declared `must_use`? (Discarding its result is an error.)
+int sema_fn_must_use(Sema* s, string name) {
+    int i = 0;
+    int n = List_len<*DeclNode>(&s.fndecls);
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&s.fndecls, i);
+        if (d.is_mustuse == 1 && sema_streq(d.name, name) == 1) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Register a non-generic function/extern/intrinsic signature. Generic functions are
+// instantiated/inferred, so they get no fixed arg-count check (mirrors the C++
+// funcTemplateDecls vs functionSignatures split).
+void sema_register_fn(Sema* s, *DeclNode d) {
+    if (List_len<TypeParam>(&d.type_params) > 0) {
+        return;
+    }
+    let sig: FnSig;
+    sig.name = d.name;
+    int np = List_len<Param>(&d.params);
+    sig.variadic = 0;
+    sig.fixed = np;
+    if (np > 0) {                          // guard List_get against a -1 index
+        string lastty = List_get<Param>(&d.params, np - 1).ty;
+        if (sema_streq(lastty, "...") == 1) {
+            sig.variadic = 1;
+            sig.fixed = np - 1;
+        }
+    }
+    List_push<FnSig>(&s.fns, sig);
+    NameIdx_push(&s.fns_ix, sig.name);
+}
+
+*DeclNode sema_find_tdecl(Sema* s, string name);
+int sema_is_arr_ty(string t);
+// A value type with no scalar meaning: a struct/union, a sum type, an interface value, a
+// fixed array, a slice, or a closure (mirrors the C++ isAggregateValue). Such a value is
+// not a truth value and has no built-in comparison.
+int sema_is_aggregate(Sema* s, string t0) {
+    string t = sema_strip_nullable(sema_strip_const(t0));
+    if (t[0] == 0) {
+        return 0;
+    }
+    if (sema_is_arr_ty(t) == 1 || sema_is_fn_type(t) == 1) {
+        return 1;
+    }
+    if (sema_has_star(t) == 1) {
+        return 0;
+    }
+    *DeclNode d = sema_find_tdecl(s, sema_base_name(t));
+    if (d == null) {
+        return 0;
+    }
+    if (d.kind == DK_STRUCT || d.kind == DK_UNION || d.kind == DK_INTERFACE) {
+        return 1;
+    }
+    if (d.kind == DK_ENUM) {
+        if (List_len<TypeParam>(&d.type_params) > 0) {
+            return 1;
+        }
+        if (ast_enum_has_payload(d) == 1) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+*DeclNode sema_find_iface(Sema* s, string name);
+string sema_canon(Sema* s, string t0);
+// An interface value (not a pointer to one)? It is a truth value (true when not null) and
+// compares with `null` (mirrors the C++ isTruthValue).
+int sema_is_iface_val(Sema* s, string t0) {
+    if (t0 == null || t0[0] == 0) {
+        return 0;
+    }
+    string c = sema_canon(s, sema_strip_nullable(sema_strip_const(t0)));
+    if (sema_has_star(c) == 1) {
+        return 0;
+    }
+    if (sema_find_iface(s, c) != null) {
+        return 1;
+    }
+    return 0;
+}
+
+// A struct value (not a pointer to one, not an array of them)?
+int sema_is_struct_value(Sema* s, string t) {
+    if (t[0] == 0 || sema_has_star(t) == 1 || sema_is_arr_ty(t) == 1) {
+        return 0;
+    }
+    return sema_is_struct(s, sema_base_name(t));
+}
+
+int sema_find_fn(Sema* s, string name) {
+    return NameIdx_first(&s.fns_ix, name);
+}
+
+int sema_is_type(Sema* s, string name) {
+    return NameIdx_first(&s.tdecls_ix, name) >= 0;
+}
+
+// Leading name of a spelling, up to a generic '<' or payload '(':
+// "Box<int>" -> "Box", "A(x)" -> "A", "W" -> "W".
+string sema_base_name(string sp) {
+    int n = 0;
+    while (sp[n] != 0 && (int)sp[n] != 60 && (int)sp[n] != 40) {   // '<' or '('
+        if ((int)sp[n] == 91) {
+            n = sema_dim_close(sp, n);
+            if (sp[n] == 0) {
+                return sp;
+            }
+        }
+        n = n + 1;
+    }
+    if ((int)sp[n] == 0) {
+        return sp;
+    }
+    *uint8 buf = alloc<uint8>(n + 1);
+    int i = 0;
+    while (i < n) {
+        buf[i] = (uint8)sp[i];
+        i = i + 1;
+    }
+    buf[n] = 0;
+    return (string)buf;
+}
+
+string sema_cat(string a, string b) {
+    int la = 0;
+    while (a[la] != 0) {
+        la = la + 1;
+    }
+    int lb = 0;
+    while (b[lb] != 0) {
+        lb = lb + 1;
+    }
+    *uint8 buf = alloc<uint8>(la + lb + 1);
+    int i = 0;
+    while (i < la) {
+        buf[i] = (uint8)a[i];
+        i = i + 1;
+    }
+    int j = 0;
+    while (j < lb) {
+        buf[la + j] = (uint8)b[j];
+        j = j + 1;
+    }
+    buf[la + lb] = 0;
+    return (string)buf;
+}
+
+// Reduce a type spelling to its base struct name: strip leading '*'/spaces and any
+// generic '<...>' or pointer suffix, and a `const` qualifier (`const P*` names P).
+// "*Point" -> "Point", "List<int>" -> "List".
+string sema_struct_of_type(string t0) {
+    string t = sema_strip_const(t0);
+    int i = 0;
+    while ((int)t[i] == 42 || (int)t[i] == 32 || (int)t[i] == 63) {   // skip '*' / ' ' / '?'
+        i = i + 1;
+    }
+    int j = i;
+    while (t[j] != 0 && (int)t[j] != 60 && (int)t[j] != 42 && (int)t[j] != 32) {
+        if ((int)t[j] == 91) {
+            j = sema_dim_close(t, j);
+            if (t[j] == 0) {
+                break;
+            }
+        }
+        j = j + 1;
+    }
+    int len = j - i;
+    *uint8 buf = alloc<uint8>(len + 1);
+    int k = 0;
+    while (k < len) {
+        buf[k] = (uint8)t[i + k];
+        k = k + 1;
+    }
+    buf[len] = 0;
+    return (string)buf;
+}
+
+// `t` with every space removed ("Result<int, string>" -> "Result<int,string>").
+string sema_nospace(string t) {
+    int n = 0;
+    while (t[n] != 0) {
+        n = n + 1;
+    }
+    *uint8 buf = alloc<uint8>(n + 1);
+    int o = 0;
+    int i = 0;
+    while (i < n) {
+        if ((int)t[i] != 32) {
+            buf[o] = (uint8)t[i];
+            o = o + 1;
+        }
+        i = i + 1;
+    }
+    buf[o] = 0;
+    return (string)buf;
+}

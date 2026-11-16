@@ -1,0 +1,492 @@
+// sema_base_infer.esk: struct and enum lookups and type inference (part of sema_base.esk, imported in order)
+
+int sema_is_struct(Sema* s, string name) {
+    return NameIdx_first(&s.sdecls_ix, name) >= 0;
+}
+
+int sema_has_member(Sema* s, string key) {   // key = "Struct.member"
+    return NameIdx_first(&s.members_ix, key) >= 0;
+}
+
+// Is `name` a variant of any enum (e.g. a generic `Some` constructed as `Some<int>(5)`)?
+int sema_is_variant_name(Sema* s, string name) {
+    return NameIdx_first(&s.evars_ix, name) >= 0;
+}
+
+// The variant `v` of enum `en` (plain = 0 and val = null when absent).
+EVar sema_find_evar(Sema* s, string en, string v) {
+    int i = NameIdx_first(&s.evars_ix, v);
+    while (i >= 0) {
+        EVar ev = List_get<EVar>(&s.evars, i);
+        if (sema_streq(ev.en, en) == 1) {
+            return ev;
+        }
+        i = NameIdx_next(&s.evars_ix, i);
+    }
+    let none: EVar;
+    none.en = en;
+    none.variant = v;
+    none.val = null;
+    none.plain = 0;
+    return none;
+}
+
+// A variant of `en` other than `self_v`, already in `seen`, whose value is `val` ("" if none).
+string sema_evar_with_val(Sema* s, string en, string val, List<string>* seen, string self_v) {
+    int i = 0;
+    int n = List_len<EVar>(&s.evars);
+    while (i < n) {
+        EVar ev = List_get<EVar>(&s.evars, i);
+        if (sema_streq(ev.en, en) == 1 && sema_streq(ev.variant, self_v) == 0 && sema_streq(ev.val, val) == 1
+            && sema_in_list(seen, ev.variant) == 1) {
+            return ev.variant;
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+int sema_is_enum(Sema* s, string name) {
+    return NameIdx_first(&s.enums_ix, name) >= 0;
+}
+
+// `+ - * / %`: the operators whose result type sema_infer_type derives from its operands.
+int sema_is_arith_op(string op) {
+    return sema_streq(op, "+") == 1 || sema_streq(op, "-") == 1 || sema_streq(op, "*") == 1
+        || sema_streq(op, "/") == 1 || sema_streq(op, "%") == 1;
+}
+
+// A value-producing binary operator (arithmetic, bitwise or shift): its result type
+// follows its operands' types.
+int sema_is_valop(string op) {
+    return sema_is_arith_op(op) == 1 || sema_streq(op, "&") == 1 || sema_streq(op, "|") == 1
+        || sema_streq(op, "^") == 1 || sema_streq(op, "<<") == 1 || sema_streq(op, ">>") == 1;
+}
+
+// The integer promotion of a canonical integer type (C: narrow types become `int`).
+string sema_int_promote(string t) {
+    if (sema_streq(t, "int64") == 1 || sema_streq(t, "uint64") == 1) {
+        return t;
+    }
+    if (sema_streq(t, "uint") == 1 || sema_streq(t, "uint32") == 1) {
+        return "uint";
+    }
+    return "int";
+}
+
+// The user operator overload of `op` whose parameters take operand types `tys` (exactly,
+// or through a numeric conversion, as the C++ resolveOperator's assignability does), or
+// null. `op` is the overload spelling ("+", "u-", "[]").
+*DeclNode sema_find_op(Sema* s, string op, List<string>* tys) {
+    int n = List_len<string>(tys);
+    int pass = 0;
+    while (pass < 2) {
+        int i = 0;
+        int nd = List_len<*DeclNode>(&s.fndecls);
+        while (i < nd) {
+            *DeclNode d = List_get<*DeclNode>(&s.fndecls, i);
+            if (d.operator_sym != null && sema_streq(d.operator_sym, op) == 1 && List_len<Param>(&d.params) == n) {
+                int ok = 1;
+                int k = 0;
+                while (k < n && ok == 1) {
+                    string pc = sema_canon(s, List_get<Param>(&d.params, k).ty);
+                    string ac = sema_canon(s, List_get<string>(tys, k));
+                    if (sema_streq(pc, ac) == 0) {
+                        if (pass == 0) {
+                            ok = 0;
+                        }
+                        else if (sema_is_numeric_ty(pc) == 0 || sema_is_numeric_ty(ac) == 0
+                                 || (sema_is_int_ty(pc) == 1 && sema_is_float_ty(ac) == 1)) {
+                            if (sema_c_ptr(pc) == 0 || (sema_c_ptr(ac) == 0 && sema_streq(ac, "null") == 0)) {
+                                ok = 0;
+                            }
+                            // pointers convert only through `*void` (or from null), as in C++
+                            else if (sema_streq(ac, "null") == 0 && sema_streq(pc, "*void") == 0 && sema_streq(ac, "*void") == 0
+                                     && sema_streq(pc, "string") == 0 && sema_streq(ac, "string") == 0) {
+                                ok = 0;
+                            }
+                        }
+                    }
+                    k = k + 1;
+                }
+                if (ok == 1) {
+                    return d;
+                }
+            }
+            i = i + 1;
+        }
+        pass = pass + 1;
+    }
+    return null;
+}
+
+// The user overload of binary `op` for operand types `lt`, `rt` (null if none).
+*DeclNode sema_find_binop(Sema* s, string op, string lt, string rt) {
+    List<string> tys;
+    List_init<string>(&tys, 2);
+    List_push<string>(&tys, lt);
+    List_push<string>(&tys, rt);
+    return sema_find_op(s, op, &tys);
+}
+
+// The inferred type of binary `op` over operand types `lt` and `rt` (as sema_infer_type
+// gives them; "" = unknown): comparisons and `&&`/`||` are bool; numbers follow C's usual
+// arithmetic conversions (a shift takes its promoted left operand's type); pointer
+// arithmetic keeps the pointer (`ptr - ptr` counts elements, int64); a struct operand
+// goes through its user operator overload.
+string sema_binary_type(Sema* s, string op, string lt, string rt) {
+    if (sema_is_cmp_op(op) == 1 || sema_streq(op, "&&") == 1 || sema_streq(op, "||") == 1) {
+        return "bool";
+    }
+    if (sema_is_valop(op) == 0) {
+        return "";
+    }
+    if (lt[0] == 0 || rt[0] == 0) {
+        return "";
+    }
+    // Stepping a `?*T` does not prove it non-null: `p + n` is still a `?*T`.
+    if ((sema_streq(op, "+") == 1 || sema_streq(op, "-") == 1) && (int)lt[0] == 63 && sema_is_int_ty(sema_canon(s, rt)) == 1) {
+        return lt;
+    }
+    string l = sema_canon(s, lt);
+    string r = sema_canon(s, rt);
+    if (sema_is_numeric_ty(l) == 1 && sema_is_numeric_ty(r) == 1) {
+        if (sema_is_float_ty(l) == 1 || sema_is_float_ty(r) == 1) {
+            if (sema_streq(op, "+") == 0 && sema_streq(op, "-") == 0 && sema_streq(op, "*") == 0
+                && sema_streq(op, "/") == 0 && sema_streq(op, "%") == 0) {
+                return "";
+            }
+            if (sema_streq(l, "double") == 1 || sema_streq(r, "double") == 1) {
+                return "double";
+            }
+            return "float";
+        }
+        if (sema_streq(op, "<<") == 1 || sema_streq(op, ">>") == 1) {
+            return sema_int_promote(l);
+        }
+        return ast_range_var_type(sema_int_promote(l), sema_int_promote(r));
+    }
+    int lp = sema_c_ptr(l);
+    int rp = sema_c_ptr(r);
+    if (lp == 1 && sema_is_int_ty(r) == 1 && (sema_streq(op, "+") == 1 || sema_streq(op, "-") == 1)) {
+        return sema_strip_nullable(lt);
+    }
+    if (lp == 1 && rp == 1 && sema_streq(op, "-") == 1) {
+        return "int64";
+    }
+    *DeclNode od = sema_find_binop(s, op, lt, rt);
+    if (od != null) {
+        return od.ret_type;
+    }
+    return "";
+}
+
+// The pointee of pointer type `t` ("" when not a pointer): `*T` / `T*` give T, and a
+// `const T*` gives `const T`.
+string sema_pointee(string t0) {
+    string t = sema_strip_nullable(t0);
+    int cst = 0;
+    if (sema_pointee_const(t) == 1) {
+        cst = 1;
+        t = sema_strip_const(t);
+    }
+    int n = sema_slen(t);
+    string r = "";
+    if (n > 0 && (int)t[n - 1] == 93) {   // `*T[N]`: an array, not a pointer
+        return "";
+    }
+    if (n >= 6 && sema_streq(sema_sub_str(t, n - 6, n), "*const") == 1) {
+        r = sema_sub_str(t, 0, n - 6);
+    }
+    else if (n > 0 && (int)t[n - 1] == 42) {
+        r = sema_sub_str(t, 0, n - 1);
+    }
+    else if (n > 0 && (int)t[0] == 42) {
+        r = sema_sub_str(t, 1, n);
+    }
+    else {
+        return "";
+    }
+    if (cst == 1) {
+        return sema_cat("const ", r);
+    }
+    return r;
+}
+
+// Element type of slice type `t` ("int[]" -> "int"), "" when not a slice.
+string sema_slice_elem(string t0) {
+    string t = sema_strip_const(sema_strip_nullable(t0));
+    int n = sema_slen(t);
+    if (n > 2 && (int)t[n - 2] == 91 && (int)t[n - 1] == 93) {
+        return sema_sub_str(t, 0, n - 2);
+    }
+    return "";
+}
+
+// "fn(T1,T2)->R" of a lambda signature spelling "R(T1 a, T2 b)".
+string sema_lambda_fn_type(string sig) {
+    string ret = sema_lambda_ret(sig);
+    if (ret[0] == 0) {
+        return "";
+    }
+    List<string> ps;
+    List_init<string>(&ps, 4);
+    sema_lambda_params(sig, &ps);
+    string out = "fn(";
+    int k = 0;
+    while (k < List_len<string>(&ps)) {
+        if (k > 0) {
+            out = sema_cat(out, ",");
+        }
+        out = sema_cat(out, List_get<string>(&ps, k));
+        k = k + 1;
+    }
+    return sema_cat(sema_cat(out, ")->"), ret);
+}
+
+// The value type `T` of a `*Future<T>` ("" if `t` is not one).
+string sema_future_inner(Sema* s, string t) {
+    string c = sema_canon(s, t);
+    if ((int)c[0] != 42) {
+        return "";
+    }
+    string inr = sema_sub_str(c, 1, sema_slen(c));
+    if (sema_streq(sema_base_name(inr), "Future") == 0) {
+        return "";
+    }
+    List<string> targs;
+    List_init<string>(&targs, 1);
+    sema_parse_targs(inr, &targs);
+    if (List_len<string>(&targs) != 1) {
+        return "";
+    }
+    return List_get<string>(&targs, 0);
+}
+
+// The type an `async` function's call yields: `*Future<T>`.
+// An `async void` function's future carries a 1-byte unit (uint8), as in the C++.
+string sema_async_type(string ret) {
+    string r = ret;
+    if (sema_streq(sema_strip_const(ret), "void") == 1) {
+        r = "uint8";
+    }
+    return sema_cat(sema_cat("*Future<", r), ">");
+}
+
+// The return type of the method call `x.m(args)` `e` ("" when unknown).
+string sema_method_ret(Sema* s, *ExprNode e) {
+    *ExprNode mem = e.a;
+    string bt = sema_infer_type(s, mem.a);
+    if (bt[0] == 0 || sema_is_fn_type(bt) == 1) {
+        return "";
+    }
+    string sn = sema_struct_of_type(bt);
+    *DeclNode ifc = sema_find_iface(s, sn);
+    if (ifc != null) {
+        int ii = 0;
+        while (ii < List_len<*DeclNode>(&ifc.methods)) {
+            *DeclNode c = List_get<*DeclNode>(&ifc.methods, ii);
+            if (sema_streq(c.name, mem.sval) == 1) {
+                return c.ret_type;
+            }
+            ii = ii + 1;
+        }
+        return "";
+    }
+    *DeclNode sd = sema_find_struct(s, sn);
+    if (sd == null) {
+        return "";
+    }
+    List<string> rtargs;
+    List_init<string>(&rtargs, 2);
+    sema_parse_targs(sema_strip_ptr_sp(sema_strip_const(bt)), &rtargs);
+    int j = 0;
+    while (j < List_len<*DeclNode>(&sd.methods)) {
+        *DeclNode cm = List_get<*DeclNode>(&sd.methods, j);
+        if (sema_streq(cm.name, mem.sval) == 1) {
+            if (List_len<TypeParam>(&sd.type_params) > 0 && List_len<string>(&rtargs) != List_len<TypeParam>(&sd.type_params)) {
+                return "";
+            }
+            if (cm.is_async == 1) {
+                return "";
+            }
+            return sema_subst_params(cm.ret_type, &sd.type_params, &rtargs);
+        }
+        j = j + 1;
+    }
+    int fi = 0;
+    while (fi < List_len<Param>(&sd.params)) {
+        Param fp = List_get<Param>(&sd.params, fi);
+        if (sema_streq(fp.name, mem.sval) == 1) {
+            string fty = sema_subst_params(fp.ty, &sd.type_params, &rtargs);
+            if (sema_is_fn_type(fty) == 1) {
+                return sema_fn_ret(fty);
+            }
+            return "";
+        }
+        fi = fi + 1;
+    }
+    *DeclNode ffn = sema_find_fndecl(s, sema_cat(sema_cat(sn, "_"), mem.sval));
+    if (ffn == null || ffn.is_async == 1 || List_len<Param>(&ffn.params) == 0) {
+        return "";
+    }
+    if (List_len<TypeParam>(&ffn.type_params) == 0) {
+        return ffn.ret_type;
+    }
+    List<string> gtargs;
+    List_init<string>(&gtargs, 2);
+    if (sema_method_targs(s, ffn, bt, e, &gtargs) == 0) {
+        return "";
+    }
+    return sema_subst_params(ffn.ret_type, &ffn.type_params, &gtargs);
+}
+
+// The enum a variant constructor `name` builds, or null.
+*DeclNode sema_variant_enum(Sema* s, string name) {
+    int i = NameIdx_first(&s.evars_ix, name);
+    if (i < 0) {
+        return null;
+    }
+    return sema_find_tdecl(s, List_get<EVar>(&s.evars, i).en);
+}
+
+string sema_infer_type(Sema* s, *ExprNode e);
+int sema_variant_index(*DeclNode d, string v);
+
+// The type of a generic variant constructor `Some(x)` without type arguments: each type
+// parameter that is a payload field's whole type takes that argument's type (mirrors the
+// C++ inference, which does not look at the target type). "" when one stays unbound.
+string sema_variant_ctor_type(Sema* s, *DeclNode ed, *ExprNode e) {
+    int vi = sema_variant_index(ed, e.a.sval);
+    if (vi < 0 || vi >= List_len<List<string>>(&ed.payloads)) {
+        return "";
+    }
+    List<string> pl = List_get<List<string>>(&ed.payloads, vi);
+    int tn = List_len<TypeParam>(&ed.type_params);
+    List<string> bound;
+    List_init<string>(&bound, 2);
+    int t = 0;
+    while (t < tn) {
+        List_push<string>(&bound, "");
+        t = t + 1;
+    }
+    int i = 0;
+    while (i < List_len<string>(&pl) && i < List_len<*ExprNode>(&e.kids)) {
+        string pt = sema_nospace(List_get<string>(&pl, i));
+        t = 0;
+        while (t < tn) {
+            if (sema_streq(pt, List_get<TypeParam>(&ed.type_params, t).name) == 1 && List_get<string>(&bound, t)[0] == 0) {
+                string at = sema_infer_type(s, List_get<*ExprNode>(&e.kids, i));
+                if (at[0] == 0) {
+                    return "";
+                }
+                List_set<string>(&bound, t, at);
+            }
+            t = t + 1;
+        }
+        i = i + 1;
+    }
+    string r = sema_cat(ed.name, "<");
+    t = 0;
+    while (t < tn) {
+        if (List_get<string>(&bound, t)[0] == 0) {
+            return "";
+        }
+        if (t > 0) {
+            r = sema_cat(r, ",");
+        }
+        r = sema_cat(r, List_get<string>(&bound, t));
+        t = t + 1;
+    }
+    return sema_cat(r, ">");
+}
+
+// Best-effort string type of an expression ("" = unknown), mirroring the C++
+// getExpressionType for the forms whose type is certain here.
+// A type spelled as a type alias (`PSq` for `type PSq = *Sq`), through every alias hop,
+// const dropped; any other spelling unchanged (mirrors the C++ dealiasOperand). A classic
+// enum keeps its name (a `match` recovers the variant set from it).
+string sema_dealias(Sema* s, string t0) {
+    if (s.has_alias == 0 || t0 == null || t0[0] == 0) {
+        return t0;
+    }
+    string t = sema_strip_const(t0);
+    int hops = 0;
+    while (hops < 32) {
+        int i = 0;
+        while (t[i] != 0 && sema_is_idc((int)t[i]) == 1) {
+            i = i + 1;
+        }
+        if (i == 0 || t[i] != 0 || sema_in_list(&s.tparams, t) == 1) {
+            hops = 32;
+        }
+        else {
+            *DeclNode ad = sema_find_tdecl(s, t);
+            if (ad == null || ad.kind != DK_TYPEALIAS) {
+                hops = 32;
+            }
+            else {
+                t = sema_strip_const(ad.ret_type);
+            }
+        }
+        hops = hops + 1;
+    }
+    if (sema_streq(t, sema_strip_const(t0)) == 1) {
+        return t0;
+    }
+    return t;
+}
+
+string sema_infer_type_raw(Sema* s, *ExprNode e);
+
+// The struct a `self` parameter points to, through aliases (`*VV self`, `type VV = V`).
+string sema_self_struct(Sema* s, string t) {
+    string d = sema_dealias(s, t);
+    int n = sema_slen(d);
+    int a = 0;
+    while (a < n && ((int)d[a] == 42 || (int)d[a] == 32)) {
+        a = a + 1;
+    }
+    int b = n;
+    while (b > a && ((int)d[b - 1] == 42 || (int)d[b - 1] == 32)) {
+        b = b - 1;
+    }
+    return sema_struct_of_type(sema_dealias(s, sema_sub_str(d, a, b)));
+}
+
+// The type of an expression, never spelled as an alias: every shape check (pointer,
+// array, slice, fn value, interface, struct) sees the alias's target.
+string sema_infer_type(Sema* s, *ExprNode e) {
+    return sema_dealias(s, sema_infer_type_raw(s, e));
+}
+
+// The type of member `field` of a value of type `mbt` (`s.f` → the field's declared
+// type, `sl.len` → int64), or "" when unknown.
+string sema_member_type(Sema* s, string mbt, string field) {
+    if (mbt[0] != 0 && sema_is_fn_type(mbt) == 0) {
+        if (sema_slice_elem(mbt)[0] != 0 && sema_has_star(mbt) == 0 && sema_streq(field, "len") == 1) {
+            return "int64";
+        }
+        *DeclNode msd = sema_find_struct(s, sema_struct_of_type(mbt));
+        List<string> mtargs;
+        List_init<string>(&mtargs, 2);
+        if (msd != null) {
+            sema_parse_targs(sema_strip_ptr_sp(sema_strip_const(mbt)), &mtargs);
+        }
+        // A generic struct's field resolves only through an instance (`Box<int>`).
+        if (msd != null && (List_len<TypeParam>(&msd.type_params) == 0
+            || List_len<string>(&mtargs) == List_len<TypeParam>(&msd.type_params))) {
+            int mi = sema_field_index(msd, field);
+            if (mi >= 0) {
+                Param mf = List_get<Param>(&msd.params, mi);
+                // A bitfield whose values all fit an int reads as `int` (C promotion).
+                if (mi < List_len<int>(&msd.field_bits) && List_get<int>(&msd.field_bits, mi) > 0
+                    && sema_streq(ast_bf_read_type(sema_canon(s, sema_strip_const(mf.ty)), List_get<int>(&msd.field_bits, mi)), "int") == 1) {
+                    return "int";
+                }
+                return sema_subst_params(mf.ty, &msd.type_params, &mtargs);
+            }
+        }
+    }
+    return "";
+}
