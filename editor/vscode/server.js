@@ -22,6 +22,7 @@
 const { execFile } = require('child_process');
 const path = require('path');
 const fs   = require('fs');
+const { flatFor } = require('./flatten');
 
 // ── LSP message framing ───────────────────────────────────────────────────────
 
@@ -91,44 +92,6 @@ function findEskiuc(hintPath) {
     return 'eskiuc'; // rely on PATH
 }
 
-// Find an entry point (e.g. kernel.esk or main.esk) that imports filePath,
-// so multi-file symbols are resolved without spurious 'undefined variable/function' errors.
-function findEntryPoint(filePath) {
-    if (!filePath) return null;
-    const docDir = path.dirname(filePath);
-    const docBase = path.basename(filePath);
-
-    const rootNames = ['kernel.esk', 'main.esk', 'app.esk', 'index.esk', 'root.esk'];
-    for (const r of rootNames) {
-        const rootPath = path.join(docDir, r);
-        if (rootPath !== filePath && fs.existsSync(rootPath)) {
-            try {
-                const text = fs.readFileSync(rootPath, 'utf8');
-                if (text.includes(`"${docBase}"`) || text.includes(`<${docBase}>`)) {
-                    return rootPath;
-                }
-            } catch {}
-        }
-    }
-
-    try {
-        const files = fs.readdirSync(docDir);
-        for (const f of files) {
-            if (!f.endsWith('.esk') || f.startsWith('.')) continue;
-            const full = path.join(docDir, f);
-            if (full === filePath) continue;
-            try {
-                const text = fs.readFileSync(full, 'utf8');
-                if (text.includes(`"${docBase}"`)) {
-                    return full;
-                }
-            } catch {}
-        }
-    } catch {}
-
-    return null;
-}
-
 // The extension's own version (serverInfo), read from package.json next to us.
 const VERSION = (() => {
     try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')).version; }
@@ -174,24 +137,46 @@ function parseErrors(text, checkedPath, origPath, fileContent) {
     return diagnostics;
 }
 
-// Run eskiuc and publish diagnostics for a document
+// Run eskiuc and publish diagnostics for a document. A part of a module (flatten.js) is checked
+// in its module; any other file alone, an unsaved buffer through a hidden sibling copy so its
+// relative imports resolve.
 function validate(uri, filePath, content) {
     const compiler = findEskiuc(filePath);
-    const entryPoint = findEntryPoint(filePath);
-    const target = entryPoint || filePath;
     let fileText = content;
     if (fileText == null) {
         try { fileText = fs.readFileSync(filePath, 'utf8'); } catch {}
     }
-
+    const publish = (diagnostics) => send({ jsonrpc: '2.0', method: 'textDocument/publishDiagnostics',
+                                           params: { uri, diagnostics } });
+    let flat = null;
+    try { flat = flatFor(filePath, content); } catch {}
+    if (flat) {
+        execFile(compiler, [flat.path, ...compilerFlags, '--test-typechecker'], { timeout: 15000, cwd: path.dirname(flat.path) },
+            (err, stdout, stderr) => {
+                flat.remove();
+                const output = (stdout || '') + (stderr || '');
+                // the flat file's lines back to their files: this document's only
+                const mapped = output.replace(/^((?:error:\s*)?)(.+?):(\d+):(\d+):/gm, (all, pre, file, line, col) => {
+                    if (path.resolve(file) !== path.resolve(flat.path)) return all;
+                    const o = flat.toOrig(parseInt(line, 10));
+                    return o && o.file === filePath ? `${pre}${filePath}:${o.line + 1}:${col}:` : `${pre}(other):0:0:`;
+                });
+                publish(parseErrors(mapped, filePath, filePath, fileText));
+            });
+        return;
+    }
+    let target = filePath;
+    let tmp = null;
+    if (content != null) {
+        tmp = path.join(path.dirname(filePath), `.eskiu_lsp_${process.pid}_${Date.now()}.esk`);
+        try { fs.writeFileSync(tmp, content); target = tmp; } catch { tmp = null; }
+    }
     execFile(compiler, [target, ...compilerFlags, '--test-typechecker'], { timeout: 10000, cwd: path.dirname(target) },
         (err, stdout, stderr) => {
+            if (tmp) { try { fs.rmSync(tmp, { force: true }); } catch {} }
             const output = (stdout || '') + (stderr || '');
-            const diagnostics = parseErrors(output, target, filePath, fileText);
-            send({ jsonrpc: '2.0', method: 'textDocument/publishDiagnostics',
-                   params: { uri, diagnostics } });
-        }
-    );
+            publish(parseErrors(output, target, filePath, fileText));
+        });
 }
 
 // ── Requests over the compiler's editor modes ─────────────────────────────────
@@ -206,38 +191,57 @@ function run(args, cwd, timeout) {
 }
 
 // Run `eskiuc <file> args` on the document's current text: an unsaved buffer goes
-// through a hidden sibling file, so its relative imports resolve. `onFile` gets the
-// path that was checked.
-async function onText(uri, args, timeout = 8000) {
+// through a hidden sibling file, so its relative imports resolve. With `pos` (0-based), `flag`
+// gets it as LINE:COL; a part of a module runs in its flattened module (flatten.js), the position
+// moved there. `loc(file, line)` maps a location in the output back to { uri, line } (0-based).
+async function onText(uri, args, timeout = 8000, flag = null, pos = null) {
     const orig = uriToPath(uri);
     const text = docs.get(uri);
+    const own = (file) => file === orig || path.basename(file).startsWith(`.${path.basename(orig)}.`);
+    const toUri = (file) => 'file://' + path.resolve(file).split('/').map(encodeURIComponent).join('/');
+    let flat = null;
+    try { flat = flatFor(orig, text); } catch {}
+    if (flat) {
+        try {
+            const line = pos ? flat.toFlat(orig, pos.line) : 0;
+            const extra = flag ? [flag, `${line || pos.line + 1}:${pos.character + 1}`] : [];
+            const out = await run([flat.path, ...args, ...extra], path.dirname(flat.path), timeout);
+            return { out, file: flat.path, loc: (file, ln) => {
+                if (path.resolve(file) !== path.resolve(flat.path)) return { uri: toUri(file), line: ln - 1 };
+                const o = flat.toOrig(ln);
+                return o ? { uri: o.file === orig ? uri : toUri(o.file), line: o.line } : null;
+            } };
+        } finally {
+            flat.remove();
+        }
+    }
+    const extra = flag ? [flag, `${pos.line + 1}:${pos.character + 1}`] : [];
+    const loc = (file, ln) => ({ uri: own(path.resolve(file)) ? uri : toUri(file), line: ln - 1 });
     let onDisk = null;
     try { onDisk = fs.readFileSync(orig, 'utf8'); } catch {}
-    if (text == null || text === onDisk) return { out: await run([orig, ...args], path.dirname(orig), timeout), file: orig };
+    if (text == null || text === onDisk) return { out: await run([orig, ...args, ...extra], path.dirname(orig), timeout), file: orig, loc };
     const tmp = path.join(path.dirname(orig), `.${path.basename(orig)}.${process.pid}.${Date.now()}.eskiu-check.esk`);
     try {
         fs.writeFileSync(tmp, text);
-        return { out: await run([tmp, ...args], path.dirname(orig), timeout), file: tmp };
+        return { out: await run([tmp, ...args, ...extra], path.dirname(orig), timeout), file: tmp, loc };
     } catch {
-        return { out: '', file: tmp };
+        return { out: '', file: tmp, loc };
     } finally {
         fs.rm(tmp, { force: true }, () => {});
     }
 }
 
-const at = (pos) => `${pos.line + 1}:${pos.character + 1}`;
-
 // --references-at: one FILE:LINE:COL:WIDTH per line; the checked file (a temp copy of
 // an unsaved buffer) is this document.
 async function references(uri, position) {
-    const { out, file } = await onText(uri, ['--references-at', at(position)], 5000);
+    const { out, loc } = await onText(uri, [], 5000, '--references-at', position);
     const refs = [];
     for (const row of out.split('\n')) {
         const m = row.trim().match(/^(.+):(\d+):(\d+):(\d+)$/);
         if (!m) continue;
-        const target = path.resolve(m[1]) === path.resolve(file) ? uri
-            : 'file://' + path.resolve(m[1]).split('/').map(encodeURIComponent).join('/');
-        const line = parseInt(m[2], 10) - 1, ch = parseInt(m[3], 10) - 1;
+        const where = loc(m[1], parseInt(m[2], 10));
+        if (!where) continue;
+        const target = where.uri, line = where.line, ch = parseInt(m[3], 10) - 1;
         refs.push({ uri: target, range: { start: { line, character: ch },
                                           end: { line, character: ch + parseInt(m[4], 10) } } });
     }
@@ -291,19 +295,19 @@ function enclosingCall(text, pos) {
 
 const REQUESTS = {
     'textDocument/hover': async (p) => {
-        const { out } = await onText(p.textDocument.uri, ['--hover-at', at(p.position)], 5000);
+        const { out } = await onText(p.textDocument.uri, [], 5000, '--hover-at', p.position);
         const t = lastLine(out);
         if (!t || t.startsWith('(') || t.startsWith('error:')) return null;
         return { contents: { kind: 'markdown', value: '```eskiu\n' + t + '\n```' } };
     },
     'textDocument/definition': async (p) => {
-        const { out, file } = await onText(p.textDocument.uri, ['--definition-at', at(p.position)], 5000);
+        const { out, loc } = await onText(p.textDocument.uri, [], 5000, '--definition-at', p.position);
         const m = out.trim().match(/^(.+):(\d+):(\d+)$/m);
         if (!m) return null;
-        const target = path.resolve(m[1]) === path.resolve(file) ? p.textDocument.uri
-            : 'file://' + path.resolve(m[1]).split('/').map(encodeURIComponent).join('/');
-        const pos = { line: parseInt(m[2], 10) - 1, character: parseInt(m[3], 10) - 1 };
-        return { uri: target, range: { start: pos, end: pos } };
+        const where = loc(m[1], parseInt(m[2], 10));
+        if (!where) return null;
+        const pos = { line: where.line, character: parseInt(m[3], 10) - 1 };
+        return { uri: where.uri, range: { start: pos, end: pos } };
     },
     'textDocument/references': async (p) => {
         const refs = await references(p.textDocument.uri, p.position);
@@ -335,7 +339,7 @@ const REQUESTS = {
         const before = line.slice(0, p.position.character);
         if (/^\s*(\/\/|#)/.test(before) || before.split('"').length % 2 === 0) return [];
         const member = /\.\s*[A-Za-z_0-9]*$/.test(before);
-        const { out } = await onText(p.textDocument.uri, ['--complete-at', at(p.position)]);
+        const { out } = await onText(p.textDocument.uri, [], 8000, '--complete-at', p.position);
         const items = [];
         for (const row of out.split('\n')) {
             const [kind, name, detail] = row.split('\t');
@@ -349,7 +353,7 @@ const REQUESTS = {
     'textDocument/signatureHelp': async (p) => {
         const call = enclosingCall(docs.get(p.textDocument.uri) || '', p.position);
         if (!call) return null;
-        const { out } = await onText(p.textDocument.uri, ['--hover-at', at(call.pos)], 5000);
+        const { out } = await onText(p.textDocument.uri, [], 5000, '--hover-at', call.pos);
         const sig = lastLine(out);
         const open = sig.indexOf('(');
         if (open < 0 || !sig.endsWith(')') || sig.startsWith('fn(')) return null;
@@ -492,49 +496,7 @@ function handleMessage(msg) {
         const content = contentChanges?.[contentChanges.length - 1]?.text;
         if (content == null) return;
         docs.set(uri, content);
-
-        const orig = uriToPath(uri);
-        const compiler = findEskiuc(orig);
-        const entryPoint = findEntryPoint(orig);
-        const dir = path.dirname(orig);
-        const base = path.basename(orig);
-
-        let tmp = path.join(dir, `.eskiu_lsp_${process.pid}_${Date.now()}.esk`);
-        try { fs.writeFileSync(tmp, content); }
-        catch {
-            tmp = path.join(require('os').tmpdir(), `.eskiu_lsp_${process.pid}_${Date.now()}.esk`);
-            fs.writeFileSync(tmp, content);
-        }
-
-        let tmpEntry = null;
-        if (entryPoint && fs.existsSync(entryPoint)) {
-            try {
-                const entryContent = fs.readFileSync(entryPoint, 'utf8');
-                const relTmp = path.basename(tmp);
-                const replaced = entryContent.replace(
-                    new RegExp(`(import\\s+["'][^"']*?)\\b${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(["'])`, 'g'),
-                    `$1${relTmp}$2`
-                );
-                if (replaced !== entryContent) {
-                    tmpEntry = path.join(path.dirname(entryPoint), `.eskiu_lsp_entry_${process.pid}_${Date.now()}.esk`);
-                    fs.writeFileSync(tmpEntry, replaced);
-                }
-            } catch {}
-        }
-
-        const runTarget = tmpEntry || (entryPoint ? null : tmp) || tmp;
-
-        execFile(compiler, [runTarget, ...compilerFlags, '--test-typechecker'], { timeout: 10000, cwd: path.dirname(runTarget) },
-            (err, stdout, stderr) => {
-                try { fs.unlinkSync(tmp); } catch {}
-                if (tmpEntry) { try { fs.unlinkSync(tmpEntry); } catch {} }
-
-                const output = (stdout || '') + (stderr || '');
-                const diagnostics = parseErrors(output, tmp, orig, content);
-                send({ jsonrpc: '2.0', method: 'textDocument/publishDiagnostics',
-                       params: { uri, diagnostics } });
-            }
-        );
+        validate(uri, uriToPath(uri), content);
         return;
     }
 

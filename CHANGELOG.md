@@ -15,6 +15,14 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   `xcrun -sdk xros` / `xrsimulator` with no `$CC`, and predefines `TARGET_OS_IPHONE` and
   `TARGET_OS_VISION`, in both compilers (`docs/dev/cross-compile.md`).
 
+### Fixed
+
+- Editors (VS Code, IntelliJ, any LSP client): a file that is a part of a module
+  (`import "part.esk";`) is checked in its module, so it sees the types and names the module
+  declares before it. Diagnostics, hover, go to definition, references, completion and
+  signature help work in parts, also nested ones and parts in other directories
+  (`editor/vscode/flatten.js`).
+
 ---
 
 ## [0.15.1] - 2026-11-10

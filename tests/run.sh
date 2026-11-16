@@ -705,6 +705,9 @@ fi
 if command -v node >/dev/null 2>&1; then
     lsp_out="$(node "$here/editor/lsp_server_test.js" 2>&1)"
     if [[ "$lsp_out" == "ok" ]]; then ok "editor/lsp-server"; else bad "editor/lsp-server" "$lsp_out"; fi
+    # a part of a module (import "part.esk") is checked in its module
+    lsp_out="$(node "$here/editor/lsp_parts_test.js" 2>&1)"
+    if [[ "$lsp_out" == "ok" ]]; then ok "editor/lsp-parts"; else bad "editor/lsp-parts" "$lsp_out"; fi
 fi
 
 # ---- go-to-definition and hover ---------------------------------------------
