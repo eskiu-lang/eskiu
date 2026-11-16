@@ -1,0 +1,600 @@
+// lexer_next.esk: the token scanner (lx_next) and the token dump (part of lexer.esk, imported in order)
+
+Token lx_next(Lexer* lx) {
+    lx_skip_ws(lx);
+    // Skip comments (interleaved with whitespace), exactly like next_token.
+    while (lx_at_end(lx) == 0 && lx_peek(lx) == 47
+           && (lx_peek_next(lx) == 47 || lx_peek_next(lx) == 42)) {
+        lx_skip_comment(lx);
+        lx_skip_ws(lx);
+    }
+
+    let t: Token;
+    if (lx_at_end(lx) == 1) {
+        t.type = EOF_TOKEN;
+        t.start = lx.pos;
+        t.len = 0;
+        t.line = lx.line;
+        t.col = lx.col;
+        return t;
+    }
+
+    // Token position is captured at the first character, after skipping whitespace.
+    int sl = lx.line;
+    int sc = lx.col;
+    int sp = lx.pos;
+    int c = lx_peek(lx);
+
+    // Identifiers + keywords.
+    if (is_ident_start(c) == 1) {
+        while (lx_at_end(lx) == 0 && is_ident_cont(lx_peek(lx)) == 1) {
+            lx_advance(lx);
+        }
+        t.type = keyword_type(lx.src, sp, lx.pos - sp);
+        t.start = sp;
+        t.len = lx.pos - sp;
+        t.line = sl;
+        t.col = sc;
+        return t;
+    }
+
+    // Number literals (mirror read_number). Entry requires a leading digit, so
+    // the C++ leading-dot-float branch is unreachable and omitted. No exponent /
+    // no suffix — exactly as the C++ lexer.
+    if (is_digit(c) == 1) {
+        lx_digits(lx, 10, sl, sc);
+        // Hex: integer part is EXACTLY "0", then x/X, then hex digits.
+        if (lx.pos - sp == 1 && (int)lx.src[sp] == 48) {     // '0'
+            int px = lx_peek(lx);
+            if (lx_at_end(lx) == 0 && (px == 120 || px == 88)) {   // 'x' 'X'
+                lx_advance(lx);
+                if (lx_peek(lx) == 95 && is_hex(lx_peek_next(lx)) == 1) {
+                    lx_advance(lx);
+                }
+                lx_digits(lx, 16, sl, sc);
+                if (lx.pos - sp == 2) {
+                    lx_error(sl, sc, lx_cat3("hexadecimal literal '", lx_span(lx.src, sp, lx.pos), "' has no digits"));
+                } else {
+                    lx_check_int_range(lx, sp, sl, sc);
+                }
+                t.type = INT_LIT;
+                t.start = sp;
+                t.len = lx.pos - sp;
+                t.line = sl;
+                t.col = sc;
+                lx_check_suffix(lx, sp, sl, sc);
+                return t;
+            }
+            // Binary: 0b/0B then 0/1 digits; the token text is the value in hex (lx_num_text).
+            if (lx_at_end(lx) == 0 && (px == 98 || px == 66)) {   // 'b' 'B'
+                lx_advance(lx);
+                if (lx_peek(lx) == 95 && lx_is_base_digit(lx_peek_next(lx), 2) == 1) {
+                    lx_advance(lx);
+                }
+                int bits_at = lx.pos;
+                lx_digits(lx, 2, sl, sc);
+                t.type = INT_LIT;
+                t.line = sl;
+                t.col = sc;
+                t.start = sp;
+                if (lx.pos == bits_at) {
+                    if (lx_at_end(lx) == 0 && is_digit(lx_peek(lx)) == 1) {
+                        uint8[2] bd;
+                        bd[0] = (uint8)lx_peek(lx);
+                        bd[1] = 0;
+                        lx_error(sl, sc, lx_cat3(lx_cat3("invalid digit '", (string)&bd[0], "' in binary literal '"),
+                                                 lx_num_shown(lx.src, sp, lx.pos), "'"));
+                    } else {
+                        lx_error(sl, sc, lx_cat3("binary literal '", lx_num_shown(lx.src, sp, lx.pos), "' has no digits"));
+                    }
+                    t.len = lx.pos - sp;
+                    lx_check_suffix(lx, sp, sl, sc);
+                    return t;
+                }
+                if (lx_at_end(lx) == 0 && is_digit(lx_peek(lx)) == 1) {
+                    uint8[2] bd2;
+                    bd2[0] = (uint8)lx_peek(lx);
+                    bd2[1] = 0;
+                    lx_error(sl, sc, lx_cat3(lx_cat3("invalid digit '", (string)&bd2[0], "' in binary literal '"),
+                                             lx_num_shown(lx.src, sp, lx.pos), "'"));
+                    while (lx_at_end(lx) == 0 && is_digit(lx_peek(lx)) == 1) {
+                        lx_advance(lx);
+                    }
+                }
+                t.len = lx.pos - sp;
+                string hx = lx_num_text(lx.src, sp, t.len);
+                int hl = 0;
+                while (hx[hl] != 0) {
+                    hl = hl + 1;
+                }
+                if (hl > 18) {
+                    lx_error(sl, sc, lx_cat3("integer literal '", lx_num_shown(lx.src, sp, lx.pos), "' does not fit in 64 bits"));
+                }
+                lx_check_suffix(lx, sp, sl, sc);
+                return t;
+            }
+        }
+        // Fractional part and/or exponent make it a float (3.14, 1e10, 3.4e38, 2.5e-3).
+        int isfloat = 0;
+        if (lx_at_end(lx) == 0 && lx_peek(lx) == 46 && is_digit(lx_peek_next(lx)) == 1) {   // '.'
+            isfloat = 1;
+            lx_advance(lx);
+            lx_digits(lx, 10, sl, sc);
+        }
+        if (lx_at_end(lx) == 0) {
+            int pe = lx_peek(lx);
+            if (pe == 101 || pe == 69) {                     // 'e' / 'E'
+                int pn = lx_peek_next(lx);
+                if (is_digit(pn) == 1 || pn == 43 || pn == 45) {   // digit / '+' / '-'
+                    isfloat = 1;
+                    lx_advance(lx);                          // e / E
+                    if (lx_at_end(lx) == 0 && (lx_peek(lx) == 43 || lx_peek(lx) == 45)) {
+                        lx_advance(lx);
+                    }
+                    int digits_at = lx.pos;
+                    lx_digits(lx, 10, sl, sc);
+                    if (lx.pos == digits_at) {
+                        lx_error(sl, sc, lx_cat3("exponent has no digits in floating-point literal '",
+                                                 lx_num_shown(lx.src, sp, lx.pos), "'"));
+                    }
+                }
+            }
+        }
+        if (isfloat == 1) {
+            t.type = FLOAT_LIT;
+        } else {
+            t.type = INT_LIT;
+        }
+        t.start = sp;
+        t.len = lx.pos - sp;
+        t.line = sl;
+        t.col = sc;
+        // A leading 0 makes an integer octal (C rule): every digit must be 0-7.
+        int octal_bad = 0;
+        if (isfloat == 0 && t.len > 1 && (int)lx.src[sp] == 48) {
+            int k = sp;
+            int bad = 0;
+            while (k < lx.pos && bad == 0) {
+                if ((int)lx.src[k] == 56 || (int)lx.src[k] == 57) {
+                    bad = (int)lx.src[k];
+                }
+                k = k + 1;
+            }
+            if (bad != 0) {
+                uint8[2] bd;
+                bd[0] = (uint8)bad;
+                bd[1] = 0;
+                lx_error(sl, sc, lx_cat3(lx_cat3("invalid digit '", (string)&bd[0], "' in octal literal '"),
+                                         lx_num_shown(lx.src, sp, lx.pos), "'"));
+                octal_bad = 1;
+            }
+        }
+        if (isfloat == 0 && octal_bad == 0) {
+            lx_check_int_range(lx, sp, sl, sc);
+        }
+        lx_check_suffix(lx, sp, sl, sc);
+        return t;
+    }
+
+    // String literal (mirror read_string's escape-aware scan; value decoded by
+    // the driver, escapes checked by lx_scan_escape). The span includes both quotes.
+    if (c == 34) {                                   // '"'
+        lx_advance(lx);                              // opening "
+        while (lx_at_end(lx) == 0 && lx_peek(lx) != 34) {
+            if (lx_peek(lx) == 92 && lx_peek_next(lx) != 0) {   // '\' + a char
+                lx_scan_escape(lx);
+            } else {
+                lx_advance(lx);
+            }
+        }
+        if (lx_at_end(lx) == 0) {
+            lx_advance(lx);                           // closing "
+        } else {
+            lx_error(sl, sc, "unterminated string literal");
+        }
+        t.type = STRING_LIT;
+        t.start = sp;
+        t.len = lx.pos - sp;
+        t.line = sl;
+        t.col = sc;
+        return t;
+    }
+
+    // Char literal (mirror read_char, incl. its recovery scan to the closing '
+    // or end-of-line). The driver decodes the first logical char only.
+    if (c == 39) {                                   // '\''
+        lx_advance(lx);                              // opening '
+        if (lx_at_end(lx) == 1) {
+            lx_error(sl, sc, "unterminated character literal");
+            t.type = CHAR_LIT;
+            t.start = sp;
+            t.len = lx.pos - sp;
+            t.line = sl;
+            t.col = sc;
+            return t;
+        }
+        if (lx_peek(lx) == 39) {                     // empty ''
+            lx_error(sl, sc, "empty character literal");
+            lx_advance(lx);                          // closing '
+            t.type = CHAR_LIT;
+            t.start = sp;
+            t.len = lx.pos - sp;
+            t.line = sl;
+            t.col = sc;
+            return t;
+        }
+        if (lx_peek(lx) == 92) {                     // backslash escape
+            lx_scan_escape(lx);
+        } else {
+            lx_advance(lx);
+        }
+        if (lx_at_end(lx) == 0 && lx_peek(lx) == 39) {
+            lx_advance(lx);                          // closing '
+        } else {
+            if (lx_at_end(lx) == 1 || lx_peek(lx) == 10) {
+                lx_error(sl, sc, "unterminated character literal");
+            }
+            else {
+                lx_error(sl, sc, "character literal must contain a single character");
+            }
+            while (lx_at_end(lx) == 0 && lx_peek(lx) != 39 && lx_peek(lx) != 10) {
+                lx_advance(lx);
+            }
+            if (lx_at_end(lx) == 0 && lx_peek(lx) == 39) {
+                lx_advance(lx);
+            }
+        }
+        t.type = CHAR_LIT;
+        t.start = sp;
+        t.len = lx.pos - sp;
+        t.line = sl;
+        t.col = sc;
+        return t;
+    }
+
+    // Compiler directive surviving the preprocessor: `#...` to end of line. The
+    // C++ value excludes the '#', so start at sp+1 (Token.start is value-only).
+    if (c == 35) {                                   // '#'
+        lx_advance(lx);                              // consume '#'
+        while (lx_at_end(lx) == 0 && lx_peek(lx) != 10) {
+            lx_advance(lx);
+        }
+        t.type = PRAGMA;
+        t.start = sp + 1;
+        t.len = lx.pos - (sp + 1);
+        t.line = sl;
+        t.col = sc;
+        return t;
+    }
+
+    // Operators and delimiters (mirror next_token's switch). Consume the first
+    // char, then longest-match the multi-char forms.
+    lx_advance(lx);
+
+    if (c == 43) {                                   // '+'
+        if (lx_at_end(lx) == 0 && lx_peek(lx) == 43) {
+            lx_advance(lx);
+            t.type = PLUS_PLUS;
+        }
+        else if (lx_at_end(lx) == 0 && lx_peek(lx) == 61) {
+            lx_advance(lx);
+            t.type = PLUS_EQ;
+        }
+        else {
+            t.type = PLUS;
+        }
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 45) {                                   // '-'
+        if (lx_at_end(lx) == 0 && lx_peek(lx) == 45) {
+            lx_advance(lx);
+            t.type = MINUS_MINUS;
+        }
+        else if (lx_at_end(lx) == 0 && lx_peek(lx) == 61) {
+            lx_advance(lx);
+            t.type = MINUS_EQ;
+        }
+        else if (lx_at_end(lx) == 0 && lx_peek(lx) == 62) {
+            lx_advance(lx);
+            t.type = ARROW;
+        }
+        else {
+            t.type = MINUS;
+        }
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 42) {                                   // '*'
+        if (lx_at_end(lx) == 0 && lx_peek(lx) == 61) {
+            lx_advance(lx);
+            t.type = STAR_EQ;
+        }
+        else {
+            t.type = STAR;
+        }
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 47) {                                   // '/'
+        if (lx_at_end(lx) == 0 && lx_peek(lx) == 61) {
+            lx_advance(lx);
+            t.type = SLASH_EQ;
+        }
+        else {
+            t.type = SLASH;
+        }
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 37) {                                   // '%'
+        if (lx_at_end(lx) == 0 && lx_peek(lx) == 61) {
+            lx_advance(lx);
+            t.type = PERCENT_EQ;
+        }
+        else {
+            t.type = PERCENT;
+        }
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 61) {                                   // '='
+        if (lx_at_end(lx) == 0 && lx_peek(lx) == 61) {
+            lx_advance(lx);
+            t.type = EQEQ;
+        }
+        else {
+            t.type = EQ;
+        }
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 33) {                                   // '!'
+        if (lx_at_end(lx) == 0 && lx_peek(lx) == 61) {
+            lx_advance(lx);
+            t.type = NE;
+        }
+        else {
+            t.type = NOT;
+        }
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 60) {                                   // '<'
+        if (lx_at_end(lx) == 0 && lx_peek(lx) == 61) {
+            lx_advance(lx);
+            t.type = LE;
+        }
+        else if (lx_at_end(lx) == 0 && lx_peek(lx) == 60) {
+            lx_advance(lx);
+            if (lx_at_end(lx) == 0 && lx_peek(lx) == 61) {
+                lx_advance(lx);
+                t.type = LSHIFT_EQ;
+            }
+            else {
+                t.type = LSHIFT;
+            }
+        }
+        else {
+            t.type = LT;
+        }
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 62) {                                   // '>'
+        if (lx_at_end(lx) == 0 && lx_peek(lx) == 61) {
+            lx_advance(lx);
+            t.type = GE;
+        }
+        else if (lx_at_end(lx) == 0 && lx_peek(lx) == 62) {
+            lx_advance(lx);
+            if (lx_at_end(lx) == 0 && lx_peek(lx) == 61) {
+                lx_advance(lx);
+                t.type = RSHIFT_EQ;
+            }
+            else {
+                t.type = RSHIFT;
+            }
+        }
+        else {
+            t.type = GT;
+        }
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 38) {                                   // '&'
+        if (lx_at_end(lx) == 0 && lx_peek(lx) == 38) {
+            lx_advance(lx);
+            t.type = AND;
+        }
+        else if (lx_at_end(lx) == 0 && lx_peek(lx) == 61) {
+            lx_advance(lx);
+            t.type = AMP_EQ;
+        }
+        else {
+            t.type = AMPERSAND;
+        }
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 124) {                                  // '|'
+        if (lx_at_end(lx) == 0 && lx_peek(lx) == 124) {
+            lx_advance(lx);
+            t.type = OR;
+        }
+        else if (lx_at_end(lx) == 0 && lx_peek(lx) == 61) {
+            lx_advance(lx);
+            t.type = PIPE_EQ;
+        }
+        else {
+            t.type = PIPE;
+        }
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 94) {                                   // '^'
+        if (lx_at_end(lx) == 0 && lx_peek(lx) == 61) {
+            lx_advance(lx);
+            t.type = CARET_EQ;
+        }
+        else {
+            t.type = CARET;
+        }
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 46) {                                   // '.'
+        if (lx_at_end(lx) == 0 && lx_peek(lx) == 46 && lx_peek_next(lx) == 46) {
+            lx_advance(lx);
+            lx_advance(lx);
+            t.type = ELLIPSIS;
+        }
+        else if (lx_at_end(lx) == 0 && lx_peek(lx) == 46) {
+            lx_advance(lx);
+            t.type = RANGE;
+        }
+        else {
+            t.type = DOT;
+        }
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 126) {   // '~'
+        t.type = TILDE;
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 123) {   // '{'
+        t.type = LBRACE;
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 125) {   // '}'
+        t.type = RBRACE;
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 40) {   // '('
+        t.type = LPAREN;
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 41) {   // ')'
+        t.type = RPAREN;
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 91) {   // '['
+        t.type = LBRACKET;
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 93) {   // ']'
+        t.type = RBRACKET;
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 59) {   // ';'
+        t.type = SEMICOLON;
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 44) {   // ','
+        t.type = COMMA;
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 58) {   // ':'
+        t.type = COLON;
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    if (c == 63) {   // '?'
+        t.type = QUESTION;
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+
+    // A UTF-8 character outside a string or comment: one error for the whole sequence
+    // (identifiers are ASCII), as the C++ lexer.
+    if (c >= 192) {
+        while (lx_at_end(lx) == 0 && (lx_peek(lx) & 192) == 128) {
+            lx_advance(lx);
+        }
+        lx_error(sl, sc, lx_cat3("non-ASCII character '", lx_span(lx.src, sp, lx.pos),
+                                 "' outside a string or comment (identifiers and operators are ASCII)"));
+        t.type = UNKNOWN;
+        return lx_finish(t, sp, lx.pos, sl, sc);
+    }
+    // Anything else: a single-byte UNKNOWN token (matches the switch default).
+    uint8[48] ub;
+    if (c >= 32 && c < 127) {
+        sprintf((string)&ub[0], "unexpected character '%c'", c);
+    }
+    else {
+        sprintf((string)&ub[0], "unexpected byte 0x%02X", c);
+    }
+    lx_error(sl, sc, (string)&ub[0]);
+    t.type = UNKNOWN;
+    return lx_finish(t, sp, lx.pos, sl, sc);
+}
+
+// ── token dump (shared by the lex_main driver and esk_main --test-lexer) ─────
+// Print a token's value exactly as the C++ lexer stores it: STRING_LIT/CHAR_LIT are
+// decoded (escapes applied, surrounding quotes dropped); everything else is the raw
+// lexeme bytes [start, start+len).
+// End of a string literal's contents in the lexeme src[start, start+len): the index
+// of its closing quote, or start+len for one left unterminated at EOF (read_string's
+// escape-aware scan, so the value keeps every byte up to the end).
+int lx_str_end(*uint8 src, int start, int len) {
+    int i = start + 1;
+    int end = start + len;
+    while (i < end && (int)src[i] != 34) {
+        if ((int)src[i] == 92 && i + 1 < end) {
+            i = i + 1;
+        }
+        i = i + 1;
+    }
+    if (i > end) {
+        return end;
+    }
+    return i;
+}
+
+void lex_emit_value(*uint8 src, int type, int start, int len) {
+    if (type == STRING_LIT) {
+        int i = start + 1;                  // skip opening "
+        int endp = lx_str_end(src, start, len);   // index of closing " (or the end)
+        while (i < endp) {
+            int ch = (int)src[i];
+            if (ch == 92 && i + 1 < endp) { // '\' with a char after it
+                i = i + 1;
+                int adv = 0;
+                putchar(decode_escape_span(src, i, endp, &adv));
+                i = i + adv;
+            } else {
+                putchar(ch);
+            }
+            i = i + 1;
+        }
+        return;
+    }
+    if (type == CHAR_LIT) {
+        int i = start + 1;                  // skip opening '
+        int endp = start + len - 1;         // index of closing '
+        if (i < endp) {                     // read_char keeps only the first char
+            int ch = (int)src[i];
+            if (ch == 92 && i + 1 < endp) {
+                i = i + 1;
+                int adv = 0;
+                putchar(decode_escape_span(src, i, endp, &adv));
+            } else {
+                putchar(ch);
+            }
+        }
+        return;
+    }
+    if (type == INT_LIT || type == FLOAT_LIT) {
+        printf("%s", lx_num_text(src, start, len));
+        return;
+    }
+    int i = 0;
+    while (i < len) {
+        putchar((int)src[start + i]);
+        i = i + 1;
+    }
+}
+
+// Lex `src` (raw bytes, no preprocessing) and print each token in the C++
+// `--test-lexer` format: "  Line %3d, Col %3d  %15s  '<value>'". EOF is not printed.
+void lex_dump(*uint8 src, int len) {
+    let lx: Lexer;
+    lx.src = src;
+    lx.len = len;
+    lx.pos = 0;
+    lx.line = 1;
+    lx.col = 1;
+    Token t = lx_next(&lx);
+    while (t.type != EOF_TOKEN) {
+        printf("  Line %3d, Col %3d  %15s  '", t.line, t.col, token_name(t.type));
+        lex_emit_value(src, t.type, t.start, t.len);
+        printf("'\n");
+        t = lx_next(&lx);
+    }
+}
