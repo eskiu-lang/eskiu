@@ -60,6 +60,7 @@ set(SOURCES
     sema/type_checker.cpp
     sema/typecheck_decl.cpp
     sema/typecheck_stmt.cpp
+    sema/typecheck_control.cpp
     sema/typecheck_expr.cpp
     sema/typecheck_narrowing.cpp
     sema/typecheck_call.cpp
