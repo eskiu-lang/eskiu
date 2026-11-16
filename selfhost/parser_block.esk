@@ -47,7 +47,7 @@
         }
         p_adv(p);
         string raw = parse_type(p);
-        if (is_value_const(raw) == 1) {
+        if (is_value_const(raw) == 1 || is_binding_const(raw) == 1) {
             is_const = 1;
         }
         string ty = strip_binding_const(raw);
@@ -69,7 +69,7 @@
     }
     // typed: Type name [= expr] ;
     string raw = parse_type(p);
-    if (is_value_const(raw) == 1) {
+    if (is_value_const(raw) == 1 || is_binding_const(raw) == 1) {
         is_const = 1;
     }
     string ty = strip_binding_const(raw);

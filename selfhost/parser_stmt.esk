@@ -28,6 +28,17 @@
     return s;
 }
 
+// Is `t` a const pointer binding, `T*const` (`T* const`, `*T const`)? Such a binding is
+// read-only, as the C++ finalizeVar's tyq::bindingConst.
+int is_binding_const(string t) {
+    int n = cstr_len(t);
+    if (n > 6 && t[n - 6] == 42 && t[n - 5] == 99 && t[n - 4] == 111 && t[n - 3] == 110
+        && t[n - 2] == 115 && t[n - 1] == 116) {                    // "*const"
+        return 1;
+    }
+    return 0;
+}
+
 // Is `t` a value-const type — a leading `const ` with no pointer (mirrors the C++
 // finalizeVar rule)? Such a binding is read-only; pointee-const (`const int*`) is not.
 int is_value_const(string t) {

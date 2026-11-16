@@ -57,7 +57,7 @@
         string nm = tok_text(p.src, gnt);
         p_expect(p, COLON, "Expected ':'");
         string raw = parse_type(p);
-        if (is_value_const(raw) == 1) {
+        if (is_value_const(raw) == 1 || is_binding_const(raw) == 1) {
             is_const = 1;
         }
         string ty = strip_binding_const(raw);
@@ -75,7 +75,7 @@
         return dv;
     }
     string raw = parse_type(p);
-    if (is_value_const(raw) == 1) {
+    if (is_value_const(raw) == 1 || is_binding_const(raw) == 1) {
         is_const = 1;
     }
     string ty = strip_binding_const(raw);
