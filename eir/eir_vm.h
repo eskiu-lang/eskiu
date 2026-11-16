@@ -5,6 +5,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <optional>
 #include <cstdint>
 #include <cstring>
 
@@ -112,6 +113,18 @@ private:
 
     // Execution
     VMValue executeFunction(Function* fn, const std::vector<VMValue>& args);
+    void execMemory(const std::unique_ptr<Instruction>& inst, StackFrame& frame);
+    void execIntArith(const std::unique_ptr<Instruction>& inst, StackFrame& frame);
+    void execFloatArith(const std::unique_ptr<Instruction>& inst, StackFrame& frame);
+    void execBitwise(const std::unique_ptr<Instruction>& inst, StackFrame& frame);
+    void execCompare(const std::unique_ptr<Instruction>& inst, StackFrame& frame);
+    void execConvert(const std::unique_ptr<Instruction>& inst, StackFrame& frame);
+    void execBranch(Function* fn, const std::unique_ptr<Instruction>& inst, StackFrame& frame, BasicBlock*& nextBB);
+    std::optional<VMValue> execReturn(const std::unique_ptr<Instruction>& inst, StackFrame& frame, BasicBlock*& nextBB, size_t savedCaughtDepth);
+    void execHandlers(const std::unique_ptr<Instruction>& inst, StackFrame& frame);
+    std::optional<VMValue> execCallIndirect(const std::unique_ptr<Instruction>& inst, StackFrame& frame, BasicBlock*& nextBB, size_t savedCaughtDepth);
+    std::optional<VMValue> execCall(const std::unique_ptr<Instruction>& inst, StackFrame& frame, BasicBlock*& nextBB, size_t savedCaughtDepth);
+    void execInlineAsm(const std::unique_ptr<Instruction>& inst, StackFrame& frame);
     VMValue getOperand(const Operand& op, StackFrame& frame);
     void writeMemory(void* ptr, TypePtr type, const VMValue& val);
     VMValue readMemory(void* ptr, TypePtr type);

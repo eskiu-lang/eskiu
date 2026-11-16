@@ -111,6 +111,7 @@ set(SOURCES
     eir/eir_vm.cpp
     eir/eir_vm_extern.cpp
     eir/eir_vm_exec.cpp
+    eir/eir_vm_ops.cpp
     eir/eir_asm_arm64.cpp
     eir/eir_asm_values.cpp
     eir/eir_asm_abi.cpp
