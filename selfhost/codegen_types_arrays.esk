@@ -1,0 +1,574 @@
+// codegen_types_arrays.esk: arrays, struct lookup and constant images (part of codegen_types.esk, imported in order)
+
+// Peel the outer (leftmost) array dimension: "int[4]" -> "int", "int[2][3]" -> "int[3]".
+string cg_array_elem(string t) {
+    int open = cg_arr_open(t);
+    if (open < 0) {
+        return t;
+    }
+    int close = cg_arr_close(t, open);
+    int tn = 0;
+    while (t[tn] != 0) {
+        tn = tn + 1;
+    }
+    // element = prefix before '[' + suffix after ']'
+    int suflen = tn - (close + 1);
+    if (suflen < 0) {
+        suflen = 0;
+    }
+    *uint8 buf = alloc<uint8>(open + suflen + 1);
+    int k = 0;
+    while (k < open) {
+        buf[k] = (uint8)t[k];
+        k = k + 1;
+    }
+    int j = 0;
+    while (j < suflen) {
+        buf[open + j] = (uint8)t[close + 1 + j];
+        j = j + 1;
+    }
+    buf[open + suflen] = 0;
+    return (string)buf;
+}
+
+// The return type a lambda initializing a `t` value takes: a fn type's return, through
+// any array dimensions (`fn(int)->int[2]` holds fns returning int), else "".
+string cg_lam_ret_of(string t) {
+    while (cg_is_array(t) == 1) {
+        t = cg_array_elem(t);
+    }
+    if (cg_is_fnty(t) == 1) {
+        return cg_fnty_ret(t);
+    }
+    return "";
+}
+
+// "int[4]" -> count "4".
+// The decimal count of dimension spelling `cnt`: a number, a named const/enum, or an
+// integer constant expression over them (`(uint8)258`, `N*2`, mirrors the C++
+// resolveArrayDim); `cnt` itself when it is none of these.
+int64 cg_parse_i64(string t) {
+    int i = 0;
+    int64 base = (int64)10;
+    int64 sign = (int64)1;
+    if (t[0] == '-') {
+        sign = (int64)-1;
+        i = 1;
+    }
+    if (t[i] == '0' && (t[i + 1] == 'x' || t[i + 1] == 'X')) {
+        base = (int64)16;
+        i = i + 2;
+    }
+    else if (t[i] == '0' && t[i + 1] != 0) {
+        base = (int64)8;
+        i = i + 1;
+    }
+    int64 v = (int64)0;
+    while (t[i] != 0) {
+        int ch = (int)t[i];
+        int64 d = (int64)0;
+        if (ch >= 48 && ch <= 57) {
+            d = (int64)(ch - 48);
+        }
+        else if (ch >= 97 && ch <= 102) {
+            d = (int64)(ch - 87);
+        }
+        else if (ch >= 65 && ch <= 70) {
+            d = (int64)(ch - 55);
+        }
+        else {
+            return sign * v;
+        }
+        v = v * base + d;
+        i = i + 1;
+    }
+    return sign * v;
+}
+
+string cg_dim_val(Codegen* g, string cnt) {
+    if (cg_all_digits(cnt) == 1) {
+        return cnt;
+    }
+    string rv = cg_enum_val(g, cnt);
+    if (rv[0] != 0) {
+        return rv;
+    }
+    int64 v = (int64)0;
+    int folded = ast_fold_dim(cnt, int(string nm, *int64 out) {
+        if (ast_has_prefix(nm, "sizeof(") == 1) {          // `sizeof(T)`, the type's allocation size
+            int nl = 0;
+            while (nm[nl] != 0) {
+                nl = nl + 1;
+            }
+            *out = (int64)cg_size(g, cg_sub_str(nm, 7, nl - 1));
+            return 1;
+        }
+        string ev = cg_enum_val(g, nm);
+        if (ev[0] == 0) {
+            return 0;
+        }
+        *out = cg_parse_i64(ev);
+        return 1;
+    }, &v);
+    if (folded == 1 && v > (int64)0) {
+        return cg_i64toa(v);
+    }
+    // The type checker leaves a `sizeof` dimension's value to codegen.
+    if (folded == 1 && cg_has_sub(cnt, "sizeof(") == 1) {
+        dprintf(2, "error: array size must be positive, got %lld ('%s')\n", v, cnt);
+        exit(1);
+    }
+    return cnt;
+}
+
+string cg_array_count(string t) {
+    int open = cg_arr_open(t);
+    if (open < 0) {
+        return "0";
+    }
+    int s = open + 1;                                     // past '['
+    int i = cg_arr_close(t, open);                        // its ']'
+    *uint8 buf = alloc<uint8>(i - s + 1);
+    int k = 0;
+    while (k < i - s) {
+        buf[k] = (uint8)t[s + k];
+        k = k + 1;
+    }
+    buf[i - s] = 0;
+    return (string)buf;
+}
+
+CgStruct cg_find_struct(Codegen* g, string name) {
+    if (cg_has_targs(name) == 1) {   // generic -> mangled
+        name = cg_ensure_struct_inst(g, name);
+    }
+    int i = NameIdx_first(&g.structs_ix, name);
+    if (i >= 0) {
+        return List_get<CgStruct>(&g.structs, i);
+    }
+    let none: CgStruct;
+    none.name = "";
+    List_init<string>(&none.fnames, 1);
+    List_init<string>(&none.fetys, 1);
+    return none;
+}
+
+int cg_field_idx(CgStruct* s, string fname) {
+    int i = 0;
+    int n = List_len<string>(&s.fnames);
+    if (n > 8 && s.name != null) {             // a hash index (ast_fx_*) for a wide struct
+        string owner = cg_cat("c:", s.name);
+        if (ast_fx_ready(owner, n) == 0) {
+            while (i < n) {
+                ast_fx_put(owner, List_get<string>(&s.fnames, i), i);
+                i = i + 1;
+            }
+            ast_fx_done(owner, n);
+            i = 0;
+        }
+        int k = ast_fx_get(owner, fname);
+        if (k >= 0 && k < n && cg_streq(List_get<string>(&s.fnames, k), fname) == 1) {
+            return k;
+        }
+        if (k < 0) {
+            return 0 - 1;
+        }
+    }
+    while (i < n) {
+        if (cg_streq(List_get<string>(&s.fnames, i), fname) == 1) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+// Innermost local binding for `name` (slot == "" if none).
+CgLocal cg_find_local(Codegen* g, string name) {
+    int i = NameIdx_last(&g.locals_ix, name);
+    if (i >= 0) {
+        return List_get<CgLocal>(&g.locals, i);
+    }
+    let none: CgLocal;
+    none.name = name;
+    none.slot = "";
+    none.ty = "i32";
+    none.ety = "";
+    return none;
+}
+
+// Drop a leading pointee "const " (`const P*` -> `P*`): const has no representation, and
+// the type's consumers (member access, deref, method mangling) expect the bare spelling.
+string cg_strip_lead_const(string t) {
+    if (t[0] == 99 && t[1] == 111 && t[2] == 110 && t[3] == 115 && t[4] == 116 && t[5] == 32) {
+        return (string)((*uint8)t + 6);
+    }
+    return t;
+}
+
+void cg_add_local(Codegen* g, string name, string slot, string ty, string ety) {
+    let l: CgLocal;
+    l.name = name;
+    l.slot = slot;
+    l.ty = ty;
+    l.ety = cg_dealias(g, cg_strip_lead_const(ety));
+    cg_push_local(g, l);
+}
+
+void cg_add_global(Codegen* g, string name, string slot, string ty, string ety) {
+    let l: CgLocal;
+    l.name = name;
+    l.slot = slot;
+    l.ty = ty;
+    l.ety = cg_dealias(g, ety);
+    List_push<CgLocal>(&g.gvars, l);
+    NameIdx_push(&g.gvars_ix, l.name);
+}
+
+// A global variable by name, or a sentinel with empty .slot if not found.
+CgLocal cg_find_global(Codegen* g, string name) {
+    int i = NameIdx_first(&g.gvars_ix, name);
+    if (i >= 0) {
+        return List_get<CgLocal>(&g.gvars, i);
+    }
+    let none: CgLocal;
+    none.name = name;
+    none.slot = "";
+    none.ty = "i32";
+    none.ety = "";
+    return none;
+}
+
+// `sizeof(x)` of a variable measures the variable's type (C semantics): the parser reads
+// the operand as a type spelling, so a name bound to a local/global (and not a struct)
+// resolves to that binding's type. Mirrors the C++ visit(SizeofExpr) rewrite.
+string cg_sizeof_ty(Codegen* g, string t) {
+    if (cg_is_struct(g, t) == 1) {
+        return t;
+    }
+    CgLocal l = cg_find_local(g, t);
+    if (l.slot[0] != 0 && l.ety[0] != 0) {
+        return l.ety;
+    }
+    CgLocal gv = cg_find_global(g, t);
+    if (gv.slot[0] != 0 && gv.ety[0] != 0) {
+        return gv.ety;
+    }
+    return t;
+}
+
+// The type `sizeof` measures, with the active substitution applied: the operand's type
+// for `sizeof(expr)` (never evaluated), else the named type or variable's type.
+string cg_sizeof_operand(Codegen* g, *ExprNode e) {
+    if (e.a != null) {
+        return cg_apply_sub(g, cg_etype(g, e.a));
+    }
+    return cg_apply_sub(g, cg_sizeof_ty(g, e.sval));
+}
+
+// Constant initializer text for a global of LLVM type `llty`. Literal scalars fold to a
+// constant; everything else (incl. a missing/non-constant init) is zeroinitializer —
+// such a global must be set up at runtime (e.g. List_init in a session-init function).
+// 64-bit value → "HHHHHHHHHHHHHHHH" (16 uppercase hex digits, MSB first).
+string cg_hex16(uint64 bits) {
+    *uint8 buf = alloc<uint8>(17);
+    int i = 0;
+    while (i < 16) {
+        int shift = (15 - i) * 4;
+        int nib = (int)((bits >> (uint64)shift) & (uint64)15);
+        buf[i] = (uint8)cg_hexd(nib);
+        i = i + 1;
+    }
+    buf[16] = 0;
+    return (string)buf;
+}
+
+// LLVM constant text for a float (f32) slot: always the hex form `0x<double-bits>`
+// of the value rounded to f32, since a plain decimal is rejected when it is not
+// exactly representable in f32 (LLVM: "floating point constant invalid for type").
+string cg_float_hex(string dec) {
+    double d = atof(dec);
+    float f = (float)d;             // round to f32
+    double d2 = (double)f;          // widen back — LLVM's hex form is these double bits
+    *uint64 pb = (*uint64)(&d2);
+    return cg_cat("0x", cg_hex16(*pb));
+}
+
+// Does `s` already look like a floating literal (has '.', exponent, or hex marker)?
+int cg_has_float_mark(string s) {
+    int i = 0;
+    while (s[i] != 0) {
+        int c = (int)s[i];
+        if (c == 46 || c == 101 || c == 69 || c == 120 || c == 88) {   // . e E x X
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Emit `text` (a numeric literal) as a valid LLVM constant for slot type `llty`:
+// float → hex form; double → ensure a decimal point (LLVM rejects `double 1`);
+// integer types → as-is.
+// Normalize a double literal for LLVM textual IR, which requires a decimal point:
+// an exponent-only form like "1e6" becomes "1.0e6"; a bare "5" becomes "5.0".
+string cg_double_lit(string text) {
+    double dv = atof(text);                                      // too large for double: infinity,
+    *uint64 db = (*uint64)(&dv);                                 // in LLVM's hex form (as C++ emits)
+    if (((*db >> 52) & (uint64)2047) == (uint64)2047) {
+        return cg_cat("0x", cg_hex16(*db));
+    }
+    int i = 0;
+    int has_dot = 0;
+    int ei = 0 - 1;
+    while (text[i] != 0) {
+        int c = (int)text[i];
+        if (c == 46) {                            // '.'
+            has_dot = 1;
+        }
+        if ((c == 101 || c == 69) && ei == (0 - 1)) {  // first 'e'/'E'
+            ei = i;
+        }
+        i = i + 1;
+    }
+    if (has_dot == 1) {
+        return text;
+    }
+    if (ei == (0 - 1)) {
+        return cg_cat(text, ".0");
+    }
+    let out: String;
+    String_init(&out, 16);
+    int j = 0;
+    while (j < ei) {
+        String_push(&out, (char)text[j]);
+        j = j + 1;
+    }
+    String_append(&out, ".0");
+    while (text[j] != 0) {
+        String_push(&out, (char)text[j]);
+        j = j + 1;
+    }
+    return (string)String_cstr(&out);
+}
+
+string cg_num_const(string llty, string text) {
+    if (cg_streq(llty, "float") == 1) {
+        return cg_float_hex(text);
+    }
+    if (cg_streq(llty, "double") == 1) {
+        return cg_double_lit(text);
+    }
+    // Integer slot: LLVM textual IR only accepts decimal, so always normalize the literal
+    // (hex `0xFF` / octal `0NN` / decimal) to a decimal magnitude, preserving the sign.
+    string dec = cg_u64toa(cg_int_lit_mag(text));
+    if (text[0] == 45) {
+        return cg_cat("-", dec);
+    }
+    return dec;
+}
+
+// The byte image of a constant bitfield-struct or union literal (little-endian), as
+// CodeGen::constAggregateImage builds it: `op` marks bytes held by a constant with no
+// byte form (an address), which only the element at that exact offset (a `dir` entry:
+// offset + LLVM type, with its constant text in `dtx`) can carry.
+struct CgImg {
+    *uint8 b;
+    *uint8 op;
+    int n;
+    List<CgLeaf> dir;
+    List<string> dtx;
+}
+
+string cg_global_init(Codegen* g, *ExprNode e, string llty);   // fwd
+string cg_i64toa(int64 v);                                      // fwd
+string cg_global_init_ty(Codegen* g, *ExprNode e, string ety);  // fwd
+int64 cg_k_wrap(int64 v, int w, int uns);                       // fwd
+int cg_is_bf_struct(Codegen* g, string sname);                  // fwd
+int cg_ll_align_of(Codegen* g, string t);                       // fwd
+int cg_ll_size_of(Codegen* g, string t);                        // fwd
+
+// The value of an integer constant text ("-5", "true", "zeroinitializer") as 64 bits.
+uint64 cg_img_ival(string t) {
+    if (cg_streq(t, "true") == 1) {
+        return (uint64)1;
+    }
+    if (cg_streq(t, "false") == 1 || cg_streq(t, "zeroinitializer") == 1 || cg_streq(t, "null") == 1) {
+        return (uint64)0;
+    }
+    uint64 m = cg_int_lit_mag(t);
+    if (t[0] == 45) {
+        return (uint64)0 - m;
+    }
+    return m;
+}
+
+// The IEEE bits of a float/double constant text (hex `0x<double bits>` or decimal).
+uint64 cg_img_fbits(string t, int isf) {
+    double d = 0.0;
+    if (t[0] == 48 && (t[1] == 120 || t[1] == 88)) {
+        uint64 hb = cg_int_lit_mag(t);
+        *uint64 ph = (*uint64)(&d);
+        *ph = hb;
+    } else if (cg_streq(t, "zeroinitializer") == 0) {
+        d = atof(t);
+    }
+    if (isf == 1) {
+        float f = (float)d;
+        *uint32 pf = (*uint32)(&f);
+        return (uint64)(*pf);
+    }
+    *uint64 pd = (*uint64)(&d);
+    return *pd;
+}
+
+void cg_img_bytes(CgImg* im, int off, uint64 v, int nb) {
+    int i = 0;
+    while (i < nb && off + i < im.n) {
+        im.b[off + i] = (uint8)((v >> (uint64)(i * 8)) & (uint64)255);
+        i = i + 1;
+    }
+}
+
+// Write the scalar constant `t` of LLVM type `llty` at `off`; a value with no byte form
+// marks its bytes opaque.
+// End of the constant value starting at `p` in `t`: its next top-level ',' or the
+// bracket closing the enclosing aggregate (string literals skipped).
+int cg_ll_val_end(string t, int p) {
+    int depth = 0;
+    int inq = 0;
+    while (t[p] != 0) {
+        int c = (int)t[p];
+        if (inq == 1) {
+            if (c == 34) {
+                inq = 0;
+            }
+        }
+        else if (c == 34) {
+            inq = 1;
+        }
+        else if (c == 123 || c == 91 || c == 40) {
+            depth = depth + 1;
+        }
+        else if (c == 125 || c == 93 || c == 41) {
+            if (depth == 0) {
+                return p;
+            }
+            depth = depth - 1;
+        }
+        else if (c == 44 && depth == 0) {
+            return p;
+        }
+        p = p + 1;
+    }
+    return p;
+}
+
+void cg_img_put(Codegen* g, CgImg* im, int off, string llty, string t);   // fwd
+void cg_ll_elem_offs(Codegen* g, string body, List<string>* tys, List<int>* offs);   // fwd
+
+// Write an aggregate constant `t` of LLVM type `llty` (a struct `{ … }` / `<{ … }>` or an
+// array `[N x T]`) into the image member by member, so a union holding a struct or an
+// array member folds like one holding a scalar. 0 when `t` is not in that form.
+int cg_img_put_agg(Codegen* g, CgImg* im, int off, string llty, string t) {
+    string body = llty;
+    if ((int)llty[0] == 37) {                                   // %name → its body
+        body = cg_tydef_body(g, cg_sub_str(llty, 1, cg_strlen(llty)));
+        if (body[0] == 0) {
+            return 0;
+        }
+    }
+    int b0 = (int)body[0];
+    if (b0 != 123 && b0 != 60 && b0 != 91) {
+        return 0;
+    }
+    List<string> tys;
+    List_init<string>(&tys, 8);
+    List<int> offs;
+    List_init<int>(&offs, 8);
+    if (b0 == 91) {
+        int q = 1;
+        cg_ll_ws(body, &q);
+        int cnt = cg_ll_num(body, &q);
+        cg_ll_ws(body, &q);
+        cg_ll_kw(body, &q, "x");
+        cg_ll_ws(body, &q);
+        string et = cg_sub_str(body, q, cg_strlen(body) - 1);
+        int esz = cg_ll_size_of(g, et);
+        int k = 0;
+        while (k < cnt) {
+            List_push<string>(&tys, et);
+            List_push<int>(&offs, k * esz);
+            k = k + 1;
+        }
+    } else {
+        cg_ll_elem_offs(g, body, &tys, &offs);
+    }
+    int p = 0;
+    cg_ll_ws(t, &p);
+    if ((int)t[p] == 60) {     // `<{` packed
+        p = p + 1;
+        cg_ll_ws(t, &p);
+    }
+    if (b0 == 91 && (int)t[p] != 91) {             // e.g. a `c"..."` byte string
+        return 0;
+    }
+    if (b0 != 91 && (int)t[p] != 123) {
+        return 0;
+    }
+    p = p + 1;
+    int i = 0;
+    while (i < List_len<string>(&tys)) {
+        cg_ll_ws(t, &p);
+        if ((int)t[p] == 125 || (int)t[p] == 93 || t[p] == 0) {
+            return 1;
+        }
+        int al = 1;                // the element's type
+        cg_ll_layout(g, t, &p, &al);
+        cg_ll_ws(t, &p);
+        int e = cg_ll_val_end(t, p);
+        string v = cg_trim(cg_sub_str(t, p, e));
+        string et = List_get<string>(&tys, i);
+        int eoff = off + List_get<int>(&offs, i);
+        let dl: CgLeaf;
+        dl.off = eoff;
+        dl.ty = et;
+        List_push<CgLeaf>(&im.dir, dl);
+        List_push<string>(&im.dtx, v);
+        cg_img_put(g, im, eoff, et, v);
+        p = e;
+        if ((int)t[p] == 44) {
+            p = p + 1;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+void cg_img_put(Codegen* g, CgImg* im, int off, string llty, string t) {
+    int sz = cg_ll_size_of(g, llty);
+    int w = cg_int_w(llty);
+    if (w > 0) {
+        cg_img_bytes(im, off, cg_img_ival(t), sz);
+        return;
+    }
+    if (cg_streq(llty, "double") == 1) {
+        cg_img_bytes(im, off, cg_img_fbits(t, 0), 8);
+        return;
+    }
+    if (cg_streq(llty, "float") == 1) {
+        cg_img_bytes(im, off, cg_img_fbits(t, 1), 4);
+        return;
+    }
+    if (cg_streq(t, "zeroinitializer") == 1 || cg_streq(t, "null") == 1) {
+        return;
+    }
+    if (cg_img_put_agg(g, im, off, llty, t) == 1) {
+        return;
+    }
+    int i = 0;
+    while (i < sz && off + i < im.n) {
+        im.op[off + i] = (uint8)1;
+        i = i + 1;
+    }
+}

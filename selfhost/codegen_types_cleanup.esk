@@ -1,0 +1,550 @@
+// codegen_types_cleanup.esk: cleanups, exception checks and type predicates (part of codegen_types.esk, imported in order)
+
+// Emit each pending cleanup body in frames at index >= depth, LIFO. On a normal exit
+// (error_path 0) errdefer bodies are skipped; the `?`-propagation error path passes 1
+// so both run. Does not shrink the stack — the owning scope truncates when it ends.
+void cg_run_cleanups(Codegen* g, int depth, int error_path) {
+    int i = List_len<*StmtNode>(&g.cleanups) - 1;
+    while (i >= depth) {
+        if (g.terminated == 1) {
+            return;
+        }
+        if (List_get<int>(&g.cl_err, i) == 1 && error_path == 0) {
+            i = i - 1;
+        }
+        else {
+            // A cleanup body sees the names that were visible where it was registered,
+            // not a later shadowing declaration: re-bind those locals on top, emit, drop.
+            int base = List_len<CgLocal>(&g.locals);
+            int nvis = List_get<int>(&g.cl_nloc, i);
+            int k = 0;
+            while (k < nvis && k < base) {
+                cg_push_local(g, List_get<CgLocal>(&g.locals, k));
+                k = k + 1;
+            }
+            string unw = g.cur_unwind;                   // the body runs under the landingpad
+            g.cur_unwind = List_get<string>(&g.cl_unw, i);   // active before it was registered
+            cg_stmt(g, List_get<*StmtNode>(&g.cleanups, i));
+            g.cur_unwind = unw;
+            cg_locals_trunc(g, base);
+            i = i - 1;
+        }
+    }
+}
+
+// Register a cleanup (a defer/errdefer body or a `finally`) for the current scope.
+void cg_push_cleanup(Codegen* g, *StmtNode body, int is_err) {
+    List_push<*StmtNode>(&g.cleanups, body);
+    List_push<int>(&g.cl_err, is_err);
+    List_push<int>(&g.cl_nloc, List_len<CgLocal>(&g.locals));
+    List_push<string>(&g.cl_unw, g.cur_unwind);
+}
+
+// Drop cleanup entries down to length `mark` (called on scope exit). Past the scope, calls
+// unwind to the landingpad that was active before its first cleanup again.
+void cg_cleanups_trunc(Codegen* g, int mark) {
+    if (List_len<*StmtNode>(&g.cleanups) > mark) {
+        g.cur_unwind = List_get<string>(&g.cl_unw, mark);
+    }
+    while (List_len<*StmtNode>(&g.cleanups) > mark) {
+        List_remove<*StmtNode>(&g.cleanups, List_len<*StmtNode>(&g.cleanups) - 1);
+        List_remove<int>(&g.cl_err, List_len<int>(&g.cl_err) - 1);
+        List_remove<int>(&g.cl_nloc, List_len<int>(&g.cl_nloc) - 1);
+        List_remove<string>(&g.cl_unw, List_len<string>(&g.cl_unw) - 1);
+    }
+}
+
+// The landingpad for the calls after a defer (only in a program that throws). Inside a
+// try body it catches everything, runs the pending cleanups down to that try and joins
+// its catch dispatch with the exception pointer; outside any try it is a cleanup pad
+// that runs the function's pending cleanups and resumes unwinding.
+void cg_defer_pad(Codegen* g) {
+    string cont = cg_lbl(g);
+    string pad = cg_lbl(g);
+    cg_br(g, cont);
+    cg_label(g, pad);
+    int nt = List_len<int>(&g.try_cld);
+    string lp = cg_tmp(g);
+    string ex = "";
+    int depth = 0;
+    if (nt > 0) {
+        cg_emit(g, "  ");
+        cg_emit(g, lp);
+        cg_emit(g, " = landingpad { ptr, i32 } catch ptr null\n");
+        ex = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, ex);
+        cg_emit(g, " = extractvalue { ptr, i32 } ");
+        cg_emit(g, lp);
+        cg_emit(g, ", 0\n");
+        depth = List_get<int>(&g.try_cld, nt - 1);
+    } else {
+        cg_emit(g, "  ");
+        cg_emit(g, lp);
+        cg_emit(g, " = landingpad { ptr, i32 } cleanup\n");
+    }
+    cg_run_cleanups(g, depth, 0);
+    if (g.terminated == 0) {
+        if (nt > 0) {
+            string inc = cg_cat(", [ ", cg_cat(ex, cg_cat(", %", cg_cat(g.cur_lbl, " ]"))));
+            List_set<string>(&g.try_phi, nt - 1, cg_cat(List_get<string>(&g.try_phi, nt - 1), inc));
+            cg_emit(g, "  br label %");
+            cg_emit(g, List_get<string>(&g.try_disp, nt - 1));
+            cg_emit(g, "\n");
+        } else {
+            cg_emit(g, "  resume { ptr, i32 } ");
+            cg_emit(g, lp);
+            cg_emit(g, "\n");
+        }
+        g.terminated = 1;
+    }
+    cg_label(g, cont);
+    g.cur_unwind = pad;
+}
+
+// Does a subtree contain a `throw` or a `try` (lambda bodies included)? Decides prog_eh.
+int cg_has_eh_s(*StmtNode s);
+int cg_has_eh_e(*ExprNode e) {
+    if (e == null) {
+        return 0;
+    }
+    if (e.kind == EK_LAMBDA) {
+        return cg_has_eh_s(e.stmt);
+    }
+    if (e.kind == EK_BINARY || e.kind == EK_INDEX) {
+        if (cg_has_eh_e(e.a) == 1 || cg_has_eh_e(e.b) == 1) {
+            return 1;
+        }
+    } else if (e.kind == EK_UNARY || e.kind == EK_MEMBER || e.kind == EK_CAST
+               || e.kind == EK_QUESTION || e.kind == EK_AWAIT || e.kind == EK_CALL
+               || e.kind == EK_INCDEC) {
+        if (cg_has_eh_e(e.a) == 1) {
+            return 1;
+        }
+    }
+    if (e.kind == EK_CALL || e.kind == EK_TEMPLATECALL || e.kind == EK_STRUCTINIT
+        || e.kind == EK_ARRAYLIT || e.kind == EK_INDEX) {
+        int i = 0;
+        int n = List_len<*ExprNode>(&e.kids);
+        while (i < n) {
+            if (cg_has_eh_e(List_get<*ExprNode>(&e.kids, i)) == 1) {
+                return 1;
+            }
+            i = i + 1;
+        }
+    }
+    if (e.kind == EK_TERNARY) {
+        if (cg_has_eh_e(e.a) == 1 || cg_has_eh_e(e.b) == 1) {
+            return 1;
+        }
+        if (cg_has_eh_e(List_get<*ExprNode>(&e.kids, 0)) == 1) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int cg_has_eh_s(*StmtNode s) {
+    if (s == null) {
+        return 0;
+    }
+    if (s.kind == SK_THROW || s.kind == SK_TRY) {
+        return 1;
+    }
+    if (s.kind == SK_RETURN || s.kind == SK_EXPR || s.kind == SK_VARDECL
+        || s.kind == SK_IF || s.kind == SK_WHILE || s.kind == SK_DOWHILE || s.kind == SK_FOR || s.kind == SK_FORIN
+        || s.kind == SK_SWITCH || s.kind == SK_CASE || s.kind == SK_MATCH) {
+        if (cg_has_eh_e(s.expr) == 1) {
+            return 1;
+        }
+    }
+    if (s.kind == SK_FOR) {
+        if (cg_has_eh_e(s.expr2) == 1) {
+            return 1;
+        }
+    }
+    if (s.kind == SK_IF || s.kind == SK_WHILE || s.kind == SK_DOWHILE || s.kind == SK_FOR || s.kind == SK_FORIN
+        || s.kind == SK_ARM || s.kind == SK_DEFER) {
+        if (cg_has_eh_s(s.s1) == 1) {
+            return 1;
+        }
+    }
+    if (s.kind == SK_IF || s.kind == SK_FOR) {
+        if (cg_has_eh_s(s.s2) == 1) {
+            return 1;
+        }
+    }
+    if (s.kind == SK_BLOCK || s.kind == SK_SWITCH || s.kind == SK_CASE || s.kind == SK_MATCH) {
+        int i = 0;
+        int n = List_len<*StmtNode>(&s.items);
+        while (i < n) {
+            if (cg_has_eh_s(List_get<*StmtNode>(&s.items, i)) == 1) {
+                return 1;
+            }
+            i = i + 1;
+        }
+    }
+    return 0;
+}
+
+// Drop local bindings down to length `mark` (a block/loop scope ends: an inner `let`
+// that shadowed an outer one goes away and the outer binding is visible again).
+void cg_locals_trunc(Codegen* g, int mark) {
+    while (List_len<CgLocal>(&g.locals) > mark) {
+        NameIdx_pop(&g.locals_ix, List_get<CgLocal>(&g.locals, List_len<CgLocal>(&g.locals) - 1).name);
+        List_remove<CgLocal>(&g.locals, List_len<CgLocal>(&g.locals) - 1);
+    }
+}
+
+// Start an empty set of local bindings (a function or lambda body).
+void cg_locals_reset(Codegen* g) {
+    cg_locals_trunc(g, 0);
+    List_init<CgLocal>(&g.locals, 8);
+}
+
+// Emit a statement body as its own scope (locals + defer cleanups), even a single
+// unbraced statement (`if (c) defer f();`, an unbraced loop body or match arm), so a
+// `defer` in it runs when that body ends (mirrors CodeGen::emitScopedBody).
+void cg_scoped_stmt(Codegen* g, *StmtNode st) {
+    if (st == null) {
+        return;
+    }
+    if (st.kind == SK_BLOCK) {
+        cg_stmt(g, st);
+        return;
+    }
+    int mark = List_len<*StmtNode>(&g.cleanups);
+    int lmark = List_len<CgLocal>(&g.locals);
+    cg_stmt(g, st);
+    if (g.terminated == 0) {
+        cg_run_cleanups(g, mark, 0);
+    }
+    cg_cleanups_trunc(g, mark);
+    cg_locals_trunc(g, lmark);
+}
+
+// An expression with no side effects: evaluating it twice is the same as once.
+int cg_is_pure(*ExprNode e) {
+    if (e == null) {
+        return 1;
+    }
+    if (e.kind == EK_IDENT || e.kind == EK_LITERAL || e.kind == EK_SIZEOF) {
+        return 1;
+    }
+    if (e.kind == EK_MEMBER || e.kind == EK_UNARY || e.kind == EK_CAST) {
+        return cg_is_pure(e.a);
+    }
+    if (e.kind == EK_INDEX) {
+        if (cg_is_pure(e.a) == 0 || cg_is_pure(e.b) == 0) {
+            return 0;
+        }
+        int i = 0;
+        while (i < List_len<*ExprNode>(&e.kids)) {
+            if (cg_is_pure(List_get<*ExprNode>(&e.kids, i)) == 0) {
+                return 0;
+            }
+            i = i + 1;
+        }
+        return 1;
+    }
+    if (e.kind == EK_BINARY) {
+        if (cg_streq(e.sval, "=") == 1) {
+            return 0;
+        }
+        if (cg_is_pure(e.a) == 0) {
+            return 0;
+        }
+        return cg_is_pure(e.b);
+    }
+    return 0;
+}
+
+int cg_is_struct(Codegen* g, string name) {
+    return NameIdx_first(&g.structs_ix, name) >= 0;
+}
+
+// Eskiu type spelling → LLVM type. Pointers (anything with `*`) lower to opaque `ptr`;
+// a registered struct name → its named type `%Name`.
+// Drop a leading `?` (the checked-nullable marker on `?*T`). It is a sema-only concept:
+// `?*T` lowers exactly like `*T`, so every type-inspection entry normalizes it away.
+string cg_strip_nullable(string t) {
+    if ((int)t[0] == 63) {   // '?'
+        return cg_sub_str(t, 1, cg_strlen(t));
+    }
+    return t;
+}
+
+int cg_arr_open(string t);   // fwd
+string cg_lltype(Codegen* g, string t) {
+    t = cg_strip_nullable(t);            // `?*T` lowers as `*T`
+    t = cg_apply_sub(g, t);               // T -> concrete during instantiation
+    t = cg_dealias(g, t);                 // type alias -> underlying type
+    // fn(...)->R first: its parameter / return spellings may hold `<`, `[` or `*`
+    // (`fn(Box<int>)->int`), which are not the fn type's own shape.
+    if (cg_is_fnty(t) == 1 && cg_arr_open(t) < 0) {   // fn(...)->R → fat pointer {fn,env}
+        return "%closure";
+    }
+    if (cg_is_slice(t) == 1) {   // "T[]" -> fat pointer { data, len }
+        return "{ ptr, i64 }";
+    }
+    if (cg_is_array(t) == 1) {            // "T[N]" -> [N x <T>]
+        string cnt = cg_dim_val(g, cg_array_count(t));   // a named or folded dimension
+        return cg_cat("[", cg_cat(cnt, cg_cat(" x ",
+                       cg_cat(cg_lltype(g, cg_array_elem(t)), "]"))));
+    }
+    if (cg_is_fnty(t) == 1) {         // fn(...)->R → fat pointer {fn,env}
+        return "%closure";
+    }
+    if (cg_is_ptr_ty(t) == 1) {   // top-level '*' (not one inside <...>)
+        return "ptr";
+    }
+    if (cg_has_targs(t) == 1) {           // "Box<int>" / "Option<int>" -> monomorphize
+        if (cg_is_genum(g, cg_gen_base(t)) == 1) {
+            return cg_cat("%", cg_ensure_enum_inst(g, t));
+        }
+        return cg_cat("%", cg_ensure_struct_inst(g, t));
+    }
+    if (cg_streq(t, "void") == 1) {
+        return "void";
+    }
+    if (cg_streq(t, "bool") == 1) {
+        return "i1";
+    }
+    if (cg_streq(t, "char") == 1 || cg_streq(t, "int8") == 1 || cg_streq(t, "uint8") == 1) {
+        return "i8";
+    }
+    if (cg_streq(t, "int16") == 1 || cg_streq(t, "uint16") == 1) {
+        return "i16";
+    }
+    if (cg_streq(t, "int64") == 1 || cg_streq(t, "uint64") == 1) {
+        return "i64";
+    }
+    if (cg_streq(t, "float") == 1) {
+        return "float";
+    }
+    if (cg_streq(t, "double") == 1) {
+        return "double";
+    }
+    if (cg_streq(t, "string") == 1) {
+        return "ptr";
+    }
+    if (cg_streq(t, "va_list") == 1) {                     // {ptr,ptr,ptr,i32,i32} (AArch64 layout, x86-64 superset)
+        if (cg_seen_inst(g, "type:__va_list") == 0) {
+            cg_push_inst(g, "type:__va_list");
+            cg_deftype(g, "__va_list", "{ ptr, ptr, ptr, i32, i32 }");
+        }
+        return "%__va_list";
+    }
+    if (cg_is_iface(g, t) == 1) {   // interface value = fat {data, vtable}, by value
+        return "%iface_fat";
+    }
+    if (cg_is_struct(g, t) == 1) {
+        return cg_cat("%", t);
+    }
+    if (cg_is_adt(g, t) == 1) {   // ADT enum → tagged-union type
+        return cg_cat("%", t);
+    }
+    return "i32";   // int/int32/uint/... and the default
+}
+
+// The pointee/base name of a pointer type, stripping '*' and spaces from BOTH ends
+// (Eskiu writes pointers either way: "*P" and "P*"). "*P"/"P*" -> "P".
+string cg_strip_ptr(string t) {
+    t = cg_strip_nullable(t);
+    int a = 0;
+    while ((int)t[a] == 42 || (int)t[a] == 32) {
+        a = a + 1;
+    }
+    int b = 0;
+    while (t[b] != 0) {
+        b = b + 1;
+    }
+    while (b > a && ((int)t[b - 1] == 42 || (int)t[b - 1] == 32)) {
+        b = b - 1;
+    }
+    int len = b - a;
+    *uint8 buf = alloc<uint8>(len + 1);
+    int k = 0;
+    while (k < len) {
+        buf[k] = (uint8)t[a + k];
+        k = k + 1;
+    }
+    buf[len] = 0;
+    return (string)buf;
+}
+
+// Bit width of an LLVM integer type string ("i32"->32), or 0 if not an integer.
+int cg_int_w(string t) {
+    if ((int)t[0] != 105) {                  // not 'i...'
+        return 0;
+    }
+    int w = 0;
+    int i = 1;
+    while (t[i] != 0) {
+        int c = (int)t[i];
+        if (c < 48 || c > 57) {
+            return 0;
+        }
+        w = w * 10 + (c - 48);
+        i = i + 1;
+    }
+    return w;
+}
+
+// Pointee of a pointer type — strips exactly ONE '*' (the outermost, either end). For
+// indexing/deref: `**ExprNode`→`*ExprNode`, `*int`→`int`, `int*`→`int`. Distinct from
+// cg_strip_ptr, which strips ALL '*' to recover a struct's base name.
+string cg_deref_ty(string t) {
+    t = cg_strip_nullable(t);                             // `?*T` derefs like `*T`
+    if (cg_streq(t, "string") == 1) {    // string = *char → element is a char
+        return "char";
+    }
+    int b = 0;
+    while (t[b] != 0) {
+        b = b + 1;
+    }
+    if (b > 0 && (int)t[b - 1] == 42) {   // trailing '*'
+        return cg_sub_str(t, 0, b - 1);
+    }
+    int a = 0;
+    while ((int)t[a] == 32) {
+        a = a + 1;
+    }
+    if ((int)t[a] == 42) {                                                  // leading '*'
+        string r = cg_sub_str(t, a + 1, b);
+        return cg_trim(r);
+    }
+    return t;
+}
+
+// Is `t` a pointer type? Only a '*' at the TOP level counts — a '*' nested inside generic
+// args (`List<*ExprNode>`) belongs to a type argument, not the outer type, which is a
+// generic struct (value), not a pointer.
+int cg_is_ptr_ty(string t) {
+    t = cg_strip_nullable(t);
+    int depth = 0;
+    int i = 0;
+    while (t[i] != 0) {
+        int c = (int)t[i];
+        if (c == 60 || c == 40) {       // '<' or '(' (generics / fn params)
+            depth = depth + 1;
+        }
+        else if (c == 41) {   // ')'
+            if (depth > 0) {
+                depth = depth - 1;
+            }
+        }
+        else if (c == 62 && (i == 0 || (int)t[i - 1] != 45)) {  // '>' but not "->"
+            if (depth > 0) {
+                depth = depth - 1;
+            }
+        }
+        else if (c == 42 && depth == 0) {        // top-level '*'
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// A function type spelling: "fn(int)->int" (a closure value, lowered to a fat pointer).
+int cg_is_fnty(string t) {
+    return (int)t[0] == 102 && (int)t[1] == 110 && (int)t[2] == 40;   // "fn("
+}
+
+// Index of the first '[' that starts an array suffix (outside a fn type's '()' and a
+// template's '<>', the '>' of a `->` not closing an angle), else -1. So
+// "fn(int)->int[2]" is an array of 2 fns and "fn(int[3])->int" is not an array.
+// With two runs of top-level brackets (`int[3]*[2]`, 2 pointers to int[3]) the last run is
+// the suffix (type.cpp firstArraySuffixBracket).
+int cg_arr_open(string t) {
+    int i = 0;
+    int paren = 0;
+    int angle = 0;
+    int br = 0;
+    int run = -1;
+    while (t[i] != 0) {
+        int c = (int)t[i];
+        if (br > 0) {
+            if (c == 91) {
+                br = br + 1;
+            }
+            else if (c == 93) {
+                br = br - 1;
+            }
+        }
+        else if (c == 40) {
+            paren = paren + 1;
+        }
+        else if (c == 41) {
+            if (paren > 0) {
+                paren = paren - 1;
+            }
+        }
+        else if (c == 60) {
+            angle = angle + 1;
+        }
+        else if (c == 62 && !(i > 0 && (int)t[i - 1] == 45)) {
+            if (angle > 0) {
+                angle = angle - 1;
+            }
+        }
+        else if (c == 91 && paren == 0 && angle == 0) {
+            if (!(run >= 0 && i > 0 && (int)t[i - 1] == 93)) {
+                run = i;
+            }
+            br = 1;
+        }
+        i = i + 1;
+    }
+    return run;
+}
+
+// The ']' matching the '[' at `open`.
+int cg_arr_close(string t, int open) {
+    int i = open;
+    int depth = 0;
+    while (t[i] != 0) {
+        if ((int)t[i] == 91) {
+            depth = depth + 1;
+        }
+        else if ((int)t[i] == 93) {
+            depth = depth - 1;
+            if (depth == 0) {
+                return i;
+            }
+        }
+        i = i + 1;
+    }
+    return i;
+}
+
+int cg_is_array(string t) {
+    int n = 0;
+    while (t[n] != 0) {
+        n = n + 1;
+    }
+    if (n > 0 && (int)t[n - 1] == 42) {   // `T[N]*`: a pointer to an array
+        return 0;
+    }
+    if (cg_arr_open(t) >= 0) {
+        return 1;
+    }
+    return 0;
+}
+
+// A slice type `T[]`: its outer array suffix has empty brackets (`[` immediately `]`).
+int cg_is_slice(string t) {
+    int n = 0;
+    while (t[n] != 0) {
+        n = n + 1;
+    }
+    if (n > 0 && (int)t[n - 1] == 42) {   // `T[]*`: a pointer to a slice
+        return 0;
+    }
+    int open = cg_arr_open(t);
+    if (open >= 0 && (int)t[open + 1] == 93) {
+        return 1;
+    }
+    return 0;
+}

@@ -1,0 +1,301 @@
+// codegen_types_globals.esk: const declarations and global initializers (part of codegen_types.esk, imported in order)
+
+// Fold a top-level `const` declaration's initializer in its declared type and record
+// it: a signed int goes to econsts (read as an int operand), anything else to fconsts.
+void cg_fold_const_decl(Codegen* g, *DeclNode d) {
+    string dt = cg_dealias(g, d.ret_type);
+    string dll = cg_lltype(g, dt);
+    CgK k = cg_k_conv(g, cg_cfold(g, d.init), dt);
+    if (k.ok == 1 && cg_streq(dll, "i32") == 1 && cg_is_unsigned(dt) == 0) {
+        let ec2: CgEnumC;
+        ec2.name = d.name;
+        ec2.val = cg_i64toa(k.iv);
+        List_push<CgEnumC>(&g.econsts, ec2);
+        NameIdx_push(&g.econsts_ix, ec2.name);
+    } else if (k.ok == 1) {
+        let ik: CgFK;
+        ik.name = d.name;
+        ik.k = k;
+        List_push<CgFK>(&g.fconsts, ik);
+        NameIdx_push(&g.fconsts_ix, ik.name);
+    }
+}
+
+// Render a folded constant as LLVM constant text for slot type `llty` ("" if the slot
+// is not a scalar numeric type). Integers are wrapped to the slot width (C conversion).
+string cg_k_text(CgK k, string llty) {
+    if (cg_streq(llty, "double") == 1 || cg_streq(llty, "float") == 1) {
+        double d = cg_k_dbl(k);
+        if (cg_streq(llty, "float") == 1) {
+            float f = (float)d;
+            d = (double)f;
+        }
+        *uint64 pb = (*uint64)(&d);
+        return cg_cat("0x", cg_hex16(*pb));
+    }
+    int w = cg_int_w(llty);
+    if (w == 0) {
+        return "";
+    }
+    if (w == 1) {
+        if (cg_k_true(k) == 1) {
+            return "true";
+        }
+        return "false";
+    }
+    int64 v = k.iv;
+    if (k.isf == 1) {
+        v = (int64)k.dv;
+    }
+    return cg_i64toa(cg_k_wrap(v, w, 0));
+}
+
+string cg_global_init(Codegen* g, *ExprNode e, string llty) {
+    if (e == null) {
+        return "zeroinitializer";
+    }
+    // `&global`: a link-time constant address.
+    if (e.kind == EK_UNARY && cg_streq(e.sval, "&") == 1 && e.a != null && e.a.kind == EK_IDENT) {
+        CgLocal gl = cg_find_global(g, e.a.sval);
+        if (gl.slot[0] != 0) {
+            return gl.slot;
+        }
+    }
+    // A foldable operator expression (`3 + 1`, `A * 2`, `1.0 / 4.0`, `c ? a : b`, a cast).
+    if (e.kind == EK_BINARY || e.kind == EK_TERNARY || e.kind == EK_UNARY || e.kind == EK_CAST
+        || e.kind == EK_IDENT) {
+        CgK k = cg_cfold(g, e);
+        if (k.ok == 1) {
+            string kt = cg_k_text(k, llty);
+            if (kt[0] != 0) {
+                return kt;
+            }
+        }
+    }
+    if (e.kind == EK_LITERAL) {
+        if (e.lit_kind == LIT_NULL) {
+            return "null";
+        }
+        if (e.lit_kind == LIT_CHAR) {
+            return cg_itoa((int)e.sval[0]);
+        }
+        if (e.lit_kind == LIT_BOOL) {      // e.sval is "true"/"false"
+            return e.sval;
+        }
+        if (e.lit_kind == LIT_STRING) {   // ptr to a real constant
+            return cg_string_global(g, e.sval);
+        }
+        return cg_num_const(llty, e.sval);                   // integer / float literal, slot-typed
+    }
+    if (e.kind == EK_CAST) {
+        // Fold a numeric cast in a constant initializer: emit the operand as the cast's
+        // LLVM target type (float → hex form, double → decimal, integer → as-is).
+        string dll = cg_lltype(g, cg_apply_sub(g, e.sval));
+        return cg_global_init(g, e.a, dll);
+    }
+    if (e.kind == EK_IDENT) {
+        // An enum constant or a folded top-level `const int` (both live in econsts).
+        string v = cg_enum_val(g, e.sval);
+        if (v[0] != 0) {
+            return cg_num_const(llty, v);
+        }
+        // A top-level function name is the constant closure { @__fnptr_f, null } (`Op g = add;`).
+        if (cg_streq(llty, "%closure") == 1 && cg_find_global(g, e.sval).slot[0] == 0 && NameIdx_first(&g.topfns_ix, e.sval) >= 0) {
+            cg_queue_fn_thunk(g, e.sval);
+            return cg_cat(cg_cat("{ ptr @__fnptr_", e.sval), ", ptr null }");
+        }
+        return "zeroinitializer";
+    }
+    if (e.kind == EK_SIZEOF) {
+        return cg_itoa(cg_size(g, cg_sizeof_operand(g, e)));   // static byte size
+    }
+    if (e.kind == EK_UNARY) {
+        // `-` reaches here rarely (negatives are single literal tokens); `~`/`!` need folding.
+        if (cg_streq(e.sval, "!") == 1) {
+            string inner = cg_global_init(g, e.a, "i64");
+            if (cg_streq(inner, "0") == 1 || cg_streq(inner, "false") == 1) {
+                return "true";
+            }
+            return "false";
+        }
+        if (cg_streq(e.sval, "~") == 1) {
+            // ~x == -x - 1. Fold the operand's magnitude and render the complement.
+            string inner = cg_global_init(g, e.a, "i64");
+            uint64 m = cg_int_lit_mag(inner);
+            if (inner[0] == 45) {        // ~(-m) = m-1
+                return cg_u64toa(m - (uint64)1);
+            }
+            return cg_cat("-", cg_u64toa(m + (uint64)1));                   // ~m = -(m+1)
+        }
+        if (cg_streq(e.sval, "-") == 1) {
+            string inner = cg_global_init(g, e.a, llty);
+            if (inner[0] == 45) {   // -(-5) → 5
+                return cg_sub_str(inner, 1, cg_strlen(inner));
+            }
+            return cg_cat("-", inner);
+        }
+        return "zeroinitializer";
+    }
+    if (e.kind == EK_STRUCTINIT) {
+        string sname = cg_apply_sub(g, e.sval);
+        string cs = cg_const_struct(g, sname, e);
+        if (cs[0] != 0) {
+            return cs;
+        }
+        return "zeroinitializer";                             // a struct with no fields
+    }
+    if (e.kind == EK_LAMBDA) {
+        // A non-capturing lambda is a compile-time-constant closure { @lambdaN, null }:
+        // queue its body for emission and fold to the constant fat pointer, so a global
+        // (or static) initializer holds a real callable, not a null closure. A capturing
+        // closure needs a live frame, so it can't be a global constant (rare; deferred).
+        List<string> pp;
+        List_init<string>(&pp, 4);
+        cg_paren_list(e.sval, &pp);
+        List<string> ids;
+        List_init<string>(&ids, 16);
+        cg_collect_idents_s(e.stmt, &ids);
+        int ci = 0;
+        while (ci < List_len<string>(&ids)) {
+            string nm = List_get<string>(&ids, ci);
+            ci = ci + 1;
+            int isparam = 0;
+            int pj = 0;
+            while (pj < List_len<string>(&pp)) {
+                if (cg_streq(cg_last_word(List_get<string>(&pp, pj)), nm) == 1) {
+                    isparam = 1;
+                }
+                pj = pj + 1;
+            }
+            if (isparam == 1) {
+                continue;
+            }
+            CgLocal l = cg_find_local(g, nm);
+            if (l.slot[0] != 0) {   // captures a local: can't fold
+                return "zeroinitializer";
+            }
+        }
+        string lname = cg_cat("__lambda", cg_itoa(g.lam_seq));
+        g.lam_seq = g.lam_seq + 1;
+        List<string> capn;
+        List_init<string>(&capn, 1);
+        List<string> capt;
+        List_init<string>(&capt, 1);
+        let lam: CgLambda;
+        lam.name = lname;
+        lam.node = e;
+        lam.capn = capn;
+        lam.capt = capt;
+        List_init<CgLocal>(&lam.statics, 1);
+        lam.sub = cg_copy_sub(&g.cursub);   // freeze the generic substitution for deferred emission
+        if (g.lam_expret[0] != 0) {
+            lam.rety = g.lam_expret;
+        } else {
+            lam.rety = cg_arm_var(e.sval);
+        }
+        List_push<CgLambda>(&g.lambdas, lam);
+        return cg_cat(cg_cat("{ ptr @", lname), ", ptr null }");
+    }
+    if (e.kind == EK_ARRAYLIT) {
+        // Fixed-size array literal `{...}`: llty is "[N x T]". Emit an LLVM array constant
+        // "[T v0, T v1, ...]", folding each element to T and zero-filling any tail (C
+        // semantics: `int[3] = {7}` -> {7,0,0}), recursing for nested arrays.
+        if ((int)llty[0] != 91) {    // 91 = '[' ; not an array type
+            return "zeroinitializer";
+        }
+        int L = cg_strlen(llty);
+        int i = 1;                                               // past '['
+        int64 cnt = (int64)0;
+        while (llty[i] != 0 && (int)llty[i] >= 48 && (int)llty[i] <= 57) {
+            cnt = cnt * (int64)10 + (int64)((int)llty[i] - 48);
+            i = i + 1;
+        }
+        int es = i + 3;                                          // skip " x " to the element type
+        int ee = L - 1;                                          // drop the trailing ']'
+        *uint8 buf = alloc<uint8>(ee - es + 1);
+        int k = 0;
+        while (k < ee - es) {
+            buf[k] = (uint8)llty[es + k];
+            k = k + 1;
+        }
+        buf[ee - es] = 0;
+        string elemty = (string)buf;
+        int nk = List_len<*ExprNode>(&e.kids);
+        if ((int64)nk > cnt) {                  // extra elements ignored
+            nk = (int)cnt;
+        }
+        List<string> vals;
+        List_init<string>(&vals, nk + 1);
+        int split = 0;
+        int idx = 0;
+        while (idx < nk) {
+            string v = cg_global_init(g, List_get<*ExprNode>(&e.kids, idx), elemty);
+            if ((int)v[0] == 33) {
+                split = 1;
+            }
+            List_push<string>(&vals, v);
+            idx = idx + 1;
+        }
+        // A long zero tail (or an element already in this form) is a struct of the given
+        // elements and one zeroinitializer array for the rest, as clang emits it: the same
+        // bytes, without a constant per zero element (cg_split_const).
+        int64 tail = cnt - (int64)nk;
+        if (g.no_split == 0 && (split == 1 || tail >= (int64)1024)) {
+            let tys: String;
+            String_init(&tys, 64);
+            let body: String;
+            String_init(&body, 64);
+            String_append(&tys, "{ ");
+            String_append(&body, "{ ");
+            idx = 0;
+            while (idx < nk) {
+                if (idx > 0) {
+                    String_append(&tys, ", ");
+                    String_append(&body, ", ");
+                }
+                string v = List_get<string>(&vals, idx);
+                String_append(&tys, cg_const_ty(elemty, v));
+                String_append(&body, cg_tyval(elemty, v));
+                idx = idx + 1;
+            }
+            if (tail > (int64)0) {
+                string tt = cg_cat("[", cg_cat(cg_i64toa(tail), cg_cat(" x ", cg_cat(elemty, "]"))));
+                if (nk > 0) {
+                    String_append(&tys, ", ");
+                    String_append(&body, ", ");
+                }
+                String_append(&tys, tt);
+                String_append(&body, tt);
+                String_append(&body, " zeroinitializer");
+            }
+            String_append(&tys, " }");
+            String_append(&body, " }");
+            return cg_split_const((string)String_cstr(&tys), (string)String_cstr(&body));
+        }
+        let out: String;
+        String_init(&out, 64);
+        String_push(&out, '[');
+        int64 j = (int64)0;
+        while (j < cnt) {
+            if (j > (int64)0) {
+                String_append(&out, ", ");
+            }
+            String_append(&out, elemty);
+            String_push(&out, ' ');
+            if (j < (int64)nk) {
+                String_append(&out, List_get<string>(&vals, (int)j));
+            }
+            else {
+                String_append(&out, "zeroinitializer");
+            }
+            j = j + (int64)1;
+        }
+        String_push(&out, ']');
+        return (string)String_cstr(&out);
+    }
+    return "zeroinitializer";
+}
+
+int cg_is_float(string ty) {
+    return cg_streq(ty, "double") == 1 || cg_streq(ty, "float") == 1;
+}

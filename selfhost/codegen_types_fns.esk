@@ -1,0 +1,552 @@
+// codegen_types_fns.esk: parameter types, interfaces and function lookup (part of codegen_types.esk, imported in order)
+
+// The declared LLVM type of parameter `i` (0-based) of `f`, or "" if out of range.
+string cg_pty(CgFn* f, int i) {
+    if (i < 0 || i >= List_len<string>(&f.ptys)) {
+        return "";
+    }
+    return List_get<string>(&f.ptys, i);
+}
+
+// The declared Eskiu type of parameter `i` (0-based) of `f`, or "" if out of range.
+string cg_pety(CgFn* f, int i) {
+    if (i < 0 || i >= List_len<string>(&f.petys)) {
+        return "";
+    }
+    return List_get<string>(&f.petys, i);
+}
+
+// Is `name` a declared interface type?
+int cg_is_iface(Codegen* g, string name) {
+    return NameIdx_first(&g.ifaces_ix, name) >= 0;
+}
+
+CgIface cg_find_iface(Codegen* g, string name) {
+    int i = NameIdx_first(&g.ifaces_ix, name);
+    if (i >= 0) {
+        return List_get<CgIface>(&g.ifaces, i);
+    }
+    let e: CgIface;
+    e.name = "";
+    List_init<string>(&e.mnames, 1);
+    List_init<string>(&e.mrets, 1);
+    List_init<List<string>>(&e.mparams, 1);
+    return e;
+}
+
+// Index of method `m` in interface `f`'s method order, or -1.
+int cg_iface_midx(CgIface* f, string m) {
+    int i = 0;
+    int n = List_len<string>(&f.mnames);
+    while (i < n) {
+        if (cg_streq(List_get<string>(&f.mnames, i), m) == 1) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+CgFn cg_find_fn(Codegen* g, string name) {
+    int i = NameIdx_first(&g.fns_ix, name);
+    if (i >= 0) {
+        return List_get<CgFn>(&g.fns, i);
+    }
+    let none: CgFn;
+    none.name = name;
+    none.retty = "i32";
+    none.rety = "";
+    none.variadic = 0;
+    none.fixedtypes = "";
+    List_init<string>(&none.ptys, 1);
+    return none;
+}
+
+// Is `name` a registered top-level function (free fn or extern, not a struct method)?
+int cg_is_fn(Codegen* g, string name) {
+    return NameIdx_first(&g.fns_ix, name) >= 0;
+}
+
+// Build a closure fat pointer {@__fnptr_<name>, null} for a top-level function used as a
+// value where a `fn(...)->R` is expected. The thunk (queued, emitted once via
+// cg_drain_thunks) drops the closure's leading env arg and forwards to the real function.
+void cg_queue_fn_thunk(Codegen* g, string fnname) {
+    if (cg_seen_inst(g, cg_cat("thunk:", fnname)) == 0) {
+        cg_push_inst(g, cg_cat("thunk:", fnname));
+        List_push<string>(&g.fnthunks, fnname);
+    }
+}
+
+string cg_fn_to_closure(Codegen* g, string fnname) {
+    cg_queue_fn_thunk(g, fnname);
+    string c1 = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, c1);
+    cg_emit(g, " = insertvalue %closure undef, ptr @__fnptr_");
+    cg_emit(g, fnname);
+    cg_emit(g, ", 0\n");
+    string c2 = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, c2);
+    cg_emit(g, " = insertvalue %closure ");
+    cg_emit(g, c1);
+    cg_emit(g, ", ptr null, 1\n");
+    return c2;
+}
+
+void cg_emit_cabi_thunk(Codegen* g, string name);   // fwd: a C-ABI callback thunk
+
+// Emit one `__fnptr_<name>` thunk: `R __fnptr_f(ptr env, <params>) { return f(<params>); }`.
+// A `cabi:<name>` entry is a C-ABI callback thunk instead (cg_cabi_callback).
+void cg_emit_thunk(Codegen* g, string fnname) {
+    int fl = 0;
+    while (fnname[fl] != 0) {
+        fl = fl + 1;
+    }
+    if (fl > 5 && cg_streq(cg_sub_str(fnname, 0, 5), "cabi:") == 1) {
+        cg_emit_cabi_thunk(g, cg_sub_str(fnname, 5, fl));
+        return;
+    }
+    CgFn f = cg_find_fn(g, fnname);
+    int np = List_len<string>(&f.ptys);
+    CgCabi cab = cg_find_cabi(g, fnname);
+    if (cab.name[0] != 0) {                             // a C-ABI extern: lower inside the thunk
+        cg_emit(g, "define ");
+        cg_emit(g, f.retty);
+        cg_emit(g, " @__fnptr_");
+        cg_emit(g, fnname);
+        cg_emit(g, "(ptr %e");
+        List<CgVal> targs;
+        List_init<CgVal>(&targs, np);
+        int ti = 0;
+        while (ti < np) {
+            let ta: CgVal;
+            ta.ty = List_get<string>(&f.ptys, ti);
+            ta.op = cg_cat("%a", cg_itoa(ti));
+            ta.ety = "";
+            cg_emit(g, ", ");
+            cg_emit(g, ta.ty);
+            cg_emit(g, " ");
+            cg_emit(g, ta.op);
+            List_push<CgVal>(&targs, ta);
+            ti = ti + 1;
+        }
+        cg_emit(g, ") {\n");
+        String_init(&g.entry_buf, 128);
+        String saved = g.out;
+        String_init(&g.out, 256);
+        CgVal r = cg_cabi_call(g, &cab, &f, &targs);
+        if (cg_streq(f.retty, "void") == 1) {
+            cg_emit(g, "  ret void\n");
+        }
+        else {
+            cg_emit(g, "  ret ");
+            cg_emit(g, f.retty);
+            cg_emit(g, " ");
+            cg_emit(g, r.op);
+            cg_emit(g, "\n");
+        }
+        string bodytext = (string)String_cstr(&g.out);
+        g.out = saved;
+        cg_emit(g, "entry:\n");
+        cg_emit(g, (string)String_cstr(&g.entry_buf));
+        cg_emit(g, bodytext);
+        cg_emit(g, "}\n\n");
+        return;
+    }
+    cg_emit(g, "define ");
+    cg_emit(g, f.retty);
+    cg_emit(g, " @__fnptr_");
+    cg_emit(g, fnname);
+    cg_emit(g, "(ptr %e");
+    string args = "";
+    int i = 0;
+    while (i < np) {
+        string pt = List_get<string>(&f.ptys, i);
+        cg_emit(g, ", ");
+        cg_emit(g, pt);
+        cg_emit(g, " %a");
+        cg_emit(g, cg_itoa(i));
+        if (i > 0) {
+            args = cg_cat(args, ", ");
+        }
+        args = cg_cat(args, cg_cat(pt, cg_cat(" %a", cg_itoa(i))));
+        i = i + 1;
+    }
+    cg_emit(g, ") {\n");
+    if (cg_streq(f.retty, "void") == 1) {
+        cg_emit(g, "  call void @");
+        cg_emit(g, fnname);
+        cg_emit(g, "(");
+        cg_emit(g, args);
+        cg_emit(g, ")\n");
+        cg_emit(g, "  ret void\n}\n\n");
+    } else {
+        cg_emit(g, "  %r = call ");
+        cg_emit(g, f.retty);
+        cg_emit(g, " @");
+        cg_emit(g, fnname);
+        cg_emit(g, "(");
+        cg_emit(g, args);
+        cg_emit(g, ")\n");
+        cg_emit(g, "  ret ");
+        cg_emit(g, f.retty);
+        cg_emit(g, " %r\n}\n\n");
+    }
+}
+
+void cg_drain_thunks(Codegen* g) {
+    while (g.thk_i < List_len<string>(&g.fnthunks)) {
+        cg_emit_thunk(g, List_get<string>(&g.fnthunks, g.thk_i));
+        g.thk_i = g.thk_i + 1;
+    }
+}
+
+// Emit a runtime `declare` once for a libc/pthread symbol the codegen calls directly
+// (pthread_create/join, free). Skips it if the symbol is already a declared extern.
+// The heap a closure environment lives on: libc's, or under --freestanding the program's
+// esk_alloc/esk_free (the same pair <mem> uses there).
+// The target's size_t, and the size type of the closures' env allocator (malloc's
+// size_t, or esk_alloc's int64 under --freestanding).
+string cg_size_ty(Codegen* g) {
+    if (g.ptrsz == 4) {
+        return "i32";
+    }
+    return "i64";
+}
+
+string cg_heap_size_ty(Codegen* g) {
+    if (g.freestanding == 1) {
+        return "i64";
+    }
+    return cg_size_ty(g);
+}
+
+string cg_heap_alloc(Codegen* g) {
+    if (g.freestanding == 1) {
+        return "esk_alloc";
+    }
+    return "malloc";
+}
+
+string cg_heap_free(Codegen* g) {
+    if (g.freestanding == 1) {
+        return "esk_free";
+    }
+    return "free";
+}
+
+void cg_ensure_extern(Codegen* g, string name, string decl) {
+    if (cg_is_fn(g, name) == 1) {
+        return;
+    }
+    if (cg_seen_inst(g, cg_cat("decl:", name)) == 1) {
+        return;
+    }
+    cg_push_inst(g, cg_cat("decl:", name));
+    String_append(&g.globals, decl);
+}
+
+void cg_emit(Codegen* g, string s) {
+    String_append(&g.out, s);
+}
+
+// Emit a `call` — or, inside a try body (cur_unwind set), an `invoke` that routes
+// unwinding to the landingpad and continues in a fresh block. Returns the result temp
+// ("" for a void call). `callty` is the call type (ret type, or a variadic fn type),
+// `target` the callee (`@name` or `%fp`).
+string cg_emit_callish(Codegen* g, string callty, string target, string args, int isvoid) {
+    string t = "";
+    cg_emit(g, "  ");
+    if (isvoid == 0) {
+        t = cg_tmp(g);
+        cg_emit(g, t);
+        cg_emit(g, " = ");
+    }
+    if (g.cur_unwind[0] != 0) {
+        string cont = cg_lbl(g);
+        cg_emit(g, "invoke ");
+        cg_emit(g, callty);
+        cg_emit(g, " ");
+        cg_emit(g, target);
+        cg_emit(g, "(");
+        cg_emit(g, args);
+        cg_emit(g, ") to label %");
+        cg_emit(g, cont);
+        cg_emit(g, " unwind label %");
+        cg_emit(g, g.cur_unwind);
+        cg_emit(g, "\n");
+        g.terminated = 1;
+        cg_label(g, cont);
+    } else {
+        cg_emit(g, "call ");
+        cg_emit(g, callty);
+        cg_emit(g, " ");
+        cg_emit(g, target);
+        cg_emit(g, "(");
+        cg_emit(g, args);
+        cg_emit(g, ")\n");
+    }
+    return t;
+}
+
+// Collect every identifier referenced in an expr/stmt subtree (for a lambda's free-
+// variable analysis — the captures are those that are enclosing locals).
+void cg_collect_idents_e(*ExprNode e, List<string>* out) {
+    if (e == null) {
+        return;
+    }
+    if (e.kind == EK_IDENT) {
+        List_push<string>(out, e.sval);
+        return;
+    }
+    if (e.kind == EK_SIZEOF && e.a != null) {   // sizeof(expr)
+        cg_collect_idents_e(e.a, out);
+        return;
+    }
+    if (e.kind == EK_SIZEOF) {   // sizeof(var) uses var's type
+        List_push<string>(out, e.sval);
+        return;
+    }
+    // Recurse only into the sub-expr fields each kind populates (an unset field is now null,
+    // not garbage, but reading a child a kind never sets is still a wrong-subtree bug).
+    if (e.kind == EK_BINARY || e.kind == EK_INDEX || e.kind == EK_ALLOCWITH) {   // alloc_with: allocator, count
+        cg_collect_idents_e(e.a, out);
+        cg_collect_idents_e(e.b, out);
+    }
+    else if (e.kind == EK_UNARY || e.kind == EK_MEMBER || e.kind == EK_CAST
+             || e.kind == EK_QUESTION || e.kind == EK_AWAIT || e.kind == EK_CALL
+             || e.kind == EK_INCDEC || e.kind == EK_FREECLOSURE || e.kind == EK_THREADCREATE) {
+        cg_collect_idents_e(e.a, out);
+    }
+    if (e.kind == EK_CALL || e.kind == EK_TEMPLATECALL || e.kind == EK_STRUCTINIT
+        || e.kind == EK_ARRAYLIT || e.kind == EK_INDEX) {   // EK_INDEX kids = a slice's hi bound
+        int i = 0;
+        int n = List_len<*ExprNode>(&e.kids);
+        while (i < n) {
+            cg_collect_idents_e(List_get<*ExprNode>(&e.kids, i), out);
+            i = i + 1;
+        }
+    }
+    if (e.kind == EK_TERNARY) {                        // cond (a) + then (b) + else (kids[0])
+        cg_collect_idents_e(e.a, out);
+        cg_collect_idents_e(e.b, out);
+        cg_collect_idents_e(List_get<*ExprNode>(&e.kids, 0), out);
+    }
+    if (e.kind == EK_LAMBDA) {
+        // A lambda's identifiers are the same wherever it is walked from, so they are
+        // collected once and replayed; otherwise each enclosing lambda would walk the
+        // nested ones again (quadratic in the nesting depth).
+        if (e.ids_done == 0) {
+            List_init<string>(&e.ids_memo, 8);
+            cg_collect_idents_s(e.stmt, &e.ids_memo);
+            e.ids_done = 1;
+        }
+        int j = 0;
+        int m = List_len<string>(&e.ids_memo);
+        while (j < m) {
+            List_push<string>(out, List_get<string>(&e.ids_memo, j));
+            j = j + 1;
+        }
+    }
+}
+
+void cg_collect_idents_s(*StmtNode s, List<string>* out) {
+    if (s == null) {
+        return;
+    }
+    if (s.kind == SK_RETURN || s.kind == SK_EXPR || s.kind == SK_THROW || s.kind == SK_VARDECL
+        || s.kind == SK_IF || s.kind == SK_WHILE || s.kind == SK_DOWHILE || s.kind == SK_FOR || s.kind == SK_FORIN
+        || s.kind == SK_SWITCH || s.kind == SK_CASE || s.kind == SK_MATCH) {
+        cg_collect_idents_e(s.expr, out);
+    }
+    if (s.kind == SK_FOR) {
+        cg_collect_idents_e(s.expr2, out);
+    }
+    if (s.kind == SK_IF || s.kind == SK_WHILE || s.kind == SK_DOWHILE || s.kind == SK_FOR || s.kind == SK_FORIN
+        || s.kind == SK_ARM || s.kind == SK_CATCH) {
+        cg_collect_idents_s(s.s1, out);
+    }
+    if (s.kind == SK_IF || s.kind == SK_FOR) {
+        cg_collect_idents_s(s.s2, out);
+    }
+    if (s.kind == SK_BLOCK || s.kind == SK_SWITCH || s.kind == SK_CASE || s.kind == SK_MATCH
+        || s.kind == SK_TRY) {
+        int i = 0;
+        int n = List_len<*StmtNode>(&s.items);
+        while (i < n) {
+            cg_collect_idents_s(List_get<*StmtNode>(&s.items, i), out);
+            i = i + 1;
+        }
+    }
+    if (s.kind == SK_TRY) {
+        cg_collect_idents_s(s.s1, out);
+        cg_collect_idents_s(s.s2, out);
+    }
+    if (s.kind == SK_DEFER) {
+        cg_collect_idents_s(s.s1, out);
+    }
+}
+
+// The LLVM literal struct type holding a closure's captured variables, e.g. "{ i32, double }".
+string cg_env_lltype(Codegen* g, List<string>* capt) {
+    String t;
+    String_init(&t, 16);
+    String_append(&t, "{ ");
+    int i = 0;
+    int n = List_len<string>(capt);
+    while (i < n) {
+        if (i > 0) {
+            String_append(&t, ", ");
+        }
+        String_append(&t, cg_lltype(g, List_get<string>(capt, i)));
+        i = i + 1;
+    }
+    String_append(&t, " }");
+    return (string)String_cstr(&t);
+}
+
+// Mutually-recursive: expr (rvalue) ↔ lval (address of an lvalue).
+CgVal cg_expr(Codegen* g, *ExprNode e);
+CgVal cg_binary_builtin(Codegen* g, *ExprNode e, CgVal l);
+CgVal cg_unary_apply(Codegen* g, *ExprNode e, CgVal operand);
+CgVal cg_cond_val(Codegen* g, CgVal c);
+CgVal cg_iface_data(Codegen* g, CgVal c);   // fwd: an interface value's data pointer
+CgVal cg_lval(Codegen* g, *ExprNode e);
+CgVal cg_addr(Codegen* g, *ExprNode e);   // fwd: address for a read (materializes an rvalue)
+string cg_etype(Codegen* g, *ExprNode e);
+string cg_ensure_struct_inst(Codegen* g, string spelling);   // monomorphize a generic struct
+CgVal cg_build_variant(Codegen* g, CgVariant var, *ExprNode call);   // construct an ADT value
+CgVal cg_emit_atomic(Codegen* g, string nm, *ExprNode e);            // atomic intrinsic
+CgVal cg_indirect_call(Codegen* g, string cval, string fnty, *ExprNode e);  // call a closure value
+CgVal cg_call_mangled(Codegen* g, string mangled, *ExprNode e);      // call a monomorphized fn
+string cg_box_iface(Codegen* g, string ifaceName, string structName, string dataop);  // struct → interface fat ptr
+CgVal cg_dispatch_iface(Codegen* g, string ifaceName, string fatop, string method, *ExprNode e);  // vtable dispatch
+string cg_member_baseptr(Codegen* g, *ExprNode ea, *string out_sname);  // struct ptr + name
+CgBF cg_bf(Codegen* g, string sname, string fname);
+string cg_bf_read_ety(Codegen* g, CgBF slot);   // fwd
+string cg_bf_wordptr(Codegen* g, string baseptr, string sname, CgBF slot);   // fwd
+string cg_infer_generic(Codegen* g, *DeclNode gd, *ExprNode e);      // infer `name<args>` from arg types
+void cg_collect_idents_e(*ExprNode e, List<string>* out);
+void cg_collect_idents_s(*StmtNode s, List<string>* out);
+string cg_ensure_fn_inst(Codegen* g, string spelling);       // monomorphize a generic function
+void cg_emit_fn(Codegen* g, *DeclNode d, string llname, string self_struct);
+
+int cg_strlen(string s) {
+    int i = 0;
+    while (s[i] != 0) {
+        i = i + 1;
+    }
+    return i;
+}
+
+int cg_hexd(int d) {   // 0-9, A-F
+    if (d < 10) {
+        return 48 + d;
+    }
+    return 55 + d;
+}
+
+string cg_hex2(int b) {
+    *uint8 buf = alloc<uint8>(3);
+    buf[0] = (uint8)cg_hexd((b / 16) % 16);
+    buf[1] = (uint8)cg_hexd(b % 16);
+    buf[2] = 0;
+    return (string)buf;
+}
+
+// `s` escaped for an LLVM IR string: printables verbatim, `"`/`\`/others as \NN.
+string cg_ll_escape(string s) {
+    String o;
+    String_init(&o, 32);
+    int i = 0;
+    while (s[i] != 0) {
+        int b = (int)s[i];
+        if (b < 0) {
+            b = b + 256;
+        }
+        if (b >= 32 && b <= 126 && b != 34 && b != 92) {
+            String_push(&o, (char)b);
+        }
+        else {
+            String_push(&o, '\\');
+            String_append(&o, cg_hex2(b));
+        }
+        i = i + 1;
+    }
+    return (string)String_cstr(&o);
+}
+
+// Emit a private string-literal constant for `s` and return its global name (a `ptr`).
+// Bytes are LLVM-escaped: printables verbatim, `"`/`\`/non-printables as \NN, + a NUL.
+string cg_string_global(Codegen* g, string s) {
+    return cg_string_global_n(g, s, cg_strlen(s));
+}
+
+// As cg_string_global, but with an explicit byte length so a literal with an embedded
+// NUL (`"a\0b"`) emits all its bytes instead of truncating at the first zero.
+string cg_string_global_n(Codegen* g, string s, int len) {
+    string name = cg_cat("@.str", cg_itoa(g.strcount));
+    g.strcount = g.strcount + 1;
+    String_append(&g.globals, name);
+    String_append(&g.globals, " = private unnamed_addr constant [");
+    String_append(&g.globals, cg_itoa(len + 1));
+    String_append(&g.globals, " x i8] c\"");
+    int i = 0;
+    while (i < len) {
+        int b = (int)s[i];
+        if (b < 0) {
+            b = b + 256;
+        }
+        if (b >= 32 && b <= 126 && b != 34 && b != 92) {
+            String_push(&g.globals, (char)b);
+        } else {
+            String_push(&g.globals, '\\');
+            String_append(&g.globals, cg_hex2(b));
+        }
+        i = i + 1;
+    }
+    String_append(&g.globals, "\\00\"\n");
+    return name;
+}
+
+// Variadic parameter list: "<fixed>, ..." (or just "..." when there are no fixed types).
+string cg_va(string fixed) {
+    if (fixed[0] == 0) {
+        return "...";
+    }
+    return cg_cat(fixed, ", ...");
+}
+
+string cg_tmp(Codegen* g) {
+    string r = cg_cat("%t", cg_itoa(g.next));
+    g.next = g.next + 1;
+    return r;
+}
+
+string cg_lbl(Codegen* g) {
+    string r = cg_cat("L", cg_itoa(g.next));
+    g.next = g.next + 1;
+    return r;
+}
+
+// Start a new basic block (resets the terminated flag).
+void cg_label(Codegen* g, string name) {
+    cg_emit(g, name);
+    cg_emit(g, ":\n");
+    g.terminated = 0;
+    g.cur_lbl = name;
+}
+
+// Unconditional branch — skipped if the block is already terminated.
+void cg_br(Codegen* g, string target) {
+    if (g.terminated == 1) {
+        return;
+    }
+    cg_emit(g, "  br label %");
+    cg_emit(g, target);
+    cg_emit(g, "\n");
+    g.terminated = 1;
+}
+
+void cg_stmt(Codegen* g, *StmtNode st);

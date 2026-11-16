@@ -1,0 +1,560 @@
+// codegen_types_const.esk: constant aggregates and struct defaults (part of codegen_types.esk, imported in order)
+
+// The element types of an LLVM struct body `{ a, b }` / `<{ a, b }>` (*packed = 1 for `<{`).
+void cg_ll_elems(Codegen* g, string s, List<string>* out, int* pk) {
+    int pos = 0;
+    cg_ll_ws(s, &pos);
+    pk[0] = 0;
+    if ((int)s[pos] == 60) {
+        pk[0] = 1;
+        pos = pos + 1;
+        cg_ll_ws(s, &pos);
+    }
+    if ((int)s[pos] == 123) {
+        pos = pos + 1;
+    }
+    cg_ll_ws(s, &pos);
+    while (s[pos] != 0 && (int)s[pos] != 125) {
+        int st = pos;
+        int al = 1;
+        cg_ll_layout(g, s, &pos, &al);
+        List_push<string>(out, cg_sub_str(s, st, pos));
+        cg_ll_ws(s, &pos);
+        if ((int)s[pos] == 44) {
+            pos = pos + 1;
+        }
+        cg_ll_ws(s, &pos);
+    }
+}
+
+// Byte offsets of the elements of an LLVM struct body.
+void cg_ll_elem_offs(Codegen* g, string body, List<string>* tys, List<int>* offs) {
+    int pkd = 0;
+    cg_ll_elems(g, body, tys, &pkd);
+    int off = 0;
+    int i = 0;
+    while (i < List_len<string>(tys)) {
+        string t = List_get<string>(tys, i);
+        if (pkd == 0) {
+            off = cg_align_up(off, cg_ll_align_of(g, t));
+        }
+        List_push<int>(offs, off);
+        off = off + cg_ll_size_of(g, t);
+        i = i + 1;
+    }
+}
+
+// Constant text of LLVM type `llty` at `off` read back from the image ("" = not representable).
+string cg_img_render(Codegen* g, CgImg* im, string llty, int off) {
+    int di = 0;
+    while (di < List_len<CgLeaf>(&im.dir)) {
+        CgLeaf dl = List_get<CgLeaf>(&im.dir, di);
+        if (dl.off == off && cg_streq(dl.ty, llty) == 1) {
+            return List_get<string>(&im.dtx, di);
+        }
+        // An address where the layout has a pointer-sized integer (a union laid out as int64).
+        if (dl.off == off && cg_streq(dl.ty, "ptr") == 1 && cg_int_w(llty) > 0
+            && cg_ll_size_of(g, llty) == cg_ll_size_of(g, "ptr")) {
+            return cg_cat(cg_cat(cg_cat(cg_cat("ptrtoint (ptr ", List_get<string>(&im.dtx, di)), " to "), llty), ")");
+        }
+        di = di + 1;
+    }
+    int sz = cg_ll_size_of(g, llty);
+    if (off + sz > im.n) {
+        return "";
+    }
+    string body = llty;
+    if ((int)llty[0] == 37) {                                   // %name → its body
+        body = cg_tydef_body(g, cg_sub_str(llty, 1, cg_strlen(llty)));
+        if (body[0] == 0) {
+            return "";
+        }
+    }
+    if ((int)body[0] == 123 || (int)body[0] == 60) {            // { … } / <{ … }>
+        List<string> tys;
+        List_init<string>(&tys, 8);
+        List<int> offs;
+        List_init<int>(&offs, 8);
+        cg_ll_elem_offs(g, body, &tys, &offs);
+        int pkd = 0;
+        if ((int)body[0] == 60) {
+            pkd = 1;
+        }
+        let out: String;
+        String_init(&out, 64);
+        if (pkd == 1) {
+            String_append(&out, "<{ ");
+        } else {
+            String_append(&out, "{ ");
+        }
+        int i = 0;
+        while (i < List_len<string>(&tys)) {
+            string et = List_get<string>(&tys, i);
+            string ev = cg_img_render(g, im, et, off + List_get<int>(&offs, i));
+            if (ev[0] == 0) {
+                return "";
+            }
+            if (i > 0) {
+                String_append(&out, ", ");
+            }
+            String_append(&out, et);
+            String_push(&out, ' ');
+            String_append(&out, ev);
+            i = i + 1;
+        }
+        if (pkd == 1) {
+            String_append(&out, " }>");
+        } else {
+            String_append(&out, " }");
+        }
+        return (string)String_cstr(&out);
+    }
+    int i = 0;
+    int zero = 1;
+    while (i < sz) {
+        if (im.op[off + i] != 0) {
+            return "";
+        }
+        if (im.b[off + i] != 0) {
+            zero = 0;
+        }
+        i = i + 1;
+    }
+    if ((int)body[0] == 91) {                                   // [N x T]
+        int p = 1;
+        cg_ll_ws(body, &p);
+        int cnt = cg_ll_num(body, &p);
+        cg_ll_ws(body, &p);
+        cg_ll_kw(body, &p, "x");
+        cg_ll_ws(body, &p);
+        string et = cg_sub_str(body, p, cg_strlen(body) - 1);
+        if (zero == 1) {
+            return "zeroinitializer";
+        }
+        int esz = cg_ll_size_of(g, et);
+        let out: String;
+        String_init(&out, 64);
+        String_push(&out, '[');
+        int k = 0;
+        while (k < cnt) {
+            string ev = cg_img_render(g, im, et, off + k * esz);
+            if (ev[0] == 0) {
+                return "";
+            }
+            if (k > 0) {
+                String_append(&out, ", ");
+            }
+            String_append(&out, et);
+            String_push(&out, ' ');
+            String_append(&out, ev);
+            k = k + 1;
+        }
+        String_push(&out, ']');
+        return (string)String_cstr(&out);
+    }
+    uint64 v = (uint64)0;
+    i = 0;
+    while (i < sz && i < 8) {
+        v = v | ((uint64)im.b[off + i] << (uint64)(i * 8));
+        i = i + 1;
+    }
+    int w = cg_int_w(body);
+    if (w > 0) {
+        if (w == 1) {
+            if ((v & (uint64)1) != (uint64)0) {
+                return "true";
+            }
+            return "false";
+        }
+        return cg_i64toa(cg_k_wrap((int64)v, w, 0));
+    }
+    if (cg_streq(body, "double") == 1) {
+        return cg_cat("0x", cg_hex16(v));
+    }
+    if (cg_streq(body, "float") == 1) {
+        uint32 fb = (uint32)v;
+        float f = (float)0.0;
+        if ((fb & (uint32)0x7F800000) == (uint32)0x7F800000) {   // inf/NaN: widen the bits exactly
+            uint64 db = ((uint64)(fb & (uint32)0x80000000) << (uint64)32) | (uint64)0x7FF0000000000000
+                      | ((uint64)(fb & (uint32)0x007FFFFF) << (uint64)29);
+            return cg_cat("0x", cg_hex16(db));
+        }
+        *uint32 pf = (*uint32)(&f);
+        *pf = fb;
+        double d = (double)f;
+        *uint64 pd = (*uint64)(&d);
+        return cg_cat("0x", cg_hex16(*pd));
+    }
+    if (zero == 1) {
+        if (cg_streq(body, "ptr") == 1) {
+            return "null";
+        }
+        return "zeroinitializer";
+    }
+    if (cg_streq(body, "ptr") == 1) {                           // integer bytes where the layout has a pointer
+        string it = "i64";
+        if (sz == 4) {
+            it = "i32";
+        }
+        return cg_cat(cg_cat(cg_cat(cg_cat("inttoptr (", it), " "), cg_i64toa((int64)v)), " to ptr)");
+    }
+    return "";
+}
+
+// Constant text of a bitfield-struct or union literal of `%sname`, folded through its
+// byte image ("" if a member is not constant or has no byte form where one is needed).
+string cg_split_const(string ty, string body);   // fwd
+
+string cg_const_image(Codegen* g, string sname, *ExprNode e) {
+    CgStruct s = cg_find_struct(g, sname);
+    string llty = cg_cat("%", sname);
+    let im: CgImg;
+    im.n = cg_ll_size_of(g, llty);
+    im.b = alloc<uint8>(im.n + 1);
+    im.op = alloc<uint8>(im.n + 1);
+    List_init<CgLeaf>(&im.dir, 4);
+    List_init<string>(&im.dtx, 4);
+    List<string> etys;
+    List_init<string>(&etys, 8);
+    List<int> eoffs;
+    List_init<int>(&eoffs, 8);
+    cg_ll_elem_offs(g, cg_tydef_body(g, sname), &etys, &eoffs);
+    int isu = cg_is_union(g, sname);
+    int nk = List_len<*ExprNode>(&e.kids);
+    int k = 0;
+    while (k < nk) {
+        string fname = List_get<string>(&e.names, k);
+        int idx = k;
+        if (fname[0] != 0) {
+            idx = cg_field_idx(&s, fname);
+        }
+        *ExprNode fe = List_get<*ExprNode>(&e.kids, k);
+        k = k + 1;
+        if (idx < 0 || idx >= List_len<string>(&s.fnames)) {
+            continue;
+        }
+        string fety = List_get<string>(&s.fetys, idx);
+        string mll = cg_lltype(g, fety);
+        int base = 0;
+        CgBF bf = cg_bf(g, sname, List_get<string>(&s.fnames, idx));
+        if (isu == 0) {
+            if (bf.boffs >= 0) {
+                base = bf.boffs;
+            }
+            else if (bf.fidx >= 0 && bf.fidx < List_len<int>(&eoffs)) {
+                base = List_get<int>(&eoffs, bf.fidx);
+            }
+        }
+        if (bf.bw > 0) {
+            uint64 v = cg_img_ival(cg_global_init(g, fe, bf.sty));
+            int bitpos = base * 8 + bf.boff;
+            int b = 0;
+            while (b < bf.bw && b < 64) {
+                int p = bitpos + b;
+                if (p / 8 < im.n) {
+                    int m = 1 << (p % 8);
+                    if (((v >> (uint64)b) & (uint64)1) != (uint64)0) {
+                        im.b[p / 8] = (uint8)((int)im.b[p / 8] | m);
+                    }
+                    else {
+                        im.b[p / 8] = (uint8)((int)im.b[p / 8] & (255 - m));
+                    }
+                }
+                b = b + 1;
+            }
+            continue;
+        }
+        string txt = cg_global_init(g, fe, mll);
+        let dl: CgLeaf;
+        dl.off = base;
+        dl.ty = mll;
+        List_push<CgLeaf>(&im.dir, dl);
+        List_push<string>(&im.dtx, txt);
+        cg_img_put(g, &im, base, mll, txt);
+    }
+    string r = cg_img_render(g, &im, llty, 0);
+    // A union global holding an address narrower than its layout member (a pointer in
+    // an int64-laid-out union on a 32-bit target) is `{ ptr, [N x i8] }` (C++
+    // constAggregateImage).
+    if (r[0] != 0 || isu == 0 || g.split_union_top == null || cg_streq(g.split_union_top, llty) == 0) {
+        return r;
+    }
+    if (List_len<CgLeaf>(&im.dir) != 1 || List_get<CgLeaf>(&im.dir, 0).off != 0
+        || cg_streq(List_get<CgLeaf>(&im.dir, 0).ty, "ptr") == 0) {
+        return "";
+    }
+    int ps = cg_ll_size_of(g, "ptr");
+    if (ps >= im.n) {
+        return "";
+    }
+    int bi = ps;
+    while (bi < im.n) {
+        if (im.b[bi] != (uint8)0) {
+            return "";
+        }
+        bi = bi + 1;
+    }
+    string pad = cg_cat("[", cg_cat(cg_itoa(im.n - ps), " x i8]"));
+    return cg_split_const(cg_cat("{ ptr, ", cg_cat(pad, " }")),
+                          cg_cat("{ ptr ", cg_cat(List_get<string>(&im.dtx, 0), cg_cat(", ", cg_cat(pad, " zeroinitializer }")))));
+}
+
+// A constant whose LLVM type is not the declared one (an array with a long zero tail
+// folded as `{ given..., [tail x T] zeroinitializer }`) is spelled "!TYPE VALUE", the type
+// a balanced `{ … }` / `<{ … }>`. cg_const_ty / cg_tyval read either spelling.
+string cg_split_const(string ty, string body) {
+    return cg_cat("!", cg_cat(ty, cg_cat(" ", body)));
+}
+
+string cg_const_ty(string declty, string v) {
+    if ((int)v[0] != 33) {
+        return declty;
+    }
+    int i = 1;
+    int depth = 0;
+    while (v[i] != 0) {
+        int c = (int)v[i];
+        if (c == 123) {
+            depth = depth + 1;
+        }
+        if (c == 125) {
+            depth = depth - 1;
+            if (depth == 0) {
+                i = i + 1;
+                break;
+            }
+        }
+        i = i + 1;
+    }
+    if ((int)v[i] == 62) {                  // the `>` closing a packed `<{ … }>`
+        i = i + 1;
+    }
+    return cg_sub_str(v, 1, i);
+}
+
+string cg_tyval(string declty, string v) {
+    if ((int)v[0] == 33) {
+        return cg_sub_str(v, 1, cg_strlen(v));
+    }
+    return cg_cat(declty, cg_cat(" ", v));
+}
+
+// Constant struct-literal text "{ ty v, ty v, ... }" for a global initializer (a
+// bitfield struct or a union goes through its byte image, cg_const_image; "" when it
+// cannot be folded). Named + positional fields; missing → zero.
+// Field defaults (mirrors the C++ defaultExprFor / withDefaults): the expression a value
+// of type `t0` starts as when nothing initializes it (`S{}` for a struct with defaults,
+// directly or in a field; an array literal of those for an array of it), or null.
+StrTab cg_dflt_memo;   // struct name -> 1 has defaults, 2 none, 3 being computed
+*ExprNode cg_default_expr(Codegen* g, string t0) {
+    if (t0 == null || t0[0] == 0) {
+        return null;
+    }
+    string t = cg_dealias(g, cg_strip_lead_const(t0));
+    if (t[0] == 0 || cg_is_ptr_ty(t) == 1) {
+        return null;
+    }
+    if (cg_is_array(t) == 1) {
+        *ExprNode de = cg_default_expr(g, cg_array_elem(t));
+        if (de == null) {
+            return null;
+        }
+        string ln = cg_array_len_const(g, t);
+        if (ln[0] == 0) {
+            return null;
+        }
+        int n = (int)cg_parse_i64(ln);
+        if (n <= 0 || n > 65536) {
+            return null;
+        }
+        *ExprNode a = ast_new_expr();
+        a.kind = EK_ARRAYLIT;
+        int i = 0;
+        while (i < n) {
+            List_push<*ExprNode>(&a.kids, de);
+            i = i + 1;
+        }
+        return a;
+    }
+    *DeclNode d = cg_find_tydecl(g, t);
+    if (d == null || d.kind != DK_STRUCT || List_len<TypeParam>(&d.type_params) > 0) {
+        return null;
+    }
+    int m = StrTab_get(&cg_dflt_memo, t, 0);
+    if (m == 2 || m == 3) {
+        return null;
+    }
+    if (m == 0) {
+        StrTab_set(&cg_dflt_memo, t, 3);
+        int any = 0;
+        int i = 0;
+        while (i < List_len<Param>(&d.params) && any == 0) {
+            if (i < List_len<*ExprNode>(&d.field_dflts) && List_get<*ExprNode>(&d.field_dflts, i) != null) {
+                any = 1;
+            }
+            else if (cg_default_expr(g, List_get<Param>(&d.params, i).ty) != null) {
+                any = 1;
+            }
+            i = i + 1;
+        }
+        if (any == 1) {
+            StrTab_set(&cg_dflt_memo, t, 1);
+        } else {
+            StrTab_set(&cg_dflt_memo, t, 2);
+            return null;
+        }
+    }
+    *ExprNode si = ast_new_expr();
+    si.kind = EK_STRUCTINIT;
+    si.sval = t;
+    return si;
+}
+
+// `e` (a struct literal) with every field it omits given its default, as a named literal;
+// `e` itself when the struct has none.
+*ExprNode cg_with_defaults(Codegen* g, *ExprNode e) {
+    string t = cg_dealias(g, e.sval);
+    if (cg_default_expr(g, t) == null) {
+        return e;
+    }
+    *DeclNode d = cg_find_tydecl(g, t);
+    int nk = List_len<*ExprNode>(&e.kids);
+    int named = 0;
+    if (nk > 0 && List_len<string>(&e.names) > 0) {
+        string n0 = List_get<string>(&e.names, 0);
+        if (n0 != null && n0[0] != 0) {
+            named = 1;
+        }
+    }
+    *ExprNode out = ast_new_expr();
+    out.kind = EK_STRUCTINIT;
+    out.sval = e.sval;
+    out.line = e.line;
+    out.col = e.col;
+    let given: StrTab;
+    int i = 0;
+    while (i < nk) {
+        string fname = "";
+        if (named == 1) {
+            fname = List_get<string>(&e.names, i);
+        }
+        else if (i < List_len<Param>(&d.params)) {
+            fname = List_get<Param>(&d.params, i).name;
+        }
+        if (fname[0] != 0) {
+            StrTab_set(&given, fname, 1);
+            List_push<string>(&out.names, fname);
+            List_push<*ExprNode>(&out.kids, List_get<*ExprNode>(&e.kids, i));
+        }
+        i = i + 1;
+    }
+    i = 0;
+    while (i < List_len<Param>(&d.params)) {
+        Param f = List_get<Param>(&d.params, i);
+        if (StrTab_has(&given, f.name) == 0) {
+            *ExprNode dv = null;
+            if (i < List_len<*ExprNode>(&d.field_dflts)) {
+                dv = List_get<*ExprNode>(&d.field_dflts, i);
+            }
+            if (dv == null) {
+                dv = cg_default_expr(g, f.ty);
+            }
+            if (dv != null) {
+                List_push<string>(&out.names, f.name);
+                List_push<*ExprNode>(&out.kids, dv);
+            }
+        }
+        i = i + 1;
+    }
+    return out;
+}
+
+string cg_const_struct(Codegen* g, string sname0, *ExprNode e0) {
+    *ExprNode e = cg_with_defaults(g, e0);             // omitted fields take their defaults
+    string sname = cg_dealias(g, sname0);
+    CgStruct s = cg_find_struct(g, sname);
+    int nf = List_len<string>(&s.fnames);
+    if (nf == 0) {
+        return "";
+    }
+    if (cg_is_union(g, sname) == 1 || cg_is_bf_struct(g, sname) == 1) {
+        int ns = g.no_split;             // the byte image reads `[N x T]` constants
+        g.no_split = 1;
+        string img = cg_const_image(g, sname, e);
+        g.no_split = ns;
+        if (img[0] == 0) {
+            dprintf(2, "error: a '%s' literal initializer is not a compile-time constant\n", sname);
+            exit(1);
+        }
+        return img;
+    }
+    // A `packed struct` is an LLVM packed type `<{ … }>`: its constant must be too.
+    int pkd = 0;
+    string sbody = cg_tydef_body(g, sname);
+    if (sbody[0] == 0) {
+        int pal = 1;
+        cg_ll_named(g, sname, &pal);
+        sbody = cg_tydef_body(g, sname);
+    }
+    if ((int)sbody[0] == 60) {
+        pkd = 1;
+    }
+    let out: String;
+    String_init(&out, 64);
+    let tys: String;             // the field types, for a split form
+    String_init(&tys, 64);
+    int split = 0;
+    if (pkd == 1) {
+        String_append(&out, "<{ ");
+        String_append(&tys, "<{ ");
+    }
+    else {
+        String_append(&out, "{ ");
+        String_append(&tys, "{ ");
+    }
+    int nk = List_len<*ExprNode>(&e.kids);
+    int i = 0;
+    while (i < nf) {
+        if (i > 0) {
+            String_append(&out, ", ");
+            String_append(&tys, ", ");
+        }
+        string flty = cg_lltype(g, List_get<string>(&s.fetys, i));
+        *ExprNode fe = null;                              // the init provided for field i, if any
+        int k = 0;
+        while (k < nk) {
+            string fname = List_get<string>(&e.names, k);
+            int idx = k;                                  // positional by default
+            if (fname[0] != 0) {
+                idx = cg_field_idx(&s, fname);
+            }
+            if (idx == i) {
+                fe = List_get<*ExprNode>(&e.kids, k);
+            }
+            k = k + 1;
+        }
+        string fv = "zeroinitializer";
+        if (fe != null) {
+            fv = cg_global_init_ty(g, fe, List_get<string>(&s.fetys, i));
+        }
+        if ((int)fv[0] == 33) {
+            split = 1;
+        }
+        String_append(&tys, cg_const_ty(flty, fv));
+        String_append(&out, cg_tyval(flty, fv));
+        i = i + 1;
+    }
+    if (pkd == 1) {
+        String_append(&out, " }>");
+        String_append(&tys, " }>");
+    }
+    else {
+        String_append(&out, " }");
+        String_append(&tys, " }");
+    }
+    // A field in the split array form makes the struct a literal one with the same layout.
+    if (split == 1) {
+        return cg_split_const((string)String_cstr(&tys), (string)String_cstr(&out));
+    }
+    return (string)String_cstr(&out);
+}
