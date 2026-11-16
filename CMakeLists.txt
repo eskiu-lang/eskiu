@@ -52,6 +52,7 @@ set(SOURCES
     pkg.cpp
     lexer/lexer.cpp
     lexer/preprocessor.cpp
+    lexer/token_names.cpp
     parser/parser.cpp
     parser/parse_decl.cpp
     parser/parse_stmt.cpp
