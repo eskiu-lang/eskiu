@@ -1,0 +1,155 @@
+// json_edit.esk: building and editing documents (part of json.esk, imported in order)
+
+// ── Building, editing and printing documents ─────────────────────────────────
+//
+//   *JsonValue doc = JsonValue_object();
+//   JsonValue_set(doc, "name", JsonValue_string("Eskiu"));
+//   *JsonValue tags = JsonValue_array();
+//   JsonValue_push(tags, JsonValue_string("systems"));
+//   JsonValue_set(doc, "tags", tags);
+//   let out: String;  out.init(64);
+//   JsonValue_stringify(doc, &out);       // {"name":"Eskiu","tags":["systems"]}
+//   *JsonValue t0 = json_get(doc, "tags[0]");
+//   out.free();
+//   JsonValue_free(doc);
+//
+// Ownership: a container owns its children. JsonValue_set and JsonValue_push
+// take ownership of `val` (a fresh value, not one already inside a container),
+// JsonValue_set and JsonValue_remove free the member they replace or remove, and
+// JsonValue_free on the root frees the whole document. JsonValue_get,
+// JsonValue_at and json_get return borrowed pointers into the tree, valid until
+// that node is removed, replaced or freed. Numbers are doubles, so an integer
+// beyond 2^53 loses precision.
+
+*JsonValue JsonValue_object() {
+    return JsonValue_new(JObject);
+}
+
+*JsonValue JsonValue_array() {
+    return JsonValue_new(JArray);
+}
+
+*JsonValue JsonValue_null() {
+    return JsonValue_new(JNull);
+}
+
+*JsonValue JsonValue_string(string s) {
+    *JsonValue v = JsonValue_new(JString);
+    v.str.from(s);
+    return v;
+}
+
+*JsonValue JsonValue_number(double d) {
+    *JsonValue v = JsonValue_new(JNumber);
+    v.num = d;
+    return v;
+}
+
+*JsonValue JsonValue_int(int64 i) {
+    *JsonValue v = JsonValue_new(JNumber);
+    v.num = (double)i;
+    return v;
+}
+
+*JsonValue JsonValue_bool(int b) {
+    *JsonValue v = JsonValue_new(JBool);
+    v.boolean = b != 0 ? 1 : 0;
+    return v;
+}
+
+// Free one node and its subtree, but not its siblings.
+void _json_free_one(JsonValue* v) {
+    v.next = null;
+    JsonValue_free(v);
+}
+
+// The member of `obj` whose key is the `n` bytes at `k`, or null.
+*JsonValue _json_member(JsonValue* obj, *char k, int64 n) {
+    for (*JsonValue c = obj.child; c != null; c = c.next) {
+        if (c.key.data != null && c.key.len == n && memcmp((*void)c.key.data, (*void)k, n) == 0) {
+            return c;
+        }
+    }
+    return null;
+}
+
+// Set member `key` of object `obj` to `val`, which `obj` then owns. A member
+// with that key is freed and replaced in its position; otherwise the member is
+// appended. Returns 0, or -1 (and leaves `val` with the caller) when `obj` is
+// not an object or `val` is null.
+int JsonValue_set(JsonValue* obj, string key, JsonValue* val) {
+    if (obj == null || val == null || obj.kind != JObject || obj._arena == 1 || val._arena == 1) {
+        return -1;
+    }
+    if (val.key.data != null) {
+        val.key.free();
+    }
+    val.key.from(key);
+    const int64 klen = val.key.len;
+    val.next = null;
+    _json_reset_hints(obj);
+    *JsonValue prev = null;
+    for (*JsonValue c = obj.child; c != null; c = c.next) {
+        if (c.key.data != null && c.key.len == klen && memcmp((*void)c.key.data, (*void)val.key.data, klen) == 0) {
+            val.next = c.next;
+            if (prev == null) {
+                obj.child = val;
+            } else {
+                prev.next = val;
+            }
+            _json_free_one(c);
+            return 0;
+        }
+        prev = c;
+    }
+    if (prev == null) {
+        obj.child = val;
+    } else {
+        prev.next = val;
+    }
+    return 0;
+}
+
+// Append `val` to array `arr`, which then owns it. Returns 0, or -1 (and leaves
+// `val` with the caller) when `arr` is not an array or `val` is null.
+int JsonValue_push(JsonValue* arr, JsonValue* val) {
+    if (arr == null || val == null || arr.kind != JArray || arr._arena == 1 || val._arena == 1) {
+        return -1;
+    }
+    if (val.key.data != null) {
+        val.key.free();
+    }
+    val.next = null;
+    _json_sync_tail(arr);
+    if (arr._tail == null) {
+        arr.child = val;
+    } else {
+        arr._tail.next = val;
+    }
+    arr._tail = val;
+    arr._n++;
+    return 0;
+}
+
+// Remove member `key` from object `obj` and free it. Returns 1 if a member was
+// removed, else 0.
+int JsonValue_remove(JsonValue* obj, string key) {
+    if (obj == null || obj.kind != JObject || obj._arena == 1) {
+        return 0;
+    }
+    _json_reset_hints(obj);
+    *JsonValue prev = null;
+    for (*JsonValue c = obj.child; c != null; c = c.next) {
+        if (c.key.data != null && c.key.eq_cstr(key) == 1) {
+            if (prev == null) {
+                obj.child = c.next;
+            } else {
+                prev.next = c.next;
+            }
+            _json_free_one(c);
+            return 1;
+        }
+        prev = c;
+    }
+    return 0;
+}

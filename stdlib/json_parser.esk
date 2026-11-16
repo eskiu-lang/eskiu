@@ -1,0 +1,575 @@
+// json_parser.esk: the parser (part of json.esk, imported in order)
+
+// ── Parser (recursive descent) ───────────────────────────────────────────────
+// Strict RFC 8259: exact literals, the number grammar, the full escape set with
+// \uXXXX decoded to UTF-8 (surrogate pairs combined), no raw control bytes in a
+// string, and nothing but whitespace after the top-level value. Every read
+// stops at the terminating NUL, so malformed input never reads past `src`.
+
+struct _JParser {
+    string src;
+    int pos;
+    int err;     // 0 = ok, 1 = malformed
+    int depth;   // arrays/objects currently open
+    *_JArena arena;   // json_parse_doc: nodes and strings come from it
+    String scratch;   // with an arena: each string is read here, then copied in
+}
+
+// The memory of a JsonDoc: chunks that only grow, freed together. Chunks come
+// from alloc (zeroed), and nothing is reused, so a node starts zeroed.
+struct _JChunk {
+    *_JChunk next;
+    int64 size;
+}
+
+struct _JArena {
+    *_JChunk head;
+    *uint8 cur;
+    int64 left;
+    int64 next_size;
+}
+
+*uint8 _jarena_alloc(_JArena* a, int64 n) {
+    n = (n + 7) & ~7;
+    if (n > a.left) {
+        int64 size = a.next_size < 4096 ? 4096 : a.next_size;
+        if (size < n) {
+            size = n;
+        }
+        *uint8 raw = alloc<uint8>(16 + size);
+        *_JChunk c = (*_JChunk)raw;
+        c.next = a.head;
+        c.size = size;
+        a.head = c;
+        a.cur = raw + 16;
+        a.left = size;
+        a.next_size = size < (1 << 20) ? size * 2 : size;
+    }
+    *uint8 p = a.cur;
+    a.cur = a.cur + n;
+    a.left = a.left - n;
+    return p;
+}
+
+void _jarena_free(_JArena* a) {
+    *_JChunk c = a.head;
+    while (c != null) {
+        *_JChunk nx = c.next;
+        free((*void)c);
+        c = nx;
+    }
+    a.head = null;
+    a.left = 0;
+}
+
+// A node of the document being parsed: from the arena, or the heap.
+*JsonValue _JParser_node(_JParser* self, int kind) {
+    if (self.arena == null) {
+        return JsonValue_new(kind);
+    }
+    *JsonValue v = (*JsonValue)_jarena_alloc(self.arena, sizeof(JsonValue));
+    v.kind = kind;
+    v._arena = 1;
+    return v;
+}
+
+// A copy of the parser's scratch string in the arena, as a String to read.
+void _JParser_keep(_JParser* self, String* out) {
+    const int64 n = self.scratch.len;
+    *char d = (*char)_jarena_alloc(self.arena, n + 1);
+    memcpy((*void)d, (*void)self.scratch.data, n);
+    d[n] = (char)0;
+    out.data = d;
+    out.len = n;
+    out.cap = n + 1;
+}
+
+// Nesting limit: deeper input is rejected (json_parse returns null) instead of
+// recursing until the stack overflows. 512 matches common parsers.
+const int JSON_MAX_DEPTH = 512;
+
+void _JParser_ws(_JParser* self) {
+    while (true) {
+        const char c = self.src[self.pos];
+        if (c != ' ' && c != '\t' && c != '\n' && c != '\r') {
+            return;
+        }
+        self.pos++;
+    }
+}
+
+// Value of one hex digit, or -1.
+int _JParser_hex(char c) {
+    if (c >= '0' && c <= '9') {
+        return (int)c - '0';
+    }
+    if (c >= 'a' && c <= 'f') {
+        return (int)c - 'a' + 10;
+    }
+    if (c >= 'A' && c <= 'F') {
+        return (int)c - 'A' + 10;
+    }
+    return -1;
+}
+
+// Read the 4 hex digits of a \u escape (cursor on the first digit); -1 if bad.
+int _JParser_u4(_JParser* self) {
+    int v = 0;
+    for (int i = 0; i < 4; i++) {
+        const int h = _JParser_hex(self.src[self.pos]);
+        if (h < 0) {
+            return -1;
+        }
+        v = v * 16 + h;
+        self.pos++;
+    }
+    return v;
+}
+
+// Append code point `cp` (<= 0x10FFFF) as UTF-8.
+void _JParser_utf8(String* out, int cp) {
+    if (cp < 128) {
+        out.push((char)cp);
+    }
+    else if (cp < 2048) {
+        out.push((char)(192 | (cp >> 6)));
+        out.push((char)(128 | (cp & 63)));
+    } else if (cp < 65536) {
+        out.push((char)(224 | (cp >> 12)));
+        out.push((char)(128 | ((cp >> 6) & 63)));
+        out.push((char)(128 | (cp & 63)));
+    } else {
+        out.push((char)(240 | (cp >> 18)));
+        out.push((char)(128 | ((cp >> 12) & 63)));
+        out.push((char)(128 | ((cp >> 6) & 63)));
+        out.push((char)(128 | (cp & 63)));
+    }
+}
+
+// Read a quoted string (cursor must be on the opening quote) into `out`,
+// decoding every JSON escape.
+void _JParser_read_string(_JParser* self, String* out) {
+    self.pos++;   // skip opening quote
+    while (true) {
+        const int c = (int)(uint8)self.src[self.pos];
+        if (c == 0) {       // unterminated
+            self.err = 1;
+            return;
+        }
+        if (c == '"') {         // closing quote
+            self.pos++;
+            return;
+        }
+        if (c < 32) {       // raw control byte
+            self.err = 1;
+            return;
+        }
+        if (c != '\\') {
+            // A run of plain bytes is copied at once.
+            int e = self.pos + 1;
+            while (true) {
+                const int d = (int)(uint8)self.src[e];
+                if (d == '"' || d == '\\' || d < 32) {
+                    break;
+                }
+                e++;
+            }
+            _string_append_bytes(out, (*char)self.src + self.pos, (int64)(e - self.pos));
+            self.pos = e;
+            continue;
+        }
+        // A backslash escape.
+        self.pos++;
+        const char e = self.src[self.pos];
+        if (e == 0) {
+            self.err = 1;
+            return;
+        }
+        self.pos++;
+        switch (e) {
+            case '"': out.push('"');
+            break;
+            case '\\': out.push('\\');
+            break;
+            case '/': out.push('/');
+            break;
+            case 'b': out.push((char)8);
+            break;
+            case 'f': out.push('\f');
+            break;
+            case 'n': out.push('\n');
+            break;
+            case 'r': out.push('\r');
+            break;
+            case 't': out.push('\t');
+            break;
+            case 'u': {                                // \uXXXX
+                int cp = _JParser_u4(self);
+                if (cp < 0 || (cp >= 56320 && cp <= 57343)) {  // bad / lone low surrogate
+                    self.err = 1;
+                    return;
+                }
+                if (cp >= 55296 && cp <= 56319) {      // high surrogate: a \uDC00-\uDFFF must follow
+                    if (self.src[self.pos] != '\\' || self.src[self.pos + 1] != 'u') {
+                        self.err = 1;
+                        return;
+                    }
+                    self.pos += 2;
+                    const int lo = _JParser_u4(self);
+                    if (lo < 56320 || lo > 57343) {
+                        self.err = 1;
+                        return;
+                    }
+                    cp = 65536 + ((cp - 55296) << 10) + (lo - 56320);
+                }
+                _JParser_utf8(out, cp);
+            }
+            break;
+            default: self.err = 1;             // not a JSON escape
+            return;
+        }
+    }
+}
+
+int _JParser_is_digit(char c) {
+    return (c >= '0' && c <= '9') ? 1 : 0;
+}
+
+// Read a number per the JSON grammar: -? (0 | [1-9][0-9]*) (.[0-9]+)? ([eE][+-]?[0-9]+)?
+// 10^0 .. 10^22, each exactly representable as a double.
+const double[23] _json_pow10 = {1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11,
+    1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22};
+
+// Read a JSON number. While checking its syntax the digits are gathered into an integer:
+// with at most 15 significant digits and a decimal exponent within 10^±22 the value is that
+// integer times or divided by an exact power of ten, a single correctly rounded operation,
+// so it is the double strtod gives (Clinger's fast path). Anything else goes to strtod,
+// which reads the number in place.
+double _JParser_read_number(_JParser* self) {
+    const int start = self.pos;
+    bool neg = false;
+    if (self.src[self.pos] == '-') {
+        neg = true;
+        self.pos++;
+    }
+    uint64 mant = 0;
+    int sig = 0;          // significant digits gathered (leading zeros skipped)
+    int scale = 0;        // decimal exponent of the last gathered digit
+    bool slow = false;    // more digits than the fast path takes
+    if (self.src[self.pos] == '0') {
+        self.pos++;
+    }
+    else if (_JParser_is_digit(self.src[self.pos]) == 1) {
+        while (_JParser_is_digit(self.src[self.pos]) == 1) {
+            if (sig < 19) {
+                mant = mant * 10 + (uint64)((int)self.src[self.pos] - (int)'0');
+                if (mant != 0) {
+                    sig++;
+                }
+            } else {
+                slow = true;
+            }
+            self.pos++;
+        }
+    } else {
+        self.err = 1;
+        return 0.0;
+    }
+    if (self.src[self.pos] == '.') {
+        self.pos++;
+        if (_JParser_is_digit(self.src[self.pos]) == 0) {
+            self.err = 1;
+            return 0.0;
+        }
+        while (_JParser_is_digit(self.src[self.pos]) == 1) {
+            if (sig < 19) {
+                mant = mant * 10 + (uint64)((int)self.src[self.pos] - (int)'0');
+                if (mant != 0) {
+                    sig++;
+                }
+                scale--;
+            } else {
+                slow = true;
+            }
+            self.pos++;
+        }
+    }
+    if (self.src[self.pos] == 'e' || self.src[self.pos] == 'E') {
+        self.pos++;
+        bool eneg = false;
+        if (self.src[self.pos] == '+' || self.src[self.pos] == '-') {
+            eneg = self.src[self.pos] == '-';
+            self.pos++;
+        }
+        if (_JParser_is_digit(self.src[self.pos]) == 0) {
+            self.err = 1;
+            return 0.0;
+        }
+        int ev = 0;
+        while (_JParser_is_digit(self.src[self.pos]) == 1) {
+            if (ev < 100000) {
+                ev = ev * 10 + ((int)self.src[self.pos] - (int)'0');
+            }
+            self.pos++;
+        }
+        scale = eneg ? scale - ev : scale + ev;
+    }
+    if (!slow && sig <= 15 && scale >= -22 && scale <= 22) {
+        double d = (double)mant;
+        if (scale >= 0) {
+            d = d * _json_pow10[scale];
+        } else {
+            d = d / _json_pow10[-scale];
+        }
+        return neg ? -d : d;
+    }
+    return strtod((string)(self.src + start), null);
+}
+
+// Consume the exact literal `word` (true / false / null); sets err otherwise.
+void _JParser_word(_JParser* self, string word) {
+    for (int i = 0; word[i] != 0; i++) {
+        if (self.src[self.pos] != word[i]) {
+            self.err = 1;
+            return;
+        }
+        self.pos++;
+    }
+}
+
+*JsonValue _JParser_value(_JParser* self);   // forward (mutual recursion)
+
+// On error the partial container is returned with everything parsed so far
+// linked in, so json_parse frees the whole tree.
+*JsonValue _JParser_array(_JParser* self) {
+    *JsonValue arr = _JParser_node(self, JArray);
+    self.pos++;   // skip [
+    _JParser_ws(self);
+    if (self.src[self.pos] == ']') {
+        self.pos++;
+        return arr;
+    }
+    *JsonValue tail = null;
+    while (true) {
+        *JsonValue elem = _JParser_value(self);
+        if (elem != null) {
+            if (arr.child == null) {
+                arr.child = elem;
+            } else {
+                tail.next = elem;
+            }
+            tail = elem;
+            arr._tail = elem;
+            arr._n++;
+        }
+        if (self.err == 1) {
+            return arr;
+        }
+        _JParser_ws(self);
+        const char c = self.src[self.pos];
+        if (c == ',') {
+            self.pos++;
+        }
+        else if (c == ']') {
+            self.pos++;
+            return arr;
+        }
+        else {
+            self.err = 1;
+            return arr;
+        }
+    }
+    return arr;
+}
+
+*JsonValue _JParser_object(_JParser* self) {
+    *JsonValue obj = _JParser_node(self, JObject);
+    self.pos++;   // skip {
+    _JParser_ws(self);
+    if (self.src[self.pos] == '}') {
+        self.pos++;
+        return obj;
+    }
+    *JsonValue tail = null;
+    while (true) {
+        _JParser_ws(self);
+        if (self.src[self.pos] != '"') {   // expect a key
+            self.err = 1;
+            return obj;
+        }
+        let k: String;
+        if (self.arena != null) {
+            self.scratch.clear();
+            _JParser_read_string(self, &self.scratch);
+            if (self.err == 0) {
+                _JParser_keep(self, &k);
+            }
+        } else {
+            k.init(8);
+            _JParser_read_string(self, &k);
+        }
+        if (self.err == 1) {
+            if (self.arena == null) {
+                k.free();
+            }
+            return obj;
+        }
+        _JParser_ws(self);
+        if (self.src[self.pos] != ':') {
+            self.err = 1;
+            if (self.arena == null) {
+                k.free();
+            }
+            return obj;
+        }
+        self.pos++;
+        *JsonValue val = _JParser_value(self);
+        if (val == null) {
+            if (self.arena == null) {
+                k.free();
+            }
+            return obj;
+        }
+        val.key = k;   // move the key in
+        if (obj.child == null) {
+            obj.child = val;
+        } else {
+            tail.next = val;
+        }
+        tail = val;
+        obj._tail = val;
+        obj._n++;
+        if (self.err == 1) {
+            return obj;
+        }
+        _JParser_ws(self);
+        const char c = self.src[self.pos];
+        if (c == ',') {
+            self.pos++;
+        }
+        else if (c == '}') {
+            self.pos++;
+            return obj;
+        }
+        else {
+            self.err = 1;
+            return obj;
+        }
+    }
+    return obj;
+}
+
+*JsonValue _JParser_value(_JParser* self) {
+    _JParser_ws(self);
+    const char c = self.src[self.pos];
+    if (c == '{' || c == '[') {
+        if (self.depth >= JSON_MAX_DEPTH) {
+            self.err = 1;
+            return null;
+        }
+        self.depth++;
+        *JsonValue r = c == '{' ? _JParser_object(self) : _JParser_array(self);
+        self.depth--;
+        return r;
+    }
+    if (c == '"') {
+        *JsonValue v = _JParser_node(self, JString);
+        if (self.arena != null) {
+            self.scratch.clear();
+            _JParser_read_string(self, &self.scratch);
+            _JParser_keep(self, &v.str);
+            return v;
+        }
+        v.str.init(8);
+        _JParser_read_string(self, &v.str);
+        return v;
+    }
+    if (c == 't') {
+        *JsonValue v = _JParser_node(self, JBool);
+        v.boolean = 1;
+        _JParser_word(self, "true");
+        return v;
+    }
+    if (c == 'f') {
+        *JsonValue v = _JParser_node(self, JBool);
+        _JParser_word(self, "false");
+        return v;
+    }
+    if (c == 'n') {
+        *JsonValue v = _JParser_node(self, JNull);
+        _JParser_word(self, "null");
+        return v;
+    }
+    if (c == '-' || _JParser_is_digit(c) == 1) {
+        *JsonValue v = _JParser_node(self, JNumber);
+        v.num = _JParser_read_number(self);
+        return v;
+    }
+    self.err = 1;
+    return null;
+}
+
+// Parse `src` into a value tree. Returns null on malformed input (any partial
+// tree is freed first). Free the result with JsonValue_free.
+*JsonValue json_parse(string src) {
+    let p: _JParser;
+    p.src = src;
+    p.pos = 0;
+    p.err = 0;
+    p.depth = 0;
+    p.arena = null;
+    *JsonValue v = _JParser_value(&p);
+    if (p.err == 0) {
+        _JParser_ws(&p);
+        if (p.src[p.pos] != 0) {        // trailing garbage after the value
+            p.err = 1;
+        }
+    }
+    if (p.err == 1) {
+        JsonValue_free(v);
+        return null;
+    }
+    return v;
+}
+
+// A parsed document whose nodes and strings live in one arena: faster to parse
+// (no allocation per node) and to free (one per chunk), but read-only, since no
+// node can be freed on its own: JsonValue_set, JsonValue_push and JsonValue_remove
+// on its nodes refuse (-1 / 0), and JsonValue_free on one does nothing. `root` is
+// null when the text is not valid JSON. Free with JsonDoc_free, after which no
+// pointer into the document may be used.
+struct JsonDoc {
+    *JsonValue root;
+    _JArena _arena;
+}
+
+JsonDoc json_parse_doc(string src) {
+    let d: JsonDoc;
+    let p: _JParser;
+    p.src = src;
+    p.pos = 0;
+    p.err = 0;
+    p.depth = 0;
+    p.arena = &d._arena;
+    p.scratch.init(64);
+    *JsonValue v = _JParser_value(&p);
+    if (p.err == 0) {
+        _JParser_ws(&p);
+        if (p.src[p.pos] != 0) {
+            p.err = 1;
+        }
+    }
+    p.scratch.free();
+    if (p.err == 1) {
+        _jarena_free(&d._arena);
+        d.root = null;
+        return d;
+    }
+    d.root = v;
+    return d;
+}
+
+void JsonDoc_free(JsonDoc* d) {
+    _jarena_free(&d._arena);
+    d.root = null;
+}

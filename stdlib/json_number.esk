@@ -1,0 +1,514 @@
+// json_number.esk: number formatting, printing, paths and the result forms (part of json.esk, imported in order)
+
+// High 64 bits of the 128-bit product a * b.
+uint64 _json_mulhi(uint64 a, uint64 b) {
+    const uint64 al = a & 0xFFFFFFFF;
+    const uint64 ah = a >> 32;
+    const uint64 bl = b & 0xFFFFFFFF;
+    const uint64 bh = b >> 32;
+    const uint64 lh = al * bh;
+    const uint64 hl = ah * bl;
+    const uint64 mid = ((al * bl) >> 32) + (lh & 0xFFFFFFFF) + (hl & 0xFFFFFFFF);
+    return ah * bh + (lh >> 32) + (hl >> 32) + (mid >> 32);
+}
+
+// Bits s..s+63 of the 128-bit value hi:lo (0 <= s < 64).
+uint64 _json_shr128(uint64 lo, uint64 hi, int s) {
+    if (s == 0) {
+        return lo;
+    }
+    return (lo >> s) | (hi << (64 - s));
+}
+
+// Ryu's mulShiftAll64 (the variant without 128-bit integers): with M the 125-bit
+// multiplier hi:lo, returns floor(4 m2 M / 2^j) and sets *vp to
+// floor((4 m2 + 2) M / 2^j) and *vm to floor((4 m2 - 1 - mm_shift) M / 2^j), all
+// from the one product 2 m2 M.
+uint64 _json_mulshift_all(uint64 m2, uint64 mlo, uint64 mhi, int j, uint64 mm_shift, *uint64 vp, *uint64 vm) {
+    const uint64 m = m2 << 1;
+    const uint64 lo = m * mlo;
+    const uint64 tmp = _json_mulhi(m, mlo);
+    const uint64 mid = tmp + m * mhi;
+    const uint64 hi = _json_mulhi(m, mhi) + (mid < tmp ? (uint64)1 : (uint64)0);
+    const uint64 lo2 = lo + mlo;
+    const uint64 mid2 = mid + mhi + (lo2 < lo ? (uint64)1 : (uint64)0);
+    const uint64 hi2 = hi + (mid2 < mid ? (uint64)1 : (uint64)0);
+    *vp = _json_shr128(mid2, hi2, j - 65);
+    if (mm_shift == 1) {
+        const uint64 lo3 = lo - mlo;
+        const uint64 mid3 = mid - mhi - (lo3 > lo ? (uint64)1 : (uint64)0);
+        const uint64 hi3 = hi - (mid3 > mid ? (uint64)1 : (uint64)0);
+        *vm = _json_shr128(mid3, hi3, j - 65);
+    } else {
+        const uint64 lo3 = lo + lo;
+        const uint64 mid3 = mid + mid + (lo3 < lo ? (uint64)1 : (uint64)0);
+        const uint64 hi3 = hi + hi + (mid3 < mid ? (uint64)1 : (uint64)0);
+        const uint64 lo4 = lo3 - mlo;
+        const uint64 mid4 = mid3 - mhi - (lo4 > lo3 ? (uint64)1 : (uint64)0);
+        const uint64 hi4 = hi3 - (mid4 > mid3 ? (uint64)1 : (uint64)0);
+        *vm = _json_shr128(mid4, hi4, j - 64);
+    }
+    return _json_shr128(mid, hi, j - 65);
+}
+
+int _json_pow5bits(int e) {
+    return ((e * 1217359) >> 19) + 1;
+}
+
+// Largest k with 5^k dividing v (v > 0).
+int _json_pow5_factor(uint64 v) {
+    int k = 0;
+    while (v % 5 == 0) {
+        v = v / 5;
+        k++;
+    }
+    return k;
+}
+
+// Ryu's d2d: the shortest digits that read back as the positive finite double
+// with mantissa field `ieee_m` and exponent field `ieee_e`; *e10 receives the
+// decimal exponent of the last digit.
+uint64 _json_ryu(uint64 ieee_m, int ieee_e, *int e10) {
+    int e2 = 0;
+    uint64 m2 = 0;
+    if (ieee_e == 0) {
+        e2 = 1 - 1023 - 52 - 2;
+        m2 = ieee_m;
+    } else {
+        e2 = ieee_e - 1023 - 52 - 2;
+        m2 = ((uint64)1 << 52) | ieee_m;
+    }
+    const bool even = (m2 & 1) == 0;
+    const uint64 mv = 4 * m2;
+    const uint64 mm_shift = (ieee_m != 0 || ieee_e <= 1) ? (uint64)1 : (uint64)0;
+    uint64 vr = 0;
+    uint64 vp = 0;
+    uint64 vm = 0;
+    int e = 0;
+    bool vm_tz = false;
+    bool vr_tz = false;
+    if (e2 >= 0) {
+        const int q = ((e2 * 78913) >> 18) - (e2 > 3 ? 1 : 0);
+        e = q;
+        const int i = -e2 + q + 125 + _json_pow5bits(q) - 1;
+        const uint64 lo = _JSON_P5INV[2 * q];
+        const uint64 hi = _JSON_P5INV[2 * q + 1];
+        vr = _json_mulshift_all(m2, lo, hi, i, mm_shift, &vp, &vm);
+        if (q <= 21) {
+            if (mv % 5 == 0) {
+                vr_tz = _json_pow5_factor(mv) >= q;
+            } else if (even) {
+                vm_tz = _json_pow5_factor(mv - 1 - mm_shift) >= q;
+            } else if (_json_pow5_factor(mv + 2) >= q) {
+                vp--;
+            }
+        }
+    } else {
+        const int q = ((-e2 * 732923) >> 20) - (-e2 > 1 ? 1 : 0);
+        e = q + e2;
+        const int i = -e2 - q;
+        const int j = q - (_json_pow5bits(i) - 125);
+        const uint64 lo = _JSON_P5[2 * i];
+        const uint64 hi = _JSON_P5[2 * i + 1];
+        vr = _json_mulshift_all(m2, lo, hi, j, mm_shift, &vp, &vm);
+        if (q <= 1) {
+            vr_tz = true;
+            if (even) {
+                vm_tz = mm_shift == 1;
+            } else {
+                vp--;
+            }
+        } else if (q < 63) {
+            vr_tz = (mv & (((uint64)1 << q) - 1)) == 0;
+        }
+    }
+    int removed = 0;
+    uint64 output = 0;
+    if (vm_tz || vr_tz) {
+        uint64 last = 0;
+        while (vp / 10 > vm / 10) {
+            vm_tz = vm_tz && vm % 10 == 0;
+            vr_tz = vr_tz && last == 0;
+            last = vr % 10;
+            vr = vr / 10;
+            vp = vp / 10;
+            vm = vm / 10;
+            removed++;
+        }
+        if (vm_tz) {
+            while (vm % 10 == 0) {
+                vr_tz = vr_tz && last == 0;
+                last = vr % 10;
+                vr = vr / 10;
+                vp = vp / 10;
+                vm = vm / 10;
+                removed++;
+            }
+        }
+        if (vr_tz && last == 5 && vr % 2 == 0) {
+            last = 4;
+        }
+        output = vr;
+        if ((vr == vm && (!even || !vm_tz)) || last >= 5) {
+            output++;
+        }
+    } else {
+        bool up = false;
+        if (vp / 100 > vm / 100) {
+            up = vr % 100 >= 50;
+            vr = vr / 100;
+            vp = vp / 100;
+            vm = vm / 100;
+            removed += 2;
+        }
+        while (vp / 10 > vm / 10) {
+            up = vr % 10 >= 5;
+            vr = vr / 10;
+            vp = vp / 10;
+            vm = vm / 10;
+            removed++;
+        }
+        output = vr;
+        if (vr == vm || up) {
+            output++;
+        }
+    }
+    *e10 = e + removed;
+    return output;
+}
+
+// The printf path: the first of %.15g / %.16g / %.17g that reads back as d,
+// written straight into `out`.
+void _json_number_libc(String* out, double d) {
+    const int64 at = out.len;
+    out.appendf("%.15g", d);
+    if (strtod((string)(out.data + at), null) != d) {
+        out.len = at;
+        out.appendf("%.16g", d);
+        if (strtod((string)(out.data + at), null) != d) {
+            out.len = at;
+            out.appendf("%.17g", d);
+        }
+    }
+}
+
+// Append a JSON number. NaN and the infinities have no JSON form and print as
+// null. Otherwise the first of %.15g / %.16g / %.17g that reads back as the
+// same double, so a number survives stringify + json_parse unchanged.
+void _json_number(String* out, double d) {
+    if (d != d || d - d != 0.0) {
+        out.append("null");
+        return;
+    }
+    // An integer of up to 15 digits prints as its digits, which is its %.15g text.
+    if (d > -1e15 && d < 1e15) {
+        const int64 iv = (int64)d;
+        if ((double)iv == d) {
+            if (iv == 0 && 1.0 / d < 0.0) {
+                out.append("-0");
+                return;
+            }
+            char[24] buf;
+            uint64 u = iv < 0 ? (uint64)(-iv) : (uint64)iv;
+            int k = 23;
+            buf[k] = (char)0;
+            if (u == 0) {
+                k--;
+                buf[k] = '0';
+            }
+            while (u > 0) {
+                k--;
+                buf[k] = (char)((int)'0' + (int)(u % 10));
+                u = u / 10;
+            }
+            if (iv < 0) {
+                k--;
+                buf[k] = '-';
+            }
+            out.append_bytes(&buf[k], (int64)(23 - k));
+            return;
+        }
+    }
+    const uint64 bits = *(*uint64)&d;
+    const uint64 ieee_m = bits & 0xFFFFFFFFFFFFF;
+    const int ieee_e = (int)((bits >> 52) & 0x7FF);
+    if (ieee_e == 0) {
+        _json_number_libc(out, d);
+        return;
+    }
+    int e10 = 0;
+    uint64 v = _json_ryu(ieee_m, ieee_e, &e10);
+    while (v % 10 == 0) {
+        v = v / 10;
+        e10++;
+    }
+    char[20] dig;
+    int k = 20;
+    while (v > 0) {
+        k--;
+        dig[k] = (char)((int)'0' + (int)(v % 10));
+        v = v / 10;
+    }
+    const int n = 20 - k;
+    if (ieee_m == 0 && n > 15) {
+        _json_number_libc(out, d);
+        return;
+    }
+    const int x = n - 1 + e10;
+    const int prec = n > 15 ? n : 15;
+    // At most 24 bytes ("-0.0000" + 17 digits), written straight into `out`.
+    out.reserve(out.len + 32);
+    *char buf = out.data + out.len;
+    int p = 0;
+    if ((bits >> 63) != 0) {
+        buf[p] = '-';
+        p++;
+    }
+    if (x >= -4 && x < prec) {
+        if (x < 0) {
+            buf[p] = '0';
+            buf[p + 1] = '.';
+            p += 2;
+            for (int z = 0; z < -x - 1; z++) {
+                buf[p] = '0';
+                p++;
+            }
+            for (int i = k; i < 20; i++) {
+                buf[p] = dig[i];
+                p++;
+            }
+        } else {
+            for (int i = 0; i <= x; i++) {
+                buf[p] = i < n ? dig[k + i] : '0';
+                p++;
+            }
+            if (n > x + 1) {
+                buf[p] = '.';
+                p++;
+                for (int i = k + x + 1; i < 20; i++) {
+                    buf[p] = dig[i];
+                    p++;
+                }
+            }
+        }
+    } else {
+        buf[p] = dig[k];
+        p++;
+        if (n > 1) {
+            buf[p] = '.';
+            p++;
+            for (int i = k + 1; i < 20; i++) {
+                buf[p] = dig[i];
+                p++;
+            }
+        }
+        buf[p] = 'e';
+        buf[p + 1] = x < 0 ? '-' : '+';
+        p += 2;
+        const int ax = x < 0 ? -x : x;
+        if (ax >= 100) {
+            buf[p] = (char)((int)'0' + ax / 100);
+            p++;
+        }
+        buf[p] = (char)((int)'0' + ax / 10 % 10);
+        buf[p + 1] = (char)((int)'0' + ax % 10);
+        p += 2;
+    }
+    out.len = out.len + (int64)p;
+    out.data[out.len] = (char)0;
+}
+
+void _json_newline(String* out, int indent, int depth) {
+    out.push('\n');
+    for (int64 i = 0; i < (int64)indent * (int64)depth; i++) {
+        out.push(' ');
+    }
+}
+
+// Append one scalar or an empty container.
+void _json_leaf(String* out, JsonValue* v) {
+    if (v.kind == JNull) {
+        out.append("null");
+    }
+    else if (v.kind == JBool) {
+        out.append(v.boolean != 0 ? "true" : "false");
+    }
+    else if (v.kind == JNumber) {
+        _json_number(out, v.num);
+    }
+    else if (v.kind == JString) {
+        if (v.str.data == null) {
+            out.append("\"\"");
+        } else {
+            _json_escape(out, v.str.data, v.str.len);
+        }
+    }
+    else if (v.kind == JArray) {
+        out.append("[]");
+    }
+    else {
+        out.append("{}");
+    }
+}
+
+// Write `v` into `out` (cleared first). indent <= 0 is the compact form;
+// otherwise each element and member goes on its own line, indented by `indent`
+// spaces per level, with ": " after keys. The walk keeps its own stack of open
+// containers instead of recursing, so any depth prints. The key of `v` itself
+// (when it is an object member) is not printed.
+void _json_write(JsonValue* v, int indent, String* out) {
+    out.clear();
+    if (v == null) {
+        out.append("null");
+        return;
+    }
+    let open: List<*JsonValue>;
+    List_init<*JsonValue>(&open, 16);
+    *JsonValue cur = v;
+    while (true) {
+        const int depth = List_len<*JsonValue>(&open);
+        if (depth > 0) {
+            *JsonValue parent = List_get<*JsonValue>(&open, depth - 1);
+            if (indent > 0) {
+                _json_newline(out, indent, depth);
+            }
+            if (parent.kind == JObject) {
+                if (cur.key.data == null) {
+                    out.append("\"\"");
+                } else {
+                    _json_escape(out, cur.key.data, cur.key.len);
+                }
+                if (indent > 0) {
+                    out.append(": ");
+                } else {
+                    out.push(':');
+                }
+            }
+        }
+        if ((cur.kind == JArray || cur.kind == JObject) && cur.child != null) {
+            out.push(cur.kind == JArray ? '[' : '{');
+            List_push<*JsonValue>(&open, cur);
+            cur = cur.child;
+            continue;
+        }
+        _json_leaf(out, cur);
+        // Move to the next sibling, closing every container that has none left.
+        bool done = true;
+        while (List_len<*JsonValue>(&open) > 0) {
+            if (cur.next != null) {
+                out.push(',');
+                cur = cur.next;
+                done = false;
+                break;
+            }
+            cur = List_pop<*JsonValue>(&open);
+            if (indent > 0) {
+                _json_newline(out, indent, List_len<*JsonValue>(&open));
+            }
+            out.push(cur.kind == JArray ? ']' : '}');
+        }
+        if (done) {
+            break;
+        }
+    }
+    List_free<*JsonValue>(&open);
+}
+
+// Compact JSON text for `v` into `out` (cleared first): no spaces, strings
+// escaped per RFC 8259, numbers that read back as the same double.
+void JsonValue_stringify(JsonValue* v, String* out) {
+    _json_write(v, 0, out);
+}
+
+// Indented JSON text for `v` into `out` (cleared first), `indent` spaces per
+// level (the JSON.stringify(v, null, indent) layout). indent <= 0 is compact.
+void JsonValue_pretty(JsonValue* v, int indent, String* out) {
+    _json_write(v, indent, out);
+}
+
+// Follow `path` from `v` and return the value there (borrowed), or null when a
+// step is missing, has the wrong kind, or the path is malformed. A path is a
+// sequence of steps: `name` or `.name` (an object member; the first step has no
+// dot), `[N]` (array element N, decimal), and `["key"]` (an object member
+// whose key may hold dots or brackets; `\"` and `\\` escape inside it).
+// Examples: "data.items[0].name", "[2]", "a[\"x.y\"].b". An empty path
+// returns `v`.
+*JsonValue json_get(JsonValue* v, string path) {
+    int64 i = 0;
+    bool first = true;
+    while (v != null && path[i] != 0) {
+        if (path[i] == '[') {
+            i++;
+            if (path[i] == '"') {
+                i++;
+                let k: String;
+                k.init(16);
+                while (path[i] != '"') {
+                    if (path[i] == 0) {
+                        k.free();
+                        return null;
+                    }
+                    if (path[i] == '\\' && (path[i + 1] == '"' || path[i + 1] == '\\')) {
+                        i++;
+                    }
+                    k.push(path[i]);
+                    i++;
+                }
+                i++;
+                if (path[i] != ']' || v.kind != JObject) {
+                    k.free();
+                    return null;
+                }
+                i++;
+                v = _json_member(v, k.data, k.len);
+                k.free();
+            } else {
+                if (path[i] < '0' || path[i] > '9') {
+                    return null;
+                }
+                int64 n = 0;
+                while (path[i] >= '0' && path[i] <= '9') {
+                    n = n * 10 + (int64)((int)path[i] - '0');
+                    if (n > 2147483647) {
+                        return null;
+                    }
+                    i++;
+                }
+                if (path[i] != ']' || v.kind != JArray) {
+                    return null;
+                }
+                i++;
+                v = JsonValue_at(v, (int)n);
+            }
+        } else {
+            if (path[i] == '.') {
+                if (first) {
+                    return null;
+                }
+                i++;
+            } else if (!first) {
+                return null;
+            }
+            const int64 start = i;
+            while (path[i] != 0 && path[i] != '.' && path[i] != '[') {
+                i++;
+            }
+            if (i == start || v.kind != JObject) {
+                return null;
+            }
+            v = _json_member(v, (*char)path + start, i - start);
+        }
+        first = false;
+    }
+    return v;
+}
+
+// json_parse as a Result: the value tree, or an error for malformed input. Free the
+// tree with JsonValue_free.
+Result<JsonValue*, string> json_parse_result(string src) {
+    *JsonValue v = json_parse(src);
+    if (v == null) {
+        return Err<JsonValue*, string>("invalid JSON");
+    }
+    return Ok<JsonValue*, string>(v);
+}
