@@ -7,7 +7,7 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
-## [Unreleased]
+## [0.16.1] - 2026-11-16
 
 ### Added
 
@@ -35,7 +35,7 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
-## [0.16.0] - 2026-11-16
+## [0.16.0]
 
 ### Added
 

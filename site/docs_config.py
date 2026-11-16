@@ -5,5 +5,5 @@ import os
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Shown in the shared top bar (kept in step with the homepage). Bump per release.
-VERSION = "v0.16.0"
+VERSION = "v0.16.1"
 GH = "https://github.com/eskiu-lang/eskiu"
