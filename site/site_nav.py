@@ -36,6 +36,8 @@ NAV = [
          "WebAssembly", "El navegador, con emscripten"),
         ("platforms.html#ios", "iOS", "Static libraries for Swift and Objective-C",
          "iOS", "Bibliotecas estáticas para Swift y Objective-C"),
+        ("platforms.html#visionos", "visionOS", "Apple Vision Pro and its simulator",
+         "visionOS", "Apple Vision Pro y su simulador"),
         ("platforms.html#android", "Android", "Shared libraries for Kotlin and Java",
          "Android", "Bibliotecas compartidas para Kotlin y Java"),
         ("platforms.html#bare-metal", "Bare metal", "Kernels and boards with no operating system",

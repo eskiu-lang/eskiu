@@ -44,6 +44,6 @@ MCP server: `https://eskiu-mcp-9450.orvex.cloud/mcp` (remote, no key). It search
 
 ## Optional
 
-- [Platforms](https://eskiu-lang.org/platforms.html): WebAssembly, iOS, Android and bare metal
+- [Platforms](https://eskiu-lang.org/platforms.html): WebAssembly, iOS, visionOS, Android and bare metal
 - [Showcase](https://eskiu-lang.org/showcase.html): what runs on Eskiu today
 - [Source](https://github.com/eskiu-lang/eskiu): the compiler (C++ and Eskiu), the standard library and the examples
