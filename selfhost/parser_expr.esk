@@ -76,6 +76,27 @@ string parse_type_inner(Parser* p) {
         ty = str_concat(ty, ">");
     }
 
+    // `*T const`: the outermost of the leading pointers is const, the same type as
+    // `T* const`, so it takes that spelling (`T*const`).
+    if (strlen(lead) > 0 && p_at(p) == CONST) {
+        int nlead = (int)strlen(lead);
+        int has_q = nullable;
+        for (k in 0..nlead) {
+            if (lead[k] == 63) {
+                has_q = 1;
+            }
+        }
+        if (has_q == 1) {
+            p_fail(p, "A const pointer with a nullable level is not supported");
+        }
+        p_adv(p);
+        for (k in 1..nlead) {
+            ty = str_concat(ty, "*");
+        }
+        ty = str_concat(ty, "*const");
+        lead = "";
+    }
+
     while (p_at(p) == STAR) {
         p_type_level(p);
         p_adv(p);
