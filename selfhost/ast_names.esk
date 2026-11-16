@@ -1,0 +1,544 @@
+// ast_names.esk: atomic intrinsics, operator names, generic inference and node constructors (part of ast.esk, imported in order)
+
+// The atomic intrinsics (mirrors intrinsics.h parseAtomicIntrinsic): `atomic_<op>` on
+// an `int` cell, `atomic_<op>64` on an `int64` cell, `atomic_<op>_ptr` on a pointer
+// cell, and `atomic_fence()`, each with an optional `_relaxed` suffix. The op ("" when
+// `name` is none of them) and the cell kind (0 int, 1 int64, 2 pointer).
+// A trailing `_relaxed` (monotonic ordering; never on the fence).
+int ast_atomic_relaxed(string name) {
+    int n = 0;
+    while (name[n] != 0) {
+        n = n + 1;
+    }
+    if (n > 15 && ast_streq((string)((*uint8)name + n - 8), "_relaxed") == 1) {
+        return 1;
+    }
+    return 0;
+}
+
+// The name without its `_relaxed` suffix.
+string ast_atomic_base(string name) {
+    if (ast_atomic_relaxed(name) == 0) {
+        return name;
+    }
+    int n = 0;
+    while (name[n] != 0) {
+        n = n + 1;
+    }
+    return ast_sub(name, 0, n - 8);
+}
+
+string ast_atomic_op(string name0) {
+    if (ast_streq(name0, "atomic_fence") == 1) {
+        return "fence";
+    }
+    string name = ast_atomic_base(name0);
+    if (ast_has_prefix(name, "atomic_") == 0) {
+        return "";
+    }
+    string rest = (string)((*uint8)name + 7);
+    int n = 0;
+    while (rest[n] != 0) {
+        n = n + 1;
+    }
+    int k = ast_atomic_kind(name);
+    if (k == 2) {
+        n = n - 4;
+    } else if (k == 1) {
+        n = n - 2;
+    }
+    if (n <= 0) {
+        return "";
+    }
+    string op = ast_sub(rest, 0, n);
+    if (ast_streq(op, "load") == 1 || ast_streq(op, "store") == 1 || ast_streq(op, "swap") == 1 || ast_streq(op, "cas") == 1) {
+        return op;
+    }
+    if (k != 2 && (ast_streq(op, "fetch_add") == 1 || ast_streq(op, "fetch_sub") == 1 || ast_streq(op, "fetch_and") == 1
+                   || ast_streq(op, "fetch_or") == 1 || ast_streq(op, "fetch_xor") == 1)) {
+        return op;
+    }
+    return "";
+}
+
+int ast_atomic_kind(string name0) {
+    string name = ast_atomic_base(name0);
+    int n = 0;
+    while (name[n] != 0) {
+        n = n + 1;
+    }
+    if (n > 11 && name[n - 4] == '_' && name[n - 3] == 'p' && name[n - 2] == 't' && name[n - 1] == 'r') {
+        return 2;
+    }
+    if (n > 9 && name[n - 2] == '6' && name[n - 1] == '4') {
+        return 1;
+    }
+    return 0;
+}
+
+// The type a bitfield of declared (dealiased) integer type `t` and `w` bits is read as:
+// `int` when every value fits an int (C promotion), else `t` (mirrors tyq::bitfieldReadType).
+string ast_bf_read_type(string t, int w) {
+    if (w <= 0) {
+        return t;
+    }
+    int u32 = 0;
+    if (ast_streq(t, "uint") == 1 || ast_streq(t, "uint32") == 1 || ast_streq(t, "uint64") == 1) {
+        u32 = 1;
+    }
+    if (u32 == 1 && w < 32) {
+        return "int";
+    }
+    if (ast_streq(t, "int64") == 1 && w <= 32) {
+        return "int";
+    }
+    return t;
+}
+
+string ast_op_name(string op, List<string>* tys) {
+    string w = ast_op_word(op);
+    if (w[0] == 0) {
+        return "";
+    }
+    let out: String;
+    String_init(&out, 24);
+    String_append(&out, "__op_");
+    String_append(&out, w);
+    int i = 0;
+    int n = List_len<string>(tys);
+    while (i < n) {
+        String_push(&out, '_');
+        String_append(&out, ast_ty_mangle(List_get<string>(tys, i)));
+        i = i + 1;
+    }
+    return (string)String_cstr(&out);
+}
+
+// ── generic type-argument inference (shared by sema + codegen) ────────────────
+// `s[a..b)` as a fresh string.
+string ast_sub(string s, int a, int b) {
+    *uint8 buf = alloc<uint8>(b - a + 1);
+    int k = 0;
+    while (a + k < b) {
+        buf[k] = (uint8)s[a + k];
+        k = k + 1;
+    }
+    buf[k] = 0;
+    return (string)buf;
+}
+
+// Canonical spelling for unification: `const` and a `struct:` tag dropped (neither
+// changes the shape) and trailing '*' moved to the front ("const Box<T>*" -> "*Box<T>"),
+// so declared and inferred spellings compare equal.
+string ast_unify_canon(string t) {
+    int a = 0;
+    int stars = 0;
+    int more = 1;
+    while (more == 1) {
+        more = 0;
+        while ((int)t[a] == 42 || (int)t[a] == 32) {
+            if ((int)t[a] == 42) {
+                stars = stars + 1;
+            }
+            a = a + 1;
+        }
+        if (ast_has_prefix((string)((*uint8)t + a), "const ") == 1) {
+            a = a + 6;
+            more = 1;
+        }
+        if (ast_has_prefix((string)((*uint8)t + a), "struct:") == 1) {
+            a = a + 7;
+            more = 1;
+        }
+    }
+    int b = a;
+    while (t[b] != 0) {
+        b = b + 1;
+    }
+    more = 1;
+    while (more == 1) {
+        more = 0;
+        while (b > a && ((int)t[b - 1] == 42 || (int)t[b - 1] == 32)) {
+            if ((int)t[b - 1] == 42) {
+                stars = stars + 1;
+            }
+            b = b - 1;
+        }
+        if (b - a >= 6 && ast_has_prefix((string)((*uint8)t + b - 6), "*const") == 1) {
+            stars = stars + 1;
+            b = b - 6;
+            more = 1;
+        }
+    }
+    let out: String;
+    String_init(&out, b - a + stars + 1);
+    int i = 0;
+    while (i < stars) {
+        String_push(&out, '*');
+        i = i + 1;
+    }
+    String_append(&out, ast_sub(t, a, b));
+    return (string)String_cstr(&out);
+}
+
+// The top-level comma-separated args inside the outermost <...> of `s` (nesting-aware,
+// the "->" of a fn type is not a closing '>').
+void ast_targs(string s, List<string>* out) {
+    int i = 0;
+    while (s[i] != 0 && (int)s[i] != 60) {
+        i = i + 1;
+    }
+    if (s[i] == 0) {
+        return;
+    }
+    i = i + 1;
+    int depth = 1;
+    int start = i;
+    while (s[i] != 0 && depth > 0) {
+        int c = (int)s[i];
+        if (c == 60 || c == 40) {
+            depth = depth + 1;
+        }
+        else if (c == 41) {
+            depth = depth - 1;
+        }
+        else if (c == 62 && (int)s[i - 1] != 45) {
+            depth = depth - 1;
+            if (depth == 0) {
+                break;
+            }
+        }
+        else if (c == 44 && depth == 1) {
+            int a = start;
+            while ((int)s[a] == 32) {
+                a = a + 1;
+            }
+            int b = i;
+            while (b > a && (int)s[b - 1] == 32) {
+                b = b - 1;
+            }
+            List_push<string>(out, ast_sub(s, a, b));
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    int a = start;
+    while ((int)s[a] == 32) {
+        a = a + 1;
+    }
+    int b = i;
+    while (b > a && (int)s[b - 1] == 32) {
+        b = b - 1;
+    }
+    if (b > a) {
+        List_push<string>(out, ast_sub(s, a, b));
+    }
+}
+
+// The binding of type parameter `tp` from unifying a parameter type `pat` against a
+// concrete argument type `arg`: matching pointer levels peel off, a bare `tp` binds the
+// whole remaining type, and `G<P1, P2>` against `G<C1, C2>` recurses into every type
+// argument, so one parameter can bind several type parameters (`Pair<A, B> p`).
+// "" when `tp` does not occur or the shapes differ. Mirrors the C++ unifyTypeParam.
+string ast_unify_tparam(string pat0, string arg0, string tp) {
+    string pat = ast_unify_canon(pat0);
+    string arg = ast_unify_canon(arg0);
+    int i = 0;
+    while ((int)pat[i] == 42 && (int)arg[i] == 42) {
+        i = i + 1;
+    }
+    pat = (string)((*uint8)pat + i);
+    arg = ast_unify_canon((string)((*uint8)arg + i));
+    if (pat[0] == 0 || arg[0] == 0) {
+        return "";
+    }
+    if (ast_streq(pat, tp) == 1) {
+        return arg;
+    }
+    int pn = 0;
+    while (pat[pn] != 0) {
+        pn = pn + 1;
+    }
+    if (pn > 2 && (int)pat[pn - 1] == 93 && (int)pat[pn - 2] == 91) {   // `T[]`: the element
+        int an = 0;
+        while (arg[an] != 0) {
+            an = an + 1;
+        }
+        if (an > 2 && (int)arg[an - 1] == 93 && (int)arg[an - 2] == 91) {
+            return ast_unify_tparam(ast_sub(pat, 0, pn - 2), ast_sub(arg, 0, an - 2), tp);
+        }
+        return "";
+    }
+    int pl = 0;
+    while (pat[pl] != 0 && (int)pat[pl] != 60) {
+        pl = pl + 1;
+    }
+    int al = 0;
+    while (arg[al] != 0 && (int)arg[al] != 60) {
+        al = al + 1;
+    }
+    if (pat[pl] == 0 || arg[al] == 0 || pl != al || (int)pat[0] == 42) {
+        return "";
+    }
+    int k = 0;
+    while (k < pl) {
+        if (pat[k] != arg[k]) {
+            return "";
+        }
+        k = k + 1;
+    }
+    List<string> pa;
+    List_init<string>(&pa, 2);
+    ast_targs(pat, &pa);
+    List<string> aa;
+    List_init<string>(&aa, 2);
+    ast_targs(arg, &aa);
+    k = 0;
+    while (k < List_len<string>(&pa) && k < List_len<string>(&aa)) {
+        string b = ast_unify_tparam(List_get<string>(&pa, k), List_get<string>(&aa, k), tp);
+        if (b[0] != 0) {
+            return b;
+        }
+        k = k + 1;
+    }
+    return "";
+}
+
+// Node kind tags (mirror the C++ node set; extended as slices land).
+enum DeclKind {
+    DK_FUNCTION, DK_EXTERN, DK_INTRINSIC, DK_STRUCT, DK_UNION,
+    DK_INTERFACE, DK_ENUM, DK_TYPEALIAS, DK_VARDECL
+}
+
+enum StmtKind {
+    SK_BLOCK, SK_RETURN, SK_IF, SK_WHILE, SK_FOR, SK_FORIN,
+    SK_BREAK, SK_CONTINUE, SK_EXPR, SK_VARDECL,
+    SK_SWITCH, SK_CASE, SK_MATCH, SK_ARM, SK_TRY, SK_CATCH,
+    SK_THROW, SK_THREADJOIN, SK_ASM, SK_ASMINPUT, SK_DOWHILE, SK_DEFER, SK_ASMOUTPUT
+}
+
+enum ExprKind {
+    EK_LITERAL, EK_IDENT, EK_BINARY, EK_UNARY,
+    EK_CALL, EK_INDEX, EK_MEMBER, EK_QUESTION, EK_CAST, EK_SIZEOF,
+    EK_STRUCTINIT, EK_TEMPLATECALL,
+    EK_AWAIT, EK_LAMBDA, EK_ALLOCWITH, EK_FREECLOSURE, EK_THREADCREATE, EK_INCDEC, EK_ARRAYLIT,
+    EK_TERNARY
+}
+
+// Literal kinds, in the C++ LiteralExpr::Kind order; lit_name maps to the
+// printer's label (INT/FLOAT/STRING/CHAR/BOOL/NULL).
+enum LitKind { LIT_INT, LIT_FLOAT, LIT_STRING, LIT_CHAR, LIT_BOOL, LIT_NULL }
+
+struct Param {   // line/col: a function parameter's name (else 0)
+    string ty;
+    string name;
+    int line;
+    int col;
+}
+
+struct ExprNode {
+    int kind;
+    int lit_kind;          // for EK_LITERAL
+    int slen;              // byte length of a LIT_STRING value (may hold embedded NULs)
+    string sval;           // literal text / operator / name / member / struct or template sig
+    *ExprNode a;
+    *ExprNode b;
+    List<*ExprNode> kids;  // call/template args, struct-init values
+    List<string> names;    // struct-init field names (parallel to kids; "" = positional)
+    *StmtNode stmt;        // lambda body
+    string op_fn;          // EK_BINARY/EK_UNARY/EK_INDEX: resolved operator-overload fn ("" = built-in)
+    List<string> ids_memo; // EK_LAMBDA: identifiers of the body, collected once (cg_collect_idents_e)
+    int ids_done;          // EK_LAMBDA: ids_memo is filled
+    int stack_env;         // EK_LAMBDA: sema proved it does not outlive its creating call, so its env is on the stack
+    int trailing;          // EK_LAMBDA: a call statement's trailing block (`f(a) { ... }`)
+    string cg_ety;         // EK_MEMBER: codegen's type of this member, valid while cg_stamp is active
+    int cg_stamp;
+    string aty;            // in an async function: the type sema inferred (the async lowering types its temporaries by it)
+    string ainst;          // in a generic async function: per checked instance, its type arguments and the type there (sema_inst_rec)
+    string sm_ety;         // EK_TERNARY / EK_BINARY: sema's type of this node, valid while sm_epoch is current
+    int sm_epoch;
+    int line;              // source position for diagnostics (0 = unknown, e.g. a synthesized node)
+    int col;
+    int mline;             // EK_MEMBER: position of the member name (line/col are the '.')
+    int mcol;
+    string dbg_text;       // EK_CALL `dbg(e)`: the source text of `e`, whitespace folded
+    int dbg_builtin;       // EK_CALL: sema resolved `dbg(e)` to the builtin (no user `dbg`)
+    int script_init;       // EK_BINARY `=`: a script global's initializer in the implicit main (checked at the declaration)
+    string lam_ret;        // EK_LAMBDA: the return type of the fn type it initializes (else null)
+    List<string> caps;     // EK_LAMBDA under --test-eir: its captures by name (sema_stamp_captures) ...
+    List<string> cap_tys;  // ... and their types
+}
+
+struct StmtNode {
+    int kind;
+    *ExprNode expr;        // return value / expr-stmt / if|while cond / for cond / for-in iterable / var init
+    *ExprNode expr2;       // for step
+    *StmtNode s1;          // then / while|for-in body / for init
+    *StmtNode s2;          // else / for body
+    List<*StmtNode> items; // block items
+    string name;           // var-decl name / for-in variable
+    string type;           // var-decl type / SK_ASM: the clobbers as `~{c},...` constraints
+    int is_const;          // SK_VARDECL: declared value-const (read-only binding)
+    int is_static;         // SK_VARDECL: `static` local (one instance, persists across calls)
+    int is_vol;            // SK_VARDECL: `volatile` (its loads/stores, and those through it, are volatile)
+    int is_err;            // SK_DEFER: errdefer (runs only on the error path) vs plain defer; SK_TRY: an async lowering wrapper whose finally runs only on unwinding
+    int is_range;          // SK_VARDECL: a `for (i in A..B)` desugar decl; sema retypes it to the bounds' common integer type
+    string resolved_elem;  // SK_FORIN: element type stamped by sema (mirrors C++ resolvedElemType); "" = fall back to structural resolution at lowering
+    string resolved_iter;  // SK_FORIN: the iterable's type stamped by sema (the async lowering holds a non-place iterable in a local)
+    string label;          // loop's own label (SK_FOR/WHILE/DOWHILE/FORIN) or target label (SK_BREAK/CONTINUE); null/"" = unlabeled
+    string arm_types;      // SK_ARM: its payload bindings' types, ';'-separated, stamped by sema (null = not stamped)
+    string arm_inst;       // SK_ARM in a generic async function: arm_types per checked instance (sema_inst_rec)
+    int line;              // source position for diagnostics (0 = unknown)
+    int col;
+}
+
+// A generic type parameter with its (possibly empty) interface constraints, e.g.
+// `T: Ord + Eq` → { name "T", constraints ["Ord","Eq"] }. Captured for sema.
+struct TypeParam {
+    string name;
+    List<string> constraints;
+}
+
+struct DeclNode {
+    int kind;
+    string name;
+    string ret_type;       // function return type / type-alias target / var-decl type
+    *StmtNode body;
+    List<Param> params;
+    *ExprNode init;        // top-level var-decl initializer
+    List<TypeParam> type_params;   // generic <T, U: Iface> on fn/struct/enum (else empty)
+    List<*DeclNode> methods;       // struct methods (each a FunctionDecl; else empty)
+    List<List<string>> payloads;   // enum ADT payload types per member (parallel to params)
+    List<int> field_bits;          // struct field bitfield widths (parallel to params; 0 = none, -1 = `: 0`)
+    List<*ExprNode> field_dflts;   // struct field defaults (parallel to params; null = none)
+    List<string> pad_tys;          // struct/union unnamed bitfields `T : N;` (layout only, not members):
+    List<int> pad_bits;            //   type, width (0 = `: 0`) and the index of the named field it
+    List<int> pad_at;              //   precedes (mirrors StructDecl::pads)
+    List<*ExprNode> enum_src;      // enum: the value expressions as written (the EIR builder folds them)
+    List<*ExprNode> enum_vals;     // enum: member value expressions (parallel to params; null = a
+    // literal or the previous + 1), folded by sema into params' ty
+    int is_async;                  // function declared `async` (1) or not (0)
+    int is_mustuse;                  // function declared `must_use` (discarding result is an error)
+    int is_export;                 // function declared `export`: a C entry point (C calling convention)
+    int is_const;                  // DK_VARDECL: declared value-const global
+    int is_extern;                 // DK_VARDECL: `extern <type> <name>;` (C global, external linkage, no init)
+    int is_vol;                    // DK_VARDECL: `volatile` global
+    int is_static;                 // DK_VARDECL: `static` written on a global (a sema error)
+    int script_init;               // DK_VARDECL: a script's global (zero at start; the implicit main assigns its init)
+    List<int> param_escaping;      // per-param `escaping` flag (parallel to params)
+    List<*ExprNode> param_defaults; // DK_FUNCTION: per-param default value (null = none); empty when it has none
+    List<string> param_def_texts;   // their source text (the AST printer)
+    int is_packed;                 // struct: `packed` qualifier / `#pragma pack(1)` (align 1)
+    int pack_align;                // struct: `#pragma pack(N)` alignment cap (0 = natural)
+    string operator_sym;           // `operator <op>(...)`: the op ("+","[]","u-"); "" = normal fn
+    string file;                   // top-level decl: the source file it came from (diagnostics)
+    string depr_msg;               // function: `deprecated("msg")` message (" " when empty; null = not deprecated)
+    int from_import;               // top-level decl parsed from an `import`ed file (not linted)
+    int line;                      // source position for diagnostics (0 = unknown)
+    int col;
+    int payload_memo;              // enum: 0 = not computed, 1 = some member has a payload, 2 = none (ast_enum_has_payload)
+}
+
+// Does some member of enum `d` carry a payload? Memoized on the node (payloads are set
+// by the parser only), so the per-member queries do not rescan every member.
+int ast_enum_has_payload(*DeclNode d) {
+    if (d.payload_memo != 0) {
+        return (int)(d.payload_memo == 1);
+    }
+    int r = 0;
+    int i = 0;
+    while (i < List_len<List<string>>(&d.payloads)) {
+        List<string> pl = List_get<List<string>>(&d.payloads, i);
+        if (List_len<string>(&pl) > 0) {
+            r = 1;
+            i = List_len<List<string>>(&d.payloads);
+        }
+        i = i + 1;
+    }
+    d.payload_memo = 2 - r;
+    return r;
+}
+
+// The fields of struct or union `d` in declaration order with its unnamed bitfields among
+// them, for the layout code (C++ layoutFields): parallel lists of the field (an unnamed
+// bitfield has name ""), its bitfield width (0 = none; an unnamed `: 0` is 0 too) and
+// whether it is named.
+void ast_layout_fields(*DeclNode d, List<Param>* fs, List<int>* bits, List<int>* named) {
+    List_init<Param>(fs, 8);
+    List_init<int>(bits, 8);
+    List_init<int>(named, 8);
+    int nf = List_len<Param>(&d.params);
+    int np = List_len<string>(&d.pad_tys);
+    int p = 0;
+    int i = 0;
+    while (i <= nf) {
+        while (p < np && List_get<int>(&d.pad_at, p) <= i) {
+            let pp: Param;
+            pp.ty = List_get<string>(&d.pad_tys, p);
+            pp.name = "";
+            List_push<Param>(fs, pp);
+            List_push<int>(bits, List_get<int>(&d.pad_bits, p));
+            List_push<int>(named, 0);
+            p = p + 1;
+        }
+        if (i < nf) {
+            int bw = 0;
+            if (i < List_len<int>(&d.field_bits)) {
+                bw = List_get<int>(&d.field_bits, i);
+            }
+            List_push<Param>(fs, List_get<Param>(&d.params, i));
+            List_push<int>(bits, bw);
+            List_push<int>(named, 1);
+        }
+        i = i + 1;
+    }
+}
+
+// Position of the token the parser consumed last; each node the parser allocates is
+// stamped with it (a diagnostic position, near the construct).
+int g_pos_line = 0;
+int g_pos_col = 0;
+
+*ExprNode ast_new_expr() {
+    *ExprNode e = alloc<ExprNode>(1);
+    e.line = g_pos_line;
+    e.col = g_pos_col;
+    return e;
+}
+
+*StmtNode ast_new_stmt() {
+    *StmtNode st = alloc<StmtNode>(1);
+    st.line = g_pos_line;
+    st.col = g_pos_col;
+    return st;
+}
+
+*DeclNode ast_new_decl() {
+    *DeclNode d = alloc<DeclNode>(1);
+    d.line = g_pos_line;
+    d.col = g_pos_col;
+    return d;
+}
+
+struct Program {
+    List<*DeclNode> decls;
+}
+
+string lit_name(int k) {
+    if (k == LIT_INT) {
+        return "INT";
+    }
+    if (k == LIT_FLOAT) {
+        return "FLOAT";
+    }
+    if (k == LIT_STRING) {
+        return "STRING";
+    }
+    if (k == LIT_CHAR) {
+        return "CHAR";
+    }
+    if (k == LIT_BOOL) {
+        return "BOOL";
+    }
+    return "NULL";
+}

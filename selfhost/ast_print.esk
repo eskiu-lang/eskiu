@@ -1,0 +1,458 @@
+// ast_print.esk: the AST printer for expressions and statements (part of ast.esk, imported in order)
+
+// ── Printer (2-space indent per depth; mirrors ast_printer.cpp) ──────────────
+
+void pind(int d) {
+    int i = 0;
+    while (i < d) {
+        printf("  ");
+        i = i + 1;
+    }
+}
+
+void pline(int d, string s) {
+    pind(d);
+    printf("%s\n", s);
+}
+
+// The default value of struct `dn`'s field `name` (`int t = 30;`), or null.
+*ExprNode ast_field_default(*DeclNode dn, string name) {
+    int i = 0;
+    while (i < List_len<Param>(&dn.params) && i < List_len<*ExprNode>(&dn.field_dflts)) {
+        if (ast_streq(List_get<Param>(&dn.params, i).name, name) == 1) {
+            return List_get<*ExprNode>(&dn.field_dflts, i);
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+void print_expr(*ExprNode e, int d) {
+    if (e.kind == EK_LITERAL) {
+        pind(d);
+        printf("LiteralExpr(%s): %s\n", lit_name(e.lit_kind), e.sval);
+        return;
+    }
+    if (e.kind == EK_IDENT) {
+        pind(d);
+        printf("IdentExpr: %s\n", e.sval);
+        return;
+    }
+    if (e.kind == EK_BINARY) {
+        // A left-leaning chain (`a + b + c ...`) is printed along its left spine with a
+        // loop, not one recursive call per operator (mirrors the C++ printer).
+        let spine: List<*ExprNode>;
+        List_init<*ExprNode>(&spine, 8);
+        *ExprNode b = e;
+        int k = 0;
+        while (b.kind == EK_BINARY) {
+            pind(d + 2 * k);
+            printf("BinaryExpr: %s\n", b.sval);
+            pline(d + 2 * k + 1, "Left:");
+            List_push<*ExprNode>(&spine, b);
+            b = b.a;
+            k = k + 1;
+        }
+        print_expr(b, d + 2 * k);
+        int i = k - 1;
+        while (i >= 0) {
+            pline(d + 2 * i + 1, "Right:");
+            *ExprNode op = List_get<*ExprNode>(&spine, i);
+            print_expr(op.b, d + 2 * i + 2);
+            i = i - 1;
+        }
+        List_free<*ExprNode>(&spine);
+        return;
+    }
+    if (e.kind == EK_UNARY) {
+        pind(d);
+        printf("UnaryExpr: %s\n", e.sval);
+        print_expr(e.a, d + 1);
+        return;
+    }
+    if (e.kind == EK_INCDEC) {
+        pind(d);
+        printf("IncDecExpr: %s\n", e.sval);
+        print_expr(e.a, d + 1);
+        return;
+    }
+    if (e.kind == EK_ARRAYLIT) {
+        pline(d, "ArrayLitExpr");
+        int i = 0;
+        int n = List_len<*ExprNode>(&e.kids);
+        while (i < n) {
+            print_expr(List_get<*ExprNode>(&e.kids, i), d + 1);
+            i = i + 1;
+        }
+        return;
+    }
+    if (e.kind == EK_CALL) {
+        pline(d, "CallExpr");
+        pline(d + 1, "Callee:");
+        print_expr(e.a, d + 2);
+        pline(d + 1, "Args:");
+        int i = 0;
+        int n = List_len<*ExprNode>(&e.kids);
+        while (i < n) {
+            print_expr(List_get<*ExprNode>(&e.kids, i), d + 2);
+            i = i + 1;
+        }
+        return;
+    }
+    if (e.kind == EK_INDEX) {
+        if (List_len<*ExprNode>(&e.kids) > 0) {
+            pline(d, "IndexExpr (slice)");
+        }
+        else {
+            pline(d, "IndexExpr");
+        }
+        pline(d + 1, "Base:");
+        print_expr(e.a, d + 2);
+        pline(d + 1, "Index:");
+        print_expr(e.b, d + 2);
+        if (List_len<*ExprNode>(&e.kids) > 0) {
+            pline(d + 1, "High:");
+            print_expr(List_get<*ExprNode>(&e.kids, 0), d + 2);
+        }
+        return;
+    }
+    if (e.kind == EK_MEMBER) {
+        pind(d);
+        printf("MemberExpr: .%s\n", e.sval);
+        print_expr(e.a, d + 1);
+        return;
+    }
+    if (e.kind == EK_QUESTION) {
+        pline(d, "QuestionExpr (?)");
+        print_expr(e.a, d + 1);
+        return;
+    }
+    if (e.kind == EK_TERNARY) {
+        pline(d, "TernaryExpr (?:)");
+        print_expr(e.a, d + 1);                          // condition
+        print_expr(e.b, d + 1);                          // then
+        print_expr(List_get<*ExprNode>(&e.kids, 0), d + 1);   // else
+        return;
+    }
+    if (e.kind == EK_CAST) {
+        pind(d);
+        printf("CastExpr: (%s)\n", e.sval);
+        print_expr(e.a, d + 1);
+        return;
+    }
+    if (e.kind == EK_SIZEOF) {
+        pind(d);
+        if (e.a != null) {                 // sizeof(expr)
+            printf("SizeofExpr: sizeof(<expr>)\n");
+            print_expr(e.a, d + 1);
+            return;
+        }
+        printf("SizeofExpr: sizeof(%s)\n", e.sval);
+        return;
+    }
+    if (e.kind == EK_STRUCTINIT) {
+        pind(d);
+        printf("StructInitExpr: %s\n", e.sval);
+        int i = 0;
+        int n = List_len<*ExprNode>(&e.kids);
+        while (i < n) {
+            string nm = List_get<string>(&e.names, i);
+            if (nm[0] != 0) {                 // named field
+                pind(d + 1);
+                printf(".%s:\n", nm);
+            }
+            print_expr(List_get<*ExprNode>(&e.kids, i), d + 2);
+            i = i + 1;
+        }
+        return;
+    }
+    if (e.kind == EK_TEMPLATECALL) {
+        pind(d);
+        printf("TemplateCallExpr: %s\n", e.sval);
+        int i = 0;
+        int n = List_len<*ExprNode>(&e.kids);
+        while (i < n) {
+            print_expr(List_get<*ExprNode>(&e.kids, i), d + 1);
+            i = i + 1;
+        }
+        return;
+    }
+    if (e.kind == EK_AWAIT) {
+        pline(d, "AwaitExpr:");
+        print_expr(e.a, d + 1);
+        return;
+    }
+    if (e.kind == EK_LAMBDA) {
+        pind(d);
+        printf("LambdaExpr: %s\n", e.sval);
+        print_stmt(e.stmt, d + 1);
+        return;
+    }
+    if (e.kind == EK_ALLOCWITH) {
+        pind(d);
+        printf("AllocWithExpr: alloc_with(<allocator>, %s, ...)\n", e.sval);
+        print_expr(e.a, d + 1);
+        print_expr(e.b, d + 1);
+        return;
+    }
+    if (e.kind == EK_FREECLOSURE) {
+        pline(d, "FreeClosureExpr:");
+        print_expr(e.a, d + 1);
+        return;
+    }
+    if (e.kind == EK_THREADCREATE) {
+        pline(d, "ThreadCreateExpr");
+        print_expr(e.a, d + 1);
+        return;
+    }
+}
+
+void print_stmt(*StmtNode s, int d) {
+    if (s.kind == SK_BLOCK) {
+        pline(d, "BlockStmt");
+        int i = 0;
+        int n = List_len<*StmtNode>(&s.items);
+        while (i < n) {
+            print_stmt(List_get<*StmtNode>(&s.items, i), d + 1);
+            i = i + 1;
+        }
+        return;
+    }
+    if (s.kind == SK_RETURN) {
+        pline(d, "ReturnStmt");
+        if (s.expr != null) {
+            print_expr(s.expr, d + 1);
+        }
+        return;
+    }
+    if (s.kind == SK_IF) {
+        // An `else if` chain is printed with a loop, one level deeper per link.
+        *StmtNode n = s;
+        int k = d;
+        while (n != null) {
+            pline(k, "IfStmt");
+            pline(k + 1, "Condition:");
+            print_expr(n.expr, k + 2);
+            pline(k + 1, "Then:");
+            print_stmt(n.s1, k + 2);
+            *StmtNode next = null;
+            if (n.s2 != null) {
+                pline(k + 1, "Else:");
+                if (n.s2.kind == SK_IF) {
+                    next = n.s2;
+                } else {
+                    print_stmt(n.s2, k + 2);
+                }
+            }
+            n = next;
+            k = k + 2;
+        }
+        return;
+    }
+    if (s.kind == SK_WHILE) {
+        if (s.label != null && s.label[0] != 0) {
+            pind(d);
+            printf("WhileStmt (label: %s)\n", s.label);
+        }
+        else {
+            pline(d, "WhileStmt");
+        }
+        pline(d + 1, "Condition:");
+        print_expr(s.expr, d + 2);
+        pline(d + 1, "Body:");
+        print_stmt(s.s1, d + 2);
+        return;
+    }
+    if (s.kind == SK_DOWHILE) {
+        if (s.label != null && s.label[0] != 0) {
+            pind(d);
+            printf("DoWhileStmt (label: %s)\n", s.label);
+        }
+        else {
+            pline(d, "DoWhileStmt");
+        }
+        pline(d + 1, "Body:");
+        print_stmt(s.s1, d + 2);
+        pline(d + 1, "Condition:");
+        print_expr(s.expr, d + 2);
+        return;
+    }
+    if (s.kind == SK_FOR) {
+        if (s.label != null && s.label[0] != 0) {
+            pind(d);
+            printf("ForStmt (label: %s)\n", s.label);
+        }
+        else {
+            pline(d, "ForStmt");
+        }
+        if (s.s1 != null) {
+            pline(d + 1, "Init:");
+            print_stmt(s.s1, d + 2);
+        }
+        if (s.expr != null) {
+            pline(d + 1, "Condition:");
+            print_expr(s.expr, d + 2);
+        }
+        if (s.expr2 != null) {
+            pline(d + 1, "Step:");
+            print_expr(s.expr2, d + 2);
+        }
+        pline(d + 1, "Body:");
+        print_stmt(s.s2, d + 2);
+        return;
+    }
+    if (s.kind == SK_FORIN) {
+        pind(d);
+        if (s.label != null && s.label[0] != 0) {
+            printf("ForInStmt (%s in ...) (label: %s)\n", s.name, s.label);
+        }
+        else {
+            printf("ForInStmt (%s in ...)\n", s.name);
+        }
+        pline(d + 1, "Iterable:");
+        print_expr(s.expr, d + 2);
+        pline(d + 1, "Body:");
+        print_stmt(s.s1, d + 2);
+        return;
+    }
+    if (s.kind == SK_BREAK) {
+        if (s.label != null && s.label[0] != 0) {
+            pind(d);
+            printf("BreakStmt %s\n", s.label);
+        }
+        else {
+            pline(d, "BreakStmt");
+        }
+        return;
+    }
+    if (s.kind == SK_CONTINUE) {
+        if (s.label != null && s.label[0] != 0) {
+            pind(d);
+            printf("ContinueStmt %s\n", s.label);
+        }
+        else {
+            pline(d, "ContinueStmt");
+        }
+        return;
+    }
+    if (s.kind == SK_EXPR) {
+        pline(d, "ExprStmt");
+        print_expr(s.expr, d + 1);
+        return;
+    }
+    if (s.kind == SK_VARDECL) {
+        pind(d);
+        printf("VarDecl: %s: %s\n", s.name, s.type);
+        if (s.expr != null) {
+            pline(d + 1, "Initializer:");
+            print_expr(s.expr, d + 2);
+        }
+        return;
+    }
+    if (s.kind == SK_SWITCH) {
+        pline(d, "SwitchStmt");
+        pline(d + 1, "Subject:");
+        print_expr(s.expr, d + 2);
+        int i = 0;
+        int n = List_len<*StmtNode>(&s.items);
+        while (i < n) {
+            print_stmt(List_get<*StmtNode>(&s.items, i), d + 1);
+            i = i + 1;
+        }
+        return;
+    }
+    if (s.kind == SK_CASE) {
+        if (s.expr != null) {
+            pline(d, "Case:");
+            print_expr(s.expr, d + 1);
+        } else {
+            pline(d, "Default:");
+        }
+        int i = 0;
+        int n = List_len<*StmtNode>(&s.items);
+        while (i < n) {
+            print_stmt(List_get<*StmtNode>(&s.items, i), d + 1);
+            i = i + 1;
+        }
+        return;
+    }
+    if (s.kind == SK_MATCH) {
+        pline(d, "MatchStmt");
+        pline(d + 1, "Subject:");
+        print_expr(s.expr, d + 2);
+        int i = 0;
+        int n = List_len<*StmtNode>(&s.items);
+        while (i < n) {
+            print_stmt(List_get<*StmtNode>(&s.items, i), d + 1);
+            i = i + 1;
+        }
+        return;
+    }
+    if (s.kind == SK_ARM) {
+        pind(d);
+        printf("Arm %s:\n", s.name);
+        print_stmt(s.s1, d + 1);
+        return;
+    }
+    if (s.kind == SK_TRY) {
+        pline(d, "TryStmt");
+        print_stmt(s.s1, d + 1);
+        int i = 0;
+        int n = List_len<*StmtNode>(&s.items);
+        while (i < n) {
+            print_stmt(List_get<*StmtNode>(&s.items, i), d + 1);
+            i = i + 1;
+        }
+        if (s.s2 != null) {
+            pline(d + 1, "Finally");
+            print_stmt(s.s2, d + 2);
+        }
+        return;
+    }
+    if (s.kind == SK_CATCH) {
+        pind(d);
+        printf("CatchClause: %s\n", s.name);
+        print_stmt(s.s1, d + 1);
+        return;
+    }
+    if (s.kind == SK_DEFER) {
+        if (s.is_err == 1) {
+            pline(d, "DeferStmt (err)");
+        } else {
+            pline(d, "DeferStmt");
+        }
+        print_stmt(s.s1, d + 1);
+        return;
+    }
+    if (s.kind == SK_THROW) {
+        pline(d, "ThrowStmt");
+        if (s.expr != null) {
+            print_expr(s.expr, d + 1);
+        }
+        return;
+    }
+    if (s.kind == SK_THREADJOIN) {
+        pline(d, "ThreadJoinStmt");
+        print_expr(s.expr, d + 1);
+        return;
+    }
+    if (s.kind == SK_ASM) {
+        pind(d);
+        printf("AsmStmt: asm(\"%s\")\n", s.name);
+        int n = List_len<*StmtNode>(&s.items);
+        int i = 0;
+        while (i < n) {
+            *StmtNode inp = List_get<*StmtNode>(&s.items, i);
+            pind(d + 1);
+            if (inp.kind == SK_ASMOUTPUT) {
+                printf("output: \"%s\"\n", inp.name);
+            }
+            else {
+                printf("input: \"%s\"\n", inp.name);
+            }
+            print_expr(inp.expr, d + 2);
+            i = i + 1;
+        }
+        return;
+    }
+}

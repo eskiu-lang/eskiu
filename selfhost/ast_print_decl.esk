@@ -1,0 +1,434 @@
+// ast_print_decl.esk: the AST printer for declarations, stable places and typed integer constants (part of ast.esk, imported in order)
+
+// Print each entry of dn.params as `<ty> <name>` at depth d (function/extern
+// parameters, struct/union fields).
+void print_params(*DeclNode dn, int d) {
+    int i = 0;
+    int n = List_len<Param>(&dn.params);
+    while (i < n) {
+        Param pm = List_get<Param>(&dn.params, i);
+        pind(d);
+        if (i < List_len<string>(&dn.param_def_texts) && List_get<string>(&dn.param_def_texts, i)[0] != 0) {
+            printf("%s %s = %s\n", pm.ty, pm.name, List_get<string>(&dn.param_def_texts, i));
+        } else {
+            printf("%s %s\n", pm.ty, pm.name);
+        }
+        i = i + 1;
+    }
+}
+
+// Print the `TypeParams:` section (only when the decl has generic params), each as
+// `T` or `T: A + B`. Mirrors ASTPrinter::printTypeParams in ast/ast_printer.cpp.
+void print_type_params(*DeclNode dn, int d) {
+    int n = List_len<TypeParam>(&dn.type_params);
+    if (n == 0) {
+        return;
+    }
+    pline(d, "TypeParams:");
+    int i = 0;
+    while (i < n) {
+        TypeParam tp = List_get<TypeParam>(&dn.type_params, i);
+        pind(d + 1);
+        printf("%s", tp.name);
+        int cn = List_len<string>(&tp.constraints);
+        if (cn > 0) {
+            printf(": ");
+            int j = 0;
+            while (j < cn) {
+                if (j > 0) {
+                    printf(" + ");
+                }
+                printf("%s", List_get<string>(&tp.constraints, j));
+                j = j + 1;
+            }
+        }
+        printf("\n");
+        i = i + 1;
+    }
+}
+
+void print_decl(*DeclNode dn, int d) {
+    if (dn.kind == DK_FUNCTION) {
+        pind(d);
+        printf("FunctionDecl: %s -> %s", dn.name, dn.ret_type);
+        if (dn.is_async == 1) {
+            printf(" (async)");
+        }
+        if (dn.is_mustuse == 1) {
+            printf(" (must_use)");
+        }
+        if (dn.is_export == 1) {
+            printf(" (export)");
+        }
+        printf("\n");
+        print_type_params(dn, d + 1);
+        pline(d + 1, "Parameters:");
+        print_params(dn, d + 2);
+        if (dn.body != null) {             // forward declaration → no Body section
+            pline(d + 1, "Body:");
+            print_stmt(dn.body, d + 2);
+        }
+        return;
+    }
+    if (dn.kind == DK_EXTERN) {
+        pind(d);
+        printf("ExternDecl: %s -> %s\n", dn.name, dn.ret_type);
+        pline(d + 1, "Parameters:");
+        print_params(dn, d + 2);
+        return;
+    }
+    if (dn.kind == DK_INTRINSIC) {
+        pind(d);
+        printf("IntrinsicDecl: %s -> %s\n", dn.name, dn.ret_type);
+        pline(d + 1, "Parameters:");
+        print_params(dn, d + 2);
+        return;
+    }
+    if (dn.kind == DK_STRUCT) {
+        pind(d);
+        printf("StructDecl: %s\n", dn.name);
+        print_type_params(dn, d + 1);
+        pline(d + 1, "Fields:");
+        List<Param> lfs;
+        List<int> lbits;
+        List<int> lnamed;
+        ast_layout_fields(dn, &lfs, &lbits, &lnamed);
+        int fi = 0;
+        int nf = List_len<Param>(&lfs);
+        while (fi < nf) {
+            Param pm = List_get<Param>(&lfs, fi);
+            int bw = List_get<int>(&lbits, fi);
+            pind(d + 2);
+            if (List_get<int>(&lnamed, fi) == 0) {   // unnamed bitfield
+                printf("%s : %d", pm.ty, bw);
+            }
+            else {
+                printf("%s %s", pm.ty, pm.name);
+                if (bw > 0) {     // bitfield width
+                    printf(" : %d", bw);
+                }
+            }
+            printf("\n");
+            *ExprNode fdv = null;
+            if (List_get<int>(&lnamed, fi) == 1) {
+                fdv = ast_field_default(dn, pm.name);
+            }
+            if (fdv != null) {
+                pline(d + 3, "Default:");
+                print_expr(fdv, d + 4);
+            }
+            fi = fi + 1;
+        }
+        int mn = List_len<*DeclNode>(&dn.methods);
+        if (mn > 0) {
+            pline(d + 1, "Methods:");
+            int mi = 0;
+            while (mi < mn) {
+                print_decl(List_get<*DeclNode>(&dn.methods, mi), d + 2);
+                mi = mi + 1;
+            }
+        }
+        return;
+    }
+    if (dn.kind == DK_UNION) {
+        pind(d);
+        printf("UnionDecl: %s\n", dn.name);
+        List<Param> ufs;
+        List<int> ubits;
+        List<int> unamed;
+        ast_layout_fields(dn, &ufs, &ubits, &unamed);
+        int ui = 0;
+        while (ui < List_len<Param>(&ufs)) {
+            Param up = List_get<Param>(&ufs, ui);
+            pind(d + 1);
+            if (List_get<int>(&unamed, ui) == 0) {
+                printf("%s : %d\n", up.ty, List_get<int>(&ubits, ui));
+            }
+            else {
+                printf("%s %s\n", up.ty, up.name);
+            }
+            ui = ui + 1;
+        }
+        return;
+    }
+    if (dn.kind == DK_INTERFACE) {
+        pind(d);
+        printf("InterfaceDecl: %s\n", dn.name);
+        int i = 0;
+        int n = List_len<*DeclNode>(&dn.methods);
+        while (i < n) {
+            *DeclNode m = List_get<*DeclNode>(&dn.methods, i);
+            pind(d + 1);
+            printf("%s %s(", m.ret_type, m.name);
+            int pn = List_len<Param>(&m.params);
+            int j = 0;
+            while (j < pn) {
+                if (j > 0) {
+                    printf(", ");
+                }
+                printf("%s", List_get<Param>(&m.params, j).ty);
+                j = j + 1;
+            }
+            printf(")\n");
+            i = i + 1;
+        }
+        return;
+    }
+    if (dn.kind == DK_ENUM) {
+        pind(d);
+        printf("EnumDecl: %s\n", dn.name);
+        print_type_params(dn, d + 1);
+        int i = 0;
+        int n = List_len<Param>(&dn.params);
+        int since = 0 - 1;                           // members after a value expression: "<expr>+k"
+        while (i < n) {
+            Param pm = List_get<Param>(&dn.params, i);
+            *ExprNode ve = null;
+            if (i < List_len<*ExprNode>(&dn.enum_vals)) {
+                ve = List_get<*ExprNode>(&dn.enum_vals, i);
+            }
+            pind(d + 1);
+            if (ve != null) {
+                printf("%s = <expr>", pm.name);
+                since = 0;
+            }
+            else if (since >= 0) {
+                since = since + 1;
+                printf("%s = <expr>+%d", pm.name, since);
+            }
+            else {       // name = value
+                printf("%s = %s", pm.name, pm.ty);
+            }
+            List<string> pl = List_get<List<string>>(&dn.payloads, i);
+            int pn = List_len<string>(&pl);
+            if (pn > 0) {                            // ADT variant payload: (t1, t2)
+                printf("(");
+                int j = 0;
+                while (j < pn) {
+                    if (j > 0) {
+                        printf(", ");
+                    }
+                    printf("%s", List_get<string>(&pl, j));
+                    j = j + 1;
+                }
+                printf(")");
+            }
+            printf("\n");
+            if (ve != null) {
+                print_expr(ve, d + 2);
+            }
+            i = i + 1;
+        }
+        return;
+    }
+    if (dn.kind == DK_TYPEALIAS) {
+        pind(d);
+        printf("TypeAlias: %s = %s\n", dn.name, dn.ret_type);
+        return;
+    }
+    if (dn.kind == DK_VARDECL) {
+        pind(d);
+        printf("VarDecl: %s: %s\n", dn.name, dn.ret_type);
+        if (dn.init != null) {
+            pline(d + 1, "Initializer:");
+            print_expr(dn.init, d + 2);
+        }
+        return;
+    }
+}
+
+void print_program(*Program p) {
+    printf("Program\n");
+    int i = 0;
+    int n = List_len<*DeclNode>(&p.decls);
+    while (i < n) {
+        print_decl(List_get<*DeclNode>(&p.decls, i), 1);
+        i = i + 1;
+    }
+}
+
+// Does `e` name the same place however often it is evaluated? A variable, and a field or
+// constant-index element of one (no call, assignment, operator overload or variable
+// index), like astwalk::isStablePlace. `for (x in E)` over anything else evaluates E once.
+int ast_stable_place(*ExprNode e) {
+    if (e == null) {
+        return 0;
+    }
+    if (e.kind == EK_IDENT) {
+        return 1;
+    }
+    if (e.kind == EK_MEMBER) {
+        return ast_stable_place(e.a);
+    }
+    if (e.kind == EK_INDEX) {
+        if (e.op_fn != null && e.op_fn[0] != 0) {
+            return 0;
+        }
+        if (e.b == null || e.b.kind != EK_LITERAL) {
+            return 0;
+        }
+        int i = 0;
+        while (i < List_len<*ExprNode>(&e.kids)) {
+            if (List_get<*ExprNode>(&e.kids, i).kind != EK_LITERAL) {
+                return 0;
+            }
+            i = i + 1;
+        }
+        return ast_stable_place(e.a);
+    }
+    if (e.kind == EK_UNARY) {
+        if (e.op_fn != null && e.op_fn[0] != 0) {
+            return 0;
+        }
+        if (ast_streq(e.sval, "&") == 1) {
+            return ast_stable_place(e.a);
+        }
+    }
+    return 0;
+}
+
+// ── array dimensions as integer constant expressions (mirrors the C++ ty::foldDim) ──
+
+// The fold state over a dimension's text: the parser keeps the tokens' text
+// (`(uint8)258`, `N*2`). `look`, passed down the recursion, resolves a name (a `const`
+// int or an enum member): it stores the value and returns 1, or returns 0.
+struct DimFold {
+    string s;
+    int i;
+    int n;
+    int ok;
+}
+
+// A folded integer constant with its C type after promotion (mirrors ty::CInt): `rank`
+// 32 (int / uint) or 64 (int64 / uint64), `uns` 1 for the unsigned ones, `v` the value in
+// that type (a 32-bit one sign- or zero-extended). The constant folders (enum values,
+// array dimensions, `case` labels) compute with these so they follow C's usual
+// arithmetic conversions.
+struct AstCInt {
+    int64 v;
+    int rank;
+    int uns;
+}
+
+AstCInt ast_ci_make(int64 v, int rank, int uns) {
+    AstCInt r;
+    r.rank = 32;
+    if (rank == 64) {
+        r.rank = 64;
+    }
+    r.uns = uns;
+    r.v = v;
+    if (r.rank == 32) {
+        if (uns == 1) {
+            r.v = (int64)(uint)v;
+        } else {
+            r.v = (int64)(int)v;
+        }
+    }
+    return r;
+}
+
+AstCInt ast_ci_bool(int b) {
+    if (b != 0) {
+        return ast_ci_make((int64)1, 32, 0);
+    }
+    return ast_ci_make((int64)0, 32, 0);
+}
+
+// An integer literal's value (bits `v`): `int` when it fits, else `int64` (`uint64` past it).
+AstCInt ast_ci_lit(int64 v) {
+    if (v < (int64)0) {
+        return ast_ci_make(v, 64, 1);
+    }
+    if (v <= (int64)2147483647) {
+        return ast_ci_make(v, 32, 0);
+    }
+    return ast_ci_make(v, 64, 0);
+}
+
+// A value known only as an int64 (an enum member, a const): `int` when it fits.
+AstCInt ast_ci_of(int64 v) {
+    if (v >= (int64)-2147483648 && v <= (int64)2147483647) {
+        return ast_ci_make(v, 32, 0);
+    }
+    return ast_ci_make(v, 64, 0);
+}
+
+// `(t)x` for an integer type `t`; 0 when `t` is not one.
+int ast_ci_cast(string t, AstCInt x, AstCInt* out) {
+    int64 v = x.v;
+    if (ast_streq(t, "bool") == 1) {
+        *out = ast_ci_bool((int)(v != (int64)0));
+        return 1;
+    }
+    if (ast_streq(t, "int8") == 1) {
+        *out = ast_ci_make((int64)(int8)v, 32, 0);
+        return 1;
+    }
+    if (ast_streq(t, "uint8") == 1 || ast_streq(t, "char") == 1) {
+        *out = ast_ci_make((int64)(uint8)v, 32, 0);
+        return 1;
+    }
+    if (ast_streq(t, "int16") == 1) {
+        *out = ast_ci_make((int64)(int16)v, 32, 0);
+        return 1;
+    }
+    if (ast_streq(t, "uint16") == 1) {
+        *out = ast_ci_make((int64)(uint16)v, 32, 0);
+        return 1;
+    }
+    if (ast_streq(t, "int") == 1 || ast_streq(t, "int32") == 1) {
+        *out = ast_ci_make(v, 32, 0);
+        return 1;
+    }
+    if (ast_streq(t, "uint") == 1 || ast_streq(t, "uint32") == 1) {
+        *out = ast_ci_make(v, 32, 1);
+        return 1;
+    }
+    if (ast_streq(t, "int64") == 1) {
+        *out = ast_ci_make(v, 64, 0);
+        return 1;
+    }
+    if (ast_streq(t, "uint64") == 1) {
+        *out = ast_ci_make(v, 64, 1);
+        return 1;
+    }
+    return 0;
+}
+
+// Unary `-`, `~`, `!`, `+`.
+int ast_ci_unary(string op, AstCInt x, AstCInt* out) {
+    if (ast_streq(op, "-") == 1) {
+        *out = ast_ci_make((int64)0 - x.v, x.rank, x.uns);
+        return 1;
+    }
+    if (ast_streq(op, "~") == 1) {
+        *out = ast_ci_make(~x.v, x.rank, x.uns);
+        return 1;
+    }
+    if (ast_streq(op, "!") == 1) {
+        *out = ast_ci_bool((int)(x.v == (int64)0));
+        return 1;
+    }
+    if (ast_streq(op, "+") == 1) {
+        *out = x;
+        return 1;
+    }
+    return 0;
+}
+
+// A negative literal `-m` (one token, as the program sees it at run time): `int` when
+// the value fits, else `int64`; past that, the C negation of the literal. `mv` is the
+// magnitude as parsed (2^63 reads as INT64_MIN). Mirrors ty::cintNegLiteral.
+AstCInt ast_ci_neg_lit(int64 mv) {
+    if (mv >= (int64)0 && mv <= (int64)2147483648) {
+        return ast_ci_make((int64)0 - mv, 32, 0);
+    }
+    if (mv >= (int64)0 || mv == (int64)(-9223372036854775807) - (int64)1) {
+        return ast_ci_make((int64)0 - mv, 64, 0);
+    }
+    AstCInt m = ast_ci_lit(mv);
+    AstCInt r = m;
+    ast_ci_unary("-", m, &r);
+    return r;
+}
