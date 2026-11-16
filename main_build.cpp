@@ -326,6 +326,20 @@ static bool crossDriver(const std::string& triple, std::string& driver, std::vec
     return false;
 }
 
+// What a --target build needs to link and did not find, as a message; empty when the target
+// links with the host's driver or what it needs is there. The host's cc cannot link these.
+static std::string missingCrossTool(const std::string& triple) {
+    auto has = [&](const char* s) { return triple.find(s) != std::string::npos; };
+    if (triple.rfind("wasm32", 0) == 0 && has("emscripten"))
+        return "emcc was not found: install Emscripten (emsdk), activate it so emcc is on PATH "
+               "(source emsdk_env.sh), or set CC";
+    if (has("android"))
+        return "the Android NDK was not found: set ANDROID_NDK_HOME (or ANDROID_NDK_ROOT) to it, or set CC";
+    if (has("-ios") || has("-xros") || has("-visionos"))
+        return "xcrun was not found: install Xcode (and its command line tools), or set CC";
+    return "";
+}
+
 // Locate a C linker driver: $CC first, then cc / clang / gcc on PATH.
 // When `sanitized` is set, prefer the clang from the LLVM toolchain this
 // compiler was built against — its compiler-rt matches the ASan instrumentation
@@ -371,6 +385,8 @@ std::string findCDriver(bool sanitized, std::vector<std::string>* ccArgs, const 
             if (ccArgs) *ccArgs = args;
             return driver;
         }
+        // The host's cc cannot link for these: linkExecutable names what is missing.
+        if (!missingCrossTool(triple).empty()) return "";
     }
     for (const char* name : {"cc", "clang", "gcc"}) {
         if (auto p = llvm::sys::findProgramByName(name)) return *p;
@@ -406,6 +422,11 @@ bool linkExecutable(const std::string& obj, const std::string& out,
                            bool sanitized, const std::string& triple) {
     std::vector<std::string> ccArgs;
     std::string driver = findCDriver(sanitized, &ccArgs, triple);
+    if (driver.empty() && !missingCrossTool(triple).empty()) {
+        std::cerr << "error: " << missingCrossTool(triple) << ".\n"
+                     "       Or use -c to emit an object file and link it yourself.\n";
+        return false;
+    }
     if (driver.empty()) {
         std::cerr << "error: no C linker driver found (looked for $CC, cc, clang, gcc).\n"
                      "       Install a C toolchain, or use -c to emit an object file "

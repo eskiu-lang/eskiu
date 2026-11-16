@@ -47,8 +47,13 @@ static int linkProgram(const std::function<bool(const std::string&)>& emitObject
                       mingwLibcxxDriver(findCDriver(false, nullptr, std::string(TargetTriple)));
         for (const auto& l : implicitLinkLibs(macros, usesEH, usesThreads))
             implied.push_back(libcxx && l == "stdc++" ? "c++" : l);
-        // emscripten catches exceptions only when linked to (its JavaScript runtime).
-        if (usesEH && macros.count("__EMSCRIPTEN__")) extra.push_back("-sDISABLE_EXCEPTION_CATCHING=0");
+        // emscripten catches exceptions only when linked to (its JavaScript runtime), and
+        // links the C++ runtime they need (__cxa_begin_catch, ...) only in C++ mode, which
+        // newer emsdks no longer default to when the driver is emcc.
+        if (usesEH && macros.count("__EMSCRIPTEN__")) {
+            extra.push_back("-sDISABLE_EXCEPTION_CATCHING=0");
+            extra.push_back("-sDEFAULT_TO_CXX=1");
+        }
         std::set<std::string> seen(libs.begin(), libs.end());
         for (const auto& l : implied)
             if (seen.insert(l).second) extra.push_back("-l" + l);
