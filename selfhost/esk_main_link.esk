@@ -221,9 +221,11 @@ int esk_link_args(EskOpts* o) {
             if (o.g.uses_threads == 1 && gnu == 1) {
                 List_push<string>(&implied, "pthread");
             }
-            // emscripten catches exceptions only when linked to.
+            // emscripten catches exceptions only when linked to, and links the C++ runtime
+            // they need only in C++ mode, which newer emsdks no longer default to for emcc.
             if (o.g.uses_eh == 1 && str_contains(o.triple, "emscripten") == 1) {
                 List_push<string>(&o.tail, "-sDISABLE_EXCEPTION_CATCHING=0");
+                List_push<string>(&o.tail, "-sDEFAULT_TO_CXX=1");
             }
             int ii2 = 0;
             while (ii2 < List_len<string>(&implied)) {
