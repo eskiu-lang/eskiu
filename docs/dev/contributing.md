@@ -84,6 +84,10 @@ Every fix comes with a regression test. CI also runs:
 - AST nodes are `shared_ptr` (`ExprPtr`, `StmtPtr`, `DeclPtr`): struct-method bodies and template bodies
   are shared by several declarations, so do not convert them to `unique_ptr`.
 - Commit subjects are short and imperative, with no trailing period.
+- A source file stays under about 600 lines: a longer one is split by topic, moving code unchanged.
+  An Eskiu module imports its parts in order; the parts of an importable module (the stdlib, a
+  package's `src/`) live in its private directory (`stdlib/_regex/vm.esk`, imported as
+  `import "_regex/vm.esk";`), so they are not modules of their own.
 
 ## Proposals
 
