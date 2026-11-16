@@ -1,0 +1,389 @@
+// eir_b_generic.esk: generic instantiation and interfaces (part of eir_b_conv.esk, imported in order)
+
+// --- generic instantiation ---
+
+string eb_strip_struct(string s) {
+    if (et_pfx(s, "struct:") == 1) {
+        return et_from(s, 7);
+    }
+    return s;
+}
+
+string eb_canon_stars(string t0) {
+    string t = t0;
+    int stars = 0;
+    while (et_len(t) > 0 && t[et_len(t) - 1] == '*') {
+        t = et_sub(t, 0, et_len(t) - 1);
+        stars = stars + 1;
+    }
+    while (et_len(t) > 0 && t[0] == '*') {
+        t = et_from(t, 1);
+        stars = stars + 1;
+    }
+    while (stars > 0) {
+        t = et_cat("*", t);
+        stars = stars - 1;
+    }
+    return t;
+}
+
+void eb_unify(EB* b, string pattern0, string concrete0, List<string>* tps, SMap* subs) {
+    string pattern = eb_canon_stars(eb_strip_struct(tyq_strip(pattern0)));
+    string concrete = eb_canon_stars(eb_strip_struct(tyq_strip(concrete0)));
+    int pi = 0;
+    int ci = 0;
+    while (pi < et_len(pattern) && pattern[pi] == '*' && ci < et_len(concrete) && concrete[ci] == '*') {
+        pi = pi + 1;
+        ci = ci + 1;
+    }
+    pattern = et_from(pattern, pi);
+    concrete = eb_strip_struct(et_from(concrete, ci));
+    if (et_len(pattern) == 0 || et_len(concrete) == 0) {
+        return;
+    }
+    if (ty_list_has(tps, pattern) == 1) {
+        if (SMap_has(subs, pattern) == 0) {
+            SMap_set(subs, pattern, concrete);
+        }
+        return;
+    }
+    if (et_len(pattern) > 2 && et_sfx(pattern, "[]") == 1) {
+        if (et_len(concrete) > 2 && et_sfx(concrete, "[]") == 1) {
+            eb_unify(b, et_sub(pattern, 0, et_len(pattern) - 2), et_sub(concrete, 0, et_len(concrete) - 2), tps, subs);
+        }
+        return;
+    }
+    if (et_pfx(pattern, "fn(") == 1 && et_pfx(concrete, "fn(") == 1) {
+        int pa = et_find(pattern, ")->", 0);
+        int ca = et_find(concrete, ")->", 0);
+        if (pa >= 0 && ca >= 0) {
+            eb_unify(b, et_from(pattern, pa + 3), et_from(concrete, ca + 3), tps, subs);
+            eb_unify(b, et_sub(pattern, 3, pa), et_sub(concrete, 3, ca), tps, subs);
+        }
+        return;
+    }
+    if (et_findc(pattern, '<') < 0) {
+        return;
+    }
+    List<string> pargs;
+    string pbase = ty_split_template(pattern, &pargs);
+    List<string> cargs;
+    string cbase = "";
+    if (et_findc(concrete, '<') >= 0) {
+        cbase = ty_split_template(concrete, &cargs);
+    } else {
+        *EInstArgs ia = IAMap_get(&b.inst_args, concrete);
+        if (ia != null) {
+            cbase = ia.base;
+            int k = 0;
+            while (k < List_len<string>(&ia.args)) {
+                List_push<string>(&cargs, List_get<string>(&ia.args, k));
+                k = k + 1;
+            }
+        }
+    }
+    if (et_eq(cbase, pbase) == 0) {
+        return;
+    }
+    int i = 0;
+    while (i < List_len<string>(&pargs) && i < List_len<string>(&cargs)) {
+        eb_unify(b, List_get<string>(&pargs, i), List_get<string>(&cargs, i), tps, subs);
+        i = i + 1;
+    }
+}
+
+void eb_tp_names(*DeclNode d, List<string>* out) {
+    int i = 0;
+    while (i < List_len<TypeParam>(&d.type_params)) {
+        List_push<string>(out, List_get<TypeParam>(&d.type_params, i).name);
+        i = i + 1;
+    }
+}
+
+*DeclNode eb_generic_free_method(EB* b, string inst, string method) {
+    *EInstArgs ia = IAMap_get(&b.inst_args, inst);
+    if (ia == null) {
+        return null;
+    }
+    *DeclNode ft = DMap_get(&b.fn_tmpl_decls, et_cat3(ia.base, "_", method));
+    if (ft == null || List_len<Param>(&ft.params) == 0) {
+        return null;
+    }
+    return ft;
+}
+
+// The instance key the sema records use: the substitution's values in type-parameter order.
+string eb_inst_key_of(*DeclNode d, SMap* subs) {
+    string k = "";
+    int i = 0;
+    while (i < List_len<TypeParam>(&d.type_params)) {
+        if (i > 0) {
+            k = et_cat(k, "\t");
+        }
+        string v = SMap_get(subs, List_get<TypeParam>(&d.type_params, i).name);
+        k = et_cat(k, et_s(v));
+        i = i + 1;
+    }
+    return k;
+}
+
+*DeclNode eb_mk_fn(string name, string ret, List<Param>* params, *StmtNode body) {
+    *DeclNode d = ast_new_decl();
+    d.kind = DK_FUNCTION;
+    d.name = name;
+    d.ret_type = ret;
+    int i = 0;
+    while (i < List_len<Param>(params)) {
+        List_push<Param>(&d.params, List_get<Param>(params, i));
+        i = i + 1;
+    }
+    d.body = body;
+    return d;
+}
+
+Param eb_param(string ty, string name) {
+    Param p;
+    p.ty = ty;
+    p.name = name;
+    return p;
+}
+
+*EFunc eb_inst_generic_method(EB* b, string inst, string method) {
+    string mangled = et_cat3(inst, "_", method);
+    *EFunc f = em_func(b.m, mangled);
+    if (f != null) {
+        return f;
+    }
+    *EInstArgs ia = IAMap_get(&b.inst_args, inst);
+    if (ia == null) {
+        return null;
+    }
+    *DeclNode td = DMap_get(&b.tmpl_decls, ia.base);
+    if (td == null) {
+        return null;
+    }
+    *DeclNode mf = null;
+    int i = 0;
+    while (i < List_len<*DeclNode>(&td.methods)) {
+        *DeclNode m = List_get<*DeclNode>(&td.methods, i);
+        if (m.kind == DK_FUNCTION && et_eq(m.name, method) == 1) {
+            mf = m;
+            break;
+        }
+        i = i + 1;
+    }
+    if (mf == null || mf.body == null) {
+        return null;
+    }
+    SMap subs;
+    i = 0;
+    while (i < List_len<TypeParam>(&td.type_params) && i < List_len<string>(&ia.args)) {
+        SMap_set(&subs, List_get<TypeParam>(&td.type_params, i).name, List_get<string>(&ia.args, i));
+        i = i + 1;
+    }
+    List<Param> params;
+    List_push<Param>(&params, eb_param(et_cat("*", inst), "self"));
+    i = 0;
+    while (i < List_len<Param>(&mf.params)) {
+        Param p = List_get<Param>(&mf.params, i);
+        List_push<Param>(&params, eb_param(ty_subst_type(p.ty, &subs), p.name));
+        i = i + 1;
+    }
+    *EBlock saved_blk = b.blk;
+    *EFunc saved_fn = b.cur_fn;
+    int saved_nv = b.nv;
+    int saved_nb = b.nb;
+    SMap saved_tpo = SMap_copy(&b.tpo);
+    string saved_key = b.inst_key;
+    b.tpo = SMap_copy(&subs);
+    b.inst_key = eb_inst_key_of(td, &subs);
+    string ret = ty_subst_type(mf.ret_type, &subs);
+    *EFunc nf = em_create_func(b.m, mangled, eb_type(b, ret));
+    i = 0;
+    while (i < List_len<Param>(&params)) {
+        Param p = List_get<Param>(&params, i);
+        efn_add_param(nf, p.name, eb_type(b, p.ty));
+        i = i + 1;
+    }
+    eb_function(b, eb_mk_fn(mangled, ret, &params, mf.body));
+    b.tpo = saved_tpo;
+    b.inst_key = saved_key;
+    b.cur_fn = saved_fn;
+    b.blk = saved_blk;
+    b.nv = saved_nv;
+    b.nb = saved_nb;
+    return em_func(b.m, mangled);
+}
+
+*EFunc eb_inst_fn_template(EB* b, *DeclNode fd, string mangled, SMap* subs) {
+    *EFunc f = em_func(b.m, mangled);
+    if (f != null) {
+        return f;
+    }
+    *EBlock saved_blk = b.blk;
+    *EFunc saved_fn = b.cur_fn;
+    int saved_nv = b.nv;
+    int saved_nb = b.nb;
+    SMap saved_tpo = SMap_copy(&b.tpo);
+    string saved_key = b.inst_key;
+    b.tpo = SMap_copy(subs);
+    b.inst_key = eb_inst_key_of(fd, subs);
+    string ret = ty_subst_type(fd.ret_type, subs);
+    List<Param> params;
+    List<Param> eparams;
+    int variadic = 0;
+    int i = 0;
+    while (i < List_len<Param>(&fd.params)) {
+        Param p = List_get<Param>(&fd.params, i);
+        string spt = ty_subst_type(p.ty, subs);
+        List_push<Param>(&params, eb_param(spt, p.name));
+        if (et_eq(p.ty, "...") == 1) {
+            variadic = 1;
+        } else {
+            List_push<Param>(&eparams, eb_param(spt, p.name));
+        }
+        i = i + 1;
+    }
+    *EFunc nf = em_create_func(b.m, mangled, eb_type(b, ret));
+    i = 0;
+    while (i < List_len<Param>(&eparams)) {
+        Param p = List_get<Param>(&eparams, i);
+        efn_add_param(nf, p.name, eb_type(b, p.ty));
+        i = i + 1;
+    }
+    nf.is_variadic = variadic;
+    eb_function(b, eb_mk_fn(mangled, ret, &params, fd.body));
+    b.tpo = saved_tpo;
+    b.inst_key = saved_key;
+    b.cur_fn = saved_fn;
+    b.blk = saved_blk;
+    b.nv = saved_nv;
+    b.nb = saved_nb;
+    return em_func(b.m, mangled);
+}
+
+// --- interfaces ---
+
+EOp eb_box_iface(EB* b, string iface, string sname, EOp sptr) {
+    *EIface inf = eb_iface(b, iface);
+    if (inf == null) {
+        return sptr;
+    }
+    string vt = et_cat3(iface, "_vtable_", sname);
+    if (eb_is_global(b, vt) == 0) {
+        EGlobal g;
+        g.name = vt;
+        g.ty = et_array(et_ptr(null), (int64)List_len<string>(&inf.mnames));
+        int mi = 0;
+        while (mi < List_len<string>(&inf.mnames)) {
+            string mname = List_get<string>(&inf.mnames, mi);
+            string mangled = et_cat3(sname, "_", mname);
+            *EFunc f = em_func(b.m, mangled);
+            if (f == null) {
+                f = eb_inst_generic_method(b, sname, mname);
+            }
+            if (f == null) {
+                *DeclNode gf = eb_generic_free_method(b, sname, mname);
+                if (gf != null) {
+                    List<string> tps;
+                    eb_tp_names(gf, &tps);
+                    SMap subs;
+                    eb_unify(b, List_get<Param>(&gf.params, 0).ty, et_cat("*", sname), &tps, &subs);
+                    if (mi < List_len<List<string>>(&inf.mparams)) {
+                        List<string> ipts = List_get<List<string>>(&inf.mparams, mi);
+                        int j = 1;
+                        while (j < List_len<Param>(&gf.params) && j - 1 < List_len<string>(&ipts)) {
+                            eb_unify(b, List_get<Param>(&gf.params, j).ty, List_get<string>(&ipts, j - 1), &tps, &subs);
+                            j = j + 1;
+                        }
+                    }
+                    string gname = gf.name;
+                    int k = 0;
+                    while (k < List_len<string>(&tps)) {
+                        gname = et_cat3(gname, "_", ty_mangle(et_s(SMap_get(&subs, List_get<string>(&tps, k)))));
+                        k = k + 1;
+                    }
+                    f = eb_inst_fn_template(b, gf, gname, &subs);
+                }
+            }
+            string actual = mangled;
+            if (f != null) {
+                actual = f.name;
+            }
+            List_push<EOp>(&g.elems, eo_global(actual, et_ptr(null)));
+            mi = mi + 1;
+        }
+        List_push<EGlobal>(&b.m.globals, g);
+    }
+    string dst = et_cat(eb_new_var(b), ".iface");
+    eb_i2(b, EO_MAKEIFACE, dst, et_iface(iface), sptr, eo_global(vt, et_ptr(null)));
+    return eo_var(dst, et_iface(iface));
+}
+
+EOp eb_eval_for(EB* b, *ExprNode e, *ETy target) {
+    if (e == null) {
+        return eo_null();
+    }
+    if (target == null) {
+        return eb_eval(b, e);
+    }
+    if (et_is_iface(target) == 1) {
+        string iface = et_nominal(target);
+        *ETy src = eb_expr_type(b, e);
+        if (et_is_iface(src) == 1) {
+            return eb_eval(b, e);
+        }
+        if (e.kind == EK_LITERAL && e.lit_kind == LIT_NULL) {
+            string dst = et_cat(eb_new_var(b), ".iface_null");
+            eb_i2(b, EO_MAKEIFACE, dst, target, eo_null(), eo_null());
+            return eo_var(dst, target);
+        }
+        string sname = "";
+        string se = eb_sema_type(b, e);
+        if (et_len(se) > 0) {
+            string st = tyq_strip(se);
+            while (et_len(st) > 0 && st[0] == '*') {
+                st = et_from(st, 1);
+            }
+            while (et_len(st) > 0 && st[et_len(st) - 1] == '*') {
+                st = et_sub(st, 0, et_len(st) - 1);
+            }
+            if (et_findc(st, '<') >= 0) {
+                sname = eb_mangle_note(b, st);
+            } else {
+                sname = ty_nominal(ty_parse(st));
+            }
+        }
+        if (et_len(sname) == 0 && src != null && src.elem != null) {
+            sname = et_nominal(src.elem);
+        }
+        return eb_box_iface(b, iface, sname, eb_eval(b, e));
+    }
+    if (et_is_closure(target) == 1) {
+        EOp v = eb_eval(b, e);
+        if (et_is_closure(v.ty) == 1) {
+            return v;
+        }
+        string dst = et_cat(eb_new_var(b), ".fn_closure");
+        eb_i2(b, EO_MAKECLOSURE, dst, target, eb_closure_target(b, v), eo_null());
+        return eo_var(dst, target);
+    }
+    return eb_coerce(b, eb_eval(b, e), target);
+}
+
+EOp eb_eval_for_s(EB* b, *ExprNode e, string target) {
+    if (e == null) {
+        return eo_null();
+    }
+    if (et_len(target) == 0) {
+        return eb_eval(b, e);
+    }
+    string t = target;
+    if (et_pfx(t, "interface:") == 1) {
+        t = et_from(t, 10);
+    }
+    if (eb_iface(b, t) != null) {
+        return eb_eval_for(b, e, et_iface(t));
+    }
+    return eb_eval_for(b, e, eb_type(b, target));
+}

@@ -1,0 +1,266 @@
+// eir_b_dbg.esk: dbg (part of eir_b_conv.esk, imported in order)
+
+// --- dbg ---
+
+void eb_fmt_lit(String* fmt, string x) {
+    int i = 0;
+    while (x[i] != 0) {
+        if (x[i] == '%') {
+            String_append(fmt, "%%");
+        } else {
+            String_push(fmt, x[i]);
+        }
+        i = i + 1;
+    }
+}
+
+EOp eb_dbg_load(EB* b, EOp addr, *ETy lt) {
+    string v = eb_new_var(b);
+    eb_i1(b, EO_LOAD, v, lt, addr);
+    return eo_var(v, lt);
+}
+
+int eb_is_sint_name(string t) {
+    if (et_eq(t, "int") == 1 || et_eq(t, "int8") == 1 || et_eq(t, "int16") == 1 || et_eq(t, "int32") == 1
+        || et_eq(t, "int64") == 1) {
+        return 1;
+    }
+    return 0;
+}
+
+int eb_is_uint_name(string t) {
+    if (et_eq(t, "uint") == 1 || et_eq(t, "uint8") == 1 || et_eq(t, "uint16") == 1 || et_eq(t, "uint32") == 1
+        || et_eq(t, "uint64") == 1) {
+        return 1;
+    }
+    return 0;
+}
+
+void eb_dbg_format(EB* b, string t0, EOp addr, String* fmt, List<EOp>* args, int depth) {
+    string t = tyq_strip(t0);
+    string al = SMap_get(&b.aliases, t);
+    if (al != null) {
+        t = tyq_strip(al);
+    }
+    string key = t;
+    if (et_pfx(t, "struct:") == 1) {
+        key = et_from(t, 7);
+    }
+    if (et_findc(key, '<') >= 0 && et_findc(key, '[') < 0 && et_findc(key, '*') < 0) {
+        key = eb_mangle_note(b, key);   // the checker's spelling of an instance is its mangled name
+    }
+    *ETy ty = eb_type(b, t);
+    *TyT pt = ty_parse(t);
+    if (eb_is_sint_name(t) == 1 || eb_is_uint_name(t) == 1) {
+        if (eb_is_sint_name(t) == 1) {
+            List_push<EOp>(args, eb_coerce(b, eb_dbg_load(b, addr, ty), et_i64()));
+            String_append(fmt, "%lld");
+        } else {
+            List_push<EOp>(args, eb_coerce(b, eb_dbg_load(b, addr, ty), et_u64()));
+            String_append(fmt, "%llu");
+        }
+        return;
+    }
+    if (et_eq(t, "bool") == 1) {
+        List_push<EOp>(args, eb_select_ptr(b, eb_dbg_load(b, addr, ty), eo_str("true"), eo_str("false")));
+        String_append(fmt, "%s");
+        return;
+    }
+    if (et_eq(t, "char") == 1) {
+        List_push<EOp>(args, eb_coerce(b, eb_dbg_load(b, addr, ty), et_i32()));
+        String_append(fmt, "'%c'");
+        return;
+    }
+    if (et_eq(t, "float") == 1 || et_eq(t, "double") == 1) {
+        List_push<EOp>(args, eb_coerce(b, eb_dbg_load(b, addr, ty), et_f64()));
+        String_append(fmt, "%g");
+        return;
+    }
+    if (et_eq(t, "string") == 1) {
+        EOp v = eb_dbg_load(b, addr, ty);
+        string isn = eb_new_var(b);
+        eb_icmp(b, isn, et_i1(), v, eo_null(), EIC_EQ);
+        EOp c = eo_var(isn, et_i1());
+        EOp q = eb_select_ptr(b, c, eo_str(""), eo_str("\""));
+        List_push<EOp>(args, q);
+        List_push<EOp>(args, eb_select_ptr(b, c, eo_str("null"), v));
+        List_push<EOp>(args, q);
+        String_append(fmt, "%s%s%s");
+        return;
+    }
+    if (pt.kind == TYK_ARRAY && pt.elem != null && et_is_array(ty) == 1) {
+        String_append(fmt, "[");
+        int64 i = (int64)0;
+        while (i < ty.size && i < (int64)16) {
+            if (i > (int64)0) {
+                String_append(fmt, ", ");
+            }
+            string ep = eb_new_var(b);
+            eb_i2(b, EO_GEP, ep, et_ptr(ty.elem), addr, eo_int(i, et_i64()));
+            if (depth < 4) {
+                eb_dbg_format(b, ty_str(pt.elem), eo_var(ep, et_ptr(ty.elem)), fmt, args, depth + 1);
+            } else {
+                String_append(fmt, "...");
+            }
+            i = i + (int64)1;
+        }
+        if (ty.size > (int64)16) {
+            String_append(fmt, ", ...");
+        }
+        String_append(fmt, "]");
+        return;
+    }
+    *DeclNode sd = DMap_get(&b.plain_structs, key);
+    *EInstArgs ia = IAMap_get(&b.inst_args, key);
+    int is_struct = 0;
+    if (sd != null && DMap_has(&b.union_decls, key) == 0) {
+        is_struct = 1;
+    }
+    if (ia != null && DMap_has(&b.tmpl_decls, ia.base) == 1) {
+        is_struct = 1;
+    }
+    if (is_struct == 1) {
+        SMap subs;
+        if (sd == null) {
+            sd = DMap_get(&b.tmpl_decls, ia.base);
+            int k = 0;
+            while (k < List_len<TypeParam>(&sd.type_params) && k < List_len<string>(&ia.args)) {
+                SMap_set(&subs, List_get<TypeParam>(&sd.type_params, k).name, List_get<string>(&ia.args, k));
+                k = k + 1;
+            }
+        }
+        int bits = 0;
+        int k = 0;
+        while (k < List_len<int>(&sd.field_bits)) {
+            if (List_get<int>(&sd.field_bits, k) != 0) {
+                bits = 1;
+            }
+            k = k + 1;
+        }
+        if (bits == 1 || List_len<string>(&sd.pad_tys) > 0) {
+            String_append(fmt, "<");
+            eb_fmt_lit(fmt, key);
+            String_append(fmt, ">");
+            return;
+        }
+        eb_ensure_layout(b, key);
+        eb_fmt_lit(fmt, key);
+        String_append(fmt, "{");
+        int i = 0;
+        while (i < List_len<Param>(&sd.params)) {
+            Param f = List_get<Param>(&sd.params, i);
+            if (i > 0) {
+                String_append(fmt, ", ");
+            }
+            eb_fmt_lit(fmt, f.name);
+            String_append(fmt, ": ");
+            string fts = f.ty;
+            if (SMap_len(&subs) > 0) {
+                fts = ty_subst_type(f.ty, &subs);
+            }
+            *ETy ft = eb_type(b, fts);
+            string fp = eb_new_var(b);
+            eb_i3(b, EO_FIELDPTR, fp, et_ptr(ft), eo_var(key, null), addr, eo_str(f.name));
+            if (depth < 4) {
+                eb_dbg_format(b, fts, eo_var(fp, et_ptr(ft)), fmt, args, depth + 1);
+            } else {
+                String_append(fmt, "...");
+            }
+            i = i + 1;
+        }
+        String_append(fmt, "}");
+        return;
+    }
+    if (et_is_ptr(ty) == 1) {
+        List_push<EOp>(args, eb_dbg_load(b, addr, ty));
+        String_append(fmt, "%p");
+        return;
+    }
+    if (DMap_has(&b.plain_enums, key) == 1) {
+        eb_fmt_lit(fmt, key);
+        String_append(fmt, "(%lld)");
+        List_push<EOp>(args, eb_coerce(b, eb_dbg_load(b, addr, et_i32()), et_i64()));
+        return;
+    }
+    String_append(fmt, "<");
+    eb_fmt_lit(fmt, key);
+    String_append(fmt, ">");
+}
+
+int eb_host_windows() {
+#ifdef _WIN32
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+EOp eb_emit_dbg(EB* b, *ExprNode node) {
+    *ExprNode arg = List_get<*ExprNode>(&node.kids, 0);
+    string t = eb_sema_type(b, arg);
+    *ETy ty = eb_type(b, t);
+    EOp v = eb_eval_for(b, arg, ty);
+    string slot = et_cat(eb_new_var(b), ".dbg");
+    eb_entry_alloca(b, slot, ty, (int64)8);
+    EOp addr = eo_var(slot, et_ptr(ty));
+    eb_store(b, v, addr);
+    String fmt;
+    String_init(&fmt, 64);
+    string head = et_cat3("[dbg ", et_itoa(node.a.line), ":");
+    head = et_cat3(head, et_itoa(node.a.col), "] ");
+    head = et_cat3(head, et_s(node.dbg_text), " = ");
+    eb_fmt_lit(&fmt, head);
+    List<EOp> args;
+    eb_dbg_format(b, t, addr, &fmt, &args, 0);
+    String_append(&fmt, "\n");
+    string triple = b.triple;
+#ifdef __APPLE__
+    if (et_len(triple) == 0) {
+        triple = "darwin";
+    }
+#else
+    if (et_len(triple) == 0 && eb_host_windows() == 1) {
+        triple = "windows";
+    }
+#endif
+    EOp err;
+    if (et_find(triple, "windows", 0) >= 0 || et_find(triple, "mingw", 0) >= 0) {
+        string e = eb_new_var(b);
+        eb_i2(b, EO_CALL, e, et_ptr(null), eo_global("__acrt_iob_func", et_ptr(null)), eo_int((int64)2, et_i32()));
+        err = eo_var(e, et_ptr(null));
+    } else {
+        int darwin = 0;
+        if (et_find(triple, "darwin", 0) >= 0 || et_find(triple, "apple", 0) >= 0 || et_find(triple, "macos", 0) >= 0
+            || et_find(triple, "ios", 0) >= 0) {
+            darwin = 1;
+        }
+        string e = eb_new_var(b);
+        string g = "stderr";
+        if (darwin == 1) {
+            g = "__stderrp";
+        }
+        eb_i1(b, EO_LOAD, e, et_ptr(null), eo_global(g, et_ptr(et_ptr(null))));
+        err = eo_var(e, et_ptr(null));
+    }
+    if (em_func(b.m, "fprintf") == null) {
+        *EFunc f = em_create_func(b.m, "fprintf", et_i32());
+        efn_add_param(f, "stream", et_ptr(null));
+        efn_add_param(f, "fmt", et_ptr(et_u8()));
+        f.is_extern = 1;
+        f.is_variadic = 1;
+    }
+    EInst c = ei_make(EO_CALL, eb_new_var(b), et_i32());
+    ei_add(&c, eo_global("fprintf", et_ptr(null)));
+    ei_add(&c, err);
+    string fs = (string)String_cstr(&fmt);
+    ei_add(&c, eo_str(fs));
+    int i = 0;
+    while (i < List_len<EOp>(&args)) {
+        ei_add(&c, List_get<EOp>(&args, i));
+        i = i + 1;
+    }
+    eb_emit(b, c);
+    string r = eb_new_var(b);
+    eb_i1(b, EO_LOAD, r, ty, addr);
+    return eo_var(r, ty);
+}
