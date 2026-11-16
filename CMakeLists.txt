@@ -61,6 +61,11 @@ set(SOURCES
     sema/typecheck_decl.cpp
     sema/typecheck_stmt.cpp
     sema/typecheck_expr.cpp
+    sema/typecheck_narrowing.cpp
+    sema/typecheck_call.cpp
+    sema/typecheck_call_args.cpp
+    sema/typecheck_access.cpp
+    sema/typecheck_builtin.cpp
     sema/typecheck_type.cpp
     sema/c_header.cpp
     sema/async_transform.cpp
