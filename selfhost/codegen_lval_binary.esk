@@ -1,0 +1,509 @@
+// codegen_lval_binary.esk: built-in unary and binary operators (part of codegen_lval.esk, imported in order)
+
+// A built-in prefix `-`, `!` or `~` applied to its already evaluated operand.
+CgVal cg_unary_apply(Codegen* g, *ExprNode e, CgVal operand) {
+    let v: CgVal;
+    v.ety = "";
+    if (cg_streq(e.sval, "-") == 1 || cg_streq(e.sval, "~") == 1) {
+        int nw = cg_int_w(operand.ty);                   // C: a narrow operand becomes int first
+        if (nw > 0 && nw < 32) {
+            operand.op = cg_coerce(g, operand, "i32");
+            operand.ty = "i32";
+            operand.ety = "int";
+        }
+    }
+    if (cg_streq(e.sval, "-") == 1) {
+        CgVal a = operand;
+        string t = cg_tmp(g);
+        if (cg_is_float(a.ty) == 1) {                  // floating-point negation
+            cg_emit(g, "  ");
+            cg_emit(g, t);
+            cg_emit(g, " = fneg ");
+            cg_emit(g, a.ty);
+            cg_emit(g, " ");
+            cg_emit(g, a.op);
+            cg_emit(g, "\n");
+        } else {
+            cg_emit(g, "  ");
+            cg_emit(g, t);
+            cg_emit(g, " = sub ");
+            cg_emit(g, a.ty);
+            cg_emit(g, " 0, ");
+            cg_emit(g, a.op);
+            cg_emit(g, "\n");
+        }
+        v.op = t;   // keeps the (promoted) signedness
+        v.ty = a.ty;
+        v.ety = a.ety;
+        return v;
+    }
+    if (cg_streq(e.sval, "!") == 1) {                // logical not: (x == 0) -> i1
+        CgVal a = cg_iface_data(g, operand);
+        string t = cg_tmp(g);
+        if (cg_is_float(a.ty) == 1) {                  // !x on a float: x == 0.0
+            cg_emit(g, "  ");
+            cg_emit(g, t);
+            cg_emit(g, " = fcmp oeq ");
+            cg_emit(g, a.ty);
+            cg_emit(g, " ");
+            cg_emit(g, a.op);
+            cg_emit(g, ", 0.0\n");
+        } else {
+            string zero = "0";
+            if (cg_streq(a.ty, "ptr") == 1) {   // !p on a pointer: p == null
+                zero = "null";
+            }
+            cg_emit(g, "  ");
+            cg_emit(g, t);
+            cg_emit(g, " = icmp eq ");
+            cg_emit(g, a.ty);
+            cg_emit(g, " ");
+            cg_emit(g, a.op);
+            cg_emit(g, ", ");
+            cg_emit(g, zero);
+            cg_emit(g, "\n");
+        }
+        v.op = t;
+        v.ty = "i1";
+        v.ety = "bool";
+        return v;
+    }
+    if (cg_streq(e.sval, "~") == 1) {                // bitwise not: xor with all-ones
+        CgVal a = operand;
+        string t = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, t);
+        cg_emit(g, " = xor ");
+        cg_emit(g, a.ty);
+        cg_emit(g, " ");
+        cg_emit(g, a.op);
+        cg_emit(g, ", -1\n");
+        v.op = t;
+        v.ty = a.ty;
+        v.ety = a.ety;
+        return v;
+    }
+    return operand;
+}
+
+// A non-assignment binary expression. A left-leaning chain (`a + b + c ...`) is as deep
+// as it is long, so it is emitted along its left spine with a loop (mirrors
+// CodeGen::visit(BinaryExpr)): the operand types are derived bottom-up once (as cg_etype
+// does), then the leftmost operand is evaluated and each built-in operator is applied to
+// the running value. An overloaded operator ends the spine (it is evaluated as an
+// ordinary operand, through its own call).
+CgVal cg_binary_chain(Codegen* g, *ExprNode e) {
+    List<*ExprNode> spine;
+    List_init<*ExprNode>(&spine, 8);
+    *ExprNode b = e;
+    while (b != null && b.kind == EK_BINARY && cg_streq(b.sval, "=") == 0) {
+        List_push<*ExprNode>(&spine, b);
+        b = b.a;
+    }
+    int n = List_len<*ExprNode>(&spine);
+    List<string> opns;   // each node's overload fn ("" = built-in)
+    List_init<string>(&opns, n);
+    int i = 0;
+    while (i < n) {
+        List_push<string>(&opns, "");
+        i = i + 1;
+    }
+    string lt = cg_etype(g, b);
+    i = n - 1;
+    while (i >= 0) {
+        *ExprNode sn = List_get<*ExprNode>(&spine, i);
+        string rt = cg_etype(g, sn.b);
+        string bopn = cg_op_resolve(g, sn.sval, lt, rt);
+        List_set<string>(&opns, i, bopn);
+        if (bopn[0] != 0) {
+            lt = cg_find_fn(g, bopn).rety;
+        }
+        else {
+            lt = cg_binary_ety(g, sn.sval, lt, rt);
+        }
+        i = i - 1;
+    }
+    string topn = List_get<string>(&opns, 0);
+    if (topn[0] != 0) {   // binary overload
+        return cg_op_call(g, topn, e.a, e.b);
+    }
+    int m = 1;
+    while (m < n) {
+        string mopn = List_get<string>(&opns, m);
+        if (mopn[0] != 0) {
+            break;
+        }
+        m = m + 1;
+    }
+    *ExprNode last = List_get<*ExprNode>(&spine, m - 1);
+    CgVal val = cg_expr(g, last.a);
+    i = m - 1;
+    while (i >= 0) {
+        val = cg_binary_builtin(g, List_get<*ExprNode>(&spine, i), val);
+        i = i - 1;
+    }
+    List_free<*ExprNode>(&spine);
+    List_free<string>(&opns);
+    return val;
+}
+
+// One built-in binary operator `e` applied to its already evaluated left operand `l`
+// (the right operand is evaluated here).
+CgVal cg_binary_builtin(Codegen* g, *ExprNode e, CgVal left) {
+    CgVal l = left;
+    let v: CgVal;
+    v.ety = "";
+    if (cg_streq(e.sval, "&&") == 1 || cg_streq(e.sval, "||") == 1) {
+        // Short-circuit via a result slot: store the LHS, branch over the RHS when
+        // the result is already decided (&& false / || true), else evaluate the RHS.
+        int is_and = cg_streq(e.sval, "&&");
+        string res = cg_entry_alloca(g, "i1");
+        CgVal a = cg_cond_val(g, l);
+        cg_emit(g, "  store i1 ");
+        cg_emit(g, a.op);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, res);
+        cg_emit(g, "\n");
+        string lrhs = cg_lbl(g);
+        string lend = cg_lbl(g);
+        cg_emit(g, "  br i1 ");
+        cg_emit(g, a.op);
+        if (is_and == 1) {
+            cg_emit(g, ", label %");
+            cg_emit(g, lrhs);
+            cg_emit(g, ", label %");
+            cg_emit(g, lend);
+        }
+        else {
+            cg_emit(g, ", label %");
+            cg_emit(g, lend);
+            cg_emit(g, ", label %");
+            cg_emit(g, lrhs);
+        }
+        cg_emit(g, "\n");
+        g.terminated = 1;
+        cg_label(g, lrhs);
+        CgVal b = cg_cond(g, e.b);
+        cg_emit(g, "  store i1 ");
+        cg_emit(g, b.op);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, res);
+        cg_emit(g, "\n");
+        cg_br(g, lend);
+        cg_label(g, lend);
+        string t = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, t);
+        cg_emit(g, " = load i1, ptr ");
+        cg_emit(g, res);
+        cg_emit(g, "\n");
+        v.op = t;
+        v.ty = "i1";
+        v.ety = "bool";
+        return v;
+    }
+    CgVal r = cg_expr(g, e.b);
+    // An interface value compares with `null` by its data pointer.
+    if ((cg_streq(e.sval, "==") == 1 || cg_streq(e.sval, "!=") == 1)
+        && (cg_streq(l.ty, "%iface_fat") == 1) != (cg_streq(r.ty, "%iface_fat") == 1)) {
+        l = cg_iface_data(g, l);
+        r = cg_iface_data(g, r);
+    }
+    // C integer promotions: an integer operand narrower than `int` (bool, char, int8/16,
+    // uint8/16) becomes a signed `int` (extended by its own signedness) before any
+    // arithmetic, bitwise, shift, or comparison. Mirrors CodeGen::isIntPromotingOp.
+    if (cg_arith_op(e.sval)[0] != 0 || cg_cmp_pred(e.sval)[0] != 0) {
+        int plw = cg_int_w(l.ty);
+        if (plw > 0 && plw < 32) {
+            l.op = cg_coerce(g, l, "i32");
+            l.ty = "i32";
+            l.ety = "int";
+        }
+        int prw = cg_int_w(r.ty);
+        if (prw > 0 && prw < 32) {
+            r.op = cg_coerce(g, r, "i32");
+            r.ty = "i32";
+            r.ety = "int";
+        }
+    }
+    // Floating-point: if either operand is float/double, promote both to the wider
+    // and use fcmp/fadd/… (mixed int/float promotes the int via sitofp in cg_coerce).
+    if (cg_is_float(l.ty) == 1 || cg_is_float(r.ty) == 1) {
+        string fty = "float";
+        if (cg_streq(l.ty, "double") == 1 || cg_streq(r.ty, "double") == 1) {
+            fty = "double";
+        }
+        string lop = cg_coerce(g, l, fty);
+        string rop = cg_coerce(g, r, fty);
+        string fpred = cg_fcmp_pred(e.sval);
+        if (fpred[0] != 0) {
+            string t = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, t);
+            cg_emit(g, " = fcmp ");
+            cg_emit(g, fpred);
+            cg_emit(g, " ");
+            cg_emit(g, fty);
+            cg_emit(g, " ");
+            cg_emit(g, lop);
+            cg_emit(g, ", ");
+            cg_emit(g, rop);
+            cg_emit(g, "\n");
+            v.op = t;
+            v.ty = "i1";
+            v.ety = "bool";
+            return v;
+        }
+        string fop = cg_farith_op(e.sval);
+        if (fop[0] != 0) {
+            string t = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, t);
+            cg_emit(g, " = ");
+            cg_emit(g, fop);
+            if (g.fp_contract == 1 && cg_streq(fop, "fdiv") == 0 && cg_streq(fop, "frem") == 0) {
+                cg_emit(g, " contract");
+            }
+            cg_emit(g, " ");
+            cg_emit(g, fty);
+            cg_emit(g, " ");
+            cg_emit(g, lop);
+            cg_emit(g, ", ");
+            cg_emit(g, rop);
+            cg_emit(g, "\n");
+            v.op = t;
+            v.ty = fty;
+            v.ety = fty;
+            return v;
+        }
+    }
+    // Integer operand unification (C usual arithmetic conversions): widen the narrower
+    // operand to the wider (signedness-aware via cg_coerce), and pick unsigned ops/
+    // predicates when either operand is unsigned. Pointer operands skip this (handled
+    // specially below); for them lw/rw are 0 so icty/ilop/irop stay the raw values.
+    int lw = cg_int_w(l.ty);
+    int rw = cg_int_w(r.ty);
+    string icty = l.ty;
+    string ilop = l.op;
+    string irop = r.op;
+    int uns = 0;
+    if (lw > 0 && rw > 0) {
+        if (rw > lw) {
+            icty = r.ty;
+        } else {
+            icty = l.ty;
+        }
+        // A shift computes in the width of the value shifted; the count never widens it.
+        if (cg_streq(e.sval, "<<") == 1 || cg_streq(e.sval, ">>") == 1) {
+            icty = l.ty;
+        }
+        ilop = cg_coerce(g, l, icty);
+        irop = cg_coerce(g, r, icty);
+        // C usual arithmetic conversions: an op mixing signed and unsigned is unsigned
+        // only when the unsigned operand's width is at least the signed one's; a wider
+        // signed type represents every value of a narrower unsigned one (then signed).
+        int lu = cg_is_unsigned(l.ety);
+        int ru = cg_is_unsigned(r.ety);
+        if (lu == ru) {
+            uns = lu;
+        }
+        else if (lu == 1) {
+            if (lw >= rw) {
+                uns = 1;
+            }
+        }
+        else {
+            if (rw >= lw) {
+                uns = 1;
+            }
+        }
+    }
+    string pred = cg_cmp_pred_s(e.sval, uns);
+    if (pred[0] != 0) {
+        // Pointer comparisons: use `ptr` as the icmp type and turn a literal `0` on
+        // either side into `null` (Eskiu writes both `p != null` and `p != 0`).
+        string cty = icty;
+        string lop = ilop;
+        string rop = irop;
+        if (cg_streq(l.ty, "ptr") == 1 || cg_streq(r.ty, "ptr") == 1) {
+            cty = "ptr";
+            lop = l.op;
+            rop = r.op;
+            if (cg_streq(lop, "0") == 1) {
+                lop = "null";
+            }
+            if (cg_streq(rop, "0") == 1) {
+                rop = "null";
+            }
+        }
+        string t = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, t);
+        cg_emit(g, " = icmp ");
+        cg_emit(g, pred);
+        cg_emit(g, " ");
+        cg_emit(g, cty);
+        cg_emit(g, " ");
+        cg_emit(g, lop);
+        cg_emit(g, ", ");
+        cg_emit(g, rop);
+        cg_emit(g, "\n");
+        v.op = t;
+        v.ty = "i1";
+        v.ety = "bool";
+        return v;
+    }
+    // Pointer difference: `p - q` (both pointers) → (ptrtoint p - ptrtoint q) / sizeof(elem),
+    // a signed count of elements (an integer, not a `ptr`). Must precede the ptr±int case.
+    if (cg_streq(e.sval, "-") == 1
+        && cg_streq(l.ty, "ptr") == 1 && cg_streq(r.ty, "ptr") == 1) {
+        string li = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, li);
+        cg_emit(g, " = ptrtoint ptr ");
+        cg_emit(g, l.op);
+        cg_emit(g, " to i64\n");
+        string ri = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, ri);
+        cg_emit(g, " = ptrtoint ptr ");
+        cg_emit(g, r.op);
+        cg_emit(g, " to i64\n");
+        string d = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, d);
+        cg_emit(g, " = sub i64 ");
+        cg_emit(g, li);
+        cg_emit(g, ", ");
+        cg_emit(g, ri);
+        cg_emit(g, "\n");
+        string elem = cg_deref_ty(l.ety);
+        string ell = cg_lltype(g, elem);
+        if (cg_streq(ell, "i8") == 1 || cg_streq(ell, "void") == 1) {   // element size 1: byte diff is the count
+            v.op = d;
+            v.ty = "i64";
+            v.ety = "int64";
+            return v;
+        }
+        string szg = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, szg);
+        cg_emit(g, " = getelementptr ");
+        cg_emit(g, ell);
+        cg_emit(g, ", ptr null, i32 1\n");
+        string szi = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, szi);
+        cg_emit(g, " = ptrtoint ptr ");
+        cg_emit(g, szg);
+        cg_emit(g, " to i64\n");
+        string res = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, res);
+        cg_emit(g, " = sdiv i64 ");
+        cg_emit(g, d);
+        cg_emit(g, ", ");
+        cg_emit(g, szi);
+        cg_emit(g, "\n");
+        v.op = res;
+        v.ty = "i64";
+        v.ety = "int64";
+        return v;
+    }
+    // Pointer arithmetic: `p + n` / `n + p` / `p - n` lower to getelementptr over the
+    // pointee, not an integer add on a `ptr` (which is invalid IR).
+    if ((cg_streq(e.sval, "+") == 1 || cg_streq(e.sval, "-") == 1)
+        && (cg_streq(l.ty, "ptr") == 1 || cg_streq(r.ty, "ptr") == 1)) {
+        CgVal base = l;
+        CgVal off = r;
+        if (cg_streq(l.ty, "ptr") == 0) {
+            base = r;
+            off = l;
+        }
+        string offop = off.op;
+        if (cg_streq(e.sval, "-") == 1) {              // p - n: index by -n
+            string nt = cg_tmp(g);
+            cg_emit(g, "  ");
+            cg_emit(g, nt);
+            cg_emit(g, " = sub ");
+            cg_emit(g, off.ty);
+            cg_emit(g, " 0, ");
+            cg_emit(g, off.op);
+            cg_emit(g, "\n");
+            offop = nt;
+        }
+        string elem = cg_deref_ty(base.ety);
+        string ell = cg_lltype(g, elem);
+        if (cg_streq(ell, "void") == 1) {   // `*void` steps by bytes (as the C++ build does)
+            ell = "i8";
+        }
+        string t = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, t);
+        cg_emit(g, " = getelementptr inbounds ");
+        cg_emit(g, ell);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, base.op);
+        cg_emit(g, ", ");
+        cg_emit(g, off.ty);
+        cg_emit(g, " ");
+        cg_emit(g, offop);
+        cg_emit(g, "\n");
+        v.op = t;
+        v.ty = "ptr";
+        v.ety = base.ety;
+        return v;
+    }
+    // A right shift's kind (arithmetic vs logical) follows the value being shifted
+    // (the left operand) only, independent of the count's signedness.
+    int op_uns = uns;
+    if (cg_streq(e.sval, ">>") == 1) {
+        op_uns = cg_is_unsigned(l.ety);
+    }
+    string op = cg_arith_op_s(e.sval, op_uns);
+    if (op[0] != 0) {
+        if (cg_streq(op, "shl") == 1 || cg_streq(op, "ashr") == 1 || cg_streq(op, "lshr") == 1) {
+            irop = cg_mask_shift(g, icty, irop);
+        }
+        if (cg_streq(op, "sdiv") == 1 || cg_streq(op, "srem") == 1
+            || cg_streq(op, "udiv") == 1 || cg_streq(op, "urem") == 1) {
+            v.op = cg_int_divrem(g, op, icty, ilop, irop);
+            v.ty = icty;
+            v.ety = cg_binary_ety(g, e.sval, l.ety, r.ety);
+            if (v.ety[0] == 0) {
+                v.ety = l.ety;
+            }
+            return v;
+        }
+        if ((g.safe & 2) != 0 && op_uns == 0 && cg_int_w(icty) >= 32
+            && (cg_streq(op, "add") == 1 || cg_streq(op, "sub") == 1 || cg_streq(op, "mul") == 1)) {
+            v.op = cg_safe_arith(g, op, icty, ilop, irop);
+            v.ty = icty;
+            v.ety = cg_binary_ety(g, e.sval, l.ety, r.ety);
+            if (v.ety[0] == 0) {
+                v.ety = l.ety;
+            }
+            return v;
+        }
+        string t = cg_tmp(g);
+        cg_emit(g, "  ");
+        cg_emit(g, t);
+        cg_emit(g, " = ");
+        cg_emit(g, op);
+        cg_emit(g, " ");
+        cg_emit(g, icty);
+        cg_emit(g, " ");
+        cg_emit(g, ilop);
+        cg_emit(g, ", ");
+        cg_emit(g, irop);
+        cg_emit(g, "\n");
+        v.op = t;
+        v.ty = icty;
+        v.ety = cg_binary_ety(g, e.sval, l.ety, r.ety);
+        if (v.ety[0] == 0) {
+            v.ety = l.ety;
+        }
+        return v;
+    }
+    return l;                                       // unhandled binary (S1) → left
+}
