@@ -1,0 +1,46 @@
+# ghcr.io/eskiu-lang/agent (packaging/agent-image/Dockerfile): built after each release of
+# the compiler, once a week (to pick up a new release of the ui tool, which lives in
+# eskiu-packages/ui), or by hand. The image is tested before it is pushed: the tools answer, and a new
+# app builds for the web and answers `ui agent web --json tree` in the image's Chrome.
+name: Agent image
+
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      install_sh:
+        description: The install.sh to use
+        default: https://raw.githubusercontent.com/eskiu-lang/eskiu/develop/site/install.sh
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          docker build -t agent \
+            --build-arg INSTALL_SH="${{ github.event.inputs.install_sh || 'https://raw.githubusercontent.com/eskiu-lang/eskiu/develop/site/install.sh' }}" \
+            packaging/agent-image
+      - name: Test
+        run: |
+          docker run --rm agent sh -c 'eskiuc --version && (ui help 2>&1 || true) | grep -q "usage: ui new" && emcc --version | head -1 && google-chrome --version'
+          docker run --rm agent sh -c 'cd /tmp && ui new hello && cd hello && ui agent web --json tree | tee /tmp/tree.json && grep -q "\"ok\": *true" /tmp/tree.json'
+      - name: Push
+        run: |
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          ver=$(docker run --rm agent eskiuc --version | awk '{print $2}')
+          for t in latest "eskiu-$ver"; do
+            docker tag agent "ghcr.io/eskiu-lang/agent:$t"
+            docker push "ghcr.io/eskiu-lang/agent:$t"
+          done
