@@ -1,0 +1,33 @@
+// A const pointer in either spelling: `*T const` is `T* const`, and `const *T const` is
+// `const T* const`. The binding cannot be reassigned; what it points at can be written
+// unless the pointee is const too. A struct reached through one keeps its fields.
+extern int printf(string fmt, ...);
+
+struct P { int v; }
+
+*int const g_none = null;
+
+int bump(*P const q) {
+    q.v = q.v + 1;
+    return q.v;
+}
+
+int old_bump(P* const q) {
+    q.v = q.v + 10;
+    return q.v;
+}
+
+int read(const *int const r) { return *r; }
+
+int main() {
+    int x = 1;
+    *int const b = &x;
+    *b = 5;
+    const *int const c = &x;
+    **int const pp = null;
+    P p = P{v: 1};
+    printf("%d %d %d\n", *b, *c, read(&x));
+    printf("%d %d\n", bump(&p), old_bump(&p));
+    printf("%d %d\n", g_none == null ? 1 : 0, pp == null ? 1 : 0);
+    return 0;
+}

@@ -1,0 +1,8 @@
+// EXPECT-ERROR: cannot assign to read-only location
+int main() {
+    int x = 1;
+    int y = 2;
+    *int const b = &x;
+    b = &y;
+    return 0;
+}
