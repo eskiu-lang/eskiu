@@ -1,0 +1,445 @@
+// preprocessor_if.esk: #if constant expressions (part of preprocessor.esk, imported in order)
+
+// ── #if / #elif constant expressions (mirrors PPExprEval / ppEvalIf) ──
+struct PPEval {
+    List<string> toks;
+    int pos;
+    string err;      // first error ("" = none)
+    int skip;        // > 0 inside an operand a short-circuit leaves unevaluated
+}
+
+string pp_ev_peek(PPEval* ev) {
+    if (ev.pos < List_len<string>(&ev.toks)) {
+        return List_get<string>(&ev.toks, ev.pos);
+    }
+    return "";
+}
+
+int pp_ev_eat(PPEval* ev, string t) {
+    if (pp_eq(pp_ev_peek(ev), t) == 1) {
+        ev.pos = ev.pos + 1;
+        return 1;
+    }
+    return 0;
+}
+
+void pp_ev_fail(PPEval* ev, string msg) {
+    if (ev.err[0] == 0) {
+        ev.err = msg;
+    }
+}
+
+// An evaluation error (division by zero, shift count) that a short-circuited operand
+// does not raise.
+void pp_ev_fail_eval(PPEval* ev, string msg) {
+    if (ev.skip == 0) {
+        pp_ev_fail(ev, msg);
+    }
+}
+
+int64 pp_ev_ternary(PPEval* ev);
+
+// Decode one hex digit, or -1 (mirrors the lexer's hexDigit).
+int pp_hex_digit(int c) {
+    if (c >= 48 && c <= 57) {
+        return c - 48;
+    }
+    if (c >= 97 && c <= 102) {
+        return c - 87;
+    }
+    if (c >= 65 && c <= 70) {
+        return c - 55;
+    }
+    return 0 - 1;
+}
+
+// A simple escape's byte (mirrors decodeEscape), -1 for an unknown escape.
+int pp_escape_char(int e) {
+    if (e == 97) {
+        return 7;
+    }
+    if (e == 98) {
+        return 8;
+    }
+    if (e == 92 || e == 34 || e == 39 || e == 63) {
+        return e;
+    }
+    if (e == 110) {
+        return 10;
+    }
+    if (e == 116) {
+        return 9;
+    }
+    if (e == 114) {
+        return 13;
+    }
+    if (e == 102) {
+        return 12;
+    }
+    if (e == 118) {
+        return 11;
+    }
+    return 0 - 1;
+}
+
+// The value of a character constant `t` (quotes included), decoded like the lexer's
+// char literals (mirrors decodeCharLiteral); records an error on a malformed one.
+int64 pp_ev_char(PPEval* ev, string t) {
+    int n = pp_clen(t);
+    int i = 1;
+    if (i >= n) {
+        pp_ev_fail(ev, "unterminated character literal");
+        return 0;
+    }
+    if ((int)t[i] == 39) {
+        pp_ev_fail(ev, "empty character literal");
+        return 0;
+    }
+    int v = 0;
+    if ((int)t[i] == 92 && i + 1 < n) {
+        int e = (int)t[i + 1];
+        i = i + 2;
+        if (e == 120 && i < n && pp_hex_digit((int)t[i]) >= 0) {
+            v = pp_hex_digit((int)t[i]);
+            i = i + 1;
+            if (i < n && pp_hex_digit((int)t[i]) >= 0) {
+                v = v * 16 + pp_hex_digit((int)t[i]);
+                i = i + 1;
+            }
+        } else if (e == 120) {
+            pp_ev_fail(ev, "\\x used with no following hex digits");
+            return 0;
+        } else if (e >= 48 && e <= 55) {
+            v = e - 48;
+            int k = 0;
+            while (k < 2 && i < n && (int)t[i] >= 48 && (int)t[i] <= 55) {
+                v = v * 8 + ((int)t[i] - 48);
+                i = i + 1;
+                k = k + 1;
+            }
+            if (v > 255) {
+                pp_ev_fail(ev, "octal escape sequence out of range");
+                return 0;
+            }
+        } else {
+            v = pp_escape_char(e);
+            if (v < 0) {
+                string pre = "unknown escape sequence '\\";
+                int pl = pp_clen(pre);
+                *uint8 mb = alloc<uint8>(pl + 3);         // kept by ev.err: heap, not stack
+                int mi = 0;
+                while (mi < pl) {
+                    mb[mi] = (uint8)pre[mi];
+                    mi = mi + 1;
+                }
+                mb[pl] = (uint8)e;
+                mb[pl + 1] = (uint8)39;
+                mb[pl + 2] = 0;
+                pp_ev_fail(ev, (string)mb);
+                return 0;
+            }
+        }
+    } else {
+        v = (int)t[i] & 255;
+        i = i + 1;
+    }
+    if (i + 1 != n || (int)t[i] != 39) {
+        if (i >= n) {
+            pp_ev_fail(ev, "unterminated character literal");
+        }
+        else {
+            pp_ev_fail(ev, "character literal must contain a single character");
+        }
+        return 0;
+    }
+    return (int64)(v & 255);
+}
+
+// Decimal text of an int64 (for diagnostics).
+string pp_i64toa(int64 v) {
+    uint8[24] buf;
+    int p = 23;
+    buf[p] = 0;
+    uint64 u = (uint64)v;
+    int neg = 0;
+    if (v < 0) {
+        neg = 1;
+        u = (uint64)0 - u;
+    }
+    if (u == 0) {
+        p = p - 1;
+        buf[p] = (uint8)48;
+    }
+    while (u > 0) {
+        p = p - 1;
+        buf[p] = (uint8)(48 + (int)(u % 10));
+        u = u / 10;
+    }
+    if (neg == 1) {
+        p = p - 1;
+        buf[p] = (uint8)45;
+    }
+    return pp_sub((string)&buf[0], p, 23 - p);
+}
+
+int64 pp_ev_primary(PPEval* ev) {
+    if (ev.pos >= List_len<string>(&ev.toks)) {
+        pp_ev_fail(ev, "expected a value");
+        return 0;
+    }
+    string t = List_get<string>(&ev.toks, ev.pos);
+    ev.pos = ev.pos + 1;
+    int c0 = (int)t[0];
+    if (pp_eq(t, "(") == 1) {
+        int64 v = pp_ev_ternary(ev);
+        if (pp_ev_eat(ev, ")") == 0) {
+            pp_ev_fail(ev, "expected ')'");
+        }
+        return v;
+    }
+    if (c0 >= 48 && c0 <= 57) {
+        int n = pp_clen(t);
+        while (n > 0 && ((int)t[n - 1] == 117 || (int)t[n - 1] == 85 || (int)t[n - 1] == 108 || (int)t[n - 1] == 76)) {
+            n = n - 1;
+        }
+        int hex = 0;
+        if (n > 1 && c0 == 48 && ((int)t[1] == 120 || (int)t[1] == 88)) {
+            hex = 1;
+        }
+        int base = 10;
+        int start = 0;
+        if (hex == 1) {
+            base = 16;
+            start = 2;
+        }
+        else if (n > 1 && c0 == 48 && ((int)t[1] == 98 || (int)t[1] == 66)) {
+            base = 2;
+            start = 2;
+        }
+        else if (n > 1 && c0 == 48) {
+            base = 8;
+        }
+        if (start >= n) {
+            pp_ev_fail(ev, pp_cat(pp_cat("invalid integer '", t), "'"));
+            return 0;
+        }
+        uint64 v = 0;
+        uint64 umax = (uint64)0 - (uint64)1;
+        int k = start;
+        while (k < n) {
+            int c = (int)t[k];
+            if (c == 95 && k > start && k + 1 < n) {
+                k = k + 1;
+                continue;
+            }
+            int dv = 99;
+            if (c >= 48 && c <= 57) {
+                dv = c - 48;
+            }
+            else if (c >= 97 && c <= 102) {
+                dv = c - 87;
+            }
+            else if (c >= 65 && c <= 70) {
+                dv = c - 55;
+            }
+            if (dv >= base) {
+                pp_ev_fail(ev, pp_cat(pp_cat("invalid integer '", t), "'"));
+                return 0;
+            }
+            if (v > (umax - (uint64)dv) / (uint64)base) {
+                pp_ev_fail(ev, pp_cat(pp_cat("integer constant '", t), "' is too large"));
+                return 0;
+            }
+            v = v * (uint64)base + (uint64)dv;
+            k = k + 1;
+        }
+        return (int64)v;
+    }
+    if (c0 == 39) {
+        return pp_ev_char(ev, t);
+    }
+    if (pp_is_alpha(c0) == 1) {
+        return 0;
+    }
+    pp_ev_fail(ev, pp_cat(pp_cat("unexpected '", t), "'"));
+    return 0;
+}
+
+int64 pp_ev_unary(PPEval* ev) {
+    if (pp_ev_eat(ev, "!") == 1) {
+        if (pp_ev_unary(ev) == 0) {
+            return 1;
+        }
+        return 0;
+    }
+    if (pp_ev_eat(ev, "~") == 1) {
+        return ~pp_ev_unary(ev);
+    }
+    if (pp_ev_eat(ev, "-") == 1) {
+        return (int64)((uint64)0 - (uint64)pp_ev_unary(ev));
+    }
+    if (pp_ev_eat(ev, "+") == 1) {
+        return pp_ev_unary(ev);
+    }
+    return pp_ev_primary(ev);
+}
+
+int64 pp_ev_mul(PPEval* ev) {
+    int64 v = pp_ev_unary(ev);
+    while (1 == 1) {
+        if (pp_ev_eat(ev, "*") == 1) {
+            v = (int64)((uint64)v * (uint64)pp_ev_unary(ev));
+        }
+        else if (pp_eq(pp_ev_peek(ev), "/") == 1 || pp_eq(pp_ev_peek(ev), "%") == 1) {
+            int dv = pp_eq(pp_ev_peek(ev), "/");
+            ev.pos = ev.pos + 1;
+            int64 r = pp_ev_unary(ev);
+            if (r == 0) {
+                pp_ev_fail_eval(ev, "division by zero");
+                v = 0;
+            }
+            else if (r == 0 - 1) {
+                if (dv == 1) {
+                    v = (int64)((uint64)0 - (uint64)v);
+                } else {
+                    v = 0;
+                }
+            }
+            else if (dv == 1) {
+                v = v / r;
+            } else {
+                v = v % r;
+            }
+        } else {
+            return v;
+        }
+    }
+    return v;
+}
+
+int64 pp_ev_add(PPEval* ev) {
+    int64 v = pp_ev_mul(ev);
+    while (1 == 1) {
+        if (pp_ev_eat(ev, "+") == 1) {
+            v = (int64)((uint64)v + (uint64)pp_ev_mul(ev));
+        }
+        else if (pp_ev_eat(ev, "-") == 1) {
+            v = (int64)((uint64)v - (uint64)pp_ev_mul(ev));
+        }
+        else {
+            return v;
+        }
+    }
+    return v;
+}
+
+int64 pp_ev_shift(PPEval* ev) {
+    int64 v = pp_ev_add(ev);
+    while (1 == 1) {
+        int left = 0;
+        if (pp_ev_eat(ev, "<<") == 1) {
+            left = 1;
+        }
+        else if (pp_ev_eat(ev, ">>") == 0) {
+            return v;
+        }
+        int64 r = pp_ev_add(ev);
+        if (r < 0 || r > 63) {
+            pp_ev_fail_eval(ev, pp_cat(pp_cat("shift count ", pp_i64toa(r)), " is out of range"));
+            v = 0;
+        }
+        else if (left == 1) {
+            v = (int64)((uint64)v << (uint64)r);
+        }
+        else {
+            v = v >> r;
+        }
+    }
+    return v;
+}
+
+int64 pp_b2i(bool b) {
+    if (b) {
+        return 1;
+    }
+    return 0;
+}
+
+int64 pp_ev_rel(PPEval* ev) {
+    int64 v = pp_ev_shift(ev);
+    while (1 == 1) {
+        if (pp_ev_eat(ev, "<") == 1) {
+            v = pp_b2i(v < pp_ev_shift(ev));
+        }
+        else if (pp_ev_eat(ev, ">") == 1) {
+            v = pp_b2i(v > pp_ev_shift(ev));
+        }
+        else if (pp_ev_eat(ev, "<=") == 1) {
+            v = pp_b2i(v <= pp_ev_shift(ev));
+        }
+        else if (pp_ev_eat(ev, ">=") == 1) {
+            v = pp_b2i(v >= pp_ev_shift(ev));
+        }
+        else {
+            return v;
+        }
+    }
+    return v;
+}
+
+int64 pp_ev_eq(PPEval* ev) {
+    int64 v = pp_ev_rel(ev);
+    while (1 == 1) {
+        if (pp_ev_eat(ev, "==") == 1) {
+            v = pp_b2i(v == pp_ev_rel(ev));
+        }
+        else if (pp_ev_eat(ev, "!=") == 1) {
+            v = pp_b2i(v != pp_ev_rel(ev));
+        }
+        else {
+            return v;
+        }
+    }
+    return v;
+}
+
+int64 pp_ev_band(PPEval* ev) {
+    int64 v = pp_ev_eq(ev);
+    while (pp_ev_eat(ev, "&") == 1) {
+        v = v & pp_ev_eq(ev);
+    }
+    return v;
+}
+
+int64 pp_ev_bxor(PPEval* ev) {
+    int64 v = pp_ev_band(ev);
+    while (pp_ev_eat(ev, "^") == 1) {
+        v = v ^ pp_ev_band(ev);
+    }
+    return v;
+}
+
+int64 pp_ev_bor(PPEval* ev) {
+    int64 v = pp_ev_bxor(ev);
+    while (pp_ev_eat(ev, "|") == 1) {
+        v = v | pp_ev_bxor(ev);
+    }
+    return v;
+}
+
+int64 pp_ev_land(PPEval* ev) {
+    int64 v = pp_ev_bor(ev);
+    while (pp_ev_eat(ev, "&&") == 1) {
+        int dead = 0;
+        if (v == 0) {
+            dead = 1;
+            ev.skip = ev.skip + 1;
+        }
+        int64 r = pp_ev_bor(ev);
+        if (dead == 1) {
+            ev.skip = ev.skip - 1;
+        }
+        v = pp_b2i(v != 0 && r != 0);
+    }
+    return v;
+}

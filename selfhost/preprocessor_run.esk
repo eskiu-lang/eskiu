@@ -1,0 +1,467 @@
+// preprocessor_run.esk: the macro table and the pass (pp_run) (part of preprocessor.esk, imported in order)
+
+List<PPMacro>* pp_table() {
+    if (g_pp_tbl_ready == 1) {
+        return &g_pp_tbl;
+    }
+    g_pp_tbl_ready = 1;
+    List_init<PPMacro>(&g_pp_tbl, 16);
+    // Host OS macro (e.g. __APPLE__/__linux__), so platform `#ifdef`s in the stdlib pick
+    // the right branch (set by every driver; the C++ seeds it in every mode).
+    if (g_pp_os != null) {
+        if (g_pp_os[0] != 0) {
+            PPMacro om;
+            om.name = g_pp_os;
+            om.is_function = 0;
+            List_init<string>(&om.params, 1);
+            om.body = "1";
+            pp_define(&g_pp_tbl, om);
+        }
+    }
+    if (g_pp_arch == null) {   // unset: the host's, like the C++
+        g_pp_arch = pp_host_arch();
+    }
+    if (g_pp_arch != null) {
+        if (g_pp_arch[0] != 0) {
+            PPMacro am;
+            am.name = g_pp_arch;
+            am.is_function = 0;
+            List_init<string>(&am.params, 1);
+            am.body = "1";
+            pp_define(&g_pp_tbl, am);
+        }
+    }
+    int pdi = 0;
+    while (pdi < List_len<string>(&g_pp_predef)) {
+        PPMacro xm;
+        xm.name = List_get<string>(&g_pp_predef, pdi);
+        xm.is_function = 0;
+        List_init<string>(&xm.params, 1);
+        xm.body = "1";
+        pp_define(&g_pp_tbl, xm);
+        pdi = pdi + 1;
+    }
+    return &g_pp_tbl;
+}
+
+// Preprocess `src` (length `len`) into a returned NUL-terminated string. `filename`
+// becomes __FILE__ (quoted) and labels diagnostics. Sets `*had_err` to 1 after
+// reporting any directive error (an active #error, a bad #if, an unbalanced
+// conditional, an unknown directive, a malformed macro invocation).
+string pp_run(string src, int len, string filename, *int had_err) {
+    had_err[0] = 0;
+    List<PPMacro>* tblp = pp_table();
+
+    // Predefined __FILE__ = "<filename>" (an ordinary object-like macro).
+    PPMacro fm;
+    fm.name = "__FILE__";
+    fm.is_function = 0;
+    List_init<string>(&fm.params, 1);
+    fm.body = pp_file_literal(filename);
+    pp_define(tblp, fm);
+
+    List<PPCond> stack;
+    List_init<PPCond>(&stack, 8);
+
+    String out;
+    String_init(&out, len + 16);
+    int first = 1;
+    int i = 0;
+    // A leading UTF-8 byte order mark is not part of the program.
+    if (len >= 3 && (int)(uint8)src[0] == 239 && (int)(uint8)src[1] == 187 && (int)(uint8)src[2] == 191) {
+        i = 3;
+    }
+    int cur_line = 0;
+    int in_block = 0;                                // a /* */ comment is open at line start
+    int in_str = 0;                                  // a string literal is open at line start
+
+    while (i < len) {
+        // Read one physical line [start, i) excluding '\n' (getline semantics).
+        String line;
+        String_init(&line, 64);
+        while (i < len && (int)src[i] != 10) {
+            String_push(&line, (char)src[i]);
+            i = i + 1;
+        }
+        if (i < len) {                  // consume the '\n'
+            i = i + 1;
+        }
+        pp_strip_cr(&line);                          // CRLF input: drop the '\r'
+        cur_line = cur_line + 1;
+        int line_no = cur_line;
+
+        // Line splicing: a real trailing '\' joins the next physical line. Each
+        // continuation becomes a trailing blank line so later line numbers hold.
+        int extra = 0;
+        int dh = 0;
+        while (dh < String_len(&line) && pp_is_sp((int)String_char_at(&line, dh)) == 1) {
+            dh = dh + 1;
+        }
+        int directive = 0;
+        if (in_block == 0 && in_str == 0 && dh < String_len(&line) && (int)String_char_at(&line, dh) == 35) {
+            directive = 1;
+        }
+        while (String_len(&line) > 0
+               && (int)String_char_at(&line, String_len(&line) - 1) == 92
+               && pp_bs_continues((string)String_cstr(&line), directive, in_str) == 1) {
+            pp_pop(&line);                           // drop the '\'
+            if (i >= len) {                 // no continuation line (getline fail)
+                break;
+            }
+            while (i < len && (int)src[i] != 10) {
+                String_push(&line, (char)src[i]);
+                i = i + 1;
+            }
+            if (i < len) {
+                i = i + 1;
+            }
+            pp_strip_cr(&line);
+            extra = extra + 1;
+            cur_line = cur_line + 1;
+        }
+
+        if (first == 0) {
+            String_push(&out, (char)10);
+        }
+        first = 0;
+
+        string ls = (string)String_cstr(&line);
+        int ln = String_len(&line);
+        int active = pp_active(&stack);
+
+        // Leading non-space char.
+        int h = 0;
+        while (h < ln && pp_is_sp((int)ls[h]) == 1) {
+            h = h + 1;
+        }
+        int handled = 0;
+
+        // A `#!` first line is a shebang (`#!/usr/bin/env -S eskiuc run`), not a directive.
+        int shebang = 0;
+        if (line_no == 1 && ln >= 2 && (int)ls[0] == 35 && (int)ls[1] == 33) {
+            shebang = 1;
+        }
+        let dir_open: int = 0;                       // the directive leaves a /* comment open
+        if (in_block == 0 && in_str == 0 && h < ln && (int)ls[h] == 35) {   // '#'
+            handled = 1;
+            if (shebang == 0) {
+                ls = pp_strip_comments(ls, &dir_open);
+                ln = pp_clen(ls);
+            }
+            int col = h + 1;
+            int p = h + 1;
+            while (p < ln && pp_is_sp((int)ls[p]) == 1) {
+                p = p + 1;
+            }
+            int ks = p;
+            while (p < ln && pp_is_alnum((int)ls[p]) == 1) {
+                p = p + 1;
+            }
+            string kw = pp_sub(ls, ks, p - ks);
+            string rest = pp_trim(pp_sub(ls, p, ln - p));
+            string operand = pp_first_word(rest, 0, pp_clen(rest));
+
+            if (pp_eq(kw, "define") == 1) {
+                if (active == 1) {
+                    int rn = pp_clen(rest);
+                    int q = 0;
+                    while (q < rn && pp_is_alnum((int)rest[q]) == 1) {
+                        q = q + 1;
+                    }
+                    string name = pp_sub(rest, 0, q);
+                    PPMacro mac;
+                    mac.name = name;
+                    mac.is_function = 0;
+                    List_init<string>(&mac.params, 2);
+                    mac.body = "";
+                    if (q < rn && (int)rest[q] == 40) {           // function-like
+                        mac.is_function = 1;
+                        int r = q + 1;
+                        String cur;
+                        String_init(&cur, 16);
+                        int done = 0;
+                        while (r < rn && done == 0) {
+                            int d = (int)rest[r];
+                            if (d == 41) {       // ')' → consume + stop
+                                r = r + 1;
+                                done = 1;
+                            }
+                            else if (d == 44) {
+                                string t = pp_trim((string)String_cstr(&cur));
+                                if (pp_clen(t) > 0) {
+                                    List_push<string>(&mac.params, t);
+                                }
+                                String_clear(&cur);
+                                r = r + 1;
+                            } else {
+                                String_push(&cur, (char)d);
+                                r = r + 1;
+                            }
+                        }
+                        string t = pp_trim((string)String_cstr(&cur));
+                        if (pp_clen(t) > 0) {
+                            List_push<string>(&mac.params, t);
+                        }
+                        if (r < rn) {
+                            mac.body = pp_trim(pp_sub(rest, r, rn - r));
+                        }
+                        else {
+                            mac.body = "";
+                        }
+                    } else {
+                        if (q < rn) {
+                            mac.body = pp_trim(pp_sub(rest, q, rn - q));
+                        }
+                        else {
+                            mac.body = "";
+                        }
+                    }
+                    if (pp_clen(name) == 0) {
+                        pp_error(filename, line_no, col, "expected a macro name after #define", had_err);
+                    }
+                    else if (pp_body_has_hash(mac.body) == 1) {
+                        pp_error(filename, line_no, col, pp_cat(pp_cat("macro '", name),
+                            "': '#' stringification and '##' token pasting are not supported"), had_err);
+                    }
+                    else {
+                        pp_define(tblp, mac);
+                    }
+                }
+            } else if (pp_eq(kw, "undef") == 1) {
+                if (active == 1) {
+                    pp_undef(tblp, operand);
+                }
+            } else if (pp_eq(kw, "ifdef") == 1 || pp_eq(kw, "ifndef") == 1) {
+                int on = 0;
+                if (active == 1) {
+                    if (pp_clen(operand) == 0) {
+                        pp_error(filename, line_no, col, pp_cat("expected a macro name after #", kw), had_err);
+                    }
+                    int want = pp_eq(kw, "ifdef");
+                    if (pp_defined(tblp, operand) == want) {
+                        on = 1;
+                    }
+                }
+                PPCond cnd;
+                cnd.parent = active;
+                cnd.branch = on;
+                cnd.taken = on;
+                cnd.saw_else = 0;
+                cnd.line = line_no;
+                cnd.col = col;
+                List_push<PPCond>(&stack, cnd);
+            } else if (pp_eq(kw, "if") == 1) {
+                int on = 0;
+                if (active == 1) {
+                    on = pp_cond_value(rest, tblp, filename, line_no, col, had_err);
+                }
+                PPCond cnd;
+                cnd.parent = active;
+                cnd.branch = on;
+                cnd.taken = on;
+                cnd.saw_else = 0;
+                cnd.line = line_no;
+                cnd.col = col;
+                List_push<PPCond>(&stack, cnd);
+            } else if (pp_eq(kw, "elif") == 1) {
+                int sn = List_len<PPCond>(&stack);
+                if (sn == 0) {
+                    pp_error(filename, line_no, col, "#elif without #if", had_err);
+                }
+                else {
+                    PPCond cc = List_get<PPCond>(&stack, sn - 1);
+                    if (cc.saw_else == 1) {
+                        pp_error(filename, line_no, col, "#elif after #else", had_err);
+                    }
+                    else {
+                        int on = 0;
+                        if (cc.parent == 1 && cc.taken == 0) {
+                            on = pp_cond_value(rest, tblp, filename, line_no, col, had_err);
+                        }
+                        cc.branch = on;
+                        if (on == 1) {
+                            cc.taken = 1;
+                        }
+                        List_set<PPCond>(&stack, sn - 1, cc);
+                    }
+                }
+            } else if (pp_eq(kw, "else") == 1) {
+                int sn = List_len<PPCond>(&stack);
+                if (sn == 0) {
+                    pp_error(filename, line_no, col, "#else without #if", had_err);
+                }
+                else {
+                    PPCond cc = List_get<PPCond>(&stack, sn - 1);
+                    if (cc.saw_else == 1) {
+                        pp_error(filename, line_no, col, "#else after #else", had_err);
+                    }
+                    else {
+                        if (cc.taken == 0) {
+                            cc.branch = 1;
+                        } else {
+                            cc.branch = 0;
+                        }
+                        cc.taken = 1;
+                        cc.saw_else = 1;
+                        List_set<PPCond>(&stack, sn - 1, cc);
+                    }
+                }
+            } else if (pp_eq(kw, "endif") == 1) {
+                int sn = List_len<PPCond>(&stack);
+                if (sn == 0) {
+                    pp_error(filename, line_no, col, "#endif without #if", had_err);
+                }
+                else {
+                    List_remove<PPCond>(&stack, sn - 1);
+                }
+            } else if (pp_eq(kw, "pragma") == 1) {
+                if (active == 1) {
+                    String_append(&out, pp_trim(pp_sub(ls, h, ln - h)));
+                }
+            } else if (pp_eq(kw, "error") == 1) {
+                if (active == 1) {
+                    pp_error(filename, line_no, col, pp_cat("#error ", rest), had_err);
+                }
+            } else if (pp_eq(kw, "include") == 1) {
+                if (active == 1) {
+                    pp_error(filename, line_no, col, "#include is not supported; use `import \"file.esk\";` or `import <module>;` instead", had_err);
+                }
+            } else if (pp_clen(kw) == 0 && (pp_clen(rest) == 0 || shebang == 1)) {
+                // `#` alone is the null directive; a `#!` first line is a shebang.
+            } else if (active == 1) {
+                string what = kw;
+                if (pp_clen(kw) == 0) {
+                    what = rest;
+                }
+                pp_error(filename, line_no, col, pp_cat(pp_cat("unknown preprocessor directive '#", what), "'"), had_err);
+            }
+        }
+
+        if (handled == 0 && active == 1) {
+            // The text of a string open at the start of the line is kept as is.
+            int lead = 0;
+            int str_open = 0;
+            if (in_str == 1) {
+                lead = pp_string_close(ls, ln);
+                if (lead < 0) {
+                    lead = ln;
+                    str_open = 1;
+                }
+                int li = 0;
+                while (li < lead) {
+                    String_push(&out, (char)ls[li]);
+                    li = li + 1;
+                }
+                ls = pp_sub(ls, lead, ln - lead);
+                ln = ln - lead;
+            }
+            int blk_line = in_block;
+            // Refresh __LINE__ for this logical line, then expand.
+            String nb;
+            String_init(&nb, 12);
+            String_from_int(&nb, line_no);
+            PPMacro lm;
+            lm.name = "__LINE__";
+            lm.is_function = 0;
+            List_init<string>(&lm.params, 1);
+            lm.body = (string)String_cstr(&nb);
+            pp_define(tblp, lm);
+
+            List<string> expanding;
+            List_init<string>(&expanding, 4);
+            let ctx: PPCtx;
+            pp_ctx_init(&ctx);
+            // A NUL byte in the line is kept (the C++ std::string keeps it, and its
+            // lexer reports it): expand the pieces between NULs.
+            int s0 = 0;
+            int joins = 0;
+            while (s0 <= ln) {
+                int e0 = s0;
+                while (e0 < ln && (int)ls[e0] != 0) {
+                    e0 = e0 + 1;
+                }
+                int blk_start = in_block;
+                string expanded = pp_expand(pp_sub(ls, s0, e0 - s0), tblp, &expanding, &in_block, &ctx);
+                // A macro call whose arguments continue on the next lines: join them
+                // (newline kept) and expand again (mirrors the C++).
+                int join = ctx.open_call;
+                if (join == 0 && ctx.trailing_fn == 1 && s0 == 0 && e0 == ln) {
+                    join = pp_next_code_is_paren((string)src, i, len);
+                }
+                if (join == 1 && s0 == 0 && e0 == ln && joins < 1000 && i < len) {
+                    in_block = blk_start;
+                    String_push(&line, (char)10);
+                    while (i < len && (int)src[i] != 10) {
+                        String_push(&line, (char)src[i]);
+                        i = i + 1;
+                    }
+                    if (i < len) {
+                        i = i + 1;
+                    }
+                    pp_strip_cr(&line);
+                    extra = extra + 1;
+                    cur_line = cur_line + 1;
+                    joins = joins + 1;
+                    ls = pp_sub((string)String_cstr(&line), lead, String_len(&line) - lead);
+                    ln = String_len(&line) - lead;
+                    pp_ctx_init(&ctx);
+                    continue;
+                }
+                int k = 0;
+                int en = pp_clen(expanded);
+                while (k < en) {
+                    if ((int)expanded[k] == 10) {
+                        extra = extra - 1;
+                    }
+                    k = k + 1;
+                }
+                String_append(&out, expanded);
+                if (e0 < ln) {
+                    String_push(&out, (char)0);
+                }
+                if (g_pp_hook_set == 1) {
+                    pp_scan_imports(expanded, blk_start, filename);
+                    pp_define(tblp, fm);
+                }
+                s0 = e0 + 1;
+            }
+            in_str = str_open;
+            if (str_open == 0) {
+                in_str = pp_ends_in_string(ls, ln, blk_line);
+            }
+            if (ctx.err[0] != 0) {
+                pp_error(filename, line_no, ctx.err_col + lead, ctx.err, had_err);
+            }
+        } else {
+            // Inactive and directive lines emit blank; one that opens or closes a
+            // `/* */` comment emits just the delimiter (mirrors the C++).
+            int was = in_block;
+            if (handled == 1) {
+                in_block = dir_open;
+            } else {
+                in_block = pp_ends_in_block(ls, in_block);
+            }
+            if (was == 0 && in_block == 1) {
+                String_append(&out, "/*");
+            }
+            else if (was == 1 && in_block == 0) {
+                String_append(&out, "*/");
+            }
+        }
+
+        int e = 0;
+        while (e < extra) {
+            String_push(&out, (char)10);
+            e = e + 1;
+        }
+    }
+    int si = 0;
+    while (si < List_len<PPCond>(&stack)) {
+        PPCond oc = List_get<PPCond>(&stack, si);
+        pp_error(filename, oc.line, oc.col, "unterminated conditional directive (missing #endif)", had_err);
+        si = si + 1;
+    }
+
+    g_pp_out_len = String_len(&out);
+    return (string)String_cstr(&out);
+}

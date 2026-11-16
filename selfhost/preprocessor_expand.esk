@@ -1,0 +1,480 @@
+// preprocessor_expand.esk: macro expansion and directive helpers (part of preprocessor.esk, imported in order)
+
+// Expand all macros in `input`, recursively. `expanding` guards a macro against
+// re-expansion within its own expansion (mirrors ppExpand). `blk` carries the
+// `/* */` comment state across lines (in: open at start; out: open at end). `ctx`
+// receives the first malformed-invocation error. A replacement that ends in the name
+// of a function-like macro is rescanned together with the rest of the text, so
+// `#define CALLF F` makes `CALLF(2)` call F (C semantics).
+string pp_expand(string input, List<PPMacro>* tbl, List<string>* expanding, *int blk, PPCtx* ctx) {
+    String out;
+    string text = input;
+    int n = pp_clen(text);
+    String_init(&out, n + 16);
+    int i = 0;
+    int col_shift = 0;
+    int keep_top = 0;
+    int inb = blk[0];
+    while (i < n) {
+        int c = (int)text[i];
+        if (inb == 1) {                           // inside /* */ → copy verbatim to */
+            if (c == 42 && i + 1 < n && (int)text[i + 1] == 47) {
+                String_push(&out, (char)42);
+                String_push(&out, (char)47);
+                i = i + 2;
+                inb = 0;
+                continue;
+            }
+            String_push(&out, (char)c);
+            i = i + 1;
+            continue;
+        }
+        if (c == 47 && i + 1 < n && (int)text[i + 1] == 42) {   // /* opens a block comment
+            String_push(&out, (char)47);
+            String_push(&out, (char)42);
+            i = i + 2;
+            inb = 1;
+            continue;
+        }
+        if (c == 34 || c == 39) {                 // string/char literal — copy verbatim
+            i = pp_copy_lit(text, i, n, &out);
+            continue;
+        }
+        if (c == 47 && i + 1 < n && (int)text[i + 1] == 47) {   // // line comment → copy rest
+            String_append(&out, pp_sub(text, i, n - i));
+            i = n;
+            continue;
+        }
+        if (pp_is_alpha(c) == 1) {
+            int j = i;
+            while (j < n && pp_is_alnum((int)text[j]) == 1) {
+                j = j + 1;
+            }
+            string id = pp_sub(text, i, j - i);
+            if (ctx.depth == 0 && i >= keep_top) {
+                ctx.top_col = i + col_shift + 1;
+            }
+            int idx = pp_find(tbl, id);
+            if (idx >= 0 && pp_in_set(expanding, id) == 0) {
+                PPMacro mac = List_get<PPMacro>(tbl, idx);
+                string res = "";
+                int after = j;
+                int expanded = 0;
+                int skip_rest = 0;
+                if (mac.is_function == 0) {
+                    List_push<string>(expanding, id);
+                    ctx.depth = ctx.depth + 1;
+                    let b0: int = 0;
+                    res = pp_expand(mac.body, tbl, expanding, &b0, ctx);
+                    ctx.depth = ctx.depth - 1;
+                    List_remove<string>(expanding, List_len<string>(expanding) - 1);
+                    expanded = 1;
+                } else {
+                    int k = pp_skip_blank_nl(text, j, n);
+                    if (k >= n && ctx.depth == 0) {
+                        ctx.trailing_fn = 1;
+                    }
+                    if (k < n && (int)text[k] == 40) {         // function-like call: '('
+                        // Split at top-level commas; string/char literals are copied whole
+                        // and a comment counts as a space.
+                        List<string> args;
+                        List_init<string>(&args, 4);
+                        String cur;
+                        String_init(&cur, 16);
+                        int depth = 0;
+                        int saw_any = 0;
+                        int p = k + 1;
+                        int closed = 0;
+                        int stop = 0;
+                        while (p < n && closed == 0 && stop == 0) {
+                            int d = (int)text[p];
+                            if (d == 34 || d == 39) {
+                                p = pp_copy_lit(text, p, n, &cur);
+                                saw_any = 1;
+                            }
+                            else if (d == 47 && p + 1 < n && (int)text[p + 1] == 42) {
+                                int e = p + 2;
+                                while (e + 1 < n && ((int)text[e] != 42 || (int)text[e + 1] != 47)) {
+                                    e = e + 1;
+                                }
+                                if (e + 1 >= n) {
+                                    stop = 1;
+                                }
+                                else {
+                                    String_push(&cur, (char)32);
+                                    p = e + 2;
+                                }
+                            }
+                            else if (d == 47 && p + 1 < n && (int)text[p + 1] == 47) {
+                                int e = p;
+                                while (e < n && (int)text[e] != 10) {
+                                    e = e + 1;
+                                }
+                                if (e >= n) {
+                                    stop = 1;
+                                } else {
+                                    p = e;
+                                }
+                            }
+                            else if (d == 10) {
+                                String_push(&cur, (char)32);
+                                p = p + 1;
+                            }
+                            else if (d == 40) {
+                                depth = depth + 1;
+                                String_push(&cur, (char)d);
+                                saw_any = 1;
+                                p = p + 1;
+                            }
+                            else if (d == 41) {
+                                if (depth == 0) {
+                                    p = p + 1;
+                                    closed = 1;
+                                }
+                                else {
+                                    depth = depth - 1;
+                                    String_push(&cur, (char)d);
+                                    p = p + 1;
+                                }
+                            }
+                            else if (d == 44 && depth == 0) {
+                                List_push<string>(&args, pp_trim((string)String_cstr(&cur)));
+                                String_clear(&cur);
+                                saw_any = 1;
+                                p = p + 1;
+                            }
+                            else {
+                                String_push(&cur, (char)d);
+                                if (d != 32 && d != 9) {
+                                    saw_any = 1;
+                                }
+                                p = p + 1;
+                            }
+                        }
+                        if (closed == 0) {
+                            if (ctx.depth == 0 && ctx.err[0] == 0) {
+                                ctx.open_call = 1;
+                            }
+                            pp_ctx_fail(ctx, pp_cat(pp_cat("unterminated argument list invoking macro '", id), "'"));
+                            skip_rest = 1;
+                        } else {
+                            if (saw_any == 1) {
+                                List_push<string>(&args, pp_trim((string)String_cstr(&cur)));
+                            }
+                            int want = List_len<string>(&mac.params);
+                            if (List_len<string>(&args) == 0 && want == 1) {
+                                List_push<string>(&args, "");
+                            }
+                            int got = List_len<string>(&args);
+                            if (got != want) {
+                                if (got < want) {
+                                    string m = pp_cat(pp_cat(pp_cat("macro '", id), "' requires "), pp_itoa(want));
+                                    if (want == 1) {
+                                        m = pp_cat(m, " argument");
+                                    } else {
+                                        m = pp_cat(m, " arguments");
+                                    }
+                                    pp_ctx_fail(ctx, pp_cat(pp_cat(pp_cat(m, ", but only "), pp_itoa(got)), " given"));
+                                } else {
+                                    string m = pp_cat(pp_cat(pp_cat("macro '", id), "' passed "), pp_itoa(got));
+                                    if (got == 1) {
+                                        m = pp_cat(m, " argument");
+                                    } else {
+                                        m = pp_cat(m, " arguments");
+                                    }
+                                    pp_ctx_fail(ctx, pp_cat(pp_cat(m, ", but takes just "), pp_itoa(want)));
+                                }
+                                String_append(&out, pp_sub(text, i, p - i));
+                                i = p;
+                                continue;
+                            }
+                            // Arguments are fully macro-expanded before substitution (C rule).
+                            ctx.depth = ctx.depth + 1;
+                            int ai = 0;
+                            while (ai < List_len<string>(&args)) {
+                                let b1: int = 0;
+                                List_set<string>(&args, ai, pp_expand(List_get<string>(&args, ai), tbl, expanding, &b1, ctx));
+                                ai = ai + 1;
+                            }
+                            string sub = pp_subst_params(mac.body, &mac.params, &args);
+                            List_push<string>(expanding, id);
+                            let b2: int = 0;
+                            res = pp_expand(sub, tbl, expanding, &b2, ctx);
+                            List_remove<string>(expanding, List_len<string>(expanding) - 1);
+                            ctx.depth = ctx.depth - 1;
+                            after = p;
+                            expanded = 1;
+                        }
+                    }
+                    // function-like name not followed by '(' → leave as-is
+                }
+                if (expanded == 1) {
+                    // A replacement ending in a function-like macro name followed by '('
+                    // in the remaining text: rescan that name with the rest.
+                    int rn = pp_clen(res);
+                    int t = rn;
+                    while (t > 0 && ((int)res[t - 1] == 32 || (int)res[t - 1] == 9)) {
+                        t = t - 1;
+                    }
+                    int s0 = t;
+                    while (s0 > 0 && pp_is_alnum((int)res[s0 - 1]) == 1) {
+                        s0 = s0 - 1;
+                    }
+                    if (s0 < t && pp_is_alpha((int)res[s0]) == 1) {
+                        string tid = pp_sub(res, s0, t - s0);
+                        int fi = pp_find(tbl, tid);
+                        int k2 = pp_skip_blank_nl(text, after, n);
+                        int fn_name = 0;
+                        if (fi >= 0 && pp_in_set(expanding, tid) == 0) {
+                            if (List_get<PPMacro>(tbl, fi).is_function == 1) {
+                                fn_name = 1;
+                            }
+                        }
+                        if (fn_name == 1 && k2 >= n && ctx.depth == 0) {
+                            ctx.trailing_fn = 1;
+                        }
+                        if (fn_name == 1 && k2 < n && (int)text[k2] == 40) {
+                            String_append(&out, pp_sub(res, 0, s0));
+                            int tl = t - s0;
+                            col_shift = col_shift + after - tl;
+                            text = pp_cat(tid, pp_sub(text, after, n - after));
+                            keep_top = tl;
+                            i = 0;
+                            n = pp_clen(text);
+                            continue;
+                        }
+                    }
+                    String_append(&out, res);
+                    i = after;
+                    continue;
+                }
+                if (skip_rest == 1) {
+                    String_append(&out, id);
+                    i = j;
+                    continue;
+                }
+            }
+            String_append(&out, id);
+            i = j;
+            continue;
+        }
+        String_push(&out, (char)c);
+        i = i + 1;
+    }
+    blk[0] = inb;
+    return (string)String_cstr(&out);
+}
+
+// Where a string literal open at the start of `line` (n bytes) closes: the index just
+// past its closing quote, or -1 when it continues onto the next line (mirrors
+// ppStringClose).
+int pp_string_close(string line, int n) {
+    int i = 0;
+    while (i < n) {
+        int c = (int)line[i];
+        if (c == 92) {
+            i = i + 2;
+            continue;
+        }
+        if (c == 34) {
+            return i + 1;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+// Does `text` (n bytes of code, starting in a /* */ comment when `blk`) end inside a
+// string literal (mirrors ppEndsInString)?
+int pp_ends_in_string(string text, int n, int blk) {
+    int i = 0;
+    while (i < n) {
+        int c = (int)text[i];
+        if (blk == 1) {
+            if (c == 42 && i + 1 < n && (int)text[i + 1] == 47) {
+                blk = 0;
+                i = i + 1;
+            }
+            i = i + 1;
+            continue;
+        }
+        if (c == 47 && i + 1 < n && (int)text[i + 1] == 42) {
+            blk = 1;
+            i = i + 2;
+            continue;
+        }
+        if (c == 47 && i + 1 < n && (int)text[i + 1] == 47) {
+            while (i < n && (int)text[i] != 10) {
+                i = i + 1;
+            }
+            if (i >= n) {
+                return 0;
+            }
+            i = i + 1;
+            continue;
+        }
+        if (c == 34 || c == 39) {
+            int q = c;
+            i = i + 1;
+            while (i < n && (int)text[i] != q) {
+                if ((int)text[i] == 92) {
+                    i = i + 1;
+                }
+                i = i + 1;
+            }
+            if (i >= n) {
+                if (q == 34) {
+                    return 1;
+                }
+                return 0;
+            }
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Does `line` end inside a /* */ comment, given whether one was open at its start
+// (mirrors endsInBlockComment)?
+int pp_ends_in_block(string line, int inb) {
+    int n = pp_clen(line);
+    int i = 0;
+    while (i < n) {
+        int c = (int)line[i];
+        if (inb == 1) {
+            if (c == 42 && i + 1 < n && (int)line[i + 1] == 47) {
+                inb = 0;
+                i = i + 1;
+            }
+            i = i + 1;
+            continue;
+        }
+        if (c == 47 && i + 1 < n && (int)line[i + 1] == 42) {
+            inb = 1;
+            i = i + 2;
+            continue;
+        }
+        if (c == 34 || c == 39) {
+            int q = c;
+            i = i + 1;
+            while (i < n && (int)line[i] != q) {
+                if ((int)line[i] == 92) {
+                    i = i + 1;
+                }
+                i = i + 1;
+            }
+            i = i + 1;
+            continue;
+        }
+        if (c == 47 && i + 1 < n && (int)line[i + 1] == 47) {
+            return inb;
+        }
+        i = i + 1;
+    }
+    return inb;
+}
+
+// Does a line ending in '\' genuinely continue (mirrors backslashContinuesLine)?
+// Precondition: the trailing char is '\'. Returns 0 if that '\' is inside a //
+// comment, an open block comment, or (unless `directive`, a directive line where it
+// splices as in C) a string/char literal.
+int pp_bs_continues(string line, int directive, int start_str) {
+    int in_str = start_str;
+    int in_chr = 0;
+    int in_block = 0;
+    int n = pp_clen(line);
+    int i = 0;
+    while (i < n) {
+        int c = (int)line[i];
+        if (in_block == 1) {
+            if (c == 42 && i + 1 < n && (int)line[i + 1] == 47) {
+                in_block = 0;
+                i = i + 1;
+            }
+            i = i + 1;
+            continue;
+        }
+        if (in_str == 1) {
+            if (c == 92 && i + 1 < n) {
+                i = i + 2;
+                continue;
+            }
+            if (c == 34) {
+                in_str = 0;
+            }
+            i = i + 1;
+            continue;
+        }
+        if (in_chr == 1) {
+            if (c == 92 && i + 1 < n) {
+                i = i + 2;
+                continue;
+            }
+            if (c == 39) {
+                in_chr = 0;
+            }
+            i = i + 1;
+            continue;
+        }
+        if (c == 34) {
+            in_str = 1;
+            i = i + 1;
+            continue;
+        }
+        if (c == 39) {
+            in_chr = 1;
+            i = i + 1;
+            continue;
+        }
+        if (c == 47 && i + 1 < n && (int)line[i + 1] == 47) {       // // comment
+            return 0;
+        }
+        if (c == 47 && i + 1 < n && (int)line[i + 1] == 42) {
+            in_block = 1;
+            i = i + 2;
+            continue;
+        }
+        i = i + 1;
+    }
+    if (in_block == 1) {
+        return 0;
+    }
+    if (directive == 1 || (in_str == 0 && in_chr == 0)) {
+        return 1;
+    }
+    return 0;
+}
+
+int pp_active(List<PPCond>* stack) {
+    int n = List_len<PPCond>(stack);
+    if (n == 0) {
+        return 1;
+    }
+    PPCond top = List_get<PPCond>(stack, n - 1);
+    if (top.parent == 1 && top.branch == 1) {
+        return 1;
+    }
+    return 0;
+}
+
+// First whitespace-delimited token of `s` starting at `from` (used for directive
+// operands like the name after #ifdef).
+string pp_first_word(string s, int from, int n) {
+    int p = from;
+    while (p < n && pp_is_sp((int)s[p]) == 1) {
+        p = p + 1;
+    }
+    int st = p;
+    while (p < n && pp_is_sp((int)s[p]) == 0) {
+        p = p + 1;
+    }
+    return pp_sub(s, st, p - st);
+}
+
+string pp_cat(string a, string b) {
+    String o;
+    String_init(&o, pp_clen(a) + pp_clen(b) + 1);
+    String_append(&o, a);
+    String_append(&o, b);
+    return (string)String_cstr(&o);
+}

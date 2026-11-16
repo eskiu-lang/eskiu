@@ -1,0 +1,458 @@
+// preprocessor_cond.esk: #if evaluation, conditions and imports (part of preprocessor.esk, imported in order)
+
+int64 pp_ev_lor(PPEval* ev) {
+    int64 v = pp_ev_land(ev);
+    while (pp_ev_eat(ev, "||") == 1) {
+        int dead = 0;
+        if (v != 0) {
+            dead = 1;
+            ev.skip = ev.skip + 1;
+        }
+        int64 r = pp_ev_land(ev);
+        if (dead == 1) {
+            ev.skip = ev.skip - 1;
+        }
+        v = pp_b2i(v != 0 || r != 0);
+    }
+    return v;
+}
+
+int64 pp_ev_ternary(PPEval* ev) {
+    int64 c = pp_ev_lor(ev);
+    if (pp_ev_eat(ev, "?") == 0) {
+        return c;
+    }
+    if (c == 0) {
+        ev.skip = ev.skip + 1;
+    }
+    int64 a = pp_ev_ternary(ev);
+    if (c == 0) {
+        ev.skip = ev.skip - 1;
+    }
+    if (pp_ev_eat(ev, ":") == 0) {
+        pp_ev_fail(ev, "expected ':' in '?:'");
+        return 0;
+    }
+    if (c != 0) {
+        ev.skip = ev.skip + 1;
+    }
+    int64 b = pp_ev_ternary(ev);
+    if (c != 0) {
+        ev.skip = ev.skip - 1;
+    }
+    if (c != 0) {
+        return a;
+    }
+    return b;
+}
+
+// Split an (already macro-expanded) #if expression into tokens (mirrors ppExprTokens).
+void pp_ev_tokens(PPEval* ev, string e) {
+    int n = pp_clen(e);
+    int i = 0;
+    string ops1 = "()!~-+*/%<>&^|?:";
+    while (i < n) {
+        int c = (int)e[i];
+        if (c == 32 || c == 9) {
+            i = i + 1;
+            continue;
+        }
+        if (c == 47 && i + 1 < n && (int)e[i + 1] == 47) {
+            return;
+        }
+        if (c == 47 && i + 1 < n && (int)e[i + 1] == 42) {
+            int j = i + 2;
+            while (j + 1 < n && ((int)e[j] != 42 || (int)e[j + 1] != 47)) {
+                j = j + 1;
+            }
+            if (j + 1 < n) {
+                i = j + 2;
+            } else {
+                i = n;
+            }
+            continue;
+        }
+        if (pp_is_alnum(c) == 1) {
+            int j = i;
+            while (j < n && pp_is_alnum((int)e[j]) == 1) {
+                j = j + 1;
+            }
+            List_push<string>(&ev.toks, pp_sub(e, i, j - i));
+            i = j;
+            continue;
+        }
+        if (c == 39) {
+            int j = i + 1;
+            while (j < n && (int)e[j] != 39) {
+                if ((int)e[j] == 92) {
+                    j = j + 1;
+                }
+                j = j + 1;
+            }
+            int end = j + 1;
+            if (end > n) {
+                end = n;
+            }
+            List_push<string>(&ev.toks, pp_sub(e, i, end - i));
+            i = j + 1;
+            continue;
+        }
+        if (i + 1 < n) {
+            int d = (int)e[i + 1];
+            if ((c == 124 && d == 124) || (c == 38 && d == 38) || (c == 61 && d == 61) || (c == 33 && d == 61)
+                || (c == 60 && d == 61) || (c == 62 && d == 61) || (c == 60 && d == 60) || (c == 62 && d == 62)) {
+                List_push<string>(&ev.toks, pp_sub(e, i, 2));
+                i = i + 2;
+                continue;
+            }
+        }
+        int k = 0;
+        int found = 0;
+        while (ops1[k] != 0) {
+            if ((int)ops1[k] == c) {
+                found = 1;
+            }
+            k = k + 1;
+        }
+        if (found == 1) {
+            List_push<string>(&ev.toks, pp_sub(e, i, 1));
+            i = i + 1;
+            continue;
+        }
+        pp_ev_fail(ev, pp_cat(pp_cat("unexpected character '", pp_sub(e, i, 1)), "'"));
+        return;
+    }
+}
+
+// Replace `defined X` / `defined(X)` with 1/0, macro-expand, then evaluate. Returns 1
+// and sets *value on success; 0 with *err set on a malformed expression.
+int pp_eval_if(string expr, List<PPMacro>* tbl, *int64 value, *string err) {
+    String pre;
+    String_init(&pre, pp_clen(expr) + 16);
+    int n = pp_clen(expr);
+    int i = 0;
+    while (i < n) {
+        int c = (int)expr[i];
+        if (pp_is_alpha(c) == 1) {
+            int j = i;
+            while (j < n && pp_is_alnum((int)expr[j]) == 1) {
+                j = j + 1;
+            }
+            string id = pp_sub(expr, i, j - i);
+            if (pp_eq(id, "defined") == 0) {
+                String_append(&pre, id);
+                i = j;
+                continue;
+            }
+            int k = j;
+            while (k < n && pp_is_sp((int)expr[k]) == 1) {
+                k = k + 1;
+            }
+            int paren = 0;
+            if (k < n && (int)expr[k] == 40) {
+                paren = 1;
+                k = k + 1;
+                while (k < n && pp_is_sp((int)expr[k]) == 1) {
+                    k = k + 1;
+                }
+            }
+            int m = k;
+            while (m < n && pp_is_alnum((int)expr[m]) == 1) {
+                m = m + 1;
+            }
+            if (m == k) {
+                err[0] = "expected a macro name after 'defined'";
+                return 0;
+            }
+            string name = pp_sub(expr, k, m - k);
+            if (paren == 1) {
+                while (m < n && pp_is_sp((int)expr[m]) == 1) {
+                    m = m + 1;
+                }
+                if (m >= n || (int)expr[m] != 41) {
+                    err[0] = pp_cat(pp_cat("expected ')' after 'defined(", name), "'");
+                    return 0;
+                }
+                m = m + 1;
+            }
+            if (pp_defined(tbl, name) == 1) {
+                String_append(&pre, " 1 ");
+            } else {
+                String_append(&pre, " 0 ");
+            }
+            i = m;
+            continue;
+        }
+        if (c == 39) {
+            int j = i + 1;
+            while (j < n && (int)expr[j] != 39) {
+                if ((int)expr[j] == 92) {
+                    j = j + 1;
+                }
+                j = j + 1;
+            }
+            int e = j + 1;
+            if (e > n) {
+                e = n;
+            }
+            String_append(&pre, pp_sub(expr, i, e - i));
+            i = e;
+            continue;
+        }
+        String_push(&pre, (char)c);
+        i = i + 1;
+    }
+    List<string> expanding;
+    List_init<string>(&expanding, 4);
+    let b0: int = 0;
+    let ctx: PPCtx;
+    pp_ctx_init(&ctx);
+    string expanded = pp_expand((string)String_cstr(&pre), tbl, &expanding, &b0, &ctx);
+    if (ctx.err[0] != 0) {
+        err[0] = ctx.err;
+        return 0;
+    }
+    let ev: PPEval;
+    List_init<string>(&ev.toks, 8);
+    ev.pos = 0;
+    ev.err = "";
+    ev.skip = 0;
+    pp_ev_tokens(&ev, expanded);
+    if (ev.err[0] != 0) {
+        err[0] = pp_cat(ev.err, " in #if expression");
+        return 0;
+    }
+    if (List_len<string>(&ev.toks) == 0) {
+        err[0] = "#if with no expression";
+        return 0;
+    }
+    int64 v = pp_ev_ternary(&ev);
+    if (ev.err[0] != 0) {
+        err[0] = pp_cat(ev.err, " in #if expression");
+        return 0;
+    }
+    if (ev.pos != List_len<string>(&ev.toks)) {
+        err[0] = pp_cat(pp_cat("unexpected '", List_get<string>(&ev.toks, ev.pos)), "' in #if expression");
+        return 0;
+    }
+    value[0] = v;
+    return 1;
+}
+
+// Does a macro body use `#` / `##` outside a string/char literal (mirrors ppBodyHasHash)?
+int pp_body_has_hash(string body) {
+    int n = pp_clen(body);
+    int i = 0;
+    while (i < n) {
+        int c = (int)body[i];
+        if (c == 34 || c == 39) {
+            int q = c;
+            i = i + 1;
+            while (i < n && (int)body[i] != q) {
+                if ((int)body[i] == 92) {
+                    i = i + 1;
+                }
+                i = i + 1;
+            }
+            i = i + 1;
+            continue;
+        }
+        if (c == 35) {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Evaluate an #if/#elif condition; a malformed one is reported and counts as false.
+int pp_cond_value(string rest, List<PPMacro>* tbl, string file, int line, int col, *int had_err) {
+    let v: int64 = 0;
+    let err: string = "";
+    if (pp_eval_if(rest, tbl, &v, &err) == 0) {
+        pp_error(file, line, col, err, had_err);
+        return 0;
+    }
+    if (v != 0) {
+        return 1;
+    }
+    return 0;
+}
+
+// Drop a trailing '\r' (CRLF input) from a line being read.
+void pp_strip_cr(String* s) {
+    if (s.len > 0 && (int)s.data[s.len - 1] == 13) {
+        pp_pop(s);
+    }
+}
+
+// The architecture macro of the host this compiler was built for (mirrors the C++
+// seedPredefinedMacros default).
+string pp_host_arch() {
+    string a = "";
+#ifdef __aarch64__
+    a = "__aarch64__";
+#endif
+#ifdef __x86_64__
+    a = "__x86_64__";
+#endif
+    return a;
+}
+
+// A directive line with its comments replaced by whitespace (mirrors ppStripComments):
+// each closed `/* */` becomes one space and a `//` comment is dropped, literals are kept
+// whole. A `/*` left open drops the rest of the line and sets `*open_at_end`.
+string pp_strip_comments(string line, *int open_at_end) {
+    int n = pp_clen(line);
+    String out;
+    String_init(&out, n + 1);
+    open_at_end[0] = 0;
+    int i = 0;
+    while (i < n) {
+        int c = (int)line[i];
+        if (c == 34 || c == 39) {
+            i = pp_copy_lit(line, i, n, &out);
+            continue;
+        }
+        if (c == 47 && i + 1 < n && (int)line[i + 1] == 47) {
+            i = n;
+            continue;
+        }
+        if (c == 47 && i + 1 < n && (int)line[i + 1] == 42) {
+            int e = i + 2;
+            while (e + 1 < n && ((int)line[e] != 42 || (int)line[e + 1] != 47)) {
+                e = e + 1;
+            }
+            if (e + 1 >= n) {
+                open_at_end[0] = 1;
+                i = n;
+                continue;
+            }
+            String_push(&out, (char)32);
+            i = e + 2;
+            continue;
+        }
+        String_push(&out, (char)c);
+        i = i + 1;
+    }
+    return (string)String_cstr(&out);
+}
+
+// The import hook (mirrors PPImportHook): called for each `import` met on an active
+// line, in textual order, with the import's path, whether it is the `<name>` form, and
+// the importing file. The compiler driver sets it so an import is preprocessed right at
+// its import line (the macro state it sees follows C's textual #include order).
+fn(string, int, string)->void g_pp_import_hook;
+int g_pp_hook_set;
+
+// Report each `import "path"` / `import <name>` on an expanded active line to the hook
+// (mirrors ppScanImports). `blk` is whether a `/* */` comment is open at line start.
+void pp_scan_imports(string s, int blk, string filename) {
+    int n = pp_clen(s);
+    int i = 0;
+    while (i < n) {
+        if (blk == 1) {
+            int e = i;
+            while (e + 1 < n && ((int)s[e] != 42 || (int)s[e + 1] != 47)) {
+                e = e + 1;
+            }
+            if (e + 1 >= n) {
+                return;
+            }
+            i = e + 2;
+            blk = 0;
+            continue;
+        }
+        int c = (int)s[i];
+        if (c == 47 && i + 1 < n && (int)s[i + 1] == 42) {
+            blk = 1;
+            i = i + 2;
+            continue;
+        }
+        if (c == 47 && i + 1 < n && (int)s[i + 1] == 47) {
+            return;
+        }
+        if (c == 34 || c == 39) {
+            String lit;
+            String_init(&lit, 16);
+            i = pp_copy_lit(s, i, n, &lit);
+            continue;
+        }
+        if (pp_is_alpha(c) == 1) {
+            int j = i;
+            while (j < n && pp_is_alnum((int)s[j]) == 1) {
+                j = j + 1;
+            }
+            if (j - i == 6 && pp_eq(pp_sub(s, i, 6), "import") == 1) {
+                int k = pp_skip_blank(s, j, n);
+                if (k < n && (int)s[k] == 34) {
+                    int e = k + 1;
+                    while (e < n && (int)s[e] != 34 && (int)s[e] != 92) {
+                        e = e + 1;
+                    }
+                    if (e < n && (int)s[e] == 34) {
+                        g_pp_import_hook(pp_sub(s, k + 1, e - k - 1), 0, filename);
+                    }
+                } else if (k < n && (int)s[k] == 60) {
+                    int e = k + 1;
+                    String name;
+                    String_init(&name, 16);
+                    while (e < n && (int)s[e] != 62 && (int)s[e] != 59) {
+                        if (pp_is_sp((int)s[e]) == 0) {
+                            String_push(&name, s[e]);
+                        }
+                        e = e + 1;
+                    }
+                    if (e < n && (int)s[e] == 62) {
+                        g_pp_import_hook((string)String_cstr(&name), 1, filename);
+                    }
+                }
+            }
+            i = j;
+            continue;
+        }
+        i = i + 1;
+    }
+}
+
+// `__FILE__`'s body: the path as a string literal with `\` and `"` escaped (mirrors
+// ppFileLiteral).
+string pp_file_literal(string path) {
+    int n = pp_clen(path);
+    String s;
+    String_init(&s, n + 4);
+    String_push(&s, (char)34);
+    int i = 0;
+    while (i < n) {
+        int c = (int)path[i];
+        if (c == 92 || c == 34) {
+            String_push(&s, (char)92);
+            String_push(&s, (char)c);
+        }
+        else if (c == 10) {
+            String_append(&s, "\\n");
+        }
+        else if (c == 9) {
+            String_append(&s, "\\t");
+        }
+        else if (c == 13) {
+            String_append(&s, "\\r");
+        }
+        else {
+            String_push(&s, (char)c);
+        }
+        i = i + 1;
+    }
+    String_push(&s, (char)34);
+    return (string)String_cstr(&s);
+}
+
+// The macro table, shared by every pp_run of one compilation (mirrors the C++ driver's
+// one `macros` map): a #define reaches the files imported after it and the later
+// inputs of a multi-file build. Seeded with the predefined macros on first use.
+List<PPMacro> g_pp_tbl;
+int g_pp_tbl_ready;
+
+// Byte length of the text the last pp_run returned (it may hold a NUL byte from the
+// source, which the lexer then reports, so do not measure it with strlen).
+int g_pp_out_len;
