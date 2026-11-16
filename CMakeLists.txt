@@ -106,6 +106,8 @@ set(SOURCES
     eir/eir_builder_match.cpp
     eir/eir_builder_lambda.cpp
     eir/eir_vm.cpp
+    eir/eir_vm_extern.cpp
+    eir/eir_vm_exec.cpp
     eir/eir_asm_arm64.cpp
     eir/eir_c.cpp
     eir/eir_obj.cpp
