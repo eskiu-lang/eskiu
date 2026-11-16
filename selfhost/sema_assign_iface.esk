@@ -304,8 +304,31 @@ int sema_fmt_is(int c, string set) {
     return 0;
 }
 
+// A printf-style function the program declares: a variadic function (or extern) whose last
+// fixed parameter is `string fmt`; that parameter's index, or -1 (as the C++
+// noteFormatFunction).
+int sema_fmt_index_declared(Sema* s, string fname) {
+    *DeclNode d = sema_find_fndecl(s, fname);
+    if (d == null) {
+        return -1;
+    }
+    int n = List_len<Param>(&d.params);
+    if (n < 2) {
+        return -1;
+    }
+    Param last = List_get<Param>(&d.params, n - 1);
+    Param fmt = List_get<Param>(&d.params, n - 2);
+    if (sema_streq(last.ty, "...") == 1 && sema_streq(fmt.name, "fmt") == 1 && sema_streq(sema_strip_const(fmt.ty), "string") == 1) {
+        return n - 2;
+    }
+    return -1;
+}
+
 void sema_check_format(Sema* s, *ExprNode e, string fname, int shift) {
     int fi = sema_fmt_index(fname);
+    if (fi < 0) {
+        fi = sema_fmt_index_declared(s, fname);
+    }
     if (fi < 0) {
         return;
     }
