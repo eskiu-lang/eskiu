@@ -93,6 +93,7 @@ set(SOURCES
     codegen/codegen_try.cpp
     codegen/codegen_adt.cpp
     codegen/codegen_cabi.cpp
+    codegen/codegen_cabi_sig.cpp
     codegen/codegen_repl.cpp
     eir/eir.cpp
     eir/eir_builder.cpp
