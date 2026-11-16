@@ -1,0 +1,533 @@
+// sema_flow_top.esk: top-level names, signatures and declaration checks (part of sema_flow.esk, imported in order)
+
+void sema_check_top_names(Sema* s, *Program prog) {
+    List<NameEnt> tab;
+    List_init<NameEnt>(&tab, 64);
+    let tix: NameIdx;
+    let exts: StrTab;    // name -> index of its first extern declaration
+    memset((*void)&tix, 0, sizeof(NameIdx));
+    memset((*void)&exts, 0, sizeof(StrTab));
+    int i = 0;
+    int n = List_len<*DeclNode>(&prog.decls);
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        s.line = d.line;
+        s.col = d.col;
+        if (d.kind == DK_FUNCTION) {
+            sema_declare_top(s, &tab, &tix, d.name, "function", d);
+        }
+        else if (d.kind == DK_VARDECL) {
+            sema_declare_top(s, &tab, &tix, d.name, "variable", d);
+        }
+        else if (d.kind == DK_STRUCT) {
+            sema_declare_top(s, &tab, &tix, d.name, "struct", d);
+            int m = 0;
+            int mn = List_len<*DeclNode>(&d.methods);
+            while (m < mn) {                         // an inline method `S.m` is the function `S_m`
+                *DeclNode md = List_get<*DeclNode>(&d.methods, m);
+                sema_declare_top(s, &tab, &tix, sema_cat(sema_cat(d.name, "_"), md.name), "method", md);
+                m = m + 1;
+            }
+        }
+        else if (d.kind == DK_UNION) {
+            sema_declare_top(s, &tab, &tix, d.name, "union", d);
+        }
+        else if (d.kind == DK_ENUM) {
+            sema_declare_top(s, &tab, &tix, d.name, "enum", d);
+            // A classic member is an int constant, apart from type names; a sum type's
+            // variant is a constructor, so it may not share a name with a type either.
+            string mkind = "enum member";
+            if (sema_is_aggregate(s, d.name) == 1) {
+                mkind = "variant";
+            }
+            int j = 0;
+            int jn = List_len<Param>(&d.params);
+            while (j < jn) {
+                sema_declare_top(s, &tab, &tix, List_get<Param>(&d.params, j).name, mkind, d);
+                j = j + 1;
+            }
+        }
+        else if (d.kind == DK_EXTERN) {
+            // An `extern` may be declared again (modules share C functions), but with the
+            // same signature: two different ones cannot both describe the C symbol.
+            int j = StrTab_get(&exts, d.name, -1);   // the first earlier extern of the name
+            if (j < 0) {
+                StrTab_set(&exts, d.name, i);
+            }
+            else {
+                *DeclNode pd = List_get<*DeclNode>(&prog.decls, j);
+                string a = sema_extern_sig(s, pd);
+                string b = sema_extern_sig(s, d);
+                if (sema_streq(a, b) == 0) {
+                    s.had_error = 1;
+                    dprintf(2, "error: %s:%d:%d: conflicting declaration of extern '%s' (%s vs the earlier %s)\n", s.filename, s.line, s.col, d.name, b, a);
+                }
+            }
+        }
+        else if (d.kind == DK_INTERFACE) {
+            sema_declare_top(s, &tab, &tix, d.name, "interface", d);
+        }
+        else if (d.kind == DK_TYPEALIAS) {
+            sema_declare_top(s, &tab, &tix, d.name, "type alias", d);
+        }
+        i = i + 1;
+    }
+    // An extern names a C function, so it cannot share its name with a generic one either
+    // (a call would reach the generic, or a mistyped mix of the two).
+    i = 0;
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        if (d.kind == DK_EXTERN) {
+            int k = sema_name_index(&tix, d.name);
+            if (k >= 0) {
+                NameEnt ne = List_get<NameEnt>(&tab, k);
+                if (sema_streq(ne.kind, "function") == 1 && List_len<TypeParam>(&ne.d.type_params) > 0) {
+                    s.had_error = 1;
+                    dprintf(2, "error: %s:%d:%d: conflicting declaration of extern '%s' (a generic function has the same name)\n",
+                           s.filename, d.line, d.col, d.name);
+                }
+            }
+        }
+        i = i + 1;
+    }
+}
+
+// Source spelling of a function for diagnostics: an operator shows as `operator +(V, V)`
+// rather than its mangled name.
+string sema_fn_display(*DeclNode d) {
+    if (d.operator_sym == null || d.operator_sym[0] == 0) {
+        return d.name;
+    }
+    string op = d.operator_sym;
+    if (sema_streq(op, "u-") == 1) {
+        op = "-";
+    }
+    string out = sema_cat(sema_cat("operator ", op), "(");
+    int i = 0;
+    int n = List_len<Param>(&d.params);
+    while (i < n) {
+        if (i > 0) {
+            out = sema_cat(out, ", ");
+        }
+        out = sema_cat(out, List_get<Param>(&d.params, i).ty);
+        i = i + 1;
+    }
+    return sema_cat(out, ")");
+}
+
+// A function's parameter and return types must name known types; no parameter is void.
+void sema_check_sig_types(Sema* s, *DeclNode f) {
+    int i = 0;
+    int n = List_len<Param>(&f.params);
+    List<string> pnames;
+    List_init<string>(&pnames, 4);
+    while (i < n) {
+        Param pm = List_get<Param>(&f.params, i);
+        if (pm.name != null && pm.name[0] != 0 && sema_streq(pm.ty, "...") == 0) {
+            if (sema_in_list(&pnames, pm.name) == 1) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: duplicate parameter '%s' in function '%s'\n", s.filename, s.line, s.col, pm.name, sema_fn_display(f));
+            } else {
+                List_push<string>(&pnames, pm.name);
+            }
+        }
+        sema_check_decl_type(s, pm.ty);
+        string pterr = sema_void_type_err(s, pm.ty);
+        if (pterr[0] != 0) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: parameter '%s' %s\n", s.filename, s.line, s.col, pm.name, pterr);
+        }
+        i = i + 1;
+    }
+    sema_check_decl_type(s, f.ret_type);
+}
+
+// Bit width of an integer type usable for a bitfield, or 0 when it is not one.
+int sema_int_bits(string t) {
+    if (sema_streq(t, "bool") == 1) {
+        return 1;
+    }
+    if (sema_streq(t, "char") == 1 || sema_streq(t, "int8") == 1 || sema_streq(t, "uint8") == 1) {
+        return 8;
+    }
+    if (sema_streq(t, "int16") == 1 || sema_streq(t, "uint16") == 1) {
+        return 16;
+    }
+    if (sema_streq(t, "int") == 1 || sema_streq(t, "int32") == 1 || sema_streq(t, "uint") == 1 || sema_streq(t, "uint32") == 1) {
+        return 32;
+    }
+    if (sema_streq(t, "int64") == 1 || sema_streq(t, "uint64") == 1) {
+        return 64;
+    }
+    return 0;
+}
+
+// A bitfield's declared type with aliases resolved and a classic enum as `int` (a sum type
+// stays itself: it is not an integer).
+string sema_bitfield_base(Sema* s, string t) {
+    string ft = sema_strip_const(t);
+    int hops = 0;
+    while (hops < 16) {
+        *DeclNode ad = sema_find_tdecl(s, ft);
+        if (ad != null && ad.kind == DK_TYPEALIAS) {
+            ft = sema_strip_const(ad.ret_type);
+        }
+        else {
+            if (sema_is_plain_enum_decl(ad) == 1) {
+                ft = "int";
+            }
+            hops = 16;
+        }
+        hops = hops + 1;
+    }
+    return ft;
+}
+
+// A field default (`int t = 30;`) is a constant of the field's type (mirrors the C++
+// visit(StructDecl)); none on a generic struct's fields or on a bitfield.
+void sema_check_field_defaults(Sema* s, *DeclNode d) {
+    int i = 0;
+    while (i < List_len<Param>(&d.params) && i < List_len<*ExprNode>(&d.field_dflts)) {
+        *ExprNode e = List_get<*ExprNode>(&d.field_dflts, i);
+        Param f = List_get<Param>(&d.params, i);
+        i = i + 1;
+        if (e == null) {
+            continue;
+        }
+        int sl = s.line;
+        int sc = s.col;
+        if (e.line > 0) {
+            s.line = e.line;
+            s.col = e.col;
+        }
+        if (List_len<TypeParam>(&d.type_params) > 0) {
+            sema_error(s, sema_cat(sema_cat(sema_cat(sema_cat("field '", f.name), "' of generic struct '"), d.name), "' cannot have a default value"));
+        } else if ((i - 1) < List_len<int>(&d.field_bits) && List_get<int>(&d.field_bits, i - 1) != 0) {
+            sema_error(s, sema_cat(sema_cat("bitfield '", f.name), "' cannot have a default value"));
+        } else {
+            sema_infer_variant_r(s, e, f.ty, 1);
+            sema_expr(s, e);
+            if (sema_is_const_init(s, e) == 0) {
+                sema_error(s, sema_cat(sema_cat("default value of field '", f.name), "' is not a compile-time constant"));
+            } else if (e.kind == EK_ARRAYLIT) {     // checked like an array initializer
+                sema_check_arr_init(s, f.ty, e);
+            } else {
+                string err = sema_assign_err(s, f.ty, e);
+                if (err[0] != 0) {
+                    sema_error(s, sema_cat(sema_cat(sema_cat(sema_cat("default value of field '", f.name), "': "), ""), err));
+                }
+            }
+        }
+        s.line = sl;
+        s.col = sc;
+    }
+}
+
+// Struct/union fields: not void; a bitfield needs an integer type at least as wide.
+void sema_check_fields(Sema* s, *DeclNode d) {
+    int i = 0;
+    int n = List_len<Param>(&d.params);
+    let fnames: StrTab;                     // a set: the field names seen
+    string what = "struct";
+    if (d.kind == DK_UNION) {
+        what = "union";
+    }
+    int k = 0;
+    while (k < n) {
+        string fname = List_get<Param>(&d.params, k).name;
+        if (StrTab_has(&fnames, fname) == 1) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: duplicate field '%s' in %s '%s'\n", s.filename, s.line, s.col, fname, what, d.name);
+        } else {
+            StrTab_set(&fnames, fname, 1);
+        }
+        k = k + 1;
+    }
+    let mnames: StrTab;                     // a set: the method names seen
+    int m = 0;
+    int mn = List_len<*DeclNode>(&d.methods);
+    while (m < mn) {
+        string mname = List_get<*DeclNode>(&d.methods, m).name;
+        *DeclNode md = List_get<*DeclNode>(&d.methods, m);
+        int mdl = s.line;             // at the method (as the C++ checker)
+        int mdc = s.col;
+        if (md.line > 0) {
+            mdl = md.line;
+            mdc = md.col;
+        }
+        if (StrTab_has(&fnames, mname) == 1) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: method '%s' of struct '%s' has the same name as a field\n", s.filename, mdl, mdc, mname, d.name);
+        }
+        if (StrTab_has(&mnames, mname) == 1) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: duplicate method '%s' in struct '%s'\n", s.filename, mdl, mdc, mname, d.name);
+        } else {
+            StrTab_set(&mnames, mname, 1);
+        }
+        int mp = 0;
+        while (mp < List_len<Param>(&md.params)) {
+            if (sema_streq(List_get<Param>(&md.params, mp).name, "self") == 1) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: method '%s' of struct '%s' cannot have a parameter named 'self': it is the implicit receiver\n",
+                        s.filename, md.line, md.col, mname, d.name);
+            }
+            mp = mp + 1;
+        }
+        m = m + 1;
+    }
+    int pi = 0;
+    while (pi < List_len<string>(&d.pad_tys)) {               // unnamed bitfields `T : N;`
+        string pty = List_get<string>(&d.pad_tys, pi);
+        int pw = List_get<int>(&d.pad_bits, pi);
+        int ptb = sema_int_bits(sema_bitfield_base(s, pty));
+        if (ptb == 0) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: unnamed bitfield of '%s' must have an integer type, got '%s'\n", s.filename, s.line, s.col, d.name, pty);
+        } else if (pw > ptb) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: unnamed bitfield of '%s' is %d bits wide, more than its type '%s' holds (%d)\n",
+                   s.filename, s.line, s.col, d.name, pw, pty, ptb);
+        }
+        pi = pi + 1;
+    }
+    while (i < n) {
+        Param f = List_get<Param>(&d.params, i);
+        string fterr = sema_void_type_err(s, f.ty);
+        if (fterr[0] != 0 && (List_len<TypeParam>(&d.type_params) == 0 || sema_is_void_value(f.ty) == 1)) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: field '%s' of '%s' %s\n", s.filename, s.line, s.col, f.name, d.name, fterr);
+        }
+        int bw = 0;
+        if (d.kind == DK_STRUCT && i < List_len<int>(&d.field_bits)) {
+            bw = List_get<int>(&d.field_bits, i);
+        }
+        if (bw < 0) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: bitfield '%s' of '%s' has zero width (only an unnamed bitfield may be zero-width)\n", s.filename, s.line, s.col, f.name, d.name);
+        }
+        if (bw > 0 && sema_names_tparam(d, f.ty) == 0) {   // a type parameter: checked per instance
+            int tb = sema_int_bits(sema_bitfield_base(s, f.ty));
+            if (tb == 0) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: bitfield '%s' of '%s' must have an integer type, got '%s'\n", s.filename, s.line, s.col, f.name, d.name, f.ty);
+            } else if (bw > tb) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: bitfield '%s' of '%s' is %d bits wide, more than its type '%s' holds (%d)\n",
+                       s.filename, s.line, s.col, f.name, d.name, bw, f.ty, tb);
+            }
+        }
+        i = i + 1;
+    }
+}
+
+// A type alias that resolves back to itself names no type (`type A = B; type B = A;`).
+void sema_check_alias_cycles(Sema* s) {
+    int i = 0;
+    int n = List_len<*DeclNode>(&s.tdecls);
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&s.tdecls, i);
+        s.line = d.line;
+        s.col = d.col;
+        if (d.kind == DK_TYPEALIAS) {
+            string cur = d.ret_type;
+            int steps = 0;
+            int cyc = 0;
+            while (steps < 64) {
+                string b0 = sema_struct_of_type(sema_strip_const(cur));
+                int bn = 0;
+                while (b0[bn] != 0 && (int)b0[bn] != 91) {
+                    bn = bn + 1;
+                }
+                string b = sema_base_name(sema_sub_str(b0, 0, bn));
+                // Also through a type argument (`type L = List<L>;`): its layout needs itself.
+                if (sema_streq(b, d.name) == 1 || sema_type_mentions(cur, d.name) == 1) {
+                    cyc = 1;
+                    steps = 64;
+                }
+                else {
+                    *DeclNode nx = sema_find_tdecl(s, b);
+                    if (nx == null || nx.kind != DK_TYPEALIAS) {
+                        steps = 64;
+                    }
+                    else {
+                        cur = nx.ret_type;
+                    }
+                }
+                steps = steps + 1;
+            }
+            if (cyc == 1) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: type alias '%s' refers to itself (a cyclic alias names no type)\n", s.filename, s.line, s.col, d.name);
+            }
+        }
+        i = i + 1;
+    }
+}
+
+void sema_check_fn(Sema* s, *DeclNode f, string self_type) {
+    if (f.body == null) {
+        return;
+    }
+    s.line = f.line;
+    s.col = f.col;
+    // Template body: full type-checking (escape soundness, `?`, uninitialized reads,
+    // undefined-variable) is deferred to instantiation, exactly as the C++ checker does,
+    // because the param types are still abstract. Only the definite-return check is
+    // structural (control-flow, type-independent), so it still applies here.
+    if (List_len<TypeParam>(&f.type_params) > 0 && s.in_inst == 0) {
+        if (f.is_async == 0 && sema_streq(f.ret_type, "void") == 0
+            && sema_always_returns(f.body) == 0) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: missing return in non-void function '%s' (control can reach the end without returning a %s)\n",
+                   s.filename, s.line, s.col, f.name, f.ret_type);
+        }
+        return;
+    }
+    // `main` is the entry point; its return value is the process exit code, so it must be int.
+    if (sema_streq(f.name, "main") == 1 && sema_streq(f.ret_type, "int") == 0
+        && sema_streq(f.ret_type, "int32") == 0) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: 'main' must return int (its return value is the process exit code); got '%s'\n",
+               s.filename, s.line, s.col, f.ret_type);
+    }
+    if (sema_streq(f.name, "main") == 1 && f.is_async == 1 && s.in_inst == 0) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: 'main' cannot be async: the program's entry point must return int directly (run an async function from main with an executor)\n",
+               s.filename, s.line, s.col);
+    }
+    s.in_async = f.is_async;
+    s.in_variadic = 0;
+    int vpn = List_len<Param>(&f.params);
+    if (vpn > 0 && sema_streq(List_get<Param>(&f.params, vpn - 1).ty, "...") == 1) {
+        s.in_variadic = 1;
+    }
+    s.await_seen = 0;
+    s.cur_ret = sema_isub(s, f.ret_type);
+    s.cur_ret_raw = f.ret_type;
+    // Escape soundness: watch non-escaping fn-type params for the body walk. (Not in a
+    // generic instance: as in the C++ checker, it is enforced on non-generic functions.)
+    List_init<string>(&s.watched, 4);
+    List_init<string>(&s.escaped, 4);
+    List_init<string>(&s.wlocals, 4);
+    List_init<string>(&s.wlocals_esc, 4);
+    List_init<*ExprNode>(&s.wlam, 4);
+    List_init<string>(&s.wlam_name, 4);
+    List_init<int>(&s.wlam_async, 4);
+    List_init<*ExprNode>(&s.lcap_lam, 4);
+    List_init<string>(&s.lcap_name, 4);
+    s.lam_arg_stack = 0;
+    List_init<string>(&s.cap_param, 4);
+    List_init<string>(&s.cap_local, 4);
+    List_init<string>(&s.narrowed, 4);
+    List_init<string>(&s.loop_lbls, 4);
+    s.callee_ctx = "";
+    int pe = 0;
+    int pn = List_len<Param>(&f.params);
+    while (pe < pn) {
+        Param pm = List_get<Param>(&f.params, pe);
+        int marked = 0;
+        if (pe < List_len<int>(&f.param_escaping)) {
+            marked = List_get<int>(&f.param_escaping, pe);
+        }
+        // In an instance the param's type is the instance's (a `T` may be a closure).
+        string wty = pm.ty;
+        if (s.in_inst == 1) {
+            wty = sema_isub(s, pm.ty);
+        }
+        if (sema_is_fn_type(wty) == 1 && marked == 0) {
+            List_push<string>(&s.watched, pm.name);
+        }
+        pe = pe + 1;
+    }
+    sema_push(s);
+    if (self_type[0] != 0) {   // method: self points at the struct
+        sema_define(s, "self", sema_cat("*", self_type), 0);
+    }
+    int j = 0;
+    int m = List_len<Param>(&f.params);
+    while (j < m) {
+        Param pm = List_get<Param>(&f.params, j);
+        // `const int x` (or `T*const p`): the parameter itself may not be reassigned.
+        int pconst = 0;
+        int pn2 = 0;
+        while (pm.ty[pn2] != 0) {
+            pn2 = pn2 + 1;
+        }
+        if (pn2 >= 6 && sema_streq(sema_sub_str(pm.ty, 0, 6), "const ") == 1 && sema_has_star(pm.ty) == 0) {
+            pconst = 1;
+        }
+        if (pn2 >= 6 && sema_streq(sema_sub_str(pm.ty, pn2 - 6, pn2), "*const") == 1) {
+            pconst = 1;
+        }
+        // An inline struct method's parameters carry no position and count as variables
+        // (the C++ checks those bodies with plain scope bindings).
+        if (self_type[0] != 0) {
+            sema_define_at(s, pm.name, sema_isub(s, pm.ty), pconst, 0, 0, 0);
+        }
+        else {
+            sema_define_at(s, pm.name, sema_isub(s, pm.ty), pconst, pm.line, pm.col, 1);
+            if (s.tool != 0 && pm.line > 0) {   // its name hovers and resolves like a local's
+                sema_tool_hsym(s, pm.line, pm.col, sema_slen(pm.name), sema_display_ty(s, sema_isub(s, pm.ty)));
+            }
+        }
+        if (s.in_inst == 1) {              // `id<void>`: a type argument may make a parameter void
+            string iperr = sema_void_type_err(s, sema_isub(s, pm.ty));
+            if (iperr[0] != 0) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: parameter '%s' %s\n", s.filename, s.line, s.col, pm.name, iperr);
+            }
+        }
+        j = j + 1;
+    }
+    int prev_pd = s.param_depth;
+    s.param_depth = s.depth;
+    List_clear<string>(&s.addr_keys);
+    List_clear<string>(&s.addr_roots);
+    sema_stmt(s, f.body);
+    s.param_depth = prev_pd;
+    // Reads of an uninitialized scalar local; under -Wall, those uninitialized on some
+    // path. An async body is skipped (its locals become frame fields), and so is an inline
+    // struct method's (the C++ checks those bodies apart from visit(FunctionDecl)).
+    if (f.is_async == 0) {
+        int urep = sema_check_uninit(s, f.body);
+        if (urep == 0 && s.wall == 1 && s.in_inst == 0 && self_type[0] == 0) {
+            sema_warn_maybe_uninit(s, f);
+        }
+    }
+    sema_pop(s);
+    // A non-void function must return on every path (no implicit zero return);
+    // void may fall off, and async completes its future implicitly.
+    if (f.is_async == 0 && s.in_inst == 0 && sema_streq(f.ret_type, "void") == 0
+        && sema_always_returns(f.body) == 0) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: missing return in non-void function '%s' (control can reach the end without returning a %s)\n",
+               s.filename, s.line, s.col, f.name, f.ret_type);
+    }
+    if (f.is_async == 1 && s.await_seen == 0) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: async function '%s' has no `await`\n", s.filename, s.line, s.col, f.name);
+    }
+    sema_stack_envs(s);
+    int ci = 0;
+    while (ci < List_len<string>(&s.cap_param)) {
+        if (sema_in_list(&s.wlocals_esc, List_get<string>(&s.cap_local, ci)) == 1
+            && sema_in_list(&s.escaped, List_get<string>(&s.cap_param, ci)) == 0) {
+            List_push<string>(&s.escaped, List_get<string>(&s.cap_param, ci));
+        }
+        ci = ci + 1;
+    }
+    sema_record_generic_params(s, f);
+    int wi = 0;
+    int wn = List_len<string>(&s.watched);
+    while (wi < wn && s.in_inst == 0 && s.stamp_all == 0) {   // enforced on non-generic functions (as the C++), not again on the lowered program
+        string wnm = List_get<string>(&s.watched, wi);
+        if (sema_in_list(&s.escaped, wnm) == 1) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: closure parameter '%s' escapes (used beyond a direct call); mark it `escaping`\n",
+                   s.filename, s.line, s.col, wnm);
+        }
+        wi = wi + 1;
+    }
+    s.in_async = 0;
+}

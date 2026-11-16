@@ -1,0 +1,511 @@
+// sema_flow_mu_stmt.esk: maybe-uninitialized statements, void values and top-level declarations (part of sema_flow.esk, imported in order)
+
+*MuFrame mu_top_frame(Mu* m) {
+    return List_get<*MuFrame>(&m.frames, List_len<*MuFrame>(&m.frames) - 1);
+}
+
+void mu_stmt(Mu* m, *StmtNode st) {
+    if (st == null) {
+        return;
+    }
+    int k = st.kind;
+    Sema* s = m.sm;
+    if (k == SK_BLOCK) {
+        mu_block(m, st);
+        return;
+    }
+    if (k == SK_VARDECL) {
+        mu_expr(m, st.expr);
+        int tracked = 0;
+        if (st.expr == null && st.is_static == 0 && sema_uninit_scalar(s, st.type) == 1) {
+            tracked = 1;
+        }
+        mu_declare(m, st.name, tracked);
+        return;
+    }
+    if (k == SK_EXPR) {
+        mu_expr(m, st.expr);
+        return;
+    }
+    if (k == SK_RETURN) {
+        mu_expr(m, st.expr);
+        mu_run_defers(m, 0);
+        m.s.live = 0;
+        return;
+    }
+    if (k == SK_THROW) {
+        mu_expr(m, st.expr);
+        m.s.live = 0;
+        return;
+    }
+    if (k == SK_BREAK) {
+        mu_jump(m, st.label, 0);
+        return;
+    }
+    if (k == SK_CONTINUE) {
+        mu_jump(m, st.label, 1);
+        return;
+    }
+    if (k == SK_DEFER) {
+        if (m.s.live == 1) {
+            List_push<*StmtNode>(&m.dfr, st.s1);
+            List_push<int>(&m.dfr_scope, List_len<int>(&m.scope_env) - 1);
+        }
+        return;
+    }
+    if (k == SK_ASM) {
+        int i = 0;
+        while (i < List_len<*StmtNode>(&st.items)) {
+            *StmtNode op = List_get<*StmtNode>(&st.items, i);
+            if (op.kind == SK_ASMINPUT) {
+                mu_expr(m, op.expr);
+            }
+            i = i + 1;
+        }
+        return;
+    }
+    if (k == SK_THREADJOIN) {
+        mu_expr(m, st.expr);
+        return;
+    }
+    if (k == SK_IF) {                              // an `else if` chain is walked with a loop
+        *MuSt out = mu_st(0);
+        *StmtNode n = st;
+        while (n != null) {
+            *MuSt then_st = mu_st(1);
+            *MuSt else_st = mu_st(1);
+            mu_cond(m, n.expr, then_st, else_st);
+            mu_assign(m.s, then_st);
+            mu_block(m, n.s1);
+            mu_join(out, m.s);
+            mu_assign(m.s, else_st);
+            *StmtNode next = null;
+            if (n.s2 != null && n.s2.kind == SK_IF) {
+                next = n.s2;
+            }
+            if (next == null) {
+                if (n.s2 != null) {
+                    mu_block(m, n.s2);
+                }
+                mu_join(out, m.s);
+            }
+            n = next;
+        }
+        mu_assign(m.s, out);
+        return;
+    }
+    if (k == SK_WHILE) {
+        *MuSt body_st = mu_st(1);
+        *MuSt exit_st = mu_st(1);
+        mu_cond(m, st.expr, body_st, exit_st);
+        mu_assign(m.s, body_st);
+        *MuSt ex = exit_st;
+        if (sema_cond_true(st.expr) == 1) {
+            ex = mu_st(0);
+        }
+        mu_push_frame(m, 1, st.label);
+        mu_block(m, st.s1);
+        *MuFrame f = mu_pop_frame(m);
+        mu_assign(m.s, ex);
+        mu_join(m.s, f.brk);
+        return;
+    }
+    if (k == SK_DOWHILE) {
+        mu_push_frame(m, 1, st.label);
+        mu_block(m, st.s1);
+        mu_join(m.s, mu_top_frame(m).cont);
+        mu_expr(m, st.expr);
+        *MuFrame f = mu_pop_frame(m);
+        if (sema_cond_true(st.expr) == 1) {
+            m.s.live = 0;
+        }
+        mu_join(m.s, f.brk);
+        return;
+    }
+    if (k == SK_FOR) {
+        mu_push_scope(m);
+        if (st.s1 != null && st.s1.kind == SK_BLOCK) {   // the init's declarations belong to the loop
+            int i = 0;
+            while (i < List_len<*StmtNode>(&st.s1.items)) {
+                mu_stmt(m, List_get<*StmtNode>(&st.s1.items, i));
+                i = i + 1;
+            }
+        } else {
+            mu_stmt(m, st.s1);
+        }
+        *MuSt body_st = mu_st(1);
+        *MuSt exit_st = mu_st(1);
+        if (st.expr != null) {
+            mu_cond(m, st.expr, body_st, exit_st);
+        }
+        else {
+            mu_assign(body_st, m.s);
+            mu_assign(exit_st, m.s);
+        }
+        mu_assign(m.s, body_st);
+        *MuSt ex = exit_st;
+        if (sema_cond_true(st.expr) == 1) {
+            ex = mu_st(0);
+        }
+        mu_push_frame(m, 1, st.label);
+        mu_block(m, st.s2);
+        mu_join(m.s, mu_top_frame(m).cont);
+        mu_expr(m, st.expr2);
+        *MuFrame fr = mu_pop_frame(m);
+        mu_assign(m.s, ex);
+        mu_join(m.s, fr.brk);
+        mu_pop_scope(m);
+        return;
+    }
+    if (k == SK_FORIN) {
+        mu_expr(m, st.expr);
+        *MuSt ex = mu_copy(m.s);
+        mu_push_scope(m);
+        mu_declare(m, st.name, 0);
+        mu_push_frame(m, 1, st.label);
+        mu_block(m, st.s1);
+        *MuFrame fr = mu_pop_frame(m);
+        mu_pop_scope(m);
+        mu_assign(m.s, ex);
+        mu_join(m.s, fr.brk);
+        return;
+    }
+    if (k == SK_SWITCH) {
+        mu_expr(m, st.expr);
+        *MuSt entry = mu_copy(m.s);
+        *MuSt cur = mu_st(0);
+        int has_default = 0;
+        mu_push_scope(m);                          // the switch body is one scope
+        mu_push_frame(m, 0, "");
+        int ci = 0;
+        while (ci < List_len<*StmtNode>(&st.items)) {
+            *StmtNode c = List_get<*StmtNode>(&st.items, ci);
+            if (c.expr == null) {
+                has_default = 1;
+            }
+            mu_assign(m.s, entry);
+            mu_join(m.s, cur);                     // fall-through from the case above
+            int i = 0;
+            while (i < List_len<*StmtNode>(&c.items)) {
+                mu_stmt(m, List_get<*StmtNode>(&c.items, i));
+                i = i + 1;
+            }
+            mu_assign(cur, m.s);
+            ci = ci + 1;
+        }
+        *MuFrame fr = mu_pop_frame(m);
+        if (List_len<*StmtNode>(&st.items) == 0) {
+            mu_assign(m.s, entry);
+        } else {
+            mu_assign(m.s, cur);
+        }
+        if (has_default == 0) {
+            mu_join(m.s, entry);
+        }
+        mu_join(m.s, fr.brk);
+        mu_run_scope_defers(m);
+        mu_pop_scope(m);
+        return;
+    }
+    if (k == SK_MATCH) {                           // the arms are exhaustive (checked separately)
+        mu_expr(m, st.expr);
+        if (List_len<*StmtNode>(&st.items) == 0) {
+            return;
+        }
+        *MuSt entry = mu_copy(m.s);
+        *MuSt out = mu_st(0);
+        int ai = 0;
+        while (ai < List_len<*StmtNode>(&st.items)) {
+            *StmtNode arm = List_get<*StmtNode>(&st.items, ai);
+            mu_assign(m.s, entry);
+            mu_push_scope(m);
+            List<string> binds;
+            List_init<string>(&binds, 2);
+            sema_arm_binds(arm.name, &binds);
+            int bi = 0;
+            while (bi < List_len<string>(&binds)) {
+                mu_declare(m, List_get<string>(&binds, bi), 0);
+                bi = bi + 1;
+            }
+            mu_block(m, arm.s1);
+            mu_pop_scope(m);
+            mu_join(out, m.s);
+            ai = ai + 1;
+        }
+        mu_assign(m.s, out);
+        return;
+    }
+    if (k == SK_TRY) {
+        *MuSt before = mu_copy(m.s);
+        mu_block(m, st.s1);
+        *MuSt out = mu_copy(m.s);
+        int ci = 0;
+        while (ci < List_len<*StmtNode>(&st.items)) {
+            *StmtNode c = List_get<*StmtNode>(&st.items, ci);
+            mu_assign(m.s, before);
+            mu_push_scope(m);
+            int sp = 0;
+            int j = 0;
+            while (c.name[j] != 0) {
+                if ((int)c.name[j] == 32) {
+                    sp = j;
+                }
+                j = j + 1;
+            }
+            if (sp > 0) {
+                mu_declare(m, sema_sub_str(c.name, sp + 1, j), 0);
+            }
+            mu_block(m, c.s1);
+            mu_pop_scope(m);
+            mu_join(out, m.s);
+            ci = ci + 1;
+        }
+        if (st.s2 != null) {
+            mu_assign(m.s, before);
+            mu_block(m, st.s2);
+            if (m.s.live == 0) {
+                return;
+            }
+            // What the finally assigns on every path through it is assigned after.
+            int v = 0;
+            while (v < List_len<int>(&before.u)) {
+                if (List_get<int>(&before.u, v) == 1 && mu_has(m.s, v) == 0) {
+                    mu_put(out, v, 0);
+                }
+                v = v + 1;
+            }
+        }
+        mu_assign(m.s, out);
+        return;
+    }
+}
+
+void mu_function(Mu* m, List<string>* params, *StmtNode body) {
+    mu_push_scope(m);
+    int i = 0;
+    while (i < List_len<string>(params)) {
+        mu_declare(m, List_get<string>(params, i), 0);
+        i = i + 1;
+    }
+    mu_block(m, body);
+    mu_pop_scope(m);
+}
+
+void sema_warn_maybe_uninit(Sema* s, *DeclNode f) {
+    let m: Mu;
+    m.sm = s;
+    m.s = mu_st(1);
+    List<string> params;
+    List_init<string>(&params, 4);
+    int i = 0;
+    while (i < List_len<Param>(&f.params)) {
+        List_push<string>(&params, List_get<Param>(&f.params, i).name);
+        i = i + 1;
+    }
+    mu_function(&m, &params, f.body);
+}
+
+
+// Is `t` a `void` value type (void, or an array of void)? Only a function result may be void.
+int sema_is_void_value(string t0) {
+    string t = sema_strip_const(t0);
+    if (sema_has_star(t) == 1) {
+        return 0;
+    }
+    int n = 0;
+    while (t[n] != 0 && (int)t[n] != 91) {
+        n = n + 1;
+    }
+    return sema_streq(sema_sub_str(t, 0, n), "void");
+}
+
+// "" when a value of type `t0` is fine, else why not (mirrors TypeChecker::voidTypeError):
+// a `void` value (also an array or slice of one), or a generic instance like `Box<void>`
+// whose type argument makes a field a `void` value.
+string sema_void_type_err(Sema* s, string t0) {
+    if (sema_is_void_value(t0) == 1) {
+        return "cannot have type 'void'";
+    }
+    string t = sema_strip_const(t0);
+    if (sema_has_star(t) == 1 || sema_is_fn_type(t) == 1) {
+        return "";
+    }
+    int n = 0;
+    while (t[n] != 0 && (int)t[n] != 91) {
+        n = n + 1;
+    }
+    string bt = sema_sub_str(t, 0, n);
+    if (sema_has_lt(bt) == 0) {
+        return "";
+    }
+    *DeclNode d = sema_find_struct(s, sema_base_name(bt));
+    if (d == null || List_len<TypeParam>(&d.type_params) == 0) {
+        return "";
+    }
+    List<string> targs;
+    List_init<string>(&targs, 2);
+    sema_parse_targs(bt, &targs);
+    int i = 0;
+    while (i < List_len<Param>(&d.params)) {
+        Param f = List_get<Param>(&d.params, i);
+        if (sema_is_void_value(sema_subst_params(f.ty, &d.type_params, &targs)) == 1) {
+            return sema_cat(sema_cat(sema_cat(sema_cat("cannot have type '", t0), "': its field '"), f.name), "' would be 'void'");
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+// "ret(p1, p2)" signature spelling of a function, for the prototype/definition check.
+string sema_sig_of(*DeclNode f) {
+    string out = sema_cat(sema_strip_const(f.ret_type), "(");
+    int i = 0;
+    int n = List_len<Param>(&f.params);
+    while (i < n) {
+        if (i > 0) {
+            out = sema_cat(out, ", ");
+        }
+        out = sema_cat(out, List_get<Param>(&f.params, i).ty);
+        i = i + 1;
+    }
+    return sema_cat(out, ")");
+}
+
+// Do two struct decls have identical fields (a multi-file merge of one declaration)?
+int sema_same_struct(*DeclNode a, *DeclNode b) {
+    List<Param> af;
+    List<int> ab;
+    List<int> an;
+    ast_layout_fields(a, &af, &ab, &an);
+    List<Param> bf;
+    List<int> bb;
+    List<int> bn;
+    ast_layout_fields(b, &bf, &bb, &bn);
+    int n = List_len<Param>(&af);
+    if (n != List_len<Param>(&bf)) {
+        return 0;
+    }
+    if (List_len<*DeclNode>(&a.methods) != List_len<*DeclNode>(&b.methods)) {
+        return 0;
+    }
+    if (List_len<TypeParam>(&a.type_params) != List_len<TypeParam>(&b.type_params)) {
+        return 0;
+    }
+    int i = 0;
+    while (i < n) {
+        Param x = List_get<Param>(&af, i);
+        Param y = List_get<Param>(&bf, i);
+        if (sema_streq(x.ty, y.ty) == 0 || sema_streq(x.name, y.name) == 0) {
+            return 0;
+        }
+        if (List_get<int>(&ab, i) != List_get<int>(&bb, i) || List_get<int>(&an, i) != List_get<int>(&bn, i)) {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+int sema_is_type_kind(string k) {
+    if (sema_streq(k, "struct") == 1 || sema_streq(k, "union") == 1 || sema_streq(k, "enum") == 1
+        || sema_streq(k, "interface") == 1 || sema_streq(k, "type alias") == 1) {
+        return 1;
+    }
+    return 0;
+}
+
+// "a struct", "an enum member", ...
+string sema_article(string k) {
+    if (k[0] == 101 || k[0] == 105 || k[0] == 117) {   // e i u
+        return sema_cat("an ", k);
+    }
+    return sema_cat("a ", k);
+}
+
+// Index of `name` in the top-level name table, or -1.
+int sema_name_index(NameIdx* tix, string name) {
+    return NameIdx_first(tix, name);
+}
+
+// Declare top-level `name` of `kind`; report a duplicate or a conflict (mirrors the C++
+// checkTopLevelNames: prototypes, `extern` variables and identical structs are allowed).
+void sema_declare_top(Sema* s, List<NameEnt>* tab, NameIdx* tix, string name, string kind, *DeclNode d) {
+    int i = sema_name_index(tix, name);
+    if (i < 0) {
+        let ne: NameEnt;
+        ne.name = name;
+        ne.kind = kind;
+        ne.d = d;
+        List_push<NameEnt>(tab, ne);
+        NameIdx_push(tix, name);
+        return;
+    }
+    NameEnt prev = List_get<NameEnt>(tab, i);
+    if (sema_streq(kind, "function") == 1 && sema_streq(prev.kind, "function") == 1) {
+        int pg = List_len<TypeParam>(&prev.d.type_params);
+        int dg = List_len<TypeParam>(&d.type_params);
+        if (pg > 0 || dg > 0) {
+            // Two bodies are reported as a redefinition; a generic and a non-generic
+            // function may not share a name (a call would silently pick one).
+            if ((pg == 0) != (dg == 0) && (prev.d.body == null || d.body == null)) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: conflicting declaration of function '%s' (a generic and a non-generic function cannot share a name)\n",
+                       s.filename, s.line, s.col, sema_fn_display(d));
+            }
+            return;
+        }
+        if (sema_streq(sema_sig_of(prev.d), sema_sig_of(d)) == 0) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: conflicting declaration of function '%s' (%s vs the earlier %s)\n",
+                   s.filename, s.line, s.col, sema_fn_display(d), sema_sig_of(d), sema_sig_of(prev.d));
+        }
+        return;                                      // two bodies: reported as a redefinition
+    }
+    if (sema_streq(kind, "variable") == 1 && sema_streq(prev.kind, "variable") == 1) {
+        if ((prev.d.is_extern == 1 || d.is_extern == 1) && sema_streq(prev.d.ret_type, d.ret_type) == 1) {
+            return;
+        }
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: redefinition of global variable '%s'\n", s.filename, s.line, s.col, name);
+        return;
+    }
+    if (sema_streq(kind, "struct") == 1 && sema_streq(prev.kind, "struct") == 1) {
+        if (sema_same_struct(prev.d, d) == 1) {
+            return;
+        }
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: redefinition of struct '%s' with different fields\n", s.filename, s.line, s.col, name);
+        return;
+    }
+    if (sema_streq(kind, "type alias") == 1 && sema_streq(prev.kind, "type alias") == 1
+        && sema_streq(prev.d.ret_type, d.ret_type) == 1) {
+        return;
+    }
+    // Types and enum members live apart (a struct `G` beside a member `G` is fine).
+    if ((sema_is_type_kind(kind) == 1 && sema_streq(prev.kind, "enum member") == 1)
+        || (sema_is_type_kind(prev.kind) == 1 && sema_streq(kind, "enum member") == 1)) {
+        return;
+    }
+    s.had_error = 1;
+    if (sema_streq(kind, prev.kind) == 1) {
+        dprintf(2, "error: %s:%d:%d: redefinition of %s '%s'\n", s.filename, s.line, s.col, kind, name);
+    } else {
+        dprintf(2, "error: %s:%d:%d: '%s' is declared as both %s and %s\n", s.filename, s.line, s.col, name, sema_article(prev.kind), sema_article(kind));
+    }
+}
+
+// "ret(p1, p2)" of an extern with type aliases and classic enums resolved (as C++ compares
+// normalized signatures).
+string sema_extern_sig(Sema* s, *DeclNode f) {
+    string out = sema_cat(sema_resolve_scalar(s, f.ret_type), "(");
+    int i = 0;
+    int n = List_len<Param>(&f.params);
+    while (i < n) {
+        if (i > 0) {
+            out = sema_cat(out, ", ");
+        }
+        out = sema_cat(out, sema_resolve_scalar(s, List_get<Param>(&f.params, i).ty));
+        i = i + 1;
+    }
+    return sema_cat(out, ")");
+}
