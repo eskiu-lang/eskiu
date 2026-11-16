@@ -580,4 +580,8 @@ void sema_binary_checks(Sema* s, *ExprNode e, string lt0, string rt0) {
 import "sema_expr_binary.esk";
 import "sema_expr_calls.esk";
 import "sema_expr_walk.esk";
+import "sema_expr_walk_values.esk";
+import "sema_expr_walk_ops.esk";
+import "sema_expr_walk_method.esk";
+import "sema_expr_walk_calls.esk";
 import "sema_expr_lambda.esk";

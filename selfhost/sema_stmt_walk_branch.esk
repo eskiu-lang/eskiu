@@ -1,0 +1,391 @@
+// Part of sema.esk (the statement kinds of sema_stmt_k), imported in order; compile sema.esk, not this file alone.
+
+void sema_stmt_switch_match(Sema* s, *StmtNode st, int k) {
+    sema_expr(s, st.expr);             // subject
+    if (k == SK_SWITCH) {
+        // The subject is an integer (a classic enum counts); each case value must
+        // convert to it (mirrors the C++ visit(SwitchStmt)).
+        string swt = sema_infer_type(s, st.expr);
+        string swc = sema_canon(s, swt);
+        if (sema_judgeable(s, swc) == 1 && sema_is_int_ty(swc) == 0) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: switch subject must be integer type, got %s\n", s.filename, s.line, s.col, swt);
+        }
+        int cj = 0;
+        while (cj < List_len<*StmtNode>(&st.items)) {
+            *StmtNode cc = List_get<*StmtNode>(&st.items, cj);
+            if (cc.kind == SK_CASE && cc.expr != null && sema_judgeable(s, swc) == 1) {
+                string cvt = sema_infer_type(s, cc.expr);
+                string cvc = sema_canon(s, cvt);
+                if (sema_judgeable(s, cvc) == 1 && (sema_is_int_ty(swc) == 0 || sema_is_int_ty(cvc) == 0)
+                    && sema_assign_strict(s, swt, cvt)[0] != 0) {
+                    int sl0 = s.line;
+                    int sc0 = s.col;
+                    if (cc.expr.line > 0) {
+                        s.line = cc.expr.line;
+                        s.col = cc.expr.col;
+                    }
+                    s.had_error = 1;
+                    dprintf(2, "error: %s:%d:%d: case value type '%s' is incompatible with switch subject type '%s'\n", s.filename, s.line, s.col, cvt, swt);
+                    s.line = sl0;
+                    s.col = sc0;
+                }
+            }
+            cj = cj + 1;
+        }
+        // Duplicate case values: compare folded values (so `7` and `(4 * 2) - 1`
+        // collide, as in C); a label that doesn't fold (a `const` name) by its text.
+        List<string> seen;
+        List_init<string>(&seen, 8);
+        List<int64> seen_cv;
+        List_init<int64>(&seen_cv, 8);
+        int ci = 0;
+        int cn = List_len<*StmtNode>(&st.items);
+        int defaults = 0;
+        while (ci < cn) {
+            *StmtNode c = List_get<*StmtNode>(&st.items, ci);
+            int sl = s.line;       // a case's errors point at its value
+            int sc = s.col;
+            if (c.kind == SK_CASE && c.expr != null && c.expr.line > 0) {
+                s.line = c.expr.line;
+                s.col = c.expr.col;
+            }
+            if (c.kind == SK_CASE && c.expr != null && sema_is_const_int(s, c.expr) == 0) {
+                sema_error(s, "switch case value must be a constant integer expression");
+            }
+            if (c.kind == SK_CASE && c.expr == null) {
+                defaults = defaults + 1;
+                if (defaults == 2) {
+                    sema_error(s, "multiple 'default' labels in one switch");
+                }
+            }
+            int64 cv = (int64)0;
+            int folded = 0;
+            if (c.kind == SK_CASE && c.expr != null && sema_fold_int(s, c.expr, &cv) == 1) {
+                folded = 1;
+            }
+            // A label the subject's type cannot hold never matches (and, truncated, could
+            // collide with another label).
+            if (folded == 1 && sema_case_fits(sema_resolve_scalar(s, sema_infer_type(s, st.expr)), cv) == 0) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: case value %lld is out of range for switch subject type '%s'\n",
+                       s.filename, s.line, s.col, cv, sema_infer_type(s, st.expr));
+                folded = 0;
+            }
+            if (folded == 1) {
+                int dj = 0;
+                int dup = 0;
+                while (dj < List_len<int64>(&seen_cv)) {
+                    if (List_get<int64>(&seen_cv, dj) == cv) {
+                        dup = 1;
+                    }
+                    dj = dj + 1;
+                }
+                if (dup == 1) {
+                    sema_error(s, "duplicate case value in switch");
+                }
+                else {
+                    List_push<int64>(&seen_cv, cv);
+                }
+            } else if (c.kind == SK_CASE && c.expr != null && c.expr.kind == EK_IDENT) {
+                string key = c.expr.sval;
+                int found = sema_in_list(&seen, key);
+                if (found == 1) {
+                    sema_error(s, "duplicate case value in switch");
+                } else {
+                    List_push<string>(&seen, key);
+                }
+            }
+            s.line = sl;
+            s.col = sc;
+            ci = ci + 1;
+        }
+    }
+    if (k == SK_MATCH) {
+        // Collect arm variants (label is "Variant(binds)" or "_"), catching dups
+        // and noting a `_` wildcard, then check exhaustiveness.
+        List<string> seen;
+        List_init<string>(&seen, 8);
+        List<string> seen_vals;                // values of the arms of a classic enum
+        List_init<string>(&seen_vals, 8);
+        string mraw = sema_infer_type(s, st.expr);
+        string mres = sema_strip_const(mraw);   // through type aliases
+        int mh = 0;
+        while (mh < 32) {
+            *DeclNode mad = sema_find_tdecl(s, sema_base_name(mres));
+            if (mad != null && mad.kind == DK_TYPEALIAS && sema_has_star(mres) == 0) {
+                mres = sema_strip_const(mad.ret_type);
+            }
+            else {
+                mh = 32;
+            }
+            mh = mh + 1;
+        }
+        string msty = sema_struct_of_type(mres);
+        // The subject is an enum value (not a pointer to one, nor a struct).
+        *DeclNode mdd = sema_find_tdecl(s, msty);
+        int menum = 0;
+        if (sema_has_star(mres) == 0 && (int)mres[0] != 63
+            && (sema_is_enum(s, msty) == 1 || (mdd != null && mdd.kind == DK_ENUM))) {
+            menum = 1;
+        }
+        if (mraw[0] != 0 && menum == 0) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: match subject must be an enum, got %s\n", s.filename, s.line, s.col, mraw);
+        }
+        int has_wild = 0;
+        int ai = 0;
+        int an = List_len<*StmtNode>(&st.items);
+        while (ai < an) {
+            *StmtNode arm = List_get<*StmtNode>(&st.items, ai);
+            if (arm.kind == SK_ARM) {
+                string v = sema_base_name(arm.name);
+                if (sema_streq(v, "_") == 1) {
+                    if (has_wild == 1) {
+                        sema_error(s, "duplicate match arm for variant '_'");
+                    }
+                    has_wild = 1;
+                    if (ai + 1 < an) {   // they can never match
+                        sema_lint(s, s.line, s.col, "match arms after the `_` default are unreachable");
+                    }
+                }
+                *DeclNode med = sema_find_tdecl(s, msty);
+                if (sema_streq(v, "_") == 0 && med != null && med.kind == DK_ENUM) {
+                    int vi = sema_variant_index(med, v);
+                    if (vi < 0) {
+                        s.had_error = 1;
+                        dprintf(2, "error: %s:%d:%d: '%s' is not a variant of %s\n", s.filename, s.line, s.col, v, msty);
+                    } else {
+                        List<string> binds;
+                        List_init<string>(&binds, 2);
+                        sema_arm_binds(arm.name, &binds);
+                        int want = 0;
+                        if (vi < List_len<List<string>>(&med.payloads)) {
+                            List<string> pl = List_get<List<string>>(&med.payloads, vi);
+                            want = List_len<string>(&pl);
+                        }
+                        if (want != List_len<string>(&binds)) {
+                            s.had_error = 1;
+                            dprintf(2, "error: %s:%d:%d: variant '%s' binds %d field(s), got %d\n", s.filename, s.line, s.col, v, want, List_len<string>(&binds));
+                        }
+                    }
+                }
+                // Each binding of `A(x, y)` names a different variable.
+                List<string> binds;
+                List_init<string>(&binds, 2);
+                sema_arm_bindings(arm.name, &binds);
+                List<string> bseen;
+                List_init<string>(&bseen, 2);
+                int bi = 0;
+                while (bi < List_len<string>(&binds)) {
+                    string bn = List_get<string>(&binds, bi);
+                    if (sema_streq(bn, "_") == 0 && sema_in_list(&bseen, bn) == 1) {
+                        s.had_error = 1;
+                        dprintf(2, "error: %s:%d:%d: duplicate binding '%s' in match arm '%s'\n", s.filename, s.line, s.col, bn, v);
+                    } else {
+                        List_push<string>(&bseen, bn);
+                    }
+                    bi = bi + 1;
+                }
+                int found = sema_in_list(&seen, v);
+                if (found == 1) {
+                    s.had_error = 1;
+                    dprintf(2, "error: %s:%d:%d: duplicate match arm for variant '%s'\n", s.filename, s.line, s.col, v);
+                } else {
+                    List_push<string>(&seen, v);
+                    // Two members of a classic enum may share a value (legal, as in C),
+                    // but a match on the value cannot have two arms for it.
+                    EVar mv = sema_find_evar(s, msty, v);
+                    if (mv.plain == 1 && mv.val != null) {
+                        string prevv = sema_evar_with_val(s, msty, mv.val, &seen, v);
+                        if (prevv[0] != 0) {
+                            s.had_error = 1;
+                            dprintf(2, "error: %s:%d:%d: duplicate match value: '%s' has the same value (%s) as '%s'\n",
+                                   s.filename, s.line, s.col, v, mv.val, prevv);
+                        }
+                        List_push<string>(&seen_vals, mv.val);
+                    }
+                }
+            }
+            ai = ai + 1;
+        }
+        // Exhaustiveness: without `_`, every variant of the subject's enum must
+        // be covered. Skip if the subject type/enum can't be determined.
+        if (has_wild == 0) {
+            string sty = sema_struct_of_type(sema_infer_type(s, st.expr));
+            if (sema_is_enum(s, sty) == 1) {
+                string missing = "";
+                int ei = 0;
+                int en = List_len<EVar>(&s.evars);
+                while (ei < en) {
+                    EVar ev = List_get<EVar>(&s.evars, ei);
+                    if (sema_streq(ev.en, sty) == 1) {
+                        int covered = sema_in_list(&seen, ev.variant);
+                        if (covered == 0 && ev.plain == 1 && sema_in_list(&seen_vals, ev.val) == 1) {
+                            covered = 1;
+                        }
+                        if (covered == 0) {
+                            if (missing[0] != 0) {
+                                missing = sema_cat(missing, ", ");
+                            }
+                            missing = sema_cat(sema_cat(sema_cat(missing, "'"), ev.variant), "'");
+                        }
+                    }
+                    ei = ei + 1;
+                }
+                if (missing[0] != 0) {
+                    s.had_error = 1;
+                    dprintf(2, "error: %s:%d:%d: non-exhaustive match on '%s': missing %s (add those arms or a `_` default)\n",
+                           s.filename, s.line, s.col, sty, missing);
+                }
+            }
+        }
+    }
+    if (k == SK_SWITCH) {   // one scope (C)
+        s.sw_depth = s.sw_depth + 1;
+        sema_push(s);
+    }
+    string saved_mty = s.match_ty;
+    int saved_ml = s.match_line;
+    int saved_mc = s.match_col;
+    if (k == SK_MATCH) {
+        s.match_ty = sema_infer_type(s, st.expr);
+        if (s.stamp_all == 1 && s.in_inst == 0) {
+            st.type = s.match_ty;      // the EIR builder's enum name (C++ MatchStmt::enumName)
+        }
+        s.match_line = st.line;
+        s.match_col = st.col;
+    }
+    int i = 0;
+    int n = List_len<*StmtNode>(&st.items);
+    while (i < n) {
+        sema_stmt(s, List_get<*StmtNode>(&st.items, i));
+        i = i + 1;
+    }
+    s.match_ty = saved_mty;
+    s.match_line = saved_ml;
+    s.match_col = saved_mc;
+    if (k == SK_SWITCH) {
+        sema_pop(s);
+        s.sw_depth = s.sw_depth - 1;
+    }
+    return;
+}
+
+void sema_stmt_try(Sema* s, *StmtNode st, int k) {
+    if (s.wasm == 1) {
+        sema_error(s, "exceptions are not supported on WebAssembly targets");
+    }
+    sema_stmt(s, st.s1);               // body
+    int ci = 0;
+    int cn = List_len<*StmtNode>(&st.items);
+    while (ci < cn) {
+        *StmtNode cc = List_get<*StmtNode>(&st.items, ci);
+        if (sema_streq(cc.name, "_") == 1 && ci + 1 < cn) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: 'catch (_)' must be the last catch clause\n", s.filename, cc.line, cc.col);
+        }
+        sema_stmt(s, cc);
+        ci = ci + 1;
+    }
+    s.fin_depth = s.fin_depth + 1;     // a `return` may not leave a finally block
+    sema_stmt(s, st.s2);               // finally
+    s.fin_depth = s.fin_depth - 1;
+    return;
+}
+
+void sema_stmt_asm(Sema* s, *StmtNode st, int k) {
+    int i = 0;
+    int n = List_len<*StmtNode>(&st.items);
+    while (i < n) {
+        *StmtNode op = List_get<*StmtNode>(&st.items, i);
+        i = i + 1;
+        if (op.kind == SK_ASMOUTPUT) {
+            sema_asm_output(s, op.name, op.expr);
+            continue;
+        }
+        if ((int)op.name[0] == 61 || (int)op.name[0] == 43) {   // '=' / '+'
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: asm input constraint '%s' cannot start with '=' or '+'\n", s.filename, s.line, s.col, op.name);
+        }
+        sema_expr(s, op.expr);
+    }
+    return;
+}
+
+void sema_stmt_arm(Sema* s, *StmtNode st, int k) {
+    // A match arm: its payload bindings take the variant's field types (the subject's
+    // type arguments substituted), in a scope of their own.
+    sema_push(s);
+    List<string> binds;
+    List_init<string>(&binds, 2);
+    sema_arm_binds(st.name, &binds);
+    string v = sema_base_name(st.name);
+    string mty = s.match_ty;
+    if (mty == null) {
+        mty = "";
+    }
+    *DeclNode med = sema_find_tdecl(s, sema_struct_of_type(mty));
+    List<string> fts;
+    List_init<string>(&fts, 2);
+    if (med != null && med.kind == DK_ENUM) {
+        int vi = sema_variant_index(med, v);
+        List<string> mtargs;
+        List_init<string>(&mtargs, 2);
+        sema_parse_targs(sema_strip_ptr_sp(sema_strip_const(mty)), &mtargs);
+        if (vi >= 0 && vi < List_len<List<string>>(&med.payloads)
+            && List_len<string>(&mtargs) == List_len<TypeParam>(&med.type_params)) {
+            List<string> pl = List_get<List<string>>(&med.payloads, vi);
+            int pi = 0;
+            while (pi < List_len<string>(&pl)) {
+                List_push<string>(&fts, sema_subst_params(List_get<string>(&pl, pi), &med.type_params, &mtargs));
+                pi = pi + 1;
+            }
+        }
+    }
+    int bi = 0;
+    string ats = "";                   // the binding types, for the async lowering
+    while (bi < List_len<string>(&binds)) {
+        string bt = "";
+        if (bi < List_len<string>(&fts)) {
+            bt = List_get<string>(&fts, bi);
+        }
+        sema_define_at(s, List_get<string>(&binds, bi), bt, 0, s.match_line, s.match_col, 0);
+        if (bi >= List_len<string>(&fts)) {   // C++ binds only a variant's fields
+            sema_mark_used(s, List_get<string>(&binds, bi));
+        }
+        if (bi > 0) {
+            ats = sema_cat(ats, ";");
+        }
+        ats = sema_cat(ats, bt);
+        bi = bi + 1;
+    }
+    st.arm_types = ats;
+    if (s.in_async == 1 && s.in_inst == 1) {
+        st.arm_inst = sema_inst_rec(s, st.arm_inst, ats);
+    }
+    sema_stmt(s, st.s1);
+    sema_pop(s);
+    return;
+}
+
+void sema_stmt_catch(Sema* s, *StmtNode st, int k) {
+    // `catch (T name) { ... }`: the body sees `name` of type T.
+    sema_push(s);
+    int sp = 0;
+    int j = 0;
+    while (st.name[j] != 0) {
+        if ((int)st.name[j] == 32) {
+            sp = j;
+        }
+        j = j + 1;
+    }
+    if (sp > 0) {
+        sema_define_at(s, sema_sub_str(st.name, sp + 1, j), sema_sub_str(st.name, 0, sp), 0, st.line, st.col, 0);
+    }
+    s.catch_depth = s.catch_depth + 1;
+    sema_stmt(s, st.s1);
+    s.catch_depth = s.catch_depth - 1;
+    sema_pop(s);
+    return;
+}

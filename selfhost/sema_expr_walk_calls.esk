@@ -1,0 +1,440 @@
+// Part of sema.esk (the expression kinds of sema_expr_k), imported in order; compile sema.esk, not this file alone.
+
+void sema_expr_plain_call(Sema* s, *ExprNode e, int k) {
+    // arg-count check: only when the callee is a bare global function (not a local
+    // fn-pointer var, not an ADT variant, not a generic — those resolve elsewhere).
+    if (e.a != null && e.a.kind == EK_IDENT && sema_local_bound(s, e.a.sval) == 0) {
+        int fi = sema_find_fn(s, e.a.sval);
+        if (fi >= 0) {
+            FnSig sig = List_get<FnSig>(&s.fns, fi);
+            int argc = List_len<*ExprNode>(&e.kids);
+            if (sig.variadic == 1) {
+                if (argc < sig.fixed) {
+                    s.had_error = 1;
+                    dprintf(2, "error: %s:%d:%d: function '%s' expects at least %d arguments, got %d\n",
+                           s.filename, s.line, s.col, e.a.sval, sig.fixed, argc);
+                } else {
+                    sema_check_variadic_extras(s, e, sig.fixed);
+                    sema_check_format(s, e, e.a.sval, 0);
+                }
+            } else if (argc != sig.fixed) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: function '%s' expects %d arguments, got %d\n",
+                       s.filename, s.line, s.col, e.a.sval, sig.fixed, argc);
+            }
+            // Argument types against the declared parameter types (conservative).
+            *DeclNode cfd = sema_find_fndecl(s, e.a.sval);
+            if (cfd != null) {
+                int cext = sema_is_c_extern(s, e.a.sval);
+                int ai = 0;
+                while (ai < argc && ai < sig.fixed) {
+                    // A C function's fn-typed parameter is a C function pointer: C can
+                    // only call a named top-level function (or get null), never a
+                    // closure's environment.
+                    *ExprNode cax = List_get<*ExprNode>(&e.kids, ai);
+                    if (cext == 1 && sema_is_fn_type_alias(s, List_get<Param>(&cfd.params, ai).ty) == 1) {
+                        if (cax.kind == EK_LITERAL && cax.lit_kind == LIT_NULL) {
+                            ai = ai + 1;
+                            continue;
+                        }
+                        if (cax.kind != EK_IDENT || sema_local_bound(s, cax.sval) == 1 || sema_find_fn(s, cax.sval) < 0) {
+                            s.had_error = 1;
+                            dprintf(2, "error: %s:%d:%d: argument %d of extern '%s' is a C function pointer: pass a top-level function by name, not a closure value\n",
+                                   s.filename, s.line, s.col, ai + 1, e.a.sval);
+                            ai = ai + 1;
+                            continue;
+                        }
+                    }
+                    string perr = sema_assign_err(s, List_get<Param>(&cfd.params, ai).ty, List_get<*ExprNode>(&e.kids, ai));
+                    if (perr[0] != 0) {
+                        s.had_error = 1;
+                        dprintf(2, "error: %s:%d:%d: argument %d type mismatch: expected %s, got %s (%s)\n", s.filename, s.line, s.col, ai + 1,
+                               List_get<Param>(&cfd.params, ai).ty, sema_infer_type(s, List_get<*ExprNode>(&e.kids, ai)), perr);
+                    }
+                    ai = ai + 1;
+                }
+            }
+        }
+    }
+    // An inferred generic call `id(1)`: argument count, and arguments bound to the same
+    // bare type parameter must agree (`pick(1, "s")`).
+    if (e.a != null && e.a.kind == EK_IDENT && sema_local_bound(s, e.a.sval) == 0 && sema_find_fn(s, e.a.sval) < 0) {
+        *DeclNode gfd = sema_find_fndecl(s, e.a.sval);
+        if (gfd != null && List_len<TypeParam>(&gfd.type_params) > 0) {
+            string unb = sema_uninferable_tparam(gfd);
+            if (unb[0] != 0) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: cannot infer type argument(s) %s of generic function '%s' from the call; write them explicitly, e.g. %s<...>(...)\n",
+                       s.filename, s.line, s.col, unb, gfd.name, gfd.name);
+            } else if (sema_check_generic_arity(s, gfd, e) == 1) {
+                int agree = sema_check_generic_binding(s, gfd, e);
+                List<string> btargs;
+                List_init<string>(&btargs, 4);
+                if (sema_bind_targs(s, gfd, e, &btargs) == 1) {
+                    if (agree == 1 && sema_check_constraints(s, &gfd.type_params, &btargs) == 1) {
+                        // The inferred instance's parameter types must accept every
+                        // argument (`swp(&i64, &i32)` against `*T`), as in C++.
+                        List<string> ipts;
+                        List_init<string>(&ipts, 4);
+                        int pi = 0;
+                        while (pi < List_len<Param>(&gfd.params)) {
+                            List_push<string>(&ipts, sema_subst_params(List_get<Param>(&gfd.params, pi).ty, &gfd.type_params, &btargs));
+                            pi = pi + 1;
+                        }
+                        int before = s.had_error;
+                        s.had_error = 0;
+                        sema_check_call_args(s, e, sema_cat(sema_cat("function '", gfd.name), "'"), &ipts);
+                        int bad = s.had_error;
+                        if (before == 1) {
+                            s.had_error = 1;
+                        }
+                        if (bad == 0) {
+                            sema_queue_inst(s, gfd, null, &btargs, gfd.name, "");
+                        }
+                    }
+                }
+                else if (sema_args_typed(s, e) == 1) {
+                    string unbound = "";
+                    int ui = 0;
+                    while (ui < List_len<string>(&btargs)) {
+                        if (List_get<string>(&btargs, ui)[0] == 0) {
+                            if (unbound[0] != 0) {
+                                unbound = sema_cat(unbound, ", ");
+                            }
+                            unbound = sema_cat(unbound, List_get<TypeParam>(&gfd.type_params, ui).name);
+                        }
+                        ui = ui + 1;
+                    }
+                    s.had_error = 1;
+                    dprintf(2, "error: %s:%d:%d: cannot infer type argument(s) %s of generic function '%s' from the call; write them explicitly, e.g. %s<...>(...)\n",
+                           s.filename, s.line, s.col, unbound, gfd.name, gfd.name);
+                }
+            }
+        }
+    }
+    // A call through a fn-typed value: a fn-pointer variable (local or global, not a
+    // declared function), or any other callee expression (`mk()(1)`).
+    if (e.a != null && e.a.kind == EK_IDENT && (sema_local_bound(s, e.a.sval) == 1 || sema_find_fn(s, e.a.sval) < 0)) {
+        string vt = sema_lookup_type(s, e.a.sval);
+        string cvt = sema_canon(s, vt);
+        if (sema_is_fn_type(vt) == 1) {
+            sema_check_fn_value_call(s, e, sema_cat(sema_cat("'", e.a.sval), "'"), vt);
+        }
+        else if (vt[0] != 0 && sema_is_fn_type(cvt) == 0
+                 && (sema_is_numeric_ty(sema_strip_const(vt)) == 1 || sema_streq(vt, "string") == 1 || sema_judgeable(s, cvt) == 1)) {
+            // a local or a global variable that is not callable (a global used to slip
+            // through to codegen, which crashed)
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: undefined function '%s' ('%s' is a variable of type '%s')\n", s.filename, e.a.line, e.a.col, e.a.sval, e.a.sval, vt);
+        } else if (vt[0] == 0 && sema_local_bound(s, e.a.sval) == 0 && sema_find_fndecl(s, e.a.sval) == null
+                   && sema_plain_member(s, e.a.sval) == 1) {
+            s.had_error = 1;                   // a classic enum member is a constant
+            dprintf(2, "error: %s:%d:%d: undefined function '%s'%s\n", s.filename, e.a.line, e.a.col, e.a.sval, sema_did_you_mean(s, e.a.sval, 0, ""));
+        }
+    } else if (e.a != null && e.a.kind != EK_IDENT) {
+        string ct = sema_infer_type(s, e.a);
+        if (sema_is_fn_type(ct) == 1) {
+            sema_check_fn_value_call(s, e, "the called function value", ct);
+        }
+    }
+    // A call names its function directly: the callee is no typed expression of its own
+    // (a local closure's name is, as in the C++).
+    if (s.tool == 1 && e.a != null && e.a.kind == EK_IDENT && sema_local_bound(s, e.a.sval) == 0) {
+        s.tool_callee = e.a;
+    }
+    if (s.tool != 0 && e.a != null && e.a.kind == EK_IDENT) {
+        if (sema_streq(e.a.sval, "__eskiu_complete__") == 1) {   // --complete-at on a callee
+            sema_tool_complete_scope(s);
+            int ci = 0;
+            while (ci < List_len<*ExprNode>(&e.kids)) {
+                sema_expr(s, List_get<*ExprNode>(&e.kids, ci));
+                ci = ci + 1;
+            }
+            return;
+        }
+        sema_tool_useloc(s, e.a.line, e.a.col, e.a.sval);
+    }
+    string prev = s.callee_ctx;        // mark the callee so a watched param here is OK
+    if (e.a != null && e.a.kind == EK_IDENT) {
+        s.callee_ctx = e.a.sval;
+    }
+    else {
+        s.callee_ctx = "";
+    }
+    if (e.a != null && e.a.kind == EK_IDENT && sema_streq(e.a.sval, "va_start") == 0 && sema_streq(e.a.sval, "va_end") == 0
+        && (sema_lookup(s, e.a.sval) == 0
+            || (sema_local_bound(s, e.a.sval) == 0 && StrTab_has(&s.late_globals, e.a.sval) == 1))) {
+        s.had_error = 1;               // an unbound callee names no function (mirrors the C++)
+        dprintf(2, "error: %s:%d:%d: undefined function '%s'%s\n", s.filename, e.a.line, e.a.col, e.a.sval,
+               sema_did_you_mean(s, e.a.sval, 0, ""));
+        s.callee_ctx = prev;
+        return;                        // its arguments are not checked (as in the C++)
+    } else {
+        if (e.a != null && e.a.kind == EK_IDENT) {
+            sema_note_call(s, e.a.sval);
+            sema_note_depr(s, e.a.sval, e.a.line, e.a.col);
+        }
+        sema_expr(s, e.a);             // callee (functions live in the global scope)
+    }
+    s.callee_ctx = prev;
+    // A watched (non-escaping) closure param passed straight to a non-escaping param
+    // of an Eskiu function does not escape: the callee may only call it (mirrors the
+    // C++ visit(CallExpr)). A C function's fn-typed param is a C pointer, not this.
+    *DeclNode cfd = null;
+    if (e.a != null && e.a.kind == EK_IDENT && sema_local_bound(s, e.a.sval) == 0) {
+        cfd = sema_find_fndecl(s, e.a.sval);
+    }
+    // A lambda argument's env follows the callee's param, also when an `extern`
+    // prototype comes before the program's own definition.
+    *DeclNode lfd = cfd;
+    if (cfd != null && cfd.kind != DK_FUNCTION) {
+        cfd = null;
+        lfd = null;
+        int fx = NameIdx_first(&s.fndecls_ix, e.a.sval);
+        while (fx >= 0 && lfd == null) {
+            *DeclNode fxd = List_get<*DeclNode>(&s.fndecls, fx);
+            if (fxd.kind == DK_FUNCTION) {
+                lfd = fxd;
+            }
+            fx = NameIdx_next(&s.fndecls_ix, fx);
+        }
+    }
+    int i = 0;
+    int n = List_len<*ExprNode>(&e.kids);
+    // A `?:` argument to an interface parameter of a named function boxes arm by arm.
+    if (e.a != null && e.a.kind == EK_IDENT && sema_local_bound(s, e.a.sval) == 0) {
+        *DeclNode hfd = sema_find_fndecl(s, e.a.sval);
+        int hi = 0;
+        while (hfd != null && hi < n && hi < List_len<Param>(&hfd.params)) {
+            sema_hint_iface(s, List_get<*ExprNode>(&e.kids, hi), List_get<Param>(&hfd.params, hi).ty);
+            hi = hi + 1;
+        }
+    }
+    int cgen = 0;
+    if (cfd != null && List_len<TypeParam>(&cfd.type_params) > 0) {
+        cgen = 1;
+    }
+    while (i < n && cgen == 1) {
+        sema_generic_call_arg(s, cfd, i, List_get<*ExprNode>(&e.kids, i));
+        i = i + 1;
+    }
+    while (i < n) {
+        *ExprNode ka = List_get<*ExprNode>(&e.kids, i);
+        int fwd = 0;
+        if (cfd != null && ka != null && ka.kind == EK_IDENT && sema_in_list(&s.watched, ka.sval) == 1
+            && i < List_len<Param>(&cfd.params)) {
+            int pesc = 0;
+            if (i < List_len<int>(&cfd.param_escaping)) {
+                pesc = List_get<int>(&cfd.param_escaping, i);
+            }
+            if (pesc == 0) {
+                fwd = 1;
+            }
+        }
+        if (ka != null && ka.kind == EK_LAMBDA && lfd != null && i < List_len<Param>(&lfd.params)) {
+            int lesc = 0;
+            if (i < List_len<int>(&lfd.param_escaping)) {
+                lesc = List_get<int>(&lfd.param_escaping, i);
+            }
+            if (lesc == 0 && s.in_inst == 0) {
+                s.lam_arg_nonesc = 1;
+            }
+            if (lesc == 0 && s.in_inst == 0 && lfd.is_async == 0) {
+                s.lam_arg_stack = 1;
+            }
+            if (s.in_inst == 1) {   // decided after the instances
+                int desc = lesc;
+                if (lfd.is_async == 1) {
+                    desc = 1;
+                }
+                sema_defer_lambda(s, ka, desc);
+            }
+        }
+        if (fwd == 1) {
+            string pk = s.callee_ctx;
+            s.callee_ctx = ka.sval;
+            sema_expr(s, ka);
+            s.callee_ctx = pk;
+        } else {
+            sema_expr(s, ka);
+        }
+        i = i + 1;
+    }
+    return;
+}
+
+void sema_expr_structinit(Sema* s, *ExprNode e, int k) {
+    // A literal through a type alias (`type LI = Box<int>; LI{v: 3}`) names the aliased
+    // struct; the node is rewritten to it so codegen sees the struct itself.
+    int ahops = 0;
+    while (ahops < 32) {
+        *DeclNode ad = sema_find_tdecl(s, e.sval);
+        if (ad == null || ad.kind != DK_TYPEALIAS) {
+            ahops = 32;
+        }
+        else {
+            e.sval = ad.ret_type;
+        }
+        ahops = ahops + 1;
+    }
+    string base = sema_base_name(e.sval);
+    *DeclNode sd0 = sema_find_tdecl(s, base);
+    List<string> sitargs;
+    List_init<string>(&sitargs, 2);
+    sema_parse_targs(e.sval, &sitargs);
+    if (sema_is_type(s, base) == 0 || (sd0 != null && sd0.kind != DK_STRUCT && sd0.kind != DK_UNION)) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: undefined struct '%s'\n", s.filename, s.line, s.col, base);
+    } else if (sd0 != null && sd0.kind == DK_STRUCT && List_len<TypeParam>(&sd0.type_params) > 0
+               && List_len<string>(&sitargs) == 0) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: generic struct '%s' needs type arguments, as in %s<int>{...}\n", s.filename, s.line, s.col, base, base);
+    } else if (sd0 != null && sd0.kind == DK_STRUCT && List_len<TypeParam>(&sd0.type_params) == 0
+               && List_len<string>(&sitargs) > 0) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: struct '%s' is not generic: write %s{...}\n", s.filename, s.line, s.col, base, base);
+    }
+    sema_infer_struct_fields(s, e);
+    sema_check_struct_init(s, e);
+    int i = 0;
+    int n = List_len<*ExprNode>(&e.kids);
+    while (i < n) {
+        sema_expr(s, List_get<*ExprNode>(&e.kids, i));
+        i = i + 1;
+    }
+    return;
+}
+
+void sema_expr_templatecall(Sema* s, *ExprNode e, int k) {
+    // Name<args>(...) — check bounded-generic constraints
+    sema_note_depr(s, sema_base_name(e.sval), e.line, e.col);
+    *DeclNode fd = sema_find_fndecl(s, sema_base_name(e.sval));
+    string tbase = sema_base_name(e.sval);
+    if (fd == null && sema_streq(tbase, "va_arg") == 1) {
+        List<string> vat;
+        List_init<string>(&vat, 1);
+        sema_parse_targs(e.sval, &vat);
+        sema_check_va_list_arg(s, "va_arg", e);
+        if (List_len<string>(&vat) == 1) {
+            string vt = List_get<string>(&vat, 0);
+            string vc = sema_canon(s, sema_isub(s, vt));
+            if (sema_is_aggregate(s, vc) == 1 || sema_is_void_value(vc) == 1) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: 'va_arg' cannot read a '%s': a variadic argument is an integer, a floating-point value or a pointer\n", s.filename, s.line, s.col, vt);
+            } else {
+                // The default argument promotions: a float arrives as a double and a
+                // narrow integer as an int (mirrors the C++ va_arg check).
+                string vp = "";
+                if (sema_streq(vc, "float") == 1) {
+                    vp = "double";
+                }
+                if (sema_streq(vc, "bool") == 1 || sema_streq(vc, "char") == 1 || sema_streq(vc, "int8") == 1
+                    || sema_streq(vc, "int16") == 1 || sema_streq(vc, "uint8") == 1 || sema_streq(vc, "uint16") == 1) {
+                    vp = "int";
+                }
+                if (vp[0] != 0) {
+                    s.had_error = 1;
+                    dprintf(2, "error: %s:%d:%d: 'va_arg' cannot read a '%s': a variadic '%s' is promoted to '%s'; read va_arg<%s> and convert it\n",
+                            s.filename, s.line, s.col, vt, vc, vp, vp);
+                }
+            }
+        }
+    }
+    if (fd == null && sema_is_variant_name(s, tbase) == 1) {
+        List<string> vtargs;
+        List_init<string>(&vtargs, 2);
+        sema_parse_targs(e.sval, &vtargs);
+        sema_infer_variant_payload(s, e, tbase, &vtargs);
+        sema_check_variant_args(s, e, tbase, &vtargs);
+    }
+    if (fd == null && sema_streq(tbase, "va_arg") == 0 && sema_is_variant_name(s, tbase) == 0) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: undefined template function '%s'\n", s.filename, s.line, s.col, tbase);
+    }
+    if (fd != null) {
+        List<string> targs;
+        List_init<string>(&targs, 4);
+        sema_parse_targs(e.sval, &targs);
+        int tn = List_len<TypeParam>(&fd.type_params);
+        int na = List_len<string>(&targs);
+        int inst_ok = 1;
+        if (tn > 0 && na != tn) {
+            s.had_error = 1;
+            inst_ok = 0;
+            dprintf(2, "error: %s:%d:%d: generic function '%s' expects %d type argument(s), got %d\n", s.filename, s.line, s.col, fd.name, tn, na);
+        }
+        if (sema_check_generic_arity(s, fd, e) == 0) {
+            inst_ok = 0;
+        }
+        if (na == tn && sema_check_constraints(s, &fd.type_params, &targs) == 0) {
+            inst_ok = 0;
+        }
+        if (inst_ok == 1 && tn > 0) {
+            // A generic variant argument takes the parameter's instance
+            // (`get<int64>(Some(8))`), from the type arguments as written.
+            int vai = 0;
+            while (vai < List_len<*ExprNode>(&e.kids) && vai < List_len<Param>(&fd.params)) {
+                sema_infer_variant_r(s, List_get<*ExprNode>(&e.kids, vai),
+                                     sema_subst_params(List_get<Param>(&fd.params, vai).ty, &fd.type_params, &targs), 1);
+                vai = vai + 1;
+            }
+            // The arguments against the instantiated parameter types.
+            List<string> ctargs;
+            List_init<string>(&ctargs, 4);
+            int ci2 = 0;
+            while (ci2 < na) {
+                List_push<string>(&ctargs, sema_isub(s, List_get<string>(&targs, ci2)));
+                ci2 = ci2 + 1;
+            }
+            int ai = 0;
+            int an = List_len<*ExprNode>(&e.kids);
+            while (ai < an && ai < List_len<Param>(&fd.params)) {
+                string pty = sema_subst_params(List_get<Param>(&fd.params, ai).ty, &fd.type_params, &ctargs);
+                if (sema_streq(pty, "...") == 1) {
+                    sema_check_variadic_extras(s, e, ai);
+                    ai = an;
+                }
+                else {
+                    *ExprNode aexp = List_get<*ExprNode>(&e.kids, ai);
+                    string aerr = sema_assign_err(s, pty, aexp);
+                    if (aerr[0] != 0) {
+                        s.had_error = 1;
+                        dprintf(2, "error: %s:%d:%d: argument %d: expected %s, got %s (%s)\n", s.filename, s.line, s.col, ai + 1, pty,
+                               sema_infer_type(s, aexp), aerr);
+                    }
+                    ai = ai + 1;
+                }
+            }
+            sema_queue_inst(s, fd, null, &targs, fd.name, "");
+        }
+    }
+    int i = 0;
+    int n = List_len<*ExprNode>(&e.kids);
+    while (i < n) {
+        if (fd != null && List_len<TypeParam>(&fd.type_params) > 0) {
+            sema_generic_call_arg(s, fd, i, List_get<*ExprNode>(&e.kids, i));
+        } else {
+            sema_expr(s, List_get<*ExprNode>(&e.kids, i));
+        }
+        i = i + 1;
+    }
+    return;
+}
+
+int sema_expr_lambda(Sema* s, *ExprNode e, int k) {
+    sema_check_lambda(s, e);
+    // A lambda returning a value must return on every path, like a function. Its
+    // signature spelling is "R(T a, ...)".
+    int lp = 0;
+    while (e.sval[lp] != 0 && (int)e.sval[lp] != 40) {
+        lp = lp + 1;
+    }
+    string lret = sema_trim_sub(e.sval, 0, lp);
+    if (e.stmt != null && lret[0] != 0 && sema_streq(sema_strip_const(lret), "void") == 0
+        && sema_always_returns(e.stmt) == 0) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: missing return in lambda returning '%s' (control can reach the end without returning a value)\n",
+               s.filename, s.line, s.col, lret);
+    }
+    return 0;
+}

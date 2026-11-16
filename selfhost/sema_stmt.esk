@@ -478,4 +478,6 @@ void sema_warn_await_lock(Sema* s, *StmtNode blk) {
 
 // The rest of sema_stmt.esk, in these parts (imported in order):
 import "sema_stmt_walk.esk";
+import "sema_stmt_walk_flow.esk";
+import "sema_stmt_walk_branch.esk";
 import "sema_stmt_entry.esk";

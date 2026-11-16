@@ -1,0 +1,370 @@
+// Part of sema.esk (the expression kinds of sema_expr_k), imported in order; compile sema.esk, not this file alone.
+
+void sema_expr_unary_cast(Sema* s, *ExprNode e, int k) {
+    if (k == EK_UNARY && sema_streq(e.sval, "*") == 1) {
+        sema_check_nullable_deref(s, e.a, "dereference");
+        // A `*void` points at no type: there is nothing to read or write through it.
+        string dt = sema_infer_type(s, e.a);
+        if (dt[0] != 0 && sema_streq(sema_strip_nullable(sema_canon(s, dt)), "*void") == 1) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: cannot dereference '%s': it points to 'void' (cast it to a typed pointer first)\n", s.filename, s.line, s.col, dt);
+        }
+    }
+    if (k == EK_UNARY && e.a != null && sema_streq(e.sval, "&") == 0) {
+        // The built-in operand rules (mirrors the C++ inferUnaryExprType): `-`/`+` take a
+        // number, `~` an integer, `*` a pointer, `!` anything but a struct; `-`, `~` and
+        // `!` otherwise go through a user operator overload.
+        string ut = sema_strip_nullable(sema_infer_type(s, e.a));
+        string uc = sema_canon(s, ut);
+        if (sema_judgeable(s, uc) == 1) {
+            int ok = 1;
+            if (sema_streq(e.sval, "-") == 1 || sema_streq(e.sval, "+") == 1) {
+                ok = sema_is_numeric_ty(uc);
+            }
+            else if (sema_streq(e.sval, "~") == 1) {
+                ok = sema_is_int_ty(uc);
+            }
+            else if (sema_streq(e.sval, "*") == 1) {
+                ok = sema_c_ptr(uc);
+            }
+            else if (sema_streq(e.sval, "!") == 1 && ((sema_is_aggregate(s, ut) == 1 && sema_is_iface_val(s, ut) == 0) || sema_is_void_value(uc) == 1)) {
+                ok = 0;
+            }
+            if (ok == 0 && sema_streq(e.sval, "*") == 0 && sema_streq(e.sval, "+") == 0) {
+                string uop = e.sval;
+                if (sema_streq(uop, "-") == 1) {
+                    uop = "u-";
+                }
+                List<string> utys;
+                List_init<string>(&utys, 1);
+                List_push<string>(&utys, ut);
+                *DeclNode uod = sema_find_op(s, uop, &utys);
+                if (uod != null) {
+                    ok = 1;
+                    sema_note_call(s, uod.name);
+                }
+            }
+            if (ok == 0) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: invalid operand for unary operator: %s\n", s.filename, s.line, s.col, ut);
+            }
+        }
+    }
+    if (k == EK_UNARY && sema_streq(e.sval, "&") == 1 && sema_is_lvalue(s, e.a) == 0) {
+        sema_error(s, "cannot take the address of this expression: it is not a variable, field, element, or dereference");
+    }
+    if (k == EK_UNARY && sema_streq(e.sval, "&") == 1) {
+        sema_check_captured_address(s, e.a);
+        sema_warn_packed_addr(s, e);
+    }
+    if (k == EK_UNARY && sema_streq(e.sval, "&") == 1 && e.a != null && e.a.kind == EK_MEMBER) {
+        *DeclNode bsd = sema_find_struct(s, sema_struct_of_type(sema_infer_type(s, e.a.a)));
+        if (bsd != null) {
+            int bi = 0;
+            int bn = List_len<Param>(&bsd.params);
+            while (bi < bn) {
+                if (sema_streq(List_get<Param>(&bsd.params, bi).name, e.a.sval) == 1 && bi < List_len<int>(&bsd.field_bits)
+                    && List_get<int>(&bsd.field_bits, bi) > 0) {
+                    s.had_error = 1;
+                    dprintf(2, "error: %s:%d:%d: cannot take the address of bitfield '%s'\n", s.filename, s.line, s.col, e.a.sval);
+                }
+                bi = bi + 1;
+            }
+        }
+    }
+    if (k == EK_CAST) {
+        // Scalars convert (numbers, pointers, integer<->pointer); an aggregate casts only
+        // to its own type; float<->pointer has no meaning. Unknown sides are not judged.
+        string cfrom = sema_infer_type(s, e.a);
+        string cto = sema_isub(s, e.sval);   // the target in a generic instance (`(T)0`, T = S)
+        int fc = sema_cast_class(s, cfrom);
+        int tc = sema_cast_class(s, cto);
+        int fn_name = 0;
+        if (e.a != null && e.a.kind == EK_IDENT && sema_local_bound(s, e.a.sval) == 0 && sema_find_fndecl(s, e.a.sval) != null) {
+            fn_name = 1;
+        }
+        int bad = 0;
+        if (fc != 0 && tc != 0 && sema_streq(sema_strip_const(cfrom), sema_strip_const(cto)) == 0 && fn_name == 0) {
+            if (fc == 3 || tc == 3) {
+                bad = 1;
+            }
+            if ((fc == 2 && tc == 1 && sema_is_float_ty(cto) == 1) || (fc == 1 && tc == 2 && sema_is_float_ty(cfrom) == 1)) {
+                bad = 1;
+            }
+        }
+        // A top-level function name casts only to a pointer (its raw C address).
+        if (fn_name == 1 && tc != 0 && tc != 2 && sema_streq(sema_strip_const(cfrom), sema_strip_const(cto)) == 0) {
+            bad = 1;
+        }
+        // A void value converts to nothing but `void`, and a `{...}` literal is only an
+        // initializer (mirrors the C++ visit(CastExpr)).
+        if (sema_is_void_value(cto) == 0) {
+            if (cfrom[0] != 0 && sema_is_void_value(cfrom) == 1) {
+                bad = 1;
+            }
+            if (e.a != null && e.a.kind == EK_ARRAYLIT) {
+                bad = 1;
+                cfrom = "array-literal";
+            }
+        }
+        if (bad == 1) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: cannot cast '%s' to '%s'\n", s.filename, s.line, s.col, cfrom, e.sval);
+        }
+        // A floating constant cast to an integer type must fit it (mirrors the C++).
+        *ExprNode fsrc = e.a;
+        int fneg = 0;
+        if (fsrc != null && fsrc.kind == EK_UNARY && sema_streq(fsrc.sval, "-") == 1) {
+            fneg = 1;
+            fsrc = fsrc.a;
+        }
+        string tt = sema_strip_const(sema_resolve_scalar(s, sema_isub(s, e.sval)));
+        int f_int = 1;
+        int64 fiv = (int64)0;
+        double fv = 0.0;
+        if (bad == 0 && sema_is_int_ty(tt) == 1 && sema_streq(tt, "bool") == 0
+            && sema_fold_num(s, e.a, &f_int, &fiv, &fv) == 1 && f_int == 0 && sema_float_fits_int(fv, tt) == 0) {
+            s.had_error = 1;
+            if (fsrc != null && fsrc.kind == EK_LITERAL && fsrc.lit_kind == LIT_FLOAT) {
+                string sign = "";
+                if (fneg == 1) {
+                    sign = "-";
+                }
+                dprintf(2, "error: %s:%d:%d: floating constant %s%s is out of range for '%s'\n", s.filename, s.line, s.col, sign, fsrc.sval, e.sval);
+            } else {
+                dprintf(2, "error: %s:%d:%d: floating constant expression (value %g) is out of range for '%s'\n", s.filename, s.line, s.col, fv, e.sval);
+            }
+        }
+    }
+    // `&p` of a narrowed `?*T` may be written through (storing null): narrowing ends.
+    if (k == EK_UNARY && sema_streq(e.sval, "&") == 1 && e.a != null && e.a.kind == EK_IDENT) {
+        sema_mark_addr(s, e.a.sval);
+        string ak = sema_nkey(s, e.a.sval);
+        if (ak[0] != 0) {
+            sema_narrow_drop(s, ak);
+        }
+    }
+    sema_expr(s, e.a);
+    return;
+}
+
+int sema_expr_alloc_with(Sema* s, *ExprNode e, int k) {
+    // The count is an integer; the allocator's type names its alloc method,
+    // `<Type>_alloc` (mirrors the C++ visit(AllocWithExpr)).
+    string awc = sema_infer_type(s, e.b);
+    if (awc[0] != 0 && sema_is_int_ty(sema_canon(s, awc)) == 0) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: alloc_with count must be integer, got %s\n", s.filename, s.line, s.col, awc);
+    }
+    // The element type needs a size: a known, non-void type.
+    if (sema_known_type(s, e.sval) == 0) {
+        s.had_error = 1;
+        string utn = sema_base_name(sema_struct_of_type(e.sval));
+        dprintf(2, "error: %s:%d:%d: unknown type '%s'%s\n", s.filename, s.line, s.col, utn, sema_did_you_mean(s, utn, 1, e.sval));
+    } else if (sema_is_void_value(sema_resolve_scalar(s, sema_isub(s, e.sval))) == 1) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: alloc_with of 'void': a void element has no size\n", s.filename, s.line, s.col);
+    }
+    // The allocator is passed as `self`, so it must be a pointer to the allocator; its type
+    // names its alloc method, `*void <Type>_alloc(*<Type> self, int64 size)`.
+    string awa = sema_infer_type(s, e.a);
+    if (awa[0] != 0) {
+        string araw = sema_strip_nullable(sema_canon(s, awa));
+        string ab = araw;
+        int a0 = 0;
+        while ((int)ab[a0] == 42) {
+            a0 = a0 + 1;
+        }
+        int a1 = sema_slen(ab);
+        while (a1 > a0 && (int)ab[a1 - 1] == 42) {
+            a1 = a1 - 1;
+        }
+        ab = sema_sub_str(ab, a0, a1);
+        // A generic instance (`G<int>`) names its alloc function by the instance's flat
+        // name (`G_int_alloc`), as the C++ mangling spells it.
+        string afn = sema_cat(sema_flat_name(ab), "_alloc");
+        int has = 0;
+        *DeclNode afd = null;       // the alloc function (null: an inline method)
+        int ashape = 1;
+        if (sema_find_fn(s, afn) >= 0) {
+            has = 1;
+            afd = sema_find_fndecl(s, afn);
+            if (afd != null) {
+                if (List_len<Param>(&afd.params) != 2) {
+                    ashape = 0;
+                }
+                else {
+                    string sp = sema_canon(s, List_get<Param>(&afd.params, 0).ty);
+                    if (sema_has_star(sp) == 0 || sema_streq(sema_strip_const(sema_pointee(sp)), ab) == 0) {
+                        ashape = 0;
+                    }
+                    if (sema_is_int_ty(sema_canon(s, List_get<Param>(&afd.params, 1).ty)) == 0) {
+                        ashape = 0;
+                    }
+                }
+                if (sema_has_star(sema_canon(s, afd.ret_type)) == 0) {
+                    ashape = 0;
+                }
+            }
+        }
+        *DeclNode asd = sema_find_struct(s, sema_base_name(ab));   // or an inline `alloc` method
+        if (asd != null) {
+            int mi = 0;
+            while (mi < List_len<*DeclNode>(&asd.methods)) {
+                *DeclNode am = List_get<*DeclNode>(&asd.methods, mi);
+                if (sema_streq(am.name, "alloc") == 1) {
+                    has = 1;
+                    if (List_len<Param>(&am.params) != 1 || sema_is_int_ty(sema_canon(s, List_get<Param>(&am.params, 0).ty)) == 0
+                        || sema_has_star(sema_canon(s, am.ret_type)) == 0) {
+                        ashape = 0;
+                    }
+                }
+                mi = mi + 1;
+            }
+        }
+        if (sema_has_star(araw) == 0 || sema_has_star(sema_pointee(araw)) == 1) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: alloc_with: the allocator must be a pointer to it, got '%s' (pass its address, as in alloc_with(&a, T, n))\n", s.filename, s.line, s.col, sema_strip_const(awa));
+        } else if (has == 0) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: alloc_with: allocator type '%s' has no alloc method (%s)\n", s.filename, s.line, s.col, ab, afn);
+        } else if (ashape == 0) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: alloc_with: '%s' must have the shape '*void %s(*%s self, int64 size)'\n", s.filename, s.line, s.col, afn, afn, ab);
+        }
+    }
+    return 0;
+}
+
+void sema_expr_index(Sema* s, *ExprNode e, int k) {
+    // Constant slice bounds `a[lo..hi]`: 0 <= lo <= hi on any base, and <= N into a fixed array.
+    // Constant indices and bounds (a literal, an enum member, a `const`, or an
+    // expression over them) into a fixed array are checked (mirrors the C++ IndexExpr).
+    if (k == EK_INDEX && List_len<*ExprNode>(&e.kids) > 0) {
+        *ExprNode hiE = List_get<*ExprNode>(&e.kids, 0);
+        string abt = sema_infer_type(s, e.a);
+        // A slice of a fixed array refers to the array's storage (a string or pointer base does not).
+        string sbc = sema_canon(s, sema_strip_nullable(abt));
+        int sbr = sema_arr_bracket(sbc);
+        int sbn = sema_slen(sbc);
+        if (sbr > 0 && (int)sbc[sbr + 1] != 93 && (int)sbc[0] != 42 && (int)sbc[sbn - 1] != 42) {
+            sema_check_captured_address(s, e.a);
+        }
+        int64 lo = (int64)0;
+        int64 hi = (int64)0;
+        int lo_ok = sema_fold_int(s, e.b, &lo);
+        int hi_ok = sema_fold_int(s, hiE, &hi);
+        if (sema_is_arr_ty(abt) == 1 && sema_is_readonly_lvalue(s, e.a) == 1) {
+            s.had_error = 1;             // a slice lets its elements be written
+            dprintf(2, "error: %s:%d:%d: cannot slice read-only array: a slice allows writing its elements\n", s.filename, s.line, s.col);
+        } else if (sema_is_arr_ty(abt) == 1 && sbr > 0 && (int)sbc[sbr + 1] != 93 && (int)sbc[0] != 42 && (int)sbc[sbn - 1] != 42
+                   && sema_is_lvalue(s, e.a) == 0) {
+            sema_error(s, "cannot slice a temporary array: store it in a variable first");
+        }
+        {
+            int64 dv = (int64)-1;   // lo <= hi on any base; the dimension only for a fixed array
+            if (sema_is_arr_ty(abt) == 1) {
+                dv = sema_dim_value(s, sema_arr_count(abt));
+            }
+            if ((lo_ok == 1 && lo < (int64)0) || (hi_ok == 1 && hi < (int64)0)) {
+                sema_error(s, "slice bound is negative");
+            } else if (lo_ok == 1 && hi_ok == 1 && lo > hi) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: slice bounds out of order: %lld..%lld\n", s.filename, s.line, s.col, lo, hi);
+            } else if (dv >= (int64)0 && hi_ok == 1 && hi > dv) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: slice bound %lld is out of bounds for array of size %lld\n", s.filename, s.line, s.col, hi, dv);
+            } else if (dv >= (int64)0 && lo_ok == 1 && lo > dv) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: slice bound %lld is out of bounds for array of size %lld\n", s.filename, s.line, s.col, lo, dv);
+            }
+        }
+        sema_expr(s, hiE);
+    }
+    // The index (and a slice's upper bound) must be an integer.
+    if (k == EK_INDEX && e.b != null) {
+        string ixt = sema_infer_type(s, e.b);
+        string ixc = sema_canon(s, ixt);
+        if (sema_judgeable(s, ixc) == 1 && sema_is_int_ty(ixc) == 0) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: array index must be integer, got %s\n", s.filename, s.line, s.col, ixt);
+        }
+        if (List_len<*ExprNode>(&e.kids) > 0) {
+            string hxt = sema_infer_type(s, List_get<*ExprNode>(&e.kids, 0));
+            string hxc = sema_canon(s, hxt);
+            if (sema_judgeable(s, hxc) == 1 && sema_is_int_ty(hxc) == 0) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: slice bound must be integer, got %s\n", s.filename, s.line, s.col, hxt);
+            }
+        }
+    }
+    // Constant-index bounds check on a fixed array (the index folds like a case label).
+    if (k == EK_INDEX && List_len<*ExprNode>(&e.kids) == 0 && e.b != null) {
+        string bt = sema_canon(s, sema_infer_type(s, e.a));
+        int64 idx = (int64)0;
+        if (sema_is_arr_ty(bt) == 1 && sema_fold_int(s, e.b, &idx) == 1) {
+            int64 dim = sema_dim_value(s, sema_arr_count(bt));
+            if (idx < (int64)0) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: array index %lld is out of bounds\n", s.filename, s.line, s.col, idx);
+            } else if (dim >= (int64)0 && idx >= dim) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: array index %lld is out of bounds for array of size %lld\n", s.filename, s.line, s.col, idx, dim);
+            }
+        }
+    }
+    sema_check_nullable_deref(s, e.a, "index");
+    if (k == EK_INDEX) {                            // only arrays, slices, pointers, strings index
+        string ibt = sema_infer_type(s, e.a);
+        int icls = sema_cast_class(s, ibt);
+        int bad = 0;
+        if (icls == 1) {
+            bad = 1;
+        }
+        if (sema_streq(ibt, "null") == 1) {   // `null[0]` points at nothing
+            bad = 1;
+        }
+        if (icls == 3 && sema_is_arr_ty(ibt) == 0 && sema_is_fn_type(ibt) == 0 && s.has_ops == 1
+            && List_len<*ExprNode>(&e.kids) == 0) {
+            *DeclNode iod = sema_find_binop(s, "[]", ibt, sema_infer_type(s, e.b));
+            if (iod != null) {
+                sema_note_call(s, iod.name);
+            }
+        }
+        if (icls == 3 && sema_is_arr_ty(ibt) == 0 && sema_is_fn_type(ibt) == 0) {
+            // a struct value: only through a user `operator []`
+            List<string> oty;
+            List_init<string>(&oty, 2);
+            List_push<string>(&oty, ibt);
+            List_push<string>(&oty, "int");
+            if (sema_find_fn(s, ast_op_name("[]", &oty)) < 0 && sema_any_index_op(s) == 0) {
+                bad = 1;
+            }
+        }
+        if (bad == 1) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: cannot index into a value of type '%s'\n", s.filename, s.line, s.col, ibt);
+        }
+    }
+    sema_expr(s, e.a);
+    sema_expr(s, e.b);
+    return;
+}
+
+void sema_expr_exception_text(Sema* s, *ExprNode e, int k) {
+    int ei = 0;
+    int en = List_len<*ExprNode>(&e.kids);
+    while (ei < en) {
+        sema_expr(s, List_get<*ExprNode>(&e.kids, ei));
+        ei = ei + 1;
+    }
+    if (en != 0) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: 'exception_text' takes no arguments, got %d\n", s.filename, e.line, e.col, en);
+    }
+    if (s.catch_depth == 0) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: 'exception_text' is only allowed inside a 'catch' block\n", s.filename, e.line, e.col);
+    }
+    return;
+}

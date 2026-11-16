@@ -1,0 +1,299 @@
+// Part of sema.esk (the expression kinds of sema_expr_k), imported in order; compile sema.esk, not this file alone.
+
+void sema_expr_method_call(Sema* s, *ExprNode e, int k) {
+    // Method-call syntax `x.m(...)`: `m` is an inline method, a field holding a fn
+    // pointer, or a free function `Type_m(self, ...)` (mirrors the C++ method path).
+    *ExprNode mem = e.a;
+    sema_expr(s, mem.a);
+    sema_check_nullable_deref(s, mem.a, "access a member of");
+    string bt = sema_infer_type(s, mem.a);
+    if (s.tool == 3 && sema_streq(mem.sval, "__eskiu_complete__") == 1) {   // --complete-at after `recv.`
+        sema_tool_complete_members(s, bt);
+        int ci = 0;
+        while (ci < List_len<*ExprNode>(&e.kids)) {
+            sema_expr(s, List_get<*ExprNode>(&e.kids, ci));
+            ci = ci + 1;
+        }
+        return;
+    }
+    // A pointer to an alias (`IL*`, `type IL = List<int>`) calls the target's methods.
+    if (s.has_alias == 1 && sema_ptr_depth(bt) == 1 && sema_pointee_const(bt) == 0) {
+        string bpe = sema_pointee(bt);
+        string bpd = sema_dealias(s, bpe);
+        if (bpe[0] != 0 && sema_streq(bpd, bpe) == 0) {
+            bt = sema_cat("*", bpd);
+        }
+    }
+    string sn = sema_struct_of_type(bt);
+    // Dot syntax dereferences at most one pointer level.
+    if (sema_is_fn_type(bt) == 0) {
+        if (sema_ptr_depth(bt) > 1) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: cannot call method '%s' through '%s': dot syntax dereferences one pointer level (dereference it first)\n",
+                   s.filename, s.line, s.col, mem.sval, bt);
+            int ai = 0;
+            while (ai < List_len<*ExprNode>(&e.kids)) {
+                sema_expr(s, List_get<*ExprNode>(&e.kids, ai));
+                ai = ai + 1;
+            }
+            return;
+        }
+    }
+    *DeclNode ifc = null;
+    if (bt[0] != 0) {
+        ifc = sema_find_iface(s, sn);
+    }
+    if (ifc != null) {                                    // interface (vtable) dispatch
+        *DeclNode im = null;
+        int ii = 0;
+        int inn = List_len<*DeclNode>(&ifc.methods);
+        while (ii < inn) {
+            *DeclNode c = List_get<*DeclNode>(&ifc.methods, ii);
+            if (sema_streq(c.name, mem.sval) == 1) {
+                im = c;
+            }
+            ii = ii + 1;
+        }
+        if (im == null) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: interface '%s' has no method '%s'\n", s.filename, s.line, s.col, sn, mem.sval);
+        } else {
+            if (s.tool != 0 && mem.mline > 0) {
+                sema_tool_hsym(s, mem.mline, mem.mcol, sema_slen(mem.sval), sym_sig_text(im));
+            }
+            List<string> ipts;
+            List_init<string>(&ipts, 4);
+            int pi = 0;
+            int pn = List_len<Param>(&im.params);
+            while (pi < pn) {
+                List_push<string>(&ipts, List_get<Param>(&im.params, pi).ty);
+                pi = pi + 1;
+            }
+            sema_check_call_args(s, e, sema_cat(sema_cat("method '", mem.sval), "'"), &ipts);
+        }
+    }
+    if (bt[0] != 0 && sema_is_struct(s, sn) == 1) {
+        int inline_m = 0;
+        *DeclNode imd = null;
+        *DeclNode sd = sema_find_struct(s, sn);
+        if (sd != null) {
+            int j = 0;
+            int mn = List_len<*DeclNode>(&sd.methods);
+            while (j < mn) {
+                *DeclNode cm = List_get<*DeclNode>(&sd.methods, j);
+                if (sema_streq(cm.name, mem.sval) == 1) {
+                    inline_m = 1;
+                    imd = cm;
+                }
+                j = j + 1;
+            }
+        }
+        *DeclNode ffn = sema_find_fndecl(s, sema_cat(sema_cat(sn, "_"), mem.sval));
+        if (ffn == null) {
+            // On a generic instance a non-generic `G_int_m(G<int>* self, ...)` serves the
+            // call too (the instance's flat name, as the C++ method lookup tries).
+            string ibt = sema_strip_const(sema_dealias(s, bt));
+            while ((int)ibt[0] == 42) {
+                ibt = sema_sub_str(ibt, 1, sema_slen(ibt));
+            }
+            while (sema_slen(ibt) > 0 && (int)ibt[sema_slen(ibt) - 1] == 42) {
+                ibt = sema_sub_str(ibt, 0, sema_slen(ibt) - 1);
+            }
+            string iflat = sema_flat_name(ibt);
+            if (sema_streq(iflat, sn) == 0) {
+                ffn = sema_find_fndecl(s, sema_cat(sema_cat(iflat, "_"), mem.sval));
+            }
+        }
+        if (inline_m == 1) {   // `x.m()` names `S_m`
+            sema_note_call(s, sema_cat(sema_cat(sn, "_"), mem.sval));
+        }
+        if (s.tool != 0 && mem.mline > 0 && (inline_m == 1 || ffn != null)) {   // the member names a function
+            string tfn = sema_cat(sema_cat(sn, "_"), mem.sval);
+            if (inline_m == 0) {
+                tfn = ffn.name;
+            }
+            string tsig = sema_sig_text(s, tfn);
+            List<string> itargs;
+            List_init<string>(&itargs, 2);
+            sema_parse_targs(sema_strip_ptr_sp(sema_strip_const(sema_dealias(s, bt))), &itargs);
+            if (inline_m == 1 && sd != null && List_len<TypeParam>(&sd.type_params) > 0
+                && List_len<string>(&itargs) == List_len<TypeParam>(&sd.type_params)) {
+                // An instance's inline method is the function `Box_int_get(*Box<int>)`.
+                string ibase = sema_strip_ptr_sp(sema_strip_const(sema_dealias(s, bt)));
+                tfn = sema_cat(sema_cat(sema_flat_name(ibase), "_"), mem.sval);
+                tsig = sema_tool_inst_sig(s, sd, imd, ibase);
+            }
+            sema_tool_hsym(s, mem.mline, mem.mcol, sema_slen(mem.sval), tsig);
+            sema_tool_memuse(s, mem.mline, mem.mcol, sema_slen(mem.sval), tfn);
+        }
+        if (ffn != null && inline_m == 0) {
+            int dln = mem.mline;
+            int dcl = mem.mcol;
+            if (dln <= 0) {
+                dln = e.line;
+                dcl = e.col;
+            }
+            sema_note_call(s, ffn.name);
+            sema_note_depr(s, ffn.name, dln, dcl);
+        }
+        // Arguments against the method's parameters (self excluded), with the same
+        // count + assignability rules as a bare call (mirrors the C++ method path).
+        string mwhat = sema_cat(sema_cat("method '", mem.sval), "'");
+        if (imd != null) {
+            List<string> mpts;
+            List_init<string>(&mpts, 4);
+            List<string> rtargs;
+            List_init<string>(&rtargs, 2);
+            sema_parse_targs(sema_strip_ptr_sp(bt), &rtargs);
+            int mpi = 0;
+            int mpn = List_len<Param>(&imd.params);
+            while (mpi < mpn) {
+                List_push<string>(&mpts, sema_subst_params(List_get<Param>(&imd.params, mpi).ty, &sd.type_params, &rtargs));
+                mpi = mpi + 1;
+            }
+            sema_check_call_args(s, e, mwhat, &mpts);
+            // A generic struct instance's method body is checked per instance, once called.
+            if (List_len<TypeParam>(&sd.type_params) > 0 && List_len<string>(&rtargs) == List_len<TypeParam>(&sd.type_params)) {
+                sema_queue_inst(s, imd, sd, &rtargs, sd.name, sema_cat(".", mem.sval));
+            }
+        } else if (ffn != null && List_len<TypeParam>(&ffn.type_params) == 0
+                   && (List_len<Param>(&ffn.params) == 0 || sema_has_star(sema_dealias(s, List_get<Param>(&ffn.params, 0).ty)) == 0
+                       || sema_streq(sema_self_struct(s, List_get<Param>(&ffn.params, 0).ty), sn) == 0)) {
+            // Dot syntax passes the receiver's address: the first parameter must be a
+            // pointer to the receiver's type (mirrors the C++ method path).
+            string fp0 = "none";
+            if (List_len<Param>(&ffn.params) > 0) {
+                fp0 = List_get<Param>(&ffn.params, 0).ty;
+            }
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: '%s' cannot be called as method '%s' of '%s': its first parameter must be '*%s self' (it is '%s')\n",
+                   s.filename, s.line, s.col, ffn.name, mem.sval, sn, sn, fp0);
+        } else if (ffn != null && List_len<TypeParam>(&ffn.type_params) == 0 && List_len<Param>(&ffn.params) > 0) {
+            List<string> fpts;
+            List_init<string>(&fpts, 4);
+            int fpi = 1;
+            int fpn = List_len<Param>(&ffn.params);
+            while (fpi < fpn) {
+                List_push<string>(&fpts, List_get<Param>(&ffn.params, fpi).ty);
+                fpi = fpi + 1;
+            }
+            sema_check_call_args(s, e, mwhat, &fpts);
+            sema_check_format(s, e, ffn.name, 1);
+        } else if (ffn != null && List_len<Param>(&ffn.params) > 0) {
+            // A generic free function `S_m<T..>(S<T..>* self, ...)` on an instance of S
+            // (the `Type_method` convention): the type arguments come from the receiver
+            // (then the arguments); check the arguments against the instantiated params.
+            List<string> gtargs;
+            List_init<string>(&gtargs, 2);
+            if (sema_method_targs(s, ffn, bt, e, &gtargs) == 1) {
+                List<string> gpts;
+                List_init<string>(&gpts, 4);
+                int gpi = 1;
+                int gpn = List_len<Param>(&ffn.params);
+                while (gpi < gpn) {
+                    List_push<string>(&gpts, sema_subst_params(List_get<Param>(&ffn.params, gpi).ty, &ffn.type_params, &gtargs));
+                    gpi = gpi + 1;
+                }
+                sema_check_call_args(s, e, mwhat, &gpts);
+                sema_queue_inst(s, ffn, null, &gtargs, ffn.name, "");
+            }
+        }
+        int is_field = 0;
+        if (inline_m == 0 && sema_has_member(s, sema_cat(sema_cat(sn, "."), mem.sval)) == 1) {
+            is_field = 1;
+        }
+        int nonfn_field = 0;                  // `s.v()` on a field that holds no fn pointer
+        if (is_field == 1) {
+            string fty = sema_field_type(s, sn, mem.sval);
+            if (fty != null && sema_is_fn_type(sema_canon(s, fty)) == 0 && sema_judgeable(s, sema_canon(s, fty)) == 1) {
+                nonfn_field = 1;
+            }
+        }
+        if (inline_m == 0 && ffn == null && (is_field == 0 || nonfn_field == 1)) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: undefined method '%s' on type '%s'%s\n", s.filename, s.line, s.col, mem.sval, sn, sema_did_you_mean(s, mem.sval, 2, bt));
+        }
+        if (is_field == 1 && s.tool != 0) {   // the callee is the field
+            sema_tool_field(s, mem, bt);
+            sema_tool_expr(s, mem);
+        }
+        if (is_field == 1 && sd != null) {                // a field holding a fn pointer: o.cb(args)
+            int fi = 0;
+            int nf = List_len<Param>(&sd.params);
+            while (fi < nf) {
+                Param fp = List_get<Param>(&sd.params, fi);
+                if (sema_streq(fp.name, mem.sval) == 1 && sema_is_fn_type(fp.ty) == 1) {
+                    sema_check_fn_value_call(s, e, sema_cat(sema_cat("'", mem.sval), "'"), fp.ty);
+                }
+                fi = fi + 1;
+            }
+        }
+        // A method with a plain (mutable) `self` may write through it, so it cannot be
+        // called on a read-only receiver unless it declares `const T* self`.
+        int ro = 0;
+        if (sema_has_star(bt) == 1) {
+            ro = sema_pointee_const(bt);
+        }
+        else {
+            ro = sema_is_readonly_lvalue(s, mem.a);
+        }
+        int self_const = 0;
+        if (inline_m == 0 && ffn != null && List_len<Param>(&ffn.params) > 0) {
+            self_const = sema_pointee_const(List_get<Param>(&ffn.params, 0).ty);
+        }
+        if (ro == 1 && is_field == 0) {
+            if (self_const == 0) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: cannot call method '%s' on a read-only value: its self may modify it (declare it 'const %s* self' if it does not)\n",
+                       s.filename, s.line, s.col, mem.sval, sn);
+            }
+        } else if (is_field == 0 && self_const == 0 && sema_has_star(bt) == 0
+                   && (inline_m == 1 || (ffn != null && List_len<Param>(&ffn.params) > 0
+                                         && sema_has_star(sema_dealias(s, List_get<Param>(&ffn.params, 0).ty)) == 1))) {
+            // A captured value is read-only in the lambda: a non-const self would get
+            // the closure's copy (mirrors the C++ checkCapturedMethodCall).
+            string cn = sema_captured_root(s, mem.a);
+            if (cn[0] != 0) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: cannot call method '%s' on captured variable '%s': a closure captures it by value, and a non-const self may modify the copy (use a 'const T* self' method, or capture a pointer)\n",
+                       s.filename, s.line, s.col, mem.sval, cn);
+            }
+        }
+    }
+    // A receiver that is not a struct, union or interface: only a free `Type_m`, or
+    // inside a generic instance a constrained call on a scalar primitive (lowered to
+    // the free function `m(x, ...)`), can serve the call.
+    string rbc = sema_canon(s, bt);
+    if (ifc == null && sema_judgeable(s, rbc) == 1 && sema_is_struct(s, sn) == 0) {
+        int served = 0;
+        if (sema_find_fndecl(s, sema_cat(sema_cat(sn, "_"), mem.sval)) != null) {
+            served = 1;
+            int dln = mem.mline;
+            int dcl = mem.mcol;
+            if (dln <= 0) {
+                dln = e.line;
+                dcl = e.col;
+            }
+            sema_note_call(s, sema_cat(sema_cat(sn, "_"), mem.sval));
+            sema_note_depr(s, sema_cat(sema_cat(sn, "_"), mem.sval), dln, dcl);
+        }
+        if (s.in_inst == 1 && sema_is_scalar_prim(rbc) == 1) {
+            *DeclNode pf = sema_find_fndecl(s, mem.sval);
+            if (pf != null && List_len<Param>(&pf.params) > 0) {
+                served = 1;
+                sema_note_call(s, pf.name);
+            }
+        }
+        if (served == 0) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: undefined method '%s' on type '%s'%s\n", s.filename, s.line, s.col, mem.sval, bt, sema_did_you_mean(s, mem.sval, 2, bt));
+        }
+    }
+    int i = 0;
+    int n = List_len<*ExprNode>(&e.kids);
+    while (i < n) {
+        sema_expr(s, List_get<*ExprNode>(&e.kids, i));
+        i = i + 1;
+    }
+    return;
+}
