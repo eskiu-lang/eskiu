@@ -349,8 +349,22 @@ string cg_lltype(Codegen* g, string t) {
 
 // The pointee/base name of a pointer type, stripping '*' and spaces from BOTH ends
 // (Eskiu writes pointers either way: "*P" and "P*"). "*P"/"P*" -> "P".
+// `T*const` (a const pointer binding: `T* const`, `*T const`) as the plain `T*` it is to
+// codegen; the const only stops the binding's reassignment, which sema checks.
+string cg_drop_bind_const(string t) {
+    int b = 0;
+    while (t[b] != 0) {
+        b = b + 1;
+    }
+    if (b > 6 && (int)t[b - 6] == 42 && (int)t[b - 5] == 99 && (int)t[b - 4] == 111 && (int)t[b - 3] == 110
+        && (int)t[b - 2] == 115 && (int)t[b - 1] == 116) {           // "*const"
+        return cg_sub_str(t, 0, b - 5);
+    }
+    return t;
+}
+
 string cg_strip_ptr(string t) {
-    t = cg_strip_nullable(t);
+    t = cg_drop_bind_const(cg_strip_nullable(t));
     int a = 0;
     while ((int)t[a] == 42 || (int)t[a] == 32) {
         a = a + 1;
@@ -395,7 +409,7 @@ int cg_int_w(string t) {
 // indexing/deref: `**ExprNode`→`*ExprNode`, `*int`→`int`, `int*`→`int`. Distinct from
 // cg_strip_ptr, which strips ALL '*' to recover a struct's base name.
 string cg_deref_ty(string t) {
-    t = cg_strip_nullable(t);                             // `?*T` derefs like `*T`
+    t = cg_drop_bind_const(cg_strip_nullable(t));         // `?*T` derefs like `*T`
     if (cg_streq(t, "string") == 1) {    // string = *char → element is a char
         return "char";
     }
