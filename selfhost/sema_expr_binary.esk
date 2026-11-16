@@ -1,0 +1,519 @@
+// sema_expr_binary.esk: binary chains and did-you-mean hints (part of sema_expr.esk, imported in order)
+
+// A non-assignment binary expression. A left-leaning chain (`a + b + c ...`) is as deep
+// as it is long, so its left spine is handled with loops, in the order a recursive walk
+// would take: the operand types are inferred bottom-up once, each operator's checks run
+// top-down, then the operands are visited in source order (the leftmost first), each
+// right operand at its operator's position and, under `&&`/`||`, with the left side's
+// narrowing in force.
+void sema_binary_chain(Sema* s, *ExprNode e) {
+    List<*ExprNode> spine;
+    List_init<*ExprNode>(&spine, 8);
+    *ExprNode b = e;
+    while (b != null && b.kind == EK_BINARY && sema_is_assign(b.sval) == 0) {
+        List_push<*ExprNode>(&spine, b);
+        b = b.a;
+    }
+    int n = List_len<*ExprNode>(&spine);
+    List<string> lts;
+    List_init<string>(&lts, n);
+    List<string> rts;
+    List_init<string>(&rts, n);
+    List<int> pls;
+    List_init<int>(&pls, n);
+    List<int> pcs;
+    List_init<int>(&pcs, n);
+    int i = 0;
+    while (i < n) {
+        List_push<string>(&lts, "");
+        List_push<string>(&rts, "");
+        *ExprNode pn = List_get<*ExprNode>(&spine, i);
+        if (i > 0 && pn.line > 0) {
+            List_push<int>(&pls, pn.line);
+            List_push<int>(&pcs, pn.col);
+        }
+        else if (i > 0) {
+            List_push<int>(&pls, List_get<int>(&pls, i - 1));
+            List_push<int>(&pcs, List_get<int>(&pcs, i - 1));
+        }
+        else {
+            List_push<int>(&pls, s.line);
+            List_push<int>(&pcs, s.col);
+        }
+        i = i + 1;
+    }
+    string t = sema_infer_type(s, b);
+    i = n - 1;
+    while (i >= 0) {
+        *ExprNode tn = List_get<*ExprNode>(&spine, i);
+        string rt = sema_infer_type(s, tn.b);
+        List_set<string>(&lts, i, t);
+        List_set<string>(&rts, i, rt);
+        t = sema_binary_type(s, tn.sval, t, rt);
+        i = i - 1;
+    }
+    i = 0;
+    while (i < n) {
+        s.line = List_get<int>(&pls, i);
+        s.col = List_get<int>(&pcs, i);
+        sema_binary_checks(s, List_get<*ExprNode>(&spine, i), List_get<string>(&lts, i), List_get<string>(&rts, i));
+        i = i + 1;
+    }
+    if (s.stamp_all == 1 && s.in_async == 0) {   // the inner operators of the chain
+        int si = 1;
+        while (si < n) {
+            sema_stamp_eir(s, List_get<*ExprNode>(&spine, si));
+            si = si + 1;
+        }
+    }
+    if (s.tool == 1) {                     // the inner operators of the chain
+        int ti = 1;
+        while (ti < n) {
+            sema_tool_expr(s, List_get<*ExprNode>(&spine, ti));
+            ti = ti + 1;
+        }
+    }
+    s.line = List_get<int>(&pls, n - 1);
+    s.col = List_get<int>(&pcs, n - 1);
+    sema_expr(s, b);
+    // Narrowing keys of the left operand of the operator just visited: in a run of the
+    // same `&&` (or `||`), the next operator's left narrows to those plus the previous
+    // right operand's, so each operand is scanned once instead of the whole prefix.
+    List<string> keys;
+    List_init<string>(&keys, 2);
+    i = n - 1;
+    while (i >= 0) {
+        *ExprNode vn = List_get<*ExprNode>(&spine, i);
+        s.line = List_get<int>(&pls, i);
+        s.col = List_get<int>(&pcs, i);
+        if (sema_streq(vn.sval, "&&") == 1 || sema_streq(vn.sval, "||") == 1) {
+            // Short-circuit narrowing: the right operand sees the left's outcome.
+            int wt = sema_streq(vn.sval, "&&");
+            int same = 0;
+            if (i + 1 < n) {
+                *ExprNode below = List_get<*ExprNode>(&spine, i + 1);
+                same = sema_streq(below.sval, vn.sval);
+                if (same == 1) {
+                    sema_cond_narrow(s, below.b, wt, &keys);
+                }
+            }
+            if (same == 0) {
+                List_free<string>(&keys);
+                List_init<string>(&keys, 2);
+                sema_cond_narrow(s, vn.a, wt, &keys);
+            }
+            List<string> ins;
+            List_init<string>(&ins, 2);
+            sema_narrow_apply(s, &keys, &ins);
+            sema_expr(s, vn.b);
+            sema_narrow_undo(s, &ins);
+        } else {
+            sema_expr(s, vn.b);
+        }
+        i = i - 1;
+    }
+    s.line = List_get<int>(&pls, 0);
+    s.col = List_get<int>(&pcs, 0);
+    List_free<*ExprNode>(&spine);
+}
+
+// `va_start(ap)` / `va_end(ap)` / `va_arg<T>(ap)`: one `va_list` operand (mirrors
+// TypeChecker::checkVaListArg).
+void sema_check_va_list_arg(Sema* s, string what, *ExprNode e) {
+    int n = List_len<*ExprNode>(&e.kids);
+    if (n != 1) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: '%s' takes one argument (a va_list), got %d\n", s.filename, s.line, s.col, what, n);
+        return;
+    }
+    string t = sema_infer_type(s, List_get<*ExprNode>(&e.kids, 0));
+    if (t[0] != 0 && sema_streq(sema_canon(s, t), "va_list") == 0) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: '%s' needs a 'va_list', got '%s'\n", s.filename, s.line, s.col, what, t);
+    }
+}
+
+// ── "did you mean" hints (mirrors TypeChecker::didYouMean) ──
+// The suffix ` (did you mean 'x'?)` for an unknown name: the closest candidate by
+// case-insensitive edit distance, at most 1 for a name of up to 3 characters and 2
+// beyond; a tie goes to the smallest name. `kind` 0 = a variable or function (what is in
+// scope, the functions, the enum members), 1 = a type, 2 = a member of a value of type
+// `recv` (fields, dot-callable functions, interface methods); for a type, `recv` is the
+// spelling the name came from.
+string sema_lower(string a) {
+    int n = sema_slen(a);
+    *uint8 b = alloc<uint8>(n + 1);
+    int i = 0;
+    while (i < n) {
+        int c = (int)a[i];
+        if (c >= 65 && c <= 90) {
+            c = c + 32;
+        }
+        b[i] = (uint8)c;
+        i = i + 1;
+    }
+    b[n] = 0;
+    return (string)b;
+}
+
+// Edit distance with adjacent transpositions (optimal string alignment): `cuont` is one
+// change from `count` (mirrors the C++ didYouMean).
+int sema_edit_distance(string a, string b) {
+    int la = sema_slen(a);
+    int lb = sema_slen(b);
+    *int prev2 = alloc<int>(lb + 1);
+    *int prev = alloc<int>(lb + 1);
+    *int cur = alloc<int>(lb + 1);
+    int j = 0;
+    while (j <= lb) {
+        prev[j] = j;
+        j = j + 1;
+    }
+    int i = 1;
+    while (i <= la) {
+        cur[0] = i;
+        j = 1;
+        while (j <= lb) {
+            int best = prev[j] + 1;
+            if (cur[j - 1] + 1 < best) {
+                best = cur[j - 1] + 1;
+            }
+            int sub = prev[j - 1];
+            if (a[i - 1] != b[j - 1]) {
+                sub = sub + 1;
+            }
+            if (sub < best) {
+                best = sub;
+            }
+            if (i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] && prev2[j - 2] + 1 < best) {
+                best = prev2[j - 2] + 1;
+            }
+            cur[j] = best;
+            j = j + 1;
+        }
+        *int t = prev2;
+        prev2 = prev;
+        prev = cur;
+        cur = t;
+        i = i + 1;
+    }
+    int d = prev[lb];
+    free((*void)prev2);
+    free((*void)prev);
+    free((*void)cur);
+    return d;
+}
+
+int sema_starts_with(string t, string pre) {
+    int i = 0;
+    while (pre[i] != 0) {
+        if (t[i] != pre[i]) {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+// `t` without its pointer stars, spaces and a leading `const`.
+string sema_dym_bare(string t0) {
+    string t = sema_strip_const(t0);
+    while ((int)t[0] == 42 || (int)t[0] == 32) {
+        t = sema_sub_str(t, 1, sema_slen(t));
+    }
+    while (sema_slen(t) > 0 && ((int)t[sema_slen(t) - 1] == 42 || (int)t[sema_slen(t) - 1] == 32)) {
+        t = sema_sub_str(t, 0, sema_slen(t) - 1);
+    }
+    return sema_strip_const(t);
+}
+
+// The member names a value of type `recv` offers (C++ completeMembers): its fields and
+// inline methods, the `T_m` functions whose first parameter points to T, on an instance
+// of a generic G the generic `G_m` functions, and an interface's methods.
+void sema_dym_members(Sema* s, string recv, List<string>* out) {
+    string t = sema_dealias(s, sema_strip_nullable(sema_strip_const(recv)));
+    if (sema_has_star(t) == 0 && sema_slice_elem(t)[0] != 0) {
+        List_push<string>(out, "len");
+        return;
+    }
+    string ibt = sema_dym_bare(t);
+    string sn = sema_struct_of_type(ibt);
+    int gen = sema_has_lt(ibt);
+    string nb = sn;
+    if (gen == 1) {
+        nb = sema_flat_name(ibt);
+    }
+    *DeclNode sd = sema_find_tdecl(s, sn);
+    if (sd != null && (sd.kind == DK_STRUCT || sd.kind == DK_UNION || sd.kind == DK_INTERFACE)) {
+        if (sd.kind != DK_INTERFACE) {
+            int fi = 0;
+            while (fi < List_len<Param>(&sd.params)) {
+                List_push<string>(out, List_get<Param>(&sd.params, fi).name);
+                fi = fi + 1;
+            }
+        }
+        int mi = 0;
+        while (mi < List_len<*DeclNode>(&sd.methods)) {
+            List_push<string>(out, List_get<*DeclNode>(&sd.methods, mi).name);
+            mi = mi + 1;
+        }
+    }
+    string pre = sema_cat(nb, "_");
+    string gpre = sema_cat(sn, "_");
+    int i = 0;
+    while (i < List_len<*DeclNode>(&s.fndecls)) {
+        *DeclNode d = List_get<*DeclNode>(&s.fndecls, i);
+        i = i + 1;
+        if (List_len<Param>(&d.params) == 0) {
+            continue;
+        }
+        if (List_len<TypeParam>(&d.type_params) > 0) {
+            if (gen == 1 && sema_starts_with(d.name, gpre) == 1 && sema_slen(d.name) > sema_slen(gpre)) {
+                List_push<string>(out, sema_sub_str(d.name, sema_slen(gpre), sema_slen(d.name)));
+            }
+            continue;
+        }
+        if (sema_starts_with(d.name, pre) == 0 || sema_slen(d.name) == sema_slen(pre)) {
+            continue;
+        }
+        string p0 = sema_dealias(s, List_get<Param>(&d.params, 0).ty);
+        if (sema_has_star(p0) == 0) {
+            continue;
+        }
+        string pe = sema_dym_bare(sema_dealias(s, sema_dym_bare(p0)));
+        string own = sema_struct_of_type(pe);
+        if (sema_has_lt(pe) == 1) {
+            own = sema_flat_name(pe);
+        }
+        if (sema_streq(own, nb) == 1) {
+            List_push<string>(out, sema_sub_str(d.name, sema_slen(pre), sema_slen(d.name)));
+        }
+    }
+}
+
+// An enum named as a type or value candidate: a non-generic sum type (the C++ enumDecls;
+// a classic enum or a generic one is not among them).
+int sema_dym_enum(*DeclNode d) {
+    return (int)(List_len<TypeParam>(&d.type_params) == 0 && sema_is_plain_enum_decl(d) == 0);
+}
+
+string sema_did_you_mean(Sema* s, string name, int kind, string recv) {
+    int n = sema_slen(name);
+    if (n < 2) {
+        return "";
+    }
+    List<string> c;
+    List_init<string>(&c, 64);
+    if (kind == 1) {
+        List_push<string>(&c, "int");
+        List_push<string>(&c, "int8");
+        List_push<string>(&c, "int16");
+        List_push<string>(&c, "int32");
+        List_push<string>(&c, "int64");
+        List_push<string>(&c, "uint");
+        List_push<string>(&c, "uint8");
+        List_push<string>(&c, "uint16");
+        List_push<string>(&c, "uint32");
+        List_push<string>(&c, "uint64");
+        List_push<string>(&c, "float");
+        List_push<string>(&c, "double");
+        List_push<string>(&c, "bool");
+        List_push<string>(&c, "char");
+        List_push<string>(&c, "string");
+        List_push<string>(&c, "void");
+        int ti = 0;
+        while (ti < List_len<*DeclNode>(&s.tdecls)) {
+            *DeclNode td = List_get<*DeclNode>(&s.tdecls, ti);
+            List_push<string>(&c, td.name);          // every declared type, enums of any kind included
+            ti = ti + 1;
+        }
+    } else if (kind == 0) {
+        int si = 0;
+        while (si < List_len<Sym>(&s.syms)) {
+            Sym y = List_get<Sym>(&s.syms, si);
+            si = si + 1;
+            if (y.depth == 0 && sema_find_fn(s, y.name) < 0) {
+                // a global defined later is not in scope yet
+                if (StrTab_has(&s.late_globals, y.name) == 1) {
+                    continue;
+                }
+                // a generic enum's variant is not a value by itself
+                *DeclNode ve = sema_variant_enum(s, y.name);
+                if (ve != null && List_len<TypeParam>(&ve.type_params) > 0) {
+                    continue;
+                }
+            }
+            List_push<string>(&c, y.name);
+        }
+        int di = 0;
+        while (di < List_len<*DeclNode>(&s.tdecls)) {
+            *DeclNode td = List_get<*DeclNode>(&s.tdecls, di);
+            di = di + 1;
+            if (td.kind == DK_INTERFACE || td.kind == DK_TYPEALIAS || (td.kind == DK_ENUM && sema_dym_enum(td) == 1)) {
+                List_push<string>(&c, td.name);
+            }
+            if (td.kind == DK_STRUCT && List_len<TypeParam>(&td.type_params) == 0) {   // inline methods are `S_m`
+                int mi = 0;
+                while (mi < List_len<*DeclNode>(&td.methods)) {
+                    List_push<string>(&c, sema_cat(sema_cat(td.name, "_"), List_get<*DeclNode>(&td.methods, mi).name));
+                    mi = mi + 1;
+                }
+            }
+        }
+    } else {
+        sema_dym_members(s, recv, &c);
+    }
+    int limit = 2;
+    if (n <= 3) {
+        limit = 1;
+    }
+    string ln = sema_lower(name);
+    string best = "";
+    int bestd = limit + 1;
+    int i = 0;
+    while (i < List_len<string>(&c)) {
+        string cand = List_get<string>(&c, i);
+        i = i + 1;
+        if (cand == null) {
+            continue;
+        }
+        if (cand[0] == 0 || (int)cand[0] == 95 || sema_streq(cand, name) == 1) {
+            continue;
+        }
+        int m = sema_slen(cand);
+        if (m > n + limit || n > m + limit) {
+            continue;
+        }
+        int d = sema_edit_distance(ln, sema_lower(cand));
+        int longer = m;
+        if (n > longer) {
+            longer = n;
+        }
+        if (d >= 2 && d * 3 > longer) {   // two changes need 6 letters (as C++)
+            continue;
+        }
+        if (d < bestd || (d == bestd && strcmp(cand, best) < 0)) {
+            bestd = d;
+            best = cand;
+        }
+    }
+    if (bestd > limit) {
+        return "";
+    }
+    return sema_cat(sema_cat(" (did you mean '", best), "'?)");
+}
+
+// A use of a function declared `deprecated("msg")` warns at its position, once per
+// position, outside imported code and generic instances (TypeChecker::noteDeprecatedUse).
+// Is `e` a `string` or pointer value (what `==` compares by address)?
+int sema_is_addr_ty(Sema* s, *ExprNode e) {
+    if (e == null) {
+        return 0;
+    }
+    if (e.kind == EK_LITERAL && (e.lit_kind == LIT_STRING || e.lit_kind == LIT_NULL)) {
+        return 1;
+    }
+    string t = sema_canon(s, sema_infer_type(s, e));
+    if ((int)t[0] == 63) {
+        t = sema_sub_str(t, 1, sema_slen(t));
+    }
+    if (sema_streq(t, "string") == 1 || sema_c_ptr(t) == 1) {
+        return 1;
+    }
+    return 0;
+}
+
+// A warning on by default, unless -Wno-<name>; once per position, never in an imported
+// declaration or a generic instance (mirrors the C++ noteWarning).
+void sema_warn(Sema* s, string name, int line, int col, string msg) {
+    if (line <= 0 || s.in_inst == 1 || s.cur_import == 1) {
+        return;
+    }
+    if (sema_in_list(&s.wno, name) == 1) {
+        return;
+    }
+    string key = sema_cat(sema_cat(sema_cat(sema_cat(sema_cat(sema_cat(s.filename, ":"), sema_i64_text((int64)line)), ":"),
+                          sema_i64_text((int64)col)), ":"), name);
+    if (sema_in_list(&s.depr_seen, key) == 1) {
+        return;
+    }
+    List_push<string>(&s.depr_seen, key);
+    if (s.wnone == 1) {
+        return;
+    }
+    if (s.werror == 1) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: %s [-W%s]\n", s.filename, line, col, msg, name);
+        return;
+    }
+    dprintf(2, "%s:%d:%d: warning: %s [-W%s]\n", s.filename, line, col, msg, name);
+}
+
+// A -Wall/-Wextra lint warning (mirrors the C++ TypeChecker::warning): no option suffix,
+// never in an imported declaration or a generic instance.
+void sema_lint(Sema* s, int line, int col, string msg) {
+    if (s.in_inst == 1 || s.cur_import == 1 || s.wnone == 1) {
+        return;
+    }
+    if (s.werror == 1) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: %s\n", s.filename, line, col, msg);
+        return;
+    }
+    dprintf(2, "%s:%d:%d: warning: %s\n", s.filename, line, col, msg);
+}
+
+string sema_addr_key(Sema* s, string name) {
+    return sema_cat(sema_cat(sema_i64_text((int64)sema_sym_index(s, name)), ":"), name);
+}
+
+int sema_addr_find(Sema* s, string key) {
+    int i = List_len<string>(&s.addr_keys) - 1;
+    while (i >= 0) {
+        if (sema_streq(List_get<string>(&s.addr_keys, i), key) == 1) {
+            return i;
+        }
+        i = i - 1;
+    }
+    return -1;
+}
+
+void sema_addr_set(Sema* s, string key, string root) {
+    int i = sema_addr_find(s, key);
+    if (i >= 0) {
+        List_set<string>(&s.addr_roots, i, root);
+        return;
+    }
+    List_push<string>(&s.addr_keys, key);
+    List_push<string>(&s.addr_roots, root);
+}
+
+void sema_addr_forget(Sema* s, string key) {
+    int i = sema_addr_find(s, key);
+    if (i >= 0) {
+        List_set<string>(&s.addr_keys, i, "");
+    }
+}
+
+// What `name = rhs` stores (mirrors the C++ trackLocalAddr): a local's address (or
+// `name + k` / `name - k`), else anything, which clears it.
+void sema_track_addr(Sema* s, string name, *ExprNode rhs) {
+    int si = sema_sym_index(s, name);
+    if (si < 0 || List_get<Sym>(&s.syms, si).depth < 1) {
+        return;
+    }
+    string key = sema_addr_key(s, name);
+    if (rhs != null && rhs.kind == EK_UNARY && sema_streq(rhs.sval, "&") == 1) {
+        string root = sema_local_root(s, rhs.a);
+        int i = sema_addr_find(s, key);
+        if (root[0] != 0 && (i < 0 || List_get<string>(&s.addr_roots, i)[0] != 0)) {
+            sema_addr_set(s, key, root);
+            return;
+        }
+    }
+    if (rhs != null && rhs.kind == EK_BINARY && (sema_streq(rhs.sval, "+") == 1 || sema_streq(rhs.sval, "-") == 1)
+        && rhs.a != null && rhs.a.kind == EK_IDENT && sema_streq(rhs.a.sval, name) == 1) {
+        return;
+    }
+    sema_addr_set(s, key, "");
+}
