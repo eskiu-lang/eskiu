@@ -1,0 +1,528 @@
+// eir_c_inst.esk: inline assembly and instruction bodies (part of eir_c.esk, imported in order)
+
+void ec_inline_asm(EC* c, EInst* ins) {
+    List<string> cons;
+    List_init<string>(&cons, 8);
+    String cur;
+    String_init(&cur, 16);
+    int depth = 0;
+    string ac = et_s(ins.asm_cons);
+    int i = 0;
+    while (ac[i] != 0) {
+        char ch = ac[i];
+        if (ch == '{') {
+            depth = depth + 1;
+        }
+        if (ch == '}') {
+            depth = depth - 1;
+        }
+        if (ch == ',' && depth == 0) {
+            List_push<string>(&cons, et_cat("", (string)String_cstr(&cur)));
+            String_clear(&cur);
+        } else {
+            String_push(&cur, ch);
+        }
+        i = i + 1;
+    }
+    if (String_len(&cur) > 0) {
+        List_push<string>(&cons, et_cat("", (string)String_cstr(&cur)));
+    }
+    List<*ETy> rtys;
+    List_init<*ETy>(&rtys, 4);
+    if (ins.ty != null && ins.ty.kind == ETK_STRUCT) {
+        for (k in 0..List_len<*ETy>(&ins.ty.members)) {
+            List_push<*ETy>(&rtys, List_get<*ETy>(&ins.ty.members, k));
+        }
+    } else if (ins.ty != null && ins.ty.kind != ETK_VOID) {
+        List_push<*ETy>(&rtys, ins.ty);
+    }
+    string res = et_len(ins.res) == 0 ? "" : ec_var(ins.res);
+    List<string> outs;
+    List_init<string>(&outs, 4);
+    List<string> inps;
+    List_init<string>(&inps, 4);
+    List<string> clob;
+    List_init<string>(&clob, 4);
+    List<*ETy> out_tys;
+    List_init<*ETy>(&out_tys, 4);
+    int op_idx = 0;
+    int out_idx = 0;
+    String pre;
+    String_init(&pre, 32);
+    String post;
+    String_init(&post, 32);
+    for (ci in 0..List_len<string>(&cons)) {
+        string cn = List_get<string>(&cons, ci);
+        if (ec_has_prefix(cn, "~{") == 1) {
+            List_push<string>(&clob, ec_escape(et_sub(cn, 2, et_len(cn) - 1)));
+            continue;
+        }
+        if (et_eq(cn, "=*m") == 1) {
+            EOp o = List_get<EOp>(&ins.ops, op_idx);
+            op_idx = op_idx + 1;
+            List_push<string>(&outs, et_cat3("\"=m\"(*(char*)", ec_pval(c, &o), ")"));
+            List_push<*ETy>(&out_tys, null);
+        } else if (cn[0] == '=') {
+            *ETy t = out_idx < List_len<*ETy>(&rtys) ? List_get<*ETy>(&rtys, out_idx) : et_i64();
+            string tmp = et_cat("a", et_itoa(c.next_tmp));
+            c.next_tmp = c.next_tmp + 1;
+            String_append(&pre, et_cat3(" ", ec_ctype(t), et_cat3(" ", tmp, ";")));
+            List_push<string>(&outs, et_cat3(ec_escape(ec_gcc_constraint(cn)), "(", et_cat(tmp, ")")));
+            List_push<*ETy>(&out_tys, t);
+            string conv = et_is_int(t) == 1 ? et_cat("(int64_t)", tmp) : tmp;
+            if (List_len<*ETy>(&rtys) > 1) {
+                String_append(&post, et_cat3(" ((int64_t*)", res, et_cat3(")[", et_itoa(out_idx), "] = (int64_t)")));
+                String_append(&post, et_cat(tmp, ";"));
+            } else if (et_len(res) > 0) {
+                String_append(&post, et_cat3(" ", res, et_cat3(" = ", conv, ";")));
+            }
+            out_idx = out_idx + 1;
+        } else if (cn[0] >= '0' && cn[0] <= '9') {
+            int tied = atoi(cn);
+            EOp o = List_get<EOp>(&ins.ops, op_idx);
+            op_idx = op_idx + 1;
+            *ETy t = o.ty;
+            if (tied < List_len<*ETy>(&out_tys) && List_get<*ETy>(&out_tys, tied) != null) {
+                t = List_get<*ETy>(&out_tys, tied);
+            }
+            List_push<string>(&inps, et_cat3(ec_escape(cn), "(", et_cat(ec_as_c(c, &o, t), ")")));
+        } else if (et_eq(cn, "*m") == 1 || et_eq(cn, "m") == 1) {
+            EOp o = List_get<EOp>(&ins.ops, op_idx);
+            op_idx = op_idx + 1;
+            List_push<string>(&inps, et_cat3("\"m\"(*(char*)", ec_pval(c, &o), ")"));
+        } else {
+            EOp o = List_get<EOp>(&ins.ops, op_idx);
+            op_idx = op_idx + 1;
+            List_push<string>(&inps, et_cat3(ec_escape(ec_gcc_constraint(cn)), "(", et_cat(ec_as_c(c, &o, o.ty), ")")));
+        }
+    }
+    String text;
+    String_init(&text, 32);
+    string a = et_s(ins.asm_str);
+    int an = et_len(a);
+    int j = 0;
+    while (j < an) {
+        char ch = a[j];
+        if (ch == '$' && j + 1 < an && a[j + 1] == '$') {
+            String_push(&text, '$');
+            j = j + 2;
+            continue;
+        }
+        if (ch == '%') {
+            String_append(&text, "%%");
+            j = j + 1;
+            continue;
+        }
+        if (ch == '$' && j + 1 < an && a[j + 1] >= '0' && a[j + 1] <= '9') {
+            String_push(&text, '%');
+            j = j + 1;
+            continue;
+        }
+        if (ch == '$' && j + 1 < an && a[j + 1] == '{') {
+            int e = j;
+            while (e < an && a[e] != '}') {
+                e = e + 1;
+            }
+            string inner = et_sub(a, j + 2, e);
+            int colon = et_findc(inner, ':');
+            String_push(&text, '%');
+            if (colon >= 0) {
+                String_append(&text, et_sub(inner, colon + 1, et_len(inner)));
+                String_append(&text, et_sub(inner, 0, colon));
+            } else {
+                String_append(&text, inner);
+            }
+            j = e + 1;
+            continue;
+        }
+        String_push(&text, ch);
+        j = j + 1;
+    }
+    int extended = List_len<string>(&outs) > 0 || List_len<string>(&inps) > 0 || List_len<string>(&clob) > 0 ? 1 : 0;
+    ec_w(c, "    {");
+    ec_w(c, (string)String_cstr(&pre));
+    ec_w(c, " __asm__ volatile (");
+    ec_w(c, ec_escape(extended == 1 ? (string)String_cstr(&text) : a));
+    if (extended == 1) {
+        ec_w(c, " :");
+        for (k in 0..List_len<string>(&outs)) {
+            ec_w(c, k > 0 ? ", " : " ");
+            ec_w(c, List_get<string>(&outs, k));
+        }
+        ec_w(c, " :");
+        for (k in 0..List_len<string>(&inps)) {
+            ec_w(c, k > 0 ? ", " : " ");
+            ec_w(c, List_get<string>(&inps, k));
+        }
+        ec_w(c, " :");
+        for (k in 0..List_len<string>(&clob)) {
+            ec_w(c, k > 0 ? ", " : " ");
+            ec_w(c, List_get<string>(&clob, k));
+        }
+    }
+    ec_w(c, ");");
+    ec_w(c, (string)String_cstr(&post));
+    ec_w(c, " }\n");
+}
+
+int64 ec_field_offset(EC* c, string sname, string fname) {
+    return em_field_offset(c.m, sname, fname);
+}
+
+string ec_utype(int bw) {
+    return bw == 8 ? "uint8_t" : bw == 16 ? "uint16_t" : bw == 32 ? "uint32_t" : "uint64_t";
+}
+
+string ec_stype(int bw) {
+    return bw == 8 ? "int8_t" : bw == 16 ? "int16_t" : bw == 32 ? "int32_t" : "int64_t";
+}
+
+void ec_instruction_body(EC* c, EInst* ins) {
+    int nops = List_len<EOp>(&ins.ops);
+    EOp o0;
+    EOp o1;
+    EOp o2;
+    if (nops > 0) {
+        o0 = List_get<EOp>(&ins.ops, 0);
+    }
+    if (nops > 1) {
+        o1 = List_get<EOp>(&ins.ops, 1);
+    }
+    if (nops > 2) {
+        o2 = List_get<EOp>(&ins.ops, 2);
+    }
+    string res = et_len(ins.res) == 0 ? "" : ec_var(ins.res);
+    *ETy rt = ins.ty;
+    int op = ins.op;
+    if (op == EO_ALLOCA) {
+        string tag = et_sub(res, 2, et_len(res));
+        ec_w(c, et_cat3("    { size_t z; for (z = 0; z < sizeof s_", tag, "; z++) ((unsigned char*)&s_"));
+        ec_w(c, et_cat(tag, ")[z] = 0; }\n"));
+        return;
+    }
+    if (op == EO_STORE) {
+        *ETy val_ty = o0.ty;
+        *ETy dst_ty = val_ty;
+        if (o1.ty != null && o1.ty.kind == ETK_POINTER && o1.ty.elem != null) {
+            dst_ty = o1.ty.elem;
+        }
+        string dst = ec_pval(c, &o1);
+        if (ec_is_agg(dst_ty) == 1 || (dst_ty == null && ec_is_agg(val_ty) == 1)) {
+            ec_w(c, et_cat3(et_cat3("    __eskc_copy(", dst, ", "), ec_pval(c, &o0), ", "));
+            ec_w(c, et_cat(ec_sizes(c, dst_ty != null ? dst_ty : val_ty), ");\n"));
+        } else if (et_is_int(dst_ty) == 1) {
+            string ct = ec_ctype(dst_ty);
+            ec_w(c, et_cat3(et_cat3("    *(", ct, "*)"), dst, et_cat3(" = (", ct, ")")));
+            ec_w(c, et_cat(ec_ival(c, &o0), ";\n"));
+        } else if (et_is_float(dst_ty) == 1) {
+            string ct = ec_ctype(dst_ty);
+            ec_w(c, et_cat3(et_cat3("    *(", ct, "*)"), dst, et_cat3(" = (", ct, ")")));
+            ec_w(c, et_cat(ec_fval(c, &o0), ";\n"));
+        } else {
+            ec_w(c, et_cat3(et_cat3("    *(void**)", dst, " = "), ec_pval(c, &o0), ";\n"));
+        }
+        return;
+    }
+    if (op == EO_LOAD) {
+        if (rt != null && rt.kind == ETK_VOID) {
+            return;
+        }
+        if (ec_is_agg(rt) == 1) {
+            ec_w(c, et_cat3(et_cat3("    ", res, " = "), ec_pval(c, &o0), ";\n"));
+        } else {
+            ec_w(c, et_cat3(et_cat3("    ", res, " = "), ec_load_expr(rt, ec_pval(c, &o0)), ";\n"));
+        }
+        return;
+    }
+    if (op == EO_FIELDPTR) {
+        int64 off = ec_field_offset(c, o0.text, o2.text);
+        if (off == 0 && (et_len(o0.text) == 0 || et_eq(o0.text, "slice") == 1) && et_eq(o2.text, "len") == 1) {
+            off = 8;
+        }
+        ec_w(c, et_cat3(et_cat3("    ", res, " = (void*)((char*)"), ec_pval(c, &o1), et_cat3(" + ", et_ltoa(off), ");\n")));
+        return;
+    }
+    if (op == EO_OFFSETPTR) {
+        ec_w(c, et_cat3(et_cat3("    ", res, " = (void*)((char*)"), ec_pval(c, &o0), " + (intptr_t)"));
+        ec_w(c, et_cat(ec_ival(c, &o1), ");\n"));
+        return;
+    }
+    if (op == EO_GEP) {
+        *ETy et = rt;
+        if (rt.elem != null) {
+            et = rt.elem;
+        }
+        ec_w(c, et_cat3(et_cat3("    ", res, " = (void*)((char*)"), ec_pval(c, &o0), " + (intptr_t)"));
+        ec_w(c, et_cat3(ec_ival(c, &o1), " * ", et_cat(ec_sizes(c, et), ");\n")));
+        return;
+    }
+    if (op == EO_ADD || op == EO_SUB || op == EO_MUL) {
+        string o = op == EO_ADD ? "+" : op == EO_SUB ? "-" : "*";
+        string e = et_cat3(et_cat3("(int64_t)(", ec_uval(c, &o0), " "), o, et_cat3(" ", ec_uval(c, &o1), ")"));
+        if (et_is_int(rt) == 1 && rt.bits == 32) {
+            e = ec_narrow(e, rt);
+        }
+        ec_w(c, ec_set_int(c, ins, e));
+        return;
+    }
+    if (op == EO_AND || op == EO_OR || op == EO_XOR) {
+        string o = op == EO_AND ? "&" : op == EO_OR ? "|" : "^";
+        string e = et_cat3(et_cat3("(int64_t)(", ec_uval(c, &o0), " "), o, et_cat3(" ", ec_uval(c, &o1), ")"));
+        if (et_is_int(rt) == 1 && rt.sgn == 0 && rt.bits > 1) {
+            e = ec_narrow(e, rt);
+        }
+        ec_w(c, ec_set_int(c, ins, e));
+        return;
+    }
+    if (op == EO_SHL || op == EO_LSHR || op == EO_ASHR) {
+        int bw = et_is_int(rt) == 1 && rt.bits > 1 ? rt.bits : 64;
+        string cnt = et_cat3(et_cat3("(", ec_uval(c, &o1), " & "), et_itoa(bw - 1), ")");
+        string ut = ec_utype(bw);
+        string e = "";
+        if (op == EO_SHL) {
+            e = et_cat3(et_cat3("(", ut, ")((uint64_t)("), et_cat3(ut, ")", ec_ival(c, &o0)), et_cat3(" << ", cnt, ")"));
+            if (bw == 32 && rt.sgn == 1) {
+                e = et_cat("(int32_t)", e);
+            }
+        } else if (op == EO_LSHR) {
+            e = et_cat3(et_cat3("((uint64_t)(", ut, ")"), ec_ival(c, &o0), et_cat3(" >> ", cnt, ")"));
+        } else {
+            e = et_cat3(et_cat3("((int64_t)(", ec_stype(bw), ")"), ec_ival(c, &o0), et_cat3(" >> ", cnt, ")"));
+        }
+        ec_w(c, ec_set_int(c, ins, et_cat("(int64_t)", e)));
+        return;
+    }
+    if (op == EO_SDIV || op == EO_SREM) {
+        string w = op == EO_SREM ? "rem" : "div";
+        if (et_is_int(rt) == 1 && rt.bits == 32) {
+            ec_w(c, et_cat3(et_cat3("    ", res, " = __eskc_s"), w, et_cat3("32((int32_t)", ec_ival(c, &o0), ", (int32_t)")));
+            ec_w(c, et_cat(ec_ival(c, &o1), ");\n"));
+        } else {
+            ec_w(c, et_cat3(et_cat3("    ", res, " = __eskc_s"), w, et_cat3("64(", ec_ival(c, &o0), ", ")));
+            ec_w(c, et_cat(ec_ival(c, &o1), ");\n"));
+        }
+        return;
+    }
+    if (op == EO_UDIV || op == EO_UREM) {
+        ec_w(c, et_cat3(et_cat3("    ", res, " = __eskc_u"), op == EO_UREM ? "rem" : "div", et_cat3("64(", ec_uval(c, &o0), ", ")));
+        ec_w(c, et_cat(ec_uval(c, &o1), ");\n"));
+        return;
+    }
+    if (op == EO_FADD || op == EO_FSUB || op == EO_FMUL || op == EO_FDIV) {
+        string o = op == EO_FADD ? "+" : op == EO_FSUB ? "-" : op == EO_FMUL ? "*" : "/";
+        string ft = ec_ctype(rt);
+        ec_w(c, et_cat3(et_cat3("    ", res, " = ("), ft, et_cat3(")((", ft, ")")));
+        ec_w(c, et_cat3(ec_fval(c, &o0), et_cat3(" ", o, " ("), et_cat3(ft, ")", ec_fval(c, &o1))));
+        ec_w(c, ");\n");
+        return;
+    }
+    if (op == EO_NEG) {
+        if (et_is_float(rt) == 1) {
+            ec_w(c, et_cat3(et_cat3("    ", res, " = ("), ec_ctype(rt), et_cat3(")-", ec_fval(c, &o0), ";\n")));
+        } else {
+            ec_w(c, ec_set_int(c, ins, et_cat3("(int64_t)(UINT64_C(0) - ", ec_uval(c, &o0), ")")));
+        }
+        return;
+    }
+    if (op == EO_NOT) {
+        ec_w(c, ec_set_int(c, ins, et_cat("(int64_t)~", ec_uval(c, &o0))));
+        return;
+    }
+    if (op == EO_ICMP) {
+        string o = "==";
+        int sgn = 0;
+        int cnd = ins.icmp;
+        if (cnd == EIC_NE) { o = "!="; }
+        if (cnd == EIC_SLT) { o = "<"; sgn = 1; }
+        if (cnd == EIC_SLE) { o = "<="; sgn = 1; }
+        if (cnd == EIC_SGT) { o = ">"; sgn = 1; }
+        if (cnd == EIC_SGE) { o = ">="; sgn = 1; }
+        if (cnd == EIC_ULT) { o = "<"; }
+        if (cnd == EIC_ULE) { o = "<="; }
+        if (cnd == EIC_UGT) { o = ">"; }
+        if (cnd == EIC_UGE) { o = ">="; }
+        string a = o0.ty != null && o0.ty.kind == ETK_INTERFACE ? et_cat3("__eskc_iface_data(", ec_pval(c, &o0), ")") : ec_ival(c, &o0);
+        string b = o1.ty != null && o1.ty.kind == ETK_INTERFACE ? et_cat3("__eskc_iface_data(", ec_pval(c, &o1), ")") : ec_ival(c, &o1);
+        if (sgn == 0) {
+            a = et_cat("(uint64_t)", a);
+            b = et_cat("(uint64_t)", b);
+        }
+        ec_w(c, et_cat3(et_cat3("    ", res, " = (int64_t)("), a, et_cat3(et_cat3(" ", o, " "), b, ");\n")));
+        return;
+    }
+    if (op == EO_FCMP) {
+        string o = "==";
+        int cnd = ins.fcmp;
+        if (cnd == EFC_ONE) { o = "!="; }
+        if (cnd == EFC_OLT) { o = "<"; }
+        if (cnd == EFC_OLE) { o = "<="; }
+        if (cnd == EFC_OGT) { o = ">"; }
+        if (cnd == EFC_OGE) { o = ">="; }
+        ec_w(c, et_cat3(et_cat3("    ", res, " = (int64_t)("), ec_fval(c, &o0), et_cat3(et_cat3(" ", o, " "), ec_fval(c, &o1), ");\n")));
+        return;
+    }
+    if (op == EO_TRUNC) {
+        if (et_is_int(rt) == 1 && rt.bits == 1) {
+            ec_w(c, et_cat3(et_cat3("    ", res, " = "), ec_ival(c, &o0), " & 1;\n"));
+        } else {
+            ec_w(c, et_cat3(et_cat3("    ", res, " = "), ec_narrow(ec_ival(c, &o0), rt), ";\n"));
+        }
+        return;
+    }
+    if (op == EO_ZEXT || op == EO_SEXT) {
+        *ETy st = o0.ty;
+        int bw = et_is_int(st) == 1 ? st.bits : 64;
+        string e = "";
+        if (bw == 1) {
+            e = op == EO_ZEXT ? et_cat3("(", ec_ival(c, &o0), " & 1)") : et_cat3("-(", ec_ival(c, &o0), " & 1)");
+        } else if (bw >= 64) {
+            e = ec_ival(c, &o0);
+        } else {
+            string ct = op == EO_ZEXT ? ec_utype(bw) : ec_stype(bw);
+            e = et_cat3(et_cat3("(int64_t)(", ct, ")"), ec_ival(c, &o0), "");
+        }
+        ec_w(c, ec_set_int(c, ins, e));
+        return;
+    }
+    if (op == EO_FPTRUNC || op == EO_FPEXT || op == EO_SITOFP) {
+        ec_w(c, et_cat3(et_cat3("    ", res, " = ("), ec_ctype(rt), et_cat3(")", ec_fval(c, &o0), ";\n")));
+        return;
+    }
+    if (op == EO_FPTOSI) {
+        int w = 64;
+        if (et_is_int(rt) == 1) {
+            w = rt.bits <= 1 ? 8 : rt.bits;
+        }
+        int uns = et_is_int(rt) == 1 && rt.sgn == 0 ? 1 : 0;
+        if (uns == 1) {
+            string hi = w >= 64 ? "UINT64_MAX" : et_cat3("UINT64_C(", ec_u64(((int64)1 << (int64)w) - 1), ")");
+            ec_w(c, et_cat3(et_cat3("    ", res, " = __eskc_f2u("), ec_fval(c, &o0), et_cat3(", ", hi, ");\n")));
+        } else {
+            string lo = w >= 64 ? "INT64_MIN" : et_cat3("(-INT64_C(", ec_u64((int64)1 << (int64)(w - 1)), "))");
+            string hi = w >= 64 ? "INT64_MAX" : et_cat3("INT64_C(", ec_u64(((int64)1 << (int64)(w - 1)) - 1), ")");
+            ec_w(c, et_cat3(et_cat3("    ", res, " = __eskc_f2s("), ec_fval(c, &o0), et_cat3(", ", lo, ", ")));
+            ec_w(c, et_cat(hi, ");\n"));
+        }
+        return;
+    }
+    if (op == EO_BITCAST || op == EO_PTRTOINT || op == EO_INTTOPTR) {
+        int dk = ec_has_kind(c, ins.res) == 1 ? ec_get_kind(c, ins.res) : ec_kind_of(rt);
+        int sk = ec_op_kind(c, &o0);
+        int src_f = sk == 'f' || sk == 'd' ? 1 : 0;
+        int dst_f = dk == 'f' || dk == 'd' ? 1 : 0;
+        if (src_f != dst_f) {
+            string tmp = et_cat("t", et_itoa(c.next_tmp));
+            c.next_tmp = c.next_tmp + 1;
+            if (src_f == 1) {
+                string ft = ec_kind_type(sk);
+                string ut = sk == 'f' ? "uint32_t" : "uint64_t";
+                ec_w(c, et_cat3(et_cat3("    { ", ft, " "), tmp, et_cat3(" = ", ec_var(o0.text), "; ")));
+                ec_w(c, et_cat3(et_cat3(ut, " u_", tmp), "; __eskc_copy(&u_", et_cat3(tmp, ", &", tmp)));
+                ec_w(c, et_cat3(et_cat3(", sizeof ", tmp, "); "), res, et_cat3(" = (int64_t)u_", tmp, "; }\n")));
+            } else {
+                string ut = dk == 'f' ? "uint32_t" : "uint64_t";
+                ec_w(c, et_cat3(et_cat3("    { ", ut, " "), tmp, et_cat3(" = (", ut, ")")));
+                ec_w(c, et_cat3(ec_ival(c, &o0), "; __eskc_copy(&", et_cat3(res, ", &", tmp)));
+                ec_w(c, et_cat3(", sizeof ", res, "); }\n"));
+            }
+        } else {
+            ec_w(c, et_cat3(et_cat3("    ", res, " = "), ec_as_kind(c, &o0, dk), ";\n"));
+        }
+        return;
+    }
+    if (op == EO_BR) {
+        ec_w(c, et_cat3("    goto ", ec_label(o0.text), ";\n"));
+        return;
+    }
+    if (op == EO_BRCOND) {
+        ec_w(c, et_cat3(et_cat3("    if (", ec_ival(c, &o0), ") goto "), ec_label(o1.text), et_cat3("; else goto ", ec_label(o2.text), ";\n")));
+        return;
+    }
+    if (op == EO_SWITCH) {
+        ec_w(c, et_cat3("    switch (", ec_ival(c, &o0), ") {\n"));
+        List<int64> used;
+        List_init<int64>(&used, 8);
+        for (k in 0..List_len<int64>(&ins.case_vals)) {
+            int64 v = List_get<int64>(&ins.case_vals, k);
+            int dup = 0;
+            for (u in 0..List_len<int64>(&used)) {
+                if (List_get<int64>(&used, u) == v) {
+                    dup = 1;
+                }
+            }
+            if (dup == 1) {
+                continue;
+            }
+            List_push<int64>(&used, v);
+            ec_w(c, et_cat3("    case ", ec_i64const(v), ": goto "));
+            ec_w(c, et_cat(ec_label(List_get<string>(&ins.case_lbls, k)), ";\n"));
+        }
+        string d = et_s(ins.dflt);
+        ec_w(c, et_cat3("    default: ", et_len(d) == 0 ? "break;" : et_cat3("goto ", ec_label(d), ";"), "\n    }\n"));
+        return;
+    }
+    if (op == EO_CALL || op == EO_CALLINDIRECT) {
+        ec_call(c, ins);
+        return;
+    }
+    if (op == EO_MAKECLOSURE || op == EO_MAKEIFACE || op == EO_MAKESLICE) {
+        ec_w(c, et_cat3(et_cat3("    ((void**)", res, ")[0] = "), ec_pval(c, &o0), ";\n"));
+        if (ec_op_kind(c, &o1) == 'i' && o1.kind != EOK_NULL) {
+            ec_w(c, et_cat3(et_cat3("    *(int64_t*)((char*)", res, " + 8) = "), ec_ival(c, &o1), ";\n"));
+        } else {
+            ec_w(c, et_cat3(et_cat3("    ((void**)", res, ")[1] = "), ec_pval(c, &o1), ";\n"));
+        }
+        return;
+    }
+    if (op == EO_EXTRACTFAT) {
+        int64 idx = o1.kind == EOK_INT ? o1.iv : 0;
+        string addr = et_cat3(et_cat3("((char*)", ec_pval(c, &o0), " + "), et_ltoa(idx * 8), ")");
+        if (et_is_int(rt) == 1 && rt.bits < 64 && !(o0.ty != null && o0.ty.kind == ETK_STRUCT)) {
+            ec_w(c, et_cat3(et_cat3("    ", res, " = *(int64_t*)"), addr, ";\n"));
+        } else {
+            ec_w(c, et_cat3(et_cat3("    ", res, " = "), ec_load_expr(rt, addr), ";\n"));
+        }
+        return;
+    }
+    if (op == EO_RET) {
+        if (nops > 0 && o0.ty != null && o0.ty.kind != ETK_VOID) {
+            ec_return(c, &o0);
+        } else {
+            ec_return(c, null);
+        }
+        return;
+    }
+    if (op == EO_UNREACHABLE) {
+        ec_w(c, "    __eskc_trap();\n");
+        return;
+    }
+    if (op == EO_THROW) {
+        ec_w(c, et_cat3("    __eir_throw(", ec_pval(c, &o0), ");\n    goto __eskc_unwind;\n"));
+        return;
+    }
+    if (op == EO_LANDINGPAD) {
+        if (et_len(res) > 0) {
+            ec_w(c, et_cat3("    ", res, " = __eir_take_exception();\n"));
+        } else {
+            ec_w(c, "    (void)__eir_take_exception();\n");
+        }
+        return;
+    }
+    if (op == EO_PUSHHANDLER) {
+        ec_w(c, et_cat3("    if (__eskc_hd >= ", et_itoa(c.handler_cap), ") __eskc_trap();\n"));
+        ec_w(c, et_cat3("    __eskc_hs[__eskc_hd++] = ", et_itoa(StrTab_get(&c.handler_ix, o0.text, 0)), ";\n"));
+        return;
+    }
+    if (op == EO_POPHANDLER) {
+        if (c.handler_cap > 0) {
+            ec_w(c, "    if (__eskc_hd > 0) __eskc_hd--;\n");
+        }
+        return;
+    }
+    if (op == EO_INLINEASM) {
+        ec_inline_asm(c, ins);
+        return;
+    }
+    eprint("error: EIR C: unsupported instruction\n");
+    exit(1);
+}

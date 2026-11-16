@@ -1,0 +1,254 @@
+// eir_c_module.esk: instructions, functions and the module (part of eir_c.esk, imported in order)
+
+void ec_instruction(EC* c, EInst* ins) {
+    ec_instruction_body(c, ins);
+    *ETy t = ins.ty;
+    if (et_len(ins.res) > 0 && et_is_int(t) == 1 && t.bits < 64 && ec_has_kind(c, ins.res) == 1
+        && ec_get_kind(c, ins.res) == 'i' && ei_is_term(ins.op) == 0) {
+        string v = ec_var(ins.res);
+        if (t.bits == 1) {
+            ec_w(c, et_cat3("    ", v, " &= 1;\n"));
+        } else {
+            ec_w(c, et_cat3(et_cat3("    ", v, " = (int64_t)("), ec_ctype(t), et_cat3(")", v, ";\n")));
+        }
+    }
+}
+
+void ec_function(EC* c, *EFunc fun) {
+    c.fun = fun;
+    c.sret = ec_is_agg(fun.ret);
+    c.saves_caught = 0;
+    memset((*void)&c.handler_ix, 0, sizeof(StrTab));
+    List_init<string>(&c.handlers, 4);
+    memset((*void)&c.kinds, 0, sizeof(StrTab));
+    c.next_tmp = 0;
+    int push_count = 0;
+    String decls;
+    String_init(&decls, 256);
+    int np = List_len<string>(&fun.pnames);
+    for (i in 0..np) {
+        ec_set_kind(c, et_cat("%", List_get<string>(&fun.pnames, i)), ec_kind_of(List_get<*ETy>(&fun.ptypes, i)));
+    }
+    for (bi in 0..List_len<*EBlock>(&fun.blocks)) {
+        *EBlock bb = List_get<*EBlock>(&fun.blocks, bi);
+        for (ii in 0..List_len<EInst>(&bb.insts)) {
+            EInst ins = List_get<EInst>(&bb.insts, ii);
+            if (ins.op == EO_PUSHHANDLER) {
+                push_count = push_count + 1;
+                string h = List_get<EOp>(&ins.ops, 0).text;
+                if (StrTab_has(&c.handler_ix, h) == 0) {
+                    StrTab_set(&c.handler_ix, h, List_len<string>(&c.handlers));
+                    List_push<string>(&c.handlers, h);
+                }
+            }
+            if (ins.op == EO_CALL && et_eq(List_get<EOp>(&ins.ops, 0).text, "__eir_push_caught") == 1) {
+                c.saves_caught = 1;
+            }
+            string rv = ins.res;
+            if (et_len(rv) == 0 || ec_has_kind(c, rv) == 1) {
+                continue;
+            }
+            string v = ec_var(rv);
+            string tag = et_sub(v, 2, et_len(v));
+            if (ins.op == EO_ALLOCA) {
+                String_append(&decls, et_cat3("    union { uint8_t b[", ec_sizes(c, ins.ty), "]; uint64_t a; double d; void* p; } s_"));
+                String_append(&decls, et_cat(tag, ";\n"));
+                String_append(&decls, et_cat3(et_cat3("    void* ", v, " = (void*)&s_"), tag, ";\n"));
+                ec_set_kind(c, rv, 'p');
+            } else if (ins.op == EO_MAKECLOSURE || ins.op == EO_MAKEIFACE || ins.op == EO_MAKESLICE) {
+                String_append(&decls, et_cat3("    void* f_", tag, "[2];\n"));
+                String_append(&decls, et_cat3(et_cat3("    void* ", v, " = (void*)f_"), tag, ";\n"));
+                ec_set_kind(c, rv, 'p');
+            } else if ((ins.op == EO_CALL || ins.op == EO_CALLINDIRECT) && ec_is_agg(ins.ty) == 1) {
+                String_append(&decls, et_cat3("    union { uint8_t b[", ec_sizes(c, ins.ty), "]; uint64_t a; void* p; } r_"));
+                String_append(&decls, et_cat(tag, ";\n"));
+                String_append(&decls, et_cat3(et_cat3("    void* ", v, " = (void*)&r_"), tag, ";\n"));
+                ec_set_kind(c, rv, 'p');
+            } else if (ins.op == EO_INLINEASM && ins.ty != null && ins.ty.kind == ETK_STRUCT) {
+                int nm = List_len<*ETy>(&ins.ty.members);
+                String_append(&decls, et_cat3("    int64_t o_", tag, et_cat3("[", et_itoa(nm > 1 ? nm : 1), "];\n")));
+                String_append(&decls, et_cat3(et_cat3("    void* ", v, " = (void*)o_"), tag, ";\n"));
+                ec_set_kind(c, rv, 'p');
+            } else {
+                int k = ec_kind_of(ins.ty);
+                String_append(&decls, et_cat3(et_cat3("    ", ec_kind_type(k), " "), v, " = 0;\n"));
+                ec_set_kind(c, rv, k);
+            }
+        }
+    }
+    if (push_count > 0) {
+        c.handler_cap = push_count * 4 > 16 ? push_count * 4 : 16;
+        String_append(&decls, et_cat3("    int32_t __eskc_hs[", et_itoa(c.handler_cap), "];\n    size_t __eskc_hd = 0;\n"));
+    } else {
+        c.handler_cap = 0;
+    }
+    if (c.saves_caught == 1) {
+        String_append(&decls, "    int32_t __eskc_cd = __eir_caught_depth();\n");
+    }
+    int is_main = et_eq(fun.name, "main");
+    string ret_type = is_main == 1 ? "int" : c.sret == 1 ? "void*" : ec_ctype(fun.ret);
+    ec_w(c, et_cat3(ret_type, " ", ec_c_name(c, fun.name)));
+    ec_w(c, "(");
+    int n = 0;
+    if (c.sret == 1) {
+        ec_w(c, "void* __eskc_sret");
+        n = 1;
+    }
+    for (i in 0..np) {
+        if (n > 0) {
+            ec_w(c, ", ");
+        }
+        if (is_main == 1 && i == 0) {
+            ec_w(c, "int __eskc_argc");
+        } else if (is_main == 1 && i == 1) {
+            ec_w(c, "char** __eskc_argv");
+        } else {
+            string pv = ec_var(et_cat("%", List_get<string>(&fun.pnames, i)));
+            ec_w(c, et_cat3(ec_ctype(List_get<*ETy>(&fun.ptypes, i)), " p_", et_sub(pv, 2, et_len(pv))));
+        }
+        n = n + 1;
+    }
+    if (n == 0 && fun.is_variadic == 0) {
+        ec_w(c, "void");
+    }
+    if (fun.is_variadic == 1) {
+        ec_w(c, ", ...");
+    }
+    ec_w(c, ") {\n");
+    for (i in 0..np) {
+        string v = ec_var(et_cat("%", List_get<string>(&fun.pnames, i)));
+        int k = ec_kind_of(List_get<*ETy>(&fun.ptypes, i));
+        string src = et_cat("p_", et_sub(v, 2, et_len(v)));
+        if (is_main == 1 && i == 0) {
+            src = "__eskc_argc";
+        } else if (is_main == 1 && i == 1) {
+            src = "__eskc_argv";
+        }
+        if (k == 'i') {
+            ec_w(c, et_cat3(et_cat3("    int64_t ", v, " = (int64_t)"), src, ";\n"));
+        } else {
+            string kt = ec_kind_type(k);
+            ec_w(c, et_cat3(et_cat3("    ", kt, " "), v, et_cat3(et_cat3(" = (", kt, ")"), src, ";\n")));
+        }
+    }
+    ec_w(c, (string)String_cstr(&decls));
+    ec_w(c, "\n");
+    for (bi in 0..List_len<*EBlock>(&fun.blocks)) {
+        *EBlock bb = List_get<*EBlock>(&fun.blocks, bi);
+        ec_w(c, et_cat(ec_label(bb.name), ": ;\n"));
+        int ni = List_len<EInst>(&bb.insts);
+        for (ii in 0..ni) {
+            EInst ins = List_get<EInst>(&bb.insts, ii);
+            ec_instruction(c, &ins);
+        }
+        if (ni == 0 || ei_is_term(List_get<EInst>(&bb.insts, ni - 1).op) == 0) {
+            ec_return(c, null);
+        }
+    }
+    if (c.throws == 1 || push_count > 0) {
+        ec_w(c, "__eskc_unwind: ;\n");
+        if (push_count > 0) {
+            ec_w(c, "    if (__eskc_hd > 0) {\n        switch (__eskc_hs[--__eskc_hd]) {\n");
+            for (id in 0..List_len<string>(&c.handlers)) {
+                ec_w(c, et_cat3("        case ", et_itoa(id), ": goto "));
+                ec_w(c, et_cat(ec_label(List_get<string>(&c.handlers, id)), ";\n"));
+            }
+            ec_w(c, "        }\n        __eskc_trap();\n    }\n");
+        }
+        if (is_main == 1) {
+            ec_w(c, "    __eir_uncaught();\n");
+        }
+        ec_return(c, null);
+    }
+    ec_w(c, "}\n\n");
+}
+
+// The module as C99 (emitModule).
+String ec_emit_module(*EModule m) {
+    EC c;
+    memset((*void)&c, 0, sizeof(EC));
+    c.m = m;
+    String_init(&c.out, 65536);
+    List_init<string>(&c.names, 64);
+    List_init<string>(&c.rec_names, 4);
+    String_init(&c.rec_defs, 256);
+    List_init<string>(&c.cabi_order, 4);
+    List_init<int>(&c.ginit_start, 16);
+    List_init<string>(&c.ginit_ty, 16);
+    List_init<string>(&c.ginit_val, 16);
+    List_init<string>(&c.handlers, 4);
+    c.throws = em_throws(m);
+    ec_w(&c, "/* Generated by the Eskiu EIR C99 backend. Compile with -fno-strict-aliasing. */\n");
+    ec_w(&c, EC_PRELUDE);
+    ec_w(&c, "\n");
+    ec_find_cabi(&c);
+    String protos;
+    String_init(&protos, 4096);
+    StrTab seen;
+    memset((*void)&seen, 0, sizeof(StrTab));
+    int nf = List_len<*EFunc>(&m.funcs);
+    for (i in 0..nf) {
+        *EFunc fun = List_get<*EFunc>(&m.funcs, i);
+        if (ec_fn_external(fun) == 0) {
+            continue;
+        }
+        if (ec_is_va_call(fun.name) == 1 || ec_is_runtime(fun.name) == 1 || ec_is_atomic(fun.name) == 1) {
+            continue;
+        }
+        if (StrTab_has(&seen, fun.name) == 1) {
+            continue;
+        }
+        StrTab_set(&seen, fun.name, 1);
+        ec_prototype(&c, fun, &protos);
+    }
+    List<string> thunks = ec_thunk_order(&c);
+    for (i in 0..List_len<string>(&thunks)) {
+        *EFunc f = ec_fn(&c, List_get<string>(&thunks, i));
+        if (ec_is_cagg(f.ret) == 1) {
+            ec_record(&c, f.ret);
+        }
+        for (k in 0..List_len<*ETy>(&f.ptypes)) {
+            *ETy pt = List_get<*ETy>(&f.ptypes, k);
+            if (ec_is_cagg(pt) == 1) {
+                ec_record(&c, pt);
+            }
+        }
+    }
+    ec_w(&c, (string)String_cstr(&c.rec_defs));
+    ec_w(&c, "\n");
+    ec_w(&c, (string)String_cstr(&protos));
+    ec_w(&c, "\n");
+    if (em_needs_runtime(m) == 1) {
+        ec_runtime_inline(&c);
+        ec_w(&c, "\n");
+    }
+    ec_implicit_decls(&c);
+    ec_global_decls(&c);
+    memset((*void)&seen, 0, sizeof(StrTab));
+    String defs;
+    String_init(&defs, 4096);
+    for (i in 0..nf) {
+        *EFunc fun = List_get<*EFunc>(&m.funcs, i);
+        if (ec_fn_external(fun) == 1 || StrTab_has(&seen, fun.name) == 1) {
+            continue;
+        }
+        StrTab_set(&seen, fun.name, 1);
+        ec_prototype(&c, fun, &defs);
+    }
+    ec_w(&c, (string)String_cstr(&defs));
+    ec_w(&c, "\n");
+    for (i in 0..List_len<string>(&thunks)) {
+        ec_cabi_thunk(&c, ec_fn(&c, List_get<string>(&thunks, i)));
+    }
+    ec_global_defs(&c);
+    memset((*void)&seen, 0, sizeof(StrTab));
+    for (i in 0..nf) {
+        *EFunc fun = List_get<*EFunc>(&m.funcs, i);
+        if (ec_fn_external(fun) == 1 || StrTab_has(&seen, fun.name) == 1) {
+            continue;
+        }
+        StrTab_set(&seen, fun.name, 1);
+        ec_function(&c, fun);
+    }
+    return c.out;
+}
