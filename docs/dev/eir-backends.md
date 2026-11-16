@@ -5,14 +5,15 @@ code without LLVM's code generator:
 
 | Mode | Output |
 |---|---|
-| `eskiuc f.esk --emit-asm [-o f.s]` | ARM64 assembly (`eir/eir_asm_arm64.cpp`), Mach-O or ELF syntax by target |
-| `eskiuc f.esk --emit-c [-o f.c]` | C99 (`eir/eir_c.cpp`) |
+| `eskiuc f.esk --emit-asm [-o f.s]` | ARM64 assembly (`eir/eir_asm_arm64.cpp`, the `Arm64Emitter` of `eir_asm_int.h`, its parts `eir_asm_*.cpp`), Mach-O or ELF syntax by target |
+| `eskiuc f.esk --emit-c [-o f.c]` | C99 (`eir/eir_c.cpp`, the `CEmitterImpl` of `eir_c_int.h`, its parts `eir_c_*.cpp`) |
 | `eskiuc f.esk -o prog --backend=eir` | an executable: the normal driver (link, `#pragma link`, implied libraries, `.a` output, `run`) with the object from EIR |
 | `eskiuc f.esk --emit-obj [-o f.o]` | the object file alone |
 
 `--backend=eir` builds the object without LLVM's code generator (`eir/eir_obj.cpp`,
 `eirUsesAsm`). At `-O0` on an arm64 target (Windows excepted) it writes ARM64 assembly and
-assembles it itself: `eir/eir_as_arm64.cpp` is an integrated assembler for the subset the
+assembles it itself: `eir/eir_as_arm64.cpp` (the `Assembler` of `eir_as_int.h`, its parts
+`eir_as_*.cpp`) is an integrated assembler for the subset the
 emitter writes (and the usual inline-asm instructions), producing a Mach-O or ELF object
 with no external assembler and no LLVM. A module whose inline asm falls outside that subset
 is assembled by the system C driver instead, and `ESKIU_EIR_EXTERNAL_AS=1` does that for
