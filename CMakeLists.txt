@@ -113,6 +113,10 @@ set(SOURCES
     eir/eir_vm_exec.cpp
     eir/eir_asm_arm64.cpp
     eir/eir_c.cpp
+    eir/eir_c_decls.cpp
+    eir/eir_c_fn.cpp
+    eir/eir_c_inst.cpp
+    eir/eir_c_call.cpp
     eir/eir_obj.cpp
     eir/eir_as_arm64.cpp
     eir/eir_runtime.cpp
