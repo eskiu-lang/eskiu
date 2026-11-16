@@ -44,6 +44,8 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 set(SOURCES
     main.cpp
     main_support.cpp
+    fmt.cpp
+    main_build.cpp
     diag_json.cpp
     doctor.cpp
     repl.cpp
