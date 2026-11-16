@@ -89,6 +89,11 @@ int load_inputs(List<string>* infiles, string primary_src, *Program prog) {
         p_init(&p, src, plen);
         p.basedir = str_dir(f);
         parse_into(&p, prog);
+        if (fi == 0) {
+            prog.tr_line = p.tr_line;
+            prog.tr_col = p.tr_col;
+            prog.tr_name = p.tr_name;
+        }
         fi = fi + 1;
     }
     // A program has one main: a script's statements are its main, so no other input may
@@ -551,6 +556,17 @@ int run_tool(string tool, string at, List<string>* infiles, string triple) {
         sm.tool = 3;
     }
     int ok2 = sema_check(&sm, prog);
+    if (sm.tool != 3) {
+        *DeclNode td = sema_tool_type_at(&sm, prog);   // a type name: its declaration
+        if (td != null) {
+            if (sm.tool == 1) {
+                printf("%s\n", sema_tool_type_text(td));
+            } else {
+                printf("%s\n", sema_tool_loc(sema_tool_typedecl_file(&sm, td), td.line, td.col));
+            }
+            return 0;
+        }
+    }
     if (sm.tool == 3) {
         int i = 0;
         while (i < List_len<string>(&sm.tc_name)) {

@@ -154,6 +154,15 @@ public:
     // --references-at: every place in the primary file that names the symbol at the
     // cursor, its definition included, as "file:line:col:width" sorted by position.
     std::vector<std::string> getReferencesAt(int line, int col) const;
+    // Type names: every named type written in the primary input (Program::typeRefs) and
+    // every declared type (struct, union, enum, interface, alias) with its declaration
+    // text, so a type name resolves to its declaration and hovers as `struct Point`.
+    struct TypeDef { DefLocation loc; std::string detail; };
+    std::map<std::string, TypeDef> typeDefs;
+    std::vector<Program::TypeRef> typeRefs;
+    void noteTypeDecls(const Program* program);
+    // The declared type named at (line, col), where it is written or declared; null if none.
+    const TypeDef* typeDefAt(int line, int col) const;
     // Declared-name hover spans (variables, parameters): cursor on the declared
     // name → its type, even though the name is not an expression node.
     struct HoverSym { int line; int col; int width; std::string type; };

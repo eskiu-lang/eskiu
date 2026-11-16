@@ -1,0 +1,85 @@
+// Part of sema.esk (editor modes), imported from sema_tooling.esk; compile sema.esk, not this file alone.
+
+// ── Type names in the editor modes (mirrors the C++ TypeChecker::typeDefAt): a named
+// type written in the primary input (Program.tr_*, recorded by the parser) or declared
+// there resolves to its declaration, and hovers as its declaration text.
+
+int sema_tool_is_typedecl(*DeclNode d) {
+    if (d.kind == DK_STRUCT || d.kind == DK_UNION || d.kind == DK_ENUM || d.kind == DK_INTERFACE || d.kind == DK_TYPEALIAS) {
+        return 1;
+    }
+    return 0;
+}
+
+// The declaration a type name refers to: the first one of that name (C++ typeDefs).
+*DeclNode sema_tool_typedecl(*Program prog, string name) {
+    int i = 0;
+    while (i < List_len<*DeclNode>(&prog.decls)) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        if (sema_tool_is_typedecl(d) == 1 && d.line > 0 && sema_streq(d.name, name) == 1) {
+            return d;
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+string sema_tool_typedecl_file(Sema* s, *DeclNode d) {
+    if (d.file == null || d.file[0] == 0) {
+        return s.primary;
+    }
+    return d.file;
+}
+
+// The declared type named at the query position, where it is written or declared; null
+// if none.
+*DeclNode sema_tool_type_at(Sema* s, *Program prog) {
+    int line = s.tq_line;
+    int c = s.tq_col;
+    int i = 0;
+    while (i < List_len<int>(&prog.tr_line)) {
+        int rc = List_get<int>(&prog.tr_col, i);
+        string rn = List_get<string>(&prog.tr_name, i);
+        if (List_get<int>(&prog.tr_line, i) == line && c >= rc && c < rc + sema_slen(rn)) {
+            *DeclNode d = sema_tool_typedecl(prog, rn);
+            if (d != null) {
+                return d;
+            }
+        }
+        i = i + 1;
+    }
+    *DeclNode best = null;                 // declarations in name order
+    i = 0;
+    while (i < List_len<*DeclNode>(&prog.decls)) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        i = i + 1;
+        if (sema_tool_is_typedecl(d) == 0 || d.line != line || c < d.col || c >= d.col + sema_slen(d.name)) {
+            continue;
+        }
+        if (sema_tool_typedecl(prog, d.name) != d || sema_streq(sema_tool_typedecl_file(s, d), s.primary) == 0) {
+            continue;
+        }
+        if (best == null || strcmp(d.name, best.name) < 0) {
+            best = d;
+        }
+    }
+    return best;
+}
+
+// A type declaration as hover shows it: `struct Point`, `type A = Point`.
+string sema_tool_type_text(*DeclNode d) {
+    if (d.kind == DK_STRUCT) {
+        return sema_cat("struct ", d.name);
+    }
+    if (d.kind == DK_UNION) {
+        return sema_cat("union ", d.name);
+    }
+    if (d.kind == DK_ENUM) {
+        return sema_cat("enum ", d.name);
+    }
+    if (d.kind == DK_INTERFACE) {
+        return sema_cat("interface ", d.name);
+    }
+    return sema_cat(sema_cat(sema_cat("type ", d.name), " = "), d.ret_type);
+}
+

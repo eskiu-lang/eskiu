@@ -557,3 +557,4 @@ void sema_tool_add_group(Sema* s, StrTab* seen, string kind, List<string>* names
 // The rest of sema_tooling.esk, in these parts (imported in order):
 import "sema_tooling_query.esk";
 import "sema_tooling_check.esk";
+import "sema_tooling_types.esk";

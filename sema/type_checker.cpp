@@ -22,6 +22,7 @@ TypeChecker::TypeChecker() {
 bool TypeChecker::check(Program* program) {
     hasErrors = false;
     errors.clear();
+    noteTypeDecls(program);
 
     // Every `&name` in the program: a global whose address is taken is never narrowed.
     for (const auto& decl : program->declarations) {

@@ -34,7 +34,35 @@ static int hoverSpanWidth(const Expr* e) {
 
 static std::string userSpelling(const std::string& msg);   // below, with the diagnostics
 
+void TypeChecker::noteTypeDecls(const Program* program) {
+    typeRefs = program->typeRefs;
+    for (const auto& d : program->declarations) {
+        std::string detail;
+        if (nodeCast<StructDecl>(d.get())) detail = "struct " + d->name;
+        else if (nodeCast<UnionDecl>(d.get())) detail = "union " + d->name;
+        else if (nodeCast<EnumDecl>(d.get())) detail = "enum " + d->name;
+        else if (nodeCast<InterfaceDecl>(d.get())) detail = "interface " + d->name;
+        else if (auto* a = nodeCast<TypeAliasDecl>(d.get())) detail = "type " + a->name + " = " + a->aliased;
+        else continue;
+        if (d->line <= 0) continue;
+        typeDefs.emplace(d->name, TypeDef{{d->line, d->col, d->sourceFile.empty() ? sourceFile : d->sourceFile}, detail});
+    }
+}
+
+const TypeChecker::TypeDef* TypeChecker::typeDefAt(int line, int col) const {
+    for (const auto& r : typeRefs) {
+        if (r.line != line || col < r.col || col >= r.col + (int)r.name.size()) continue;
+        auto it = typeDefs.find(r.name);
+        if (it != typeDefs.end()) return &it->second;
+    }
+    for (const auto& [name, t] : typeDefs)
+        if (t.loc.file == sourceFile && t.loc.line == line && col >= t.loc.col && col < t.loc.col + (int)name.size())
+            return &t;
+    return nullptr;
+}
+
 std::string TypeChecker::getTypeAtPosition(int line, int col) const {
+    if (const TypeDef* t = typeDefAt(line, col)) return t->detail;
     // Return a type only when the cursor is within an expression's token span —
     // never for keywords, type annotations, operators, or whitespace. Among the
     // expressions that contain the cursor, prefer the narrowest (most specific).
@@ -75,6 +103,8 @@ std::string TypeChecker::getDefinitionAt(int line, int col) const {
     auto fmtLoc = [](const DefLocation& loc) {
         return loc.file + ":" + std::to_string(loc.line) + ":" + std::to_string(loc.col);
     };
+    // 0. A type name, where it is written or declared.
+    if (const TypeDef* t = typeDefAt(line, col)) return fmtLoc(t->loc);
     // 1. A use of a local/parameter whose name spans the cursor: the definition is
     //    the symbol scope resolution picked at that use.
     for (const auto& [pos, use] : useDefs) {
@@ -148,6 +178,16 @@ std::vector<std::string> TypeChecker::getReferencesAt(int line, int col) const {
             defWidth = (int)name.size();
         }
     }
+    for (const auto& r : typeRefs) {
+        auto td = typeDefs.find(r.name);
+        if (td != typeDefs.end() && fmtLoc(td->second.loc) == target) {
+            uses[{r.line, r.col}] = (int)r.name.size();
+            defWidth = (int)r.name.size();
+        }
+    }
+    if (!defWidth)
+        for (const auto& [name, t] : typeDefs)
+            if (fmtLoc(t.loc) == target) defWidth = (int)name.size();
     int width = 0;
     for (const auto& [pos, w] : uses)
         if (pos.first == line && col >= pos.second && col < pos.second + w) width = w;
