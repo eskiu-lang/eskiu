@@ -1,0 +1,389 @@
+// eir_a_inst.esk: instructions (part of eir_a_fn.esk, imported in order)
+
+// ---- Instructions ----
+
+void ea_instruction(EA* a, EInst* ins, string ret_label, string unwind_label, String* os) {
+    int op = ins.op;
+    int nops = List_len<EOp>(&ins.ops);
+    EOp o0;
+    EOp o1;
+    EOp o2;
+    if (nops > 0) {
+        o0 = ei_op(ins, 0);
+    }
+    if (nops > 1) {
+        o1 = ei_op(ins, 1);
+    }
+    if (nops > 2) {
+        o2 = ei_op(ins, 2);
+    }
+    *ETy ty = ins.ty;
+    // A stack slot starts zeroed each time its alloca runs, as in the EVM.
+    if (op == EO_ALLOCA) {
+        int64 sz = ea_align_up(ea_size_of(a, ty), 8);
+        ea_add_imm("x10", "sp", ea_slot_of(a, ins.res), os);
+        if (sz <= 128) {
+            int64 b = 0;
+            while (b < sz) {
+                ea_w(os, et_cat3("    str xzr, [x10, #", ea_l(b), "]\n"));
+                b = b + 8;
+            }
+        } else {
+            string loop = ea_new_local(a, "zero");
+            ea_mov_imm("x12", sz / 8, os);
+            ea_w(os, et_cat3(loop, ":\n    str xzr, [x10], #8\n    subs x12, x12, #1\n    b.ne ", et_cat(loop, "\n")));
+        }
+    } else if (op == EO_STORE) {
+        *ETy val_ty = o0.ty;
+        *ETy dst_ty = et_is_ptr(o1.ty) == 1 && o1.ty.elem != null ? o1.ty.elem : val_ty;
+        if (et_is_agg(dst_ty) == 1 || (dst_ty == null && et_is_agg(val_ty) == 1)) {
+            ea_load_operand(a, &o0, 9, os);
+            ea_load_operand(a, &o1, 10, os);
+            ea_copy_bytes(a, ea_size_of(a, dst_ty != null ? dst_ty : val_ty), os);
+            return;
+        }
+        ea_load_operand(a, &o1, 10, os);
+        if (et_is_float(dst_ty) == 1) {
+            int is32 = dst_ty.bits == 32 ? 1 : 0;
+            ea_load_float(a, &o0, 16, is32, os);
+            ea_w(os, is32 == 1 ? "    str s16, [x10]\n" : "    str d16, [x10]\n");
+            return;
+        }
+        int val_float = et_is_float(val_ty) == 1 || o0.kind == EOK_FLOAT ? 1 : 0;
+        if (val_float == 1 && et_is_int(dst_ty) == 1) {
+            ea_load_float(a, &o0, 16, 0, os);
+            ea_w(os, "    fcvtzs x9, d16\n");
+        } else {
+            ea_load_operand(a, &o0, 9, os);
+        }
+        int64 w = et_is_int(dst_ty) == 1 ? et_type_size(dst_ty, null) : 8;
+        if (w == 1) {
+            ea_w(os, "    strb w9, [x10]\n");
+        } else if (w == 2) {
+            ea_w(os, "    strh w9, [x10]\n");
+        } else if (w == 4) {
+            ea_w(os, "    str w9, [x10]\n");
+        } else {
+            ea_w(os, "    str x9, [x10]\n");
+        }
+    } else if (op == EO_LOAD) {
+        ea_load_operand(a, &o0, 10, os);
+        if (et_is_agg(ty) == 1) {
+            ea_store_x(a, "x10", ins.res, os);
+        } else if (et_is_float(ty) == 1) {
+            int is32 = ty.bits == 32 ? 1 : 0;
+            ea_w(os, is32 == 1 ? "    ldr s16, [x10]\n" : "    ldr d16, [x10]\n");
+            ea_store_float(a, 16, is32, ins.res, os);
+        } else {
+            ea_load_sized("x9", "x10", 0, ty, os);
+            ea_store_x(a, "x9", ins.res, os);
+        }
+    } else if (op == EO_FIELDPTR) {
+        string sname = et_s(o0.text);
+        ea_load_operand(a, &o1, 10, os);
+        string fname = et_s(o2.text);
+        int64 off = em_field_offset(a.m, sname, fname);
+        if (off == 0 && (et_len(sname) == 0 || et_eq(sname, "slice") == 1)) {
+            if (et_eq(fname, "len") == 1) {
+                off = 8;
+            }
+        }
+        ea_add_imm("x10", "x10", off, os);
+        ea_store_x(a, "x10", ins.res, os);
+    } else if (op == EO_OFFSETPTR) {
+        ea_load_operand(a, &o0, 9, os);
+        ea_load_operand(a, &o1, 10, os);
+        ea_w(os, "    add x9, x9, x10\n");
+        ea_store_x(a, "x9", ins.res, os);
+    } else if (op == EO_GEP) {
+        ea_load_operand(a, &o0, 9, os);
+        ea_load_operand(a, &o1, 10, os);
+        *ETy elem = ty.elem != null ? ty.elem : ty;
+        int64 es = ea_size_of(a, elem);
+        if (es == 1) {
+            ea_w(os, "    add x9, x9, x10\n");
+        } else if (es == 2) {
+            ea_w(os, "    add x9, x9, x10, lsl #1\n");
+        } else if (es == 4) {
+            ea_w(os, "    add x9, x9, x10, lsl #2\n");
+        } else if (es == 8) {
+            ea_w(os, "    add x9, x9, x10, lsl #3\n");
+        } else {
+            ea_mov_imm("x11", es, os);
+            ea_w(os, "    madd x9, x10, x11, x9\n");
+        }
+        ea_store_x(a, "x9", ins.res, os);
+    } else if (op == EO_ADD || op == EO_SUB || op == EO_MUL) {
+        // Integer values follow the EVM: 64-bit arithmetic, wrapped to 32 bits for a
+        // 32-bit add/sub/mul, a narrow unsigned bitwise result masked to its width,
+        // shifts done at the type's width with the count masked.
+        ea_load_operand(a, &o0, 9, os);
+        ea_load_operand(a, &o1, 10, os);
+        string mn = op == EO_ADD ? "add" : op == EO_SUB ? "sub" : "mul";
+        if (et_is_int(ty) == 1 && ty.bits == 32) {
+            ea_w(os, et_cat3("    ", mn, " w9, w9, w10\n"));
+            ea_normalize(9, ty, os);
+        } else {
+            ea_w(os, et_cat3("    ", mn, " x9, x9, x10\n"));
+        }
+        ea_store_x(a, "x9", ins.res, os);
+    } else if (op == EO_AND || op == EO_OR || op == EO_XOR) {
+        ea_load_operand(a, &o0, 9, os);
+        ea_load_operand(a, &o1, 10, os);
+        string mn = op == EO_AND ? "and" : op == EO_OR ? "orr" : "eor";
+        ea_w(os, et_cat3("    ", mn, " x9, x9, x10\n"));
+        if (et_is_int(ty) == 1 && ty.sgn == 0 && ty.bits > 1 && ty.bits < 64) {
+            ea_normalize(9, ty, os);
+        }
+        ea_store_x(a, "x9", ins.res, os);
+    } else if (op == EO_SHL || op == EO_LSHR || op == EO_ASHR) {
+        ea_load_operand(a, &o0, 9, os);
+        ea_load_operand(a, &o1, 10, os);
+        int bw = et_is_int(ty) == 1 && ty.bits > 1 ? ty.bits : 64;
+        string mn = ea_shift_mn(op);
+        string ext = op == EO_ASHR ? "    sbfx x9, x9, #0, #" : "    ubfx x9, x9, #0, #";
+        if (bw < 32) {
+            ea_w(os, et_cat3("    and x10, x10, #", et_itoa(bw - 1), "\n"));
+            ea_w(os, et_cat3(ext, et_itoa(bw), "\n"));
+            ea_w(os, et_cat3("    ", mn, " x9, x9, x10\n"));
+            ea_w(os, et_cat3(ext, et_itoa(bw), "\n"));
+        } else if (bw == 32) {
+            ea_w(os, et_cat3("    ", mn, " w9, w9, w10\n"));
+            if (op == EO_LSHR) {
+                ea_w(os, "    mov w9, w9\n");
+            } else if (op == EO_ASHR) {
+                ea_w(os, "    sxtw x9, w9\n");
+            } else {
+                ea_normalize(9, ty, os);
+            }
+        } else {
+            ea_w(os, et_cat3("    ", mn, " x9, x9, x10\n"));
+        }
+        ea_store_x(a, "x9", ins.res, os);
+    } else if (op == EO_SDIV || op == EO_UDIV || op == EO_SREM || op == EO_UREM) {
+        ea_load_operand(a, &o0, 9, os);
+        ea_load_operand(a, &o1, 10, os);
+        ea_div_check(a, &o1, os);
+        int sgn = op == EO_SDIV || op == EO_SREM ? 1 : 0;
+        int is32 = sgn == 1 && et_is_int(ty) == 1 && ty.bits == 32 ? 1 : 0;
+        string r = is32 == 1 ? "w" : "x";
+        ea_w(os, et_cat3(sgn == 1 ? "    sdiv " : "    udiv ", r, et_cat3("11, ", r, et_cat3("9, ", r, "10\n"))));
+        if (op == EO_SREM || op == EO_UREM) {
+            ea_w(os, et_cat3(et_cat3("    msub ", r, "9, "), r, et_cat3("11, ", r, et_cat3("10, ", r, "9\n"))));
+        } else {
+            ea_w(os, et_cat3(et_cat3("    mov ", r, "9, "), r, "11\n"));
+        }
+        if (is32 == 1) {
+            ea_w(os, "    sxtw x9, w9\n");
+        }
+        ea_store_x(a, "x9", ins.res, os);
+    } else if (op == EO_FADD || op == EO_FSUB || op == EO_FMUL || op == EO_FDIV) {
+        int is32 = ty != null && ty.bits == 32 ? 1 : 0;
+        ea_load_float(a, &o0, 16, is32, os);
+        ea_load_float(a, &o1, 17, is32, os);
+        string fa = is32 == 1 ? "s16" : "d16";
+        string fb = is32 == 1 ? "s17" : "d17";
+        string mn = op == EO_FADD ? "fadd" : op == EO_FSUB ? "fsub" : op == EO_FMUL ? "fmul" : "fdiv";
+        ea_w(os, et_cat3(et_cat3("    ", mn, " "), fa, et_cat3(", ", fa, et_cat3(", ", fb, "\n"))));
+        ea_store_float(a, 16, is32, ins.res, os);
+    } else if (op == EO_NOT) {
+        ea_load_operand(a, &o0, 9, os);
+        ea_w(os, "    mvn x9, x9\n");
+        ea_store_x(a, "x9", ins.res, os);
+    } else if (op == EO_NEG) {
+        if (et_is_float(ty) == 1) {
+            int is32 = ty.bits == 32 ? 1 : 0;
+            ea_load_float(a, &o0, 16, is32, os);
+            ea_w(os, is32 == 1 ? "    fneg s16, s16\n" : "    fneg d16, d16\n");
+            ea_store_float(a, 16, is32, ins.res, os);
+        } else {
+            ea_load_operand(a, &o0, 9, os);
+            ea_w(os, "    neg x9, x9\n");
+            ea_store_x(a, "x9", ins.res, os);
+        }
+    } else if (op == EO_ICMP) {
+        ea_load_operand(a, &o0, 9, os);
+        ea_load_operand(a, &o1, 10, os);
+        if (et_is_iface(o0.ty) == 1) {
+            ea_w(os, "    cbz x9, 1f\n    ldr x9, [x9]\n1:\n");
+        }
+        if (et_is_iface(o1.ty) == 1) {
+            ea_w(os, "    cbz x10, 1f\n    ldr x10, [x10]\n1:\n");
+        }
+        ea_w(os, "    cmp x9, x10\n");
+        ea_w(os, et_cat3("    cset x9, ", ea_icond(ins.icmp), "\n"));
+        ea_store_x(a, "x9", ins.res, os);
+    } else if (op == EO_FCMP) {
+        int is32 = et_is_float(o0.ty) == 1 && o0.ty.bits == 32 && (et_is_float(o1.ty) == 0 || o1.ty.bits == 32) ? 1 : 0;
+        ea_load_float(a, &o0, 16, is32, os);
+        ea_load_float(a, &o1, 17, is32, os);
+        ea_w(os, is32 == 1 ? "    fcmp s16, s17\n" : "    fcmp d16, d17\n");
+        ea_w(os, et_cat3("    cset x9, ", ea_fcond(ins.fcmp), "\n"));
+        ea_store_x(a, "x9", ins.res, os);
+    } else if (op == EO_SITOFP) {
+        int is32 = ty != null && ty.bits == 32 ? 1 : 0;
+        ea_load_operand(a, &o0, 9, os);
+        int uns = et_is_int(o0.ty) == 1 && o0.ty.sgn == 0 ? 1 : 0;
+        ea_w(os, et_cat3(uns == 1 ? "    ucvtf " : "    scvtf ", is32 == 1 ? "s16" : "d16", ", x9\n"));
+        ea_store_float(a, 16, is32, ins.res, os);
+    } else if (op == EO_FPTOSI) {
+        int src32 = et_is_float(o0.ty) == 1 && o0.ty.bits == 32 ? 1 : 0;
+        ea_load_float(a, &o0, 16, src32, os);
+        int uns = et_is_int(ty) == 1 && ty.sgn == 0 ? 1 : 0;
+        int bw = et_is_int(ty) == 1 ? ty.bits : 32;
+        string src = src32 == 1 ? "s16" : "d16";
+        string cv = uns == 1 ? "    fcvtzu" : "    fcvtzs";
+        if (bw > 32) {
+            ea_w(os, et_cat3(cv, " x9, ", et_cat(src, "\n")));
+        } else {
+            ea_w(os, et_cat3(cv, " w9, ", et_cat(src, "\n")));
+            if (bw < 32 && bw > 1) {
+                int64 one = 1;
+                int64 hi = uns == 1 ? (one << (int64)bw) - 1 : (one << (int64)(bw - 1)) - 1;
+                ea_mov_imm("w10", hi, os);
+                ea_w(os, "    cmp w9, w10\n");
+                ea_w(os, et_cat3("    csel w9, w10, w9, ", uns == 1 ? "hi" : "gt", "\n"));
+                if (uns == 0) {
+                    ea_mov_imm("w10", -(one << (int64)(bw - 1)), os);
+                    ea_w(os, "    cmp w9, w10\n");
+                    ea_w(os, "    csel w9, w10, w9, lt\n");
+                }
+            }
+        }
+        ea_normalize(9, ty, os);
+        ea_store_x(a, "x9", ins.res, os);
+    } else if (op == EO_FPTRUNC) {
+        ea_load_float(a, &o0, 16, 1, os);
+        ea_store_float(a, 16, 1, ins.res, os);
+    } else if (op == EO_FPEXT) {
+        ea_load_float(a, &o0, 16, 0, os);
+        ea_store_float(a, 16, 0, ins.res, os);
+    } else if (op == EO_TRUNC) {
+        ea_load_operand(a, &o0, 9, os);
+        ea_normalize(9, ty, os);
+        ea_store_x(a, "x9", ins.res, os);
+    } else if (op == EO_SEXT || op == EO_ZEXT) {
+        ea_load_operand(a, &o0, 9, os);
+        int bw = et_is_int(o0.ty) == 1 ? o0.ty.bits : 64;
+        if (bw < 64) {
+            string ext = op == EO_SEXT ? "    sbfx x9, x9, #0, #" : "    ubfx x9, x9, #0, #";
+            ea_w(os, et_cat3(ext, et_itoa(bw), "\n"));
+        }
+        ea_normalize(9, ty, os);
+        ea_store_x(a, "x9", ins.res, os);
+    } else if (op == EO_BITCAST || op == EO_PTRTOINT || op == EO_INTTOPTR) {
+        int src_f = et_is_float(o0.ty);
+        int dst_f = et_is_float(ty);
+        if (src_f == 1 && dst_f == 1) {
+            int is32 = ty.bits == 32 ? 1 : 0;
+            ea_load_float(a, &o0, 16, is32, os);
+            ea_store_float(a, 16, is32, ins.res, os);
+        } else if (src_f == 1) {
+            int is32 = o0.ty.bits == 32 ? 1 : 0;
+            ea_load_float(a, &o0, 16, is32, os);
+            ea_w(os, is32 == 1 ? "    fmov w9, s16\n" : "    fmov x9, d16\n");
+            ea_normalize(9, ty, os);
+            ea_store_x(a, "x9", ins.res, os);
+        } else if (dst_f == 1) {
+            ea_load_operand(a, &o0, 9, os);
+            int is32 = ty.bits == 32 ? 1 : 0;
+            ea_w(os, is32 == 1 ? "    fmov s16, w9\n" : "    fmov d16, x9\n");
+            ea_store_float(a, 16, is32, ins.res, os);
+        } else {
+            ea_load_operand(a, &o0, 9, os);
+            ea_normalize(9, ty, os);
+            ea_store_x(a, "x9", ins.res, os);
+        }
+    } else if (op == EO_BR) {
+        ea_w(os, et_cat3("    b ", ea_block_label(a, o0.text), "\n"));
+    } else if (op == EO_BRCOND) {
+        ea_load_operand(a, &o0, 9, os);
+        ea_w(os, et_cat3("    cbnz x9, ", ea_block_label(a, o1.text), "\n"));
+        ea_w(os, et_cat3("    b ", ea_block_label(a, o2.text), "\n"));
+    } else if (op == EO_SWITCH) {
+        ea_load_operand(a, &o0, 9, os);
+        for (k in 0..List_len<int64>(&ins.case_vals)) {
+            ea_mov_imm("x10", List_get<int64>(&ins.case_vals, k), os);
+            ea_w(os, "    cmp x9, x10\n");
+            ea_w(os, et_cat3("    b.eq ", ea_block_label(a, List_get<string>(&ins.case_lbls, k)), "\n"));
+        }
+        if (et_len(ins.dflt) > 0) {
+            ea_w(os, et_cat3("    b ", ea_block_label(a, ins.dflt), "\n"));
+        }
+    } else if (op == EO_CALL || op == EO_CALLINDIRECT) {
+        ea_call(a, ins, unwind_label, os);
+    } else if (op == EO_MAKECLOSURE || op == EO_MAKEIFACE || op == EO_MAKESLICE) {
+        int64 slot = ea_slot_of(a, ins.res);
+        ea_load_operand(a, &o0, 9, os);
+        ea_mem_op("str", "x9", "sp", slot, 8, os);
+        ea_load_operand(a, &o1, 9, os);
+        ea_mem_op("str", "x9", "sp", slot + 8, 8, os);
+    } else if (op == EO_EXTRACTFAT) {
+        ea_load_operand(a, &o0, 10, os);
+        int64 idx = o1.kind == EOK_INT ? o1.iv : 0;
+        if (et_is_float(ty) == 1) {
+            int is32 = ty.bits == 32 ? 1 : 0;
+            ea_mem_op("ldr", is32 == 1 ? "s16" : "d16", "x10", idx * 8, is32 == 1 ? 4 : 8, os);
+            ea_store_float(a, 16, is32, ins.res, os);
+        } else {
+            ea_mem_op("ldr", "x9", "x10", idx * 8, 8, os);
+            ea_normalize(9, ty, os);
+            ea_store_x(a, "x9", ins.res, os);
+        }
+    } else if (op == EO_RET) {
+        int has_val = nops > 0 && o0.ty != null && et_is_void(o0.ty) == 0 ? 1 : 0;
+        *ETy rt = a.fun.ret;
+        if (a.has_sret == 1) {
+            ea_mem_op("ldr", "x10", "sp", a.sret_slot, 8, os);
+            if (has_val == 1) {
+                ea_load_operand(a, &o0, 9, os);
+                ea_copy_bytes(a, ea_size_of(a, rt), os);
+            }
+            ea_mem_op("ldr", "x0", "sp", a.sret_slot, 8, os);
+        } else if (has_val == 1 && et_is_float(rt) == 1) {
+            ea_load_float(a, &o0, 0, rt.bits == 32 ? 1 : 0, os);
+        } else if (has_val == 1) {
+            ea_load_operand(a, &o0, 0, os);
+        } else if (et_eq(a.fun.name, "main") == 1) {
+            ea_w(os, "    mov x0, #0\n");
+        }
+        ea_w(os, et_cat3("    b ", ret_label, "\n"));
+    } else if (op == EO_UNREACHABLE) {
+        ea_w(os, "    brk #1\n");
+    } else if (op == EO_THROW) {
+        ea_load_operand(a, &o0, 0, os);
+        ea_w(os, et_cat3("    bl ", ea_mangle(a, "__eir_throw"), "\n"));
+        ea_w(os, et_cat3("    b ", unwind_label, "\n"));
+    } else if (op == EO_LANDINGPAD) {
+        ea_w(os, et_cat3("    bl ", ea_mangle(a, "__eir_take_exception"), "\n"));
+        if (et_len(ins.res) > 0) {
+            ea_store_x(a, "x0", ins.res, os);
+        }
+    } else if (op == EO_PUSHHANDLER) {
+        int id = StrTab_get(&a.handler_ix, o0.text, -1);
+        string ok = ea_new_local(a, "hok");
+        ea_mem_op("ldr", "x9", "sp", a.hdepth_slot, 8, os);
+        ea_mov_imm("x10", a.hcap, os);
+        ea_w(os, "    cmp x9, x10\n");
+        ea_w(os, et_cat3("    b.lo ", ok, "\n"));
+        ea_w(os, "    brk #1\n");
+        ea_w(os, et_cat(ok, ":\n"));
+        ea_add_imm("x10", "sp", a.hstack_slot, os);
+        ea_mov_imm("x11", (int64)id, os);
+        ea_w(os, "    str x11, [x10, x9, lsl #3]\n");
+        ea_w(os, "    add x9, x9, #1\n");
+        ea_mem_op("str", "x9", "sp", a.hdepth_slot, 8, os);
+    } else if (op == EO_POPHANDLER) {
+        if (a.hcap == 0) {
+            return;
+        }
+        ea_mem_op("ldr", "x9", "sp", a.hdepth_slot, 8, os);
+        ea_w(os, "    subs x9, x9, #1\n");
+        ea_w(os, "    csel x9, xzr, x9, lt\n");
+        ea_mem_op("str", "x9", "sp", a.hdepth_slot, 8, os);
+    } else if (op == EO_INLINEASM) {
+        ea_inline_asm(a, ins, os);
+    } else {
+        ea_fail(et_cat("unsupported instruction ", ei_render(ins)));
+    }
+}
