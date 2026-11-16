@@ -1,0 +1,210 @@
+// sema_stmt_entry.esk: variant arguments, match arms and the entry (part of sema_stmt.esk, imported in order)
+
+// A variant constructor call `V(args)` (`targs` = explicit type arguments of `V<..>(..)`,
+// or null): the argument count must match the payload, and for a non-generic enum (or
+// explicit type arguments) each argument must convert to its field type.
+void sema_check_variant_args(Sema* s, *ExprNode e, string v, List<string>* targs) {
+    *DeclNode ed = sema_variant_enum(s, v);
+    if (ed == null) {
+        return;
+    }
+    int vi = sema_variant_index(ed, v);
+    if (vi < 0 || vi >= List_len<List<string>>(&ed.payloads)) {
+        return;
+    }
+    List<string> pl = List_get<List<string>>(&ed.payloads, vi);
+    int want = List_len<string>(&pl);
+    int got = List_len<*ExprNode>(&e.kids);
+    if (want == 0 && targs == null && List_len<TypeParam>(&ed.type_params) == 0 && sema_is_plain_enum_decl(ed) == 0) {
+        s.had_error = 1;                   // a nullary variant is written bare: `B`
+        dprintf(2, "error: %s:%d:%d: variant '%s' takes no arguments\n", s.filename, s.line, s.col, v);
+        return;
+    }
+    if (want != got) {
+        s.had_error = 1;
+        dprintf(2, "error: %s:%d:%d: variant '%s' expects %d argument(s), got %d\n", s.filename, s.line, s.col, v, want, got);
+        return;
+    }
+    int tn = List_len<TypeParam>(&ed.type_params);
+    List<string> subs;
+    List_init<string>(&subs, 2);
+    if (targs != null) {
+        int ti = 0;
+        while (ti < List_len<string>(targs)) {
+            List_push<string>(&subs, sema_isub(s, List_get<string>(targs, ti)));
+            ti = ti + 1;
+        }
+    }
+    if (tn > 0 && List_len<string>(&subs) != tn) {
+        return;
+    }
+    int i = 0;
+    while (i < want) {
+        string ft = sema_subst_params(List_get<string>(&pl, i), &ed.type_params, &subs);
+        string at = sema_infer_type(s, List_get<*ExprNode>(&e.kids, i));
+        *ExprNode av = List_get<*ExprNode>(&e.kids, i);
+        string fc = sema_canon(s, ft);
+        if (sema_assign_strict(s, ft, at)[0] != 0) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: variant '%s' argument %d type mismatch\n", s.filename, s.line, s.col, v, i + 1);
+        } else if (sema_is_int_ty(fc) == 1 && av != null && av.kind == EK_LITERAL && av.lit_kind == LIT_INT
+                   && sema_int_lit_fits(fc, av.sval) == 0) {
+            s.had_error = 1;                   // a literal must fit the payload, as for a function argument
+            dprintf(2, "error: %s:%d:%d: variant '%s' argument %d: integer literal %s is out of range for '%s'\n",
+                    s.filename, s.line, s.col, v, i + 1, av.sval, ft);
+        }
+        i = i + 1;
+    }
+}
+
+// Index of variant `v` among enum `d`'s members, or -1.
+int sema_variant_index(*DeclNode d, string v) {
+    int i = 0;
+    while (i < List_len<Param>(&d.params)) {
+        if (sema_streq(List_get<Param>(&d.params, i).name, v) == 1) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+// The payload binding names of a match-arm label "Variant(a, b)" into `out`.
+void sema_arm_binds(string label, List<string>* out) {
+    int i = 0;
+    while (label[i] != 0 && (int)label[i] != 40) {
+        i = i + 1;
+    }
+    if (label[i] == 0) {
+        return;
+    }
+    int n = sema_slen(label);
+    int close = n - 1;
+    while (close > i && (int)label[close] != 41) {
+        close = close - 1;
+    }
+    int start = i + 1;
+    int j = i + 1;
+    while (j <= close) {
+        if ((int)label[j] == 44 || j == close) {
+            string one = sema_trim_sub(label, start, j);
+            if (one[0] != 0) {
+                List_push<string>(out, one);
+            }
+            start = j + 1;
+        }
+        j = j + 1;
+    }
+}
+
+// ── entry ──
+
+// Register top-level names that can be referenced as a bare identifier: functions,
+// externs, intrinsics, global vars, and enum members (constants / variant ctors).
+// Diagnostics inside `d` name the file it was parsed from (the primary input if unknown).
+void sema_enter_decl(Sema* s, *DeclNode d, string primary) {
+    s.filename = primary;
+    s.cur_import = d.from_import;
+    if (d.file != null) {
+        if (d.file[0] != 0) {
+            s.filename = d.file;
+        }
+    }
+}
+
+void sema_register_globals(Sema* s, *Program prog) {
+    string primary = s.filename;
+    int i = 0;
+    int n = List_len<*DeclNode>(&prog.decls);
+    while (i < n) {
+        *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        sema_enter_decl(s, d, primary);
+        if (d.kind == DK_FUNCTION || d.kind == DK_EXTERN
+            || d.kind == DK_INTRINSIC || d.kind == DK_VARDECL) {
+            string gty = "";
+            if (d.kind == DK_VARDECL) {   // global var's type
+                gty = d.ret_type;
+            }
+            sema_define(s, d.name, gty, d.is_const);
+            if (d.kind == DK_VARDECL) {
+                sema_set_const_init(s, d.init);
+                StrTab_set(&s.gvar_set, d.name, 1);
+            }
+            // Global array literal must fit the fixed size (locals are checked in SK_VARDECL).
+            if (d.kind == DK_VARDECL && d.init != null && d.init.kind == EK_ARRAYLIT
+                && d.ret_type != null && d.ret_type[0] != 0) {
+                sema_check_arr_init(s, d.ret_type, d.init);
+            }
+        }
+        if (d.kind == DK_FUNCTION || d.kind == DK_EXTERN || d.kind == DK_INTRINSIC) {
+            sema_register_fn(s, d);
+            List_push<*DeclNode>(&s.fndecls, d);
+            NameIdx_push(&s.fndecls_ix, d.name);
+            if (d.operator_sym != null) {
+                s.has_ops = 1;
+            }
+        }
+        if (d.kind == DK_INTERFACE) {
+            List_push<*DeclNode>(&s.ifaces, d);
+        }
+        if (d.kind == DK_STRUCT || d.kind == DK_UNION || d.kind == DK_INTERFACE
+            || d.kind == DK_ENUM || d.kind == DK_TYPEALIAS) {
+            List_push<string>(&s.types, d.name);
+            List_push<*DeclNode>(&s.tdecls, d);
+            NameIdx_push(&s.tdecls_ix, d.name);
+            if (d.kind == DK_TYPEALIAS) {
+                s.has_alias = 1;
+            }
+        }
+        if (d.kind == DK_STRUCT || d.kind == DK_UNION) {
+            List_push<string>(&s.structs, d.name);
+            List_push<*DeclNode>(&s.sdecls, d);
+            NameIdx_push(&s.sdecls_ix, d.name);
+            int fi = 0;                                       // fields are valid members
+            int fn2 = List_len<Param>(&d.params);
+            while (fi < fn2) {
+                string mk = sema_cat(sema_cat(d.name, "."), List_get<Param>(&d.params, fi).name);
+                List_push<string>(&s.members, mk);
+                NameIdx_push(&s.members_ix, mk);
+                fi = fi + 1;
+            }
+            int mi = 0;                                       // methods are valid members too
+            int mn = List_len<*DeclNode>(&d.methods);
+            while (mi < mn) {
+                string mk2 = sema_cat(sema_cat(d.name, "."), List_get<*DeclNode>(&d.methods, mi).name);
+                List_push<string>(&s.members, mk2);
+                NameIdx_push(&s.members_ix, mk2);
+                mi = mi + 1;
+            }
+        }
+        if (d.kind == DK_ENUM) {
+            List_push<string>(&s.enums, d.name);
+            NameIdx_push(&s.enums_ix, d.name);
+            int j = 0;
+            int m = List_len<Param>(&d.params);
+            while (j < m) {
+                string vn = List_get<Param>(&d.params, j).name;
+                sema_define(s, vn, "", 0);
+                let ev: EVar;
+                ev.en = d.name;
+                ev.variant = vn;
+                ev.val = List_get<Param>(&d.params, j).ty;
+                ev.plain = 1;
+                if (List_len<TypeParam>(&d.type_params) > 0) {
+                    ev.plain = 0;
+                }
+                if (ast_enum_has_payload(d) == 1) {
+                    ev.plain = 0;
+                }
+                List_push<EVar>(&s.evars, ev);
+                NameIdx_push(&s.evars_ix, vn);
+                j = j + 1;
+            }
+            if (sema_is_plain_enum_decl(d) == 1) {   // provisional: later decls unseen
+                sema_fold_enum(s, d, 0);
+            }
+        }
+        i = i + 1;
+    }
+    s.filename = primary;
+}
