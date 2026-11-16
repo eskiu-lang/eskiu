@@ -526,6 +526,15 @@ links the system's library in place of the archive, and a build whose download f
 falls back to the system's library when there is one, with a warning (see
 <a href="getting-started.html#native-libraries">getting started</a>). A web build copies the files a
 package lists in <code>[web] assets</code> next to its output (<a href="getting-started.html#web-assets">web assets</a>).</p>
+<h3 id="publishing-a-package">Publishing a package</h3>
+<p>A package is any git repository with an <code>eskiu.toml</code>; <code>eskiuc add NAME --git URL --rev TAG</code>
+adds it from wherever it lives, so publishing one is tagging a release (<code>v0.1.0</code>). The
+<a href="https://github.com/eskiu-lang/index">package index</a> lists published packages so people can
+find them: a pull request there adds <code>packages/NAME.toml</code> with the package's name (as in its
+<code>eskiu.toml</code>), repository, a one-line description and its license, and a check reads the
+repository before it is merged. The <a href="https://eskiu-lang.org/packages.html">package catalog</a>
+lists every package in the index. The packages the project maintains live in
+<a href="https://github.com/eskiu-packages">eskiu-packages</a> and are listed the same way.</p>
 <h2 id="running-tests">Running Tests</h2>
 <p>The automated suite is driven by <code>tests/run.sh</code>, which compiles, links, and runs every
 <code>tests/*.esk</code> case (matching stdout against <code>*.expected</code>, smoke-running the rest, and

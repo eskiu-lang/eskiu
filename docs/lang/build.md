@@ -331,6 +331,17 @@ falls back to the system's library when there is one, with a warning (see
 [getting started](getting-started.md#native-libraries)). A web build copies the files a
 package lists in `[web] assets` next to its output ([web assets](getting-started.md#web-assets)).
 
+### Publishing a package
+
+A package is any git repository with an `eskiu.toml`; `eskiuc add NAME --git URL --rev TAG`
+adds it from wherever it lives, so publishing one is tagging a release (`v0.1.0`). The
+[package index](https://github.com/eskiu-lang/index) lists published packages so people can
+find them: a pull request there adds `packages/NAME.toml` with the package's name (as in its
+`eskiu.toml`), repository, a one-line description and its license, and a check reads the
+repository before it is merged. The [package catalog](https://eskiu-lang.org/packages.html)
+lists every package in the index. The packages the project maintains live in
+[eskiu-packages](https://github.com/eskiu-packages) and are listed the same way.
+
 ## Running Tests
 
 The automated suite is driven by `tests/run.sh`, which compiles, links, and runs every

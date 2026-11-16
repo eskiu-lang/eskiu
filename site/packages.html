@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script>try{if(localStorage.getItem("eskiu-lang")==="es")location.replace("es/packages.html"+location.hash);}catch(e){}</script>
   <title>Packages · Eskiu</title>
-  <meta name="description" content="The official Eskiu packages: gpu (compute, rendering, glTF and OBJ models, Llama inference and training over WebGPU), onnx, tflite, compress, audio, font, jni, quickjs and nds, each added with one eskiuc add." />
+  <meta name="description" content="Eskiu packages: gpu (compute, rendering, glTF and OBJ models, Llama inference and training over WebGPU), onnx, tflite, compress, audio, font, jni, quickjs and nds, each added with one eskiuc add." />
   <link rel="canonical" href="https://eskiu-lang.org/packages.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
   <meta property="og:title" content="Packages · Eskiu" />
-  <meta property="og:description" content="The official Eskiu packages: gpu (compute, rendering, glTF and OBJ models, Llama inference and training over WebGPU), onnx, tflite, compress, audio, font, jni, quickjs and nds, each added with one eskiuc add." />
+  <meta property="og:description" content="Eskiu packages: gpu (compute, rendering, glTF and OBJ models, Llama inference and training over WebGPU), onnx, tflite, compress, audio, font, jni, quickjs and nds, each added with one eskiuc add." />
   <meta property="og:url" content="https://eskiu-lang.org/packages.html" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
   <meta property="og:image:width" content="1200" />
@@ -41,11 +41,11 @@
   </header>
   <main class="bar article">
     <div class="eyebrow">Packages</div>
-    <h1>Official packages</h1>
-    <p class="lede">Libraries from the <a href="https://github.com/eskiu-lang">eskiu-lang</a> organization on GitHub. Each one is a git repository with an <code>eskiu.toml</code>, added to a project with one command.</p>
+    <h1>Packages</h1>
+    <p class="lede">The packages the project maintains, in the <a href="https://github.com/eskiu-packages">eskiu-packages</a> organization, and every package anyone has published in the <a href="https://github.com/eskiu-lang/index">package index</a>. Each one is a git repository with an <code>eskiu.toml</code>, added to a project with one command.</p>
     <nav class="pkg-grid" aria-label="Packages"><a href="#gpu"><b>gpu</b><span>GPU compute, rendering, 3D models and machine learning for Eskiu, over WebGPU.</span></a><a href="#scene"><b>scene</b><span>A scene graph and material renderer for Eskiu, on gpu.</span></a><a href="#onnx"><b>onnx</b><span>ONNX model inference for Eskiu, over ONNX Runtime.</span></a><a href="#tflite"><b>tflite</b><span>TensorFlow Lite model inference for Eskiu.</span></a><a href="#compress"><b>compress</b><span>zlib, gzip, raw DEFLATE and ZIP archives for Eskiu, written in Eskiu.</span></a><a href="#yaml"><b>yaml</b><span>YAML configuration files for Eskiu, read into the standard library&#x27;s JSON tree.</span></a><a href="#audio"><b>audio</b><span>Sound for Eskiu: WAV and Ogg Vorbis files, a mixer and output through SDL3.</span></a><a href="#font"><b>font</b><span>TrueType fonts for Eskiu: glyph outlines, antialiased rendering, text layout and atlases.</span></a><a href="#jni"><b>jni</b><span>Native methods for Android and the JVM, written in Eskiu.</span></a><a href="#quickjs"><b>quickjs</b><span>JavaScript for Eskiu programs, over QuickJS.</span></a><a href="#nds"><b>nds</b><span>Nintendo DS file formats for Eskiu: ROMs, NARC archives, sound, 2D graphics, 3D models and particles, and game text.</span></a><a href="#location"><b>location</b><span>Where the device is, for apps on eskiu-lang/ui.</span><em>ui</em></a><a href="#notifications"><b>notifications</b><span>Local notifications for apps on eskiu-lang/ui.</span><em>ui</em></a><a href="#camera"><b>camera</b><span>Photos for apps on eskiu-lang/ui: the library, the camera and a live view.</span><em>ui</em></a><a href="#video"><b>video</b><span>Video playback for apps on eskiu-lang/ui, with the decoded frames in Eskiu.</span><em>ui</em></a><a href="#ar"><b>ar</b><span>Augmented reality for apps on eskiu-lang/ui: ARKit on iOS, ARCore on Android, WebXR on the web.</span><em>ui</em></a><a href="#arscene"><b>arscene</b><span>Augmented reality on scene: the camera, occlusion, placement and image markers.</span><em>ui</em></a><a href="#canvas"><b>canvas</b><span>A 2D canvas for Eskiu, in a ui app (the GPU on phones, Canvas 2D on the web) or offscreen.</span><em>ui</em></a><a href="#svg"><b>svg</b><span>Vector drawings from SVG text, for Eskiu ui apps.</span><em>ui</em></a><a href="#pedometer"><b>pedometer</b><span>Steps walked, live and between two times, for Eskiu ui apps on iOS and Android.</span><em>ui</em></a><a href="#barcode"><b>barcode</b><span>QR codes and barcodes read live from the camera, for Eskiu ui apps.</span><em>ui</em></a><a href="#securestore"><b>securestore</b><span>Small secrets kept by the platform&#x27;s secure storage, for Eskiu ui apps.</span><em>ui</em></a><a class="pkg-grid-soon" href="#vision"><b>vision</b><span>Computer vision, bit for bit with C++.</span><em>private for now</em></a></nav>
     <h2 id="using">Using a package</h2>
-    <p><code>eskiuc add</code> writes the dependency into <code>eskiu.toml</code>, fetches it with git and records its commit in <code>eskiu.lock</code>, so later builds reuse it without touching the network. There is no registry: a dependency is a git URL with a rev (a tag, branch or commit) or a local path.</p>
+    <p><code>eskiuc add</code> writes the dependency into <code>eskiu.toml</code>, fetches it with git and records its commit in <code>eskiu.lock</code>, so later builds reuse it without touching the network. A dependency is a git URL with a rev (a tag, branch or commit) or a local path, from any repository; the index only helps people find packages.</p>
     <pre><code>eskiuc new myapp
 cd myapp
 eskiuc add compress --git https://github.com/eskiu-packages/compress --rev v0.1.0
@@ -662,6 +662,16 @@ secure_remove("session");</code></pre>
       <div class="pkg-meta"><span class="tag">private for now</span></div>
       <p>Corners, optical flow, multi-view geometry and planes, in pure Eskiu. It comes from tinyvio, the tracker behind ViroReact's web AR, and computes the same bits as its C++. The repository is private for now. <a href="vision.html">What it does and how it was checked →</a></p>
     </section>
+    <h2 id="index">From the index</h2>
+    <p>Packages published by their own maintainers. They are not reviewed by the Eskiu project: read a package before you depend on it.</p>
+    <section class="pkg" id="ui">
+      <h3>ui</h3>
+      <div class="pkg-meta"><span class="tag">v0.6.0</span><a href="https://github.com/eskiu-packages/ui">github.com/eskiu-packages/ui</a><span>eskiu-packages</span><span>MIT</span></div>
+      <p>Native apps from one Eskiu codebase for iOS, Android, the web and the desktop</p>
+      <pre><code>eskiuc add ui --git https://github.com/eskiu-packages/ui --rev v0.6.0</code></pre>
+    </section>
+    <h2 id="publish">Publishing a package</h2>
+    <p>Make a public git repository with an <code>eskiu.toml</code> (<code>eskiuc new NAME</code> writes one), tag a release (<code>v0.1.0</code>), and open a pull request on <a href="https://github.com/eskiu-lang/index">eskiu-lang/index</a> that adds <code>packages/NAME.toml</code> with its name, repository, a one-line description and its license. Its README has the rules.</p>
     <p>Every package needs Eskiu 0.13 or newer. Its README has the full module list, more examples and the details for each operating system.</p>
   </main>
   <section class="cta-band" aria-label="Get started">

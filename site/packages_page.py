@@ -16,6 +16,37 @@ def fetch_readme(name, rev):
         return r.read().decode("utf-8")
 
 
+INDEX_GIT = "https://github.com/eskiu-lang/index"
+
+
+def fetch_index():
+    """The index's entries (eskiu-lang/index, packages/NAME.toml), each with its latest vX.Y.Z tag."""
+    import subprocess
+    import tempfile
+    import tomllib
+    entries = []
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(["git", "clone", "--quiet", "--depth", "1", INDEX_GIT, tmp], check=True, timeout=120)
+        folder = os.path.join(tmp, "packages")
+        for file in sorted(os.listdir(folder)):
+            if file.endswith(".toml"):
+                with open(os.path.join(folder, file), "rb") as f:
+                    entries.append(tomllib.load(f))
+    return entries
+
+
+def latest_tag(url):
+    import subprocess
+    out = subprocess.run(["git", "ls-remote", "--tags", "--refs", url], capture_output=True, text=True,
+                         timeout=120)
+    tags = []
+    for line in out.stdout.splitlines():
+        m = re.match(r"^v(\d+)\.(\d+)\.(\d+)$", line.split("\t")[-1].removeprefix("refs/tags/"))
+        if m:
+            tags.append((tuple(int(x) for x in m.groups()), m.group(0)))
+    return max(tags)[1] if tags else None
+
+
 def readme_tagline(text, name):
     m = re.search(r'<h2 align="center">[^<]*</h2>\s*<p align="center">(.*?)</p>', text, re.S)
     if not m:
@@ -65,18 +96,21 @@ def highlight_comments(code):
 
 PKG_TEXT = {
     "en": {
-        "lang": "en", "title": "Packages · Eskiu", "eyebrow": "Packages", "h1": "Official packages",
-        "desc": "The official Eskiu packages: gpu (compute, rendering, glTF and OBJ models, Llama "
+        "lang": "en", "title": "Packages · Eskiu", "eyebrow": "Packages", "h1": "Packages",
+        "desc": "Eskiu packages: gpu (compute, rendering, glTF and OBJ models, Llama "
                 "inference and training over WebGPU), onnx, tflite, compress, audio, font, jni, quickjs and nds, "
                 "each added with one eskiuc add.",
-        "lede": "Libraries from the <a href=\"https://github.com/eskiu-lang\">eskiu-lang</a> "
-                "organization on GitHub. Each one is a git repository with an "
-                "<code>eskiu.toml</code>, added to a project with one command.",
+        "lede": "The packages the project maintains, in the "
+                "<a href=\"https://github.com/eskiu-packages\">eskiu-packages</a> organization, and "
+                "every package anyone has published in the "
+                "<a href=\"https://github.com/eskiu-lang/index\">package index</a>. Each one is a git "
+                "repository with an <code>eskiu.toml</code>, added to a project with one command.",
         "how_h": "Using a package",
         "how_p": "<code>eskiuc add</code> writes the dependency into <code>eskiu.toml</code>, fetches "
                  "it with git and records its commit in <code>eskiu.lock</code>, so later builds "
-                 "reuse it without touching the network. There is no registry: a dependency is a "
-                 "git URL with a rev (a tag, branch or commit) or a local path.",
+                 "reuse it without touching the network. A dependency is a git URL with a rev (a tag, "
+                 "branch or commit) or a local path, from any repository; the index only helps people "
+                 "find packages.",
         "how_cmd": ["eskiuc new myapp", "cd myapp",
                     "eskiuc add compress --git https://github.com/eskiu-packages/compress --rev v0.1.0",
                     "eskiuc run"],
@@ -92,23 +126,36 @@ PKG_TEXT = {
                   "C++. The repository is private for now. "
                   "<a href=\"{p}vision.html\">What it does and how it was checked →</a>",
         "repo": "Repository", "ci": "CI status",
+        "index_h": "From the index",
+        "index_p": "Packages published by their own maintainers. They are not reviewed by the Eskiu "
+                   "project: read a package before you depend on it.",
+        "index_none": "None yet besides the ones above.",
+        "publish_h": "Publishing a package",
+        "publish_p": "Make a public git repository with an <code>eskiu.toml</code> (<code>eskiuc new "
+                     "NAME</code> writes one), tag a release (<code>v0.1.0</code>), and open a pull request "
+                     "on <a href=\"https://github.com/eskiu-lang/index\">eskiu-lang/index</a> that adds "
+                     "<code>packages/NAME.toml</code> with its name, repository, a one-line description "
+                     "and its license. Its README has the rules.",
         "outro": "Every package needs Eskiu 0.13 or newer. Its README has the full module list, "
                  "more examples and the details for each operating system.",
     },
     "es": {
-        "lang": "es", "title": "Paquetes · Eskiu", "eyebrow": "Paquetes", "h1": "Paquetes oficiales",
-        "desc": "Los paquetes oficiales de Eskiu: gpu (cómputo, renderizado, modelos glTF y OBJ, "
+        "lang": "es", "title": "Paquetes · Eskiu", "eyebrow": "Paquetes", "h1": "Paquetes",
+        "desc": "Paquetes de Eskiu: gpu (cómputo, renderizado, modelos glTF y OBJ, "
                 "inferencia y entrenamiento de Llama sobre WebGPU), onnx, tflite, compress, audio, "
                 "font, jni, quickjs y nds, cada uno se agrega con un eskiuc add.",
-        "lede": "Bibliotecas de la organización <a href=\"https://github.com/eskiu-lang\">eskiu-lang</a> "
-                "en GitHub. Cada una es un repositorio de git con un <code>eskiu.toml</code>, y se "
-                "agrega a un proyecto con un solo comando.",
+        "lede": "Los paquetes que mantiene el proyecto, en la organización "
+                "<a href=\"https://github.com/eskiu-packages\">eskiu-packages</a>, y cada paquete que "
+                "alguien haya publicado en el "
+                "<a href=\"https://github.com/eskiu-lang/index\">índice de paquetes</a>. Cada uno es un "
+                "repositorio de git con un <code>eskiu.toml</code>, y se agrega a un proyecto con un solo "
+                "comando.",
         "how_h": "Cómo usar un paquete",
         "how_p": "<code>eskiuc add</code> escribe la dependencia en <code>eskiu.toml</code>, la "
                  "descarga con git y guarda su commit en <code>eskiu.lock</code>, así que los builds "
-                 "siguientes la reutilizan sin tocar la red. No hay un registro central: una "
-                 "dependencia es una URL de git con un rev (un tag, una rama o un commit) o una ruta "
-                 "local.",
+                 "siguientes la reutilizan sin tocar la red. Una dependencia es una URL de git con un rev "
+                 "(un tag, una rama o un commit) o una ruta local, de cualquier repositorio; el índice "
+                 "solo ayuda a encontrar paquetes.",
         "how_cmd": ["eskiuc new myapp", "cd myapp",
                     "eskiuc add compress --git https://github.com/eskiu-packages/compress --rev v0.1.0",
                     "eskiuc run"],
@@ -124,6 +171,16 @@ PKG_TEXT = {
                   "repositorio es privado por ahora. "
                   "<a href=\"vision.html\">Qué hace y cómo se verificó →</a>",
         "repo": "Repositorio", "ci": "Estado de CI",
+        "index_h": "Del índice",
+        "index_p": "Paquetes publicados por quienes los mantienen. El proyecto Eskiu no los revisa: "
+                   "lee un paquete antes de depender de él.",
+        "index_none": "Por ahora ninguno además de los de arriba.",
+        "publish_h": "Publicar un paquete",
+        "publish_p": "Crea un repositorio público de git con un <code>eskiu.toml</code> (<code>eskiuc "
+                     "new NOMBRE</code> escribe uno), etiqueta un release (<code>v0.1.0</code>) y abre un "
+                     "pull request en <a href=\"https://github.com/eskiu-lang/index\">eskiu-lang/index</a> "
+                     "que agregue <code>packages/NOMBRE.toml</code> con su nombre, repositorio, una "
+                     "descripción de una línea y su licencia. Su README tiene las reglas (en inglés).",
         "outro": "Todos los paquetes necesitan Eskiu 0.13 o más nuevo. En el README de cada uno "
                  "están la lista completa de módulos, más ejemplos y los detalles para cada sistema "
                  "operativo (en inglés).",
@@ -237,6 +294,12 @@ def build_packages():
         text = fetch_readme(pkg.get("repo", pkg["name"]), pkg.get("rev", PKG_REV))
         data.append((pkg, readme_tagline(text, pkg["name"]),
                      readme_example(text, pkg["name"], pkg["section"])))
+    # The index's packages that have no section of their own here (anyone's).
+    curated = {pkg["name"] for pkg in PACKAGES_CATALOG} | {"vision"}
+    others = []
+    for e in fetch_index():
+        if e["name"] not in curated:
+            others.append((e, latest_tag(e["git"])))
     for lang in ("en", "es"):
         T = PKG_TEXT[lang]
         p = "" if lang == "en" else "../"
@@ -283,6 +346,24 @@ def build_packages():
               f'      <div class="pkg-meta"><span class="tag">{T["soon_tag"]}</span></div>',
               f'      <p>{T["soon_p"].format(p=p)}</p>',
               "    </section>"]
+        b.append(f'    <h2 id="index">{T["index_h"]}</h2>')
+        if others:
+            b.append(f'    <p>{T["index_p"]}</p>')
+            for e, tag in others:
+                cmd = f'eskiuc add {e["name"]} --git {e["git"]}' + (f" --rev {tag}" if tag else "")
+                who = ", ".join(e.get("maintainers", []))
+                b += [f'    <section class="pkg" id="{html.escape(e["name"])}">',
+                      f'      <h3>{html.escape(e["name"])}</h3>',
+                      '      <div class="pkg-meta">' + (f'<span class="tag">{html.escape(tag)}</span>' if tag else "")
+                      + f'<a href="{html.escape(e["git"])}">{html.escape(e["git"].removeprefix("https://"))}</a>'
+                      + (f'<span>{html.escape(who)}</span>' if who else "")
+                      + f'<span>{html.escape(e["license"])}</span></div>',
+                      f'      <p>{html.escape(e["description"])}</p>',
+                      "      <pre><code>" + html.escape(cmd, quote=False) + "</code></pre>",
+                      "    </section>"]
+        else:
+            b.append(f'    <p>{T["index_none"]}</p>')
+        b += [f'    <h2 id="publish">{T["publish_h"]}</h2>', f'    <p>{T["publish_p"]}</p>']
         b.append(f'    <p>{T["outro"]}</p>')
         page = render_site_page(lang, "packages.html", "packages", T["title"], T["desc"], "\n".join(b))
         out = os.path.join(ROOT, "site", "packages.html" if lang == "en" else "es/packages.html")

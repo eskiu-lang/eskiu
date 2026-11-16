@@ -34,6 +34,7 @@ MCP server: `https://eskiu-mcp-9450.orvex.cloud/mcp` (remote, no key). It search
 
 ## Packages
 
+- [Package index](https://github.com/eskiu-lang/index): every published package, from anyone; a package is added to the index with a pull request that adds `packages/NAME.toml` (see [publishing](https://eskiu-lang.org/docs/build.html#publishing-a-package))
 - [Package catalog](https://eskiu-lang.org/packages.html): gpu, scene, ar, video, camera, onnx, tflite, audio, font, yaml, jni, quickjs and more, each with its API reference
 - [gpu](https://github.com/eskiu-packages/gpu): WebGPU compute and rendering, glTF models, image-based lighting, YUV frames
 - [scene](https://github.com/eskiu-packages/scene): a scene graph and material renderer on gpu, with input, physics, animation, particles and headset rendering (Meta Quest, Apple Vision Pro)
