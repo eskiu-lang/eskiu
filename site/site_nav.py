@@ -29,18 +29,6 @@ NAV = [
         ("@docs/index.html", "Docs", "The specification, the standard library and the compiler",
          "Docs", "La especificación, la biblioteca estándar y el compilador"),
     ]),
-    ("packages", "Packages", "Paquetes", [
-        ("packages.html", "All packages", "Each one is one eskiuc add away",
-         "Todos los paquetes", "Cada uno a un eskiuc add de distancia"),
-        ("vision.html", "vision", "Computer vision, bit for bit with C++",
-         "vision", "Visión por computadora, bit por bit con C++"),
-        ("gpu.html", "gpu", "WebGPU compute, 3D models and Llama",
-         "gpu", "Cómputo con WebGPU, modelos 3D y Llama"),
-        ("packages.html#onnx", "onnx", "ONNX Runtime inference",
-         "onnx", "Inferencia con ONNX Runtime"),
-        ("packages.html#jni", "jni", "Java and Android with no C glue",
-         "jni", "Java y Android sin código de C de por medio"),
-    ]),
     ("platforms", "Platforms", "Plataformas", [
         ("platforms.html", "Overview", "One compiler, every target",
          "Resumen", "Un compilador, todas las plataformas"),
@@ -53,23 +41,19 @@ NAV = [
         ("platforms.html#bare-metal", "Bare metal", "Kernels and boards with no operating system",
          "Bare metal", "Kernels y tarjetas sin sistema operativo"),
     ]),
-    ("ui", "UI", "UI", [
-        ("ui.html", "Overview", "Native apps for phones, the web and the desktop",
-         "Resumen", "Apps nativas para el celular, la web y el escritorio"),
-        ("ui-components.html", "Components and APIs", "Every element, hook and service",
-         "Componentes y APIs", "Cada elemento, hook y servicio"),
-        ("ui.html#dev", "Developer loop", "Each change on screen in a third of a second",
-         "Ciclo de desarrollo", "Cada cambio en pantalla en un tercio de segundo"),
-        ("ui.html#agents", "Agents and tests", "Drive and test the app on every platform",
-         "Agentes y pruebas", "Maneja y prueba la app en cada plataforma"),
-        ("ui.html#navigation", "Navigation", "Screens on the phone, pages on the web",
-         "Navegación", "Pantallas en el teléfono, páginas en la web"),
-        ("ui.html#native", "Native code", "Swift, Kotlin, Gradle and Swift packages",
-         "Código nativo", "Swift, Kotlin, Gradle y paquetes de Swift"),
-        ("ui.html#ship", "To the stores", "Xcode, Android Studio, the App Store and Google Play",
-         "A las tiendas", "Xcode, Android Studio, el App Store y Google Play"),
-        ("ui.html#start", "Get started", "The ui tool and a first app",
-         "Empieza", "La herramienta ui y una primera app"),
+    ("packages", "Packages", "Paquetes", [
+        ("packages.html", "All packages", "Each one is one eskiuc add away",
+         "Todos los paquetes", "Cada uno a un eskiuc add de distancia"),
+        ("ui.html", "ui", "Native apps for phones, the web and the desktop",
+         "ui", "Apps nativas para el celular, la web y el escritorio"),
+        ("gpu.html", "gpu", "WebGPU compute, 3D models and Llama",
+         "gpu", "Cómputo con WebGPU, modelos 3D y Llama"),
+        ("vision.html", "vision", "Computer vision, bit for bit with C++",
+         "vision", "Visión por computadora, bit por bit con C++"),
+        ("packages.html#onnx", "onnx", "ONNX Runtime inference",
+         "onnx", "Inferencia con ONNX Runtime"),
+        ("packages.html#jni", "jni", "Java and Android with no C glue",
+         "jni", "Java y Android sin código de C de por medio"),
     ]),
     ("showcase", "Showcase", "Proyectos", [
         ("showcase.html", "Built with Eskiu", "What runs on it today",
@@ -86,7 +70,7 @@ NAV_CURRENT = {"quickstart.html": "learn", "agents.html": "learn", "docs/": "lea
                "vision.html": "packages", "gpu.html": "packages", "platforms.html": "platforms", "showcase.html": "showcase",
                "case-study-reactvision.html": "showcase", "case-study-3ds.html": "showcase",
                "case-study-identity.html": "showcase",
-               "ui.html": "ui", "ui-components.html": "ui"}
+               "ui.html": "packages", "ui-components.html": "packages"}
 CHEVRON = ('<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" '
            'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
            '<path d="M2 3.5 5 6.5 8 3.5"/></svg>')
