@@ -25,6 +25,11 @@ the install layout, and uses `$CLANG` (default `clang`) to link.
 
 ## Files
 
+A file that grew past about 600 lines is split by topic into parts named after it
+(`parser_expr.esk`, `sema_base_scope.esk`, `codegen_types_fold.esk`, ...). The file keeps
+its header and first section and ends by importing its parts in order, so the table below
+names only the files a module starts from.
+
 | File | Role |
 |---|---|
 | `tokens.esk`, `lexer.esk` | Token kinds and the lexer |
