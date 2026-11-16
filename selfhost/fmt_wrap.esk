@@ -1,0 +1,601 @@
+// fmt_wrap.esk: format_source and the --width wrap pass (part of fmt.esk, imported in order)
+
+// Reindent `src` (n bytes) and return the formatted text. Mirrors the C++ line split
+// (break on `\n`, drop the one `\r` before it, with the remainder after the last `\n`
+// as a final line)
+// and keeps the file's line ending (CRLF if its first line break is `\r\n`).
+String format_source(*uint8 src, int n) {
+    let out: String;
+    String_init(&out, n + 64);
+    let depth: int = 0;    // current `{` nesting
+    let inBlock: int = 0;  // inside a /* … */ block comment
+    let inStr: int = 0;    // a string literal continues onto the next line
+    int prevCont = 0;      // the previous line ends with `\`: this one continues it
+    int ppCont = 0;        // the continued line is a preprocessor line (no nesting)
+    int pendingBlank = 0;  // blank lines buffered (dropped only at the end of the file)
+    // The preprocessor's view (mirrors the C++): a `#` line inside a multi-line string is
+    // string text, each branch of a conditional and the code after `#endif` start from
+    // the string state at the `#if`, and a directive that leaves a `/*` open opens a
+    // comment for the following lines. In a string opened inside a conditional (maybe a
+    // branch that is not compiled) a `#` line keeps its bytes but counts as a directive.
+    List<int> condStr;
+    List_init<int>(&condStr, 4);
+    int strSeen = 0;       // inStr was already set at the start of the previous line
+    int strInCond = 0;     // the open string began inside a conditional
+    let ppLine: String;    // the directive's logical line (continuations joined)
+    String_init(&ppLine, 64);
+    int firstLine = 1;
+    let layout: FmtLay;    // the open braces' kinds and parentheses (fmt_layout_line)
+    List_init<int>(&layout.kinds, 16);
+    List_init<int>(&layout.parens, 16);
+    layout.paren = 0;
+    int last = 0;          // the last code character so far
+    List<int> condLast;    // `last` at each open #if
+    List_init<int>(&condLast, 4);
+    // The nesting at each open #if: each branch starts from it (only one reaches the
+    // lexer), and the code after `#endif` continues from the last branch.
+    List<int> condDepth;
+    List_init<int>(&condDepth, 4);
+    List<FmtLay> condLay;
+    List_init<FmtLay>(&condLay, 4);
+    int stmtOrig = 0;      // the current statement's first line: indent before and after
+    int stmtNew = 0;
+    int sepNext = 0;       // the last line closed a top-level block
+    int crlf = 0;
+    int fnl = 0;
+    while (fnl < n && src[fnl] != 10) {
+        fnl = fnl + 1;
+    }
+    if (fnl < n && fnl > 0 && src[fnl - 1] == 13) {
+        crlf = 1;
+    }
+
+    let raw: String;       // one source line, `\r` stripped, not yet trimmed
+    String_init(&raw, 128);
+    let t: String;         // the trimmed line content
+    String_init(&t, 128);
+
+    int i = 0;
+    int done = 0;
+    while (done == 0) {
+        String_clear(&raw);
+        while (i < n && src[i] != 10) {
+            String_push(&raw, (char)src[i]);
+            i = i + 1;
+        }
+        if (i < n) {                // consume the '\n', and a CRLF ending's '\r'
+            i = i + 1;
+            int rl = (int)String_len(&raw);
+            if (rl > 0 && (int)String_char_at(&raw, rl - 1) == 13) {
+                raw.len = raw.len - 1;
+                raw.data[raw.len] = 0;
+            }
+        }
+        else {          // final remainder line: process it, then stop
+            done = 1;
+        }
+
+        int rlen = (int)String_len(&raw);
+        // The text after the final newline is a line only when it is not empty (C++).
+        if (done == 1 && rlen == 0 && n > 0 && src[n - 1] == 10) {
+            continue;
+        }
+        *uint8 rb = (*uint8)String_cstr(&raw);
+        int cont = prevCont;
+        int shebang = 0;
+        if (firstLine == 1 && rlen >= 2 && rb[0] == 35 && rb[1] == 33) {
+            shebang = 1;
+        }
+        firstLine = 0;
+        prevCont = 0;
+        if (rlen > 0 && rb[rlen - 1] == 92) {
+            prevCont = 1;
+        }
+        if (inStr == 1 && strSeen == 0) {
+            strInCond = 0;
+            if (List_len<int>(&condStr) > 0) {
+                strInCond = 1;
+            }
+        }
+        strSeen = inStr;
+        int h0 = 0;
+        while (h0 < rlen && (rb[h0] == 32 || rb[h0] == 9)) {
+            h0 = h0 + 1;
+        }
+        int directive = 0;
+        if (inBlock == 0 && cont == 0 && (inStr == 0 || strInCond == 1) && h0 < rlen && rb[h0] == 35) {
+            directive = 1;
+        }
+
+        if (inBlock == 1) {         // verbatim until the comment closes
+            int a = 0;
+            while (a < rlen) {
+                String_push(&out, (char)rb[a]);
+                a = a + 1;
+            }
+            fmt_eol(&out, crlf);
+            int b = 0;
+            while (b + 1 < rlen) {
+                if (rb[b] == 42 && rb[b + 1] == 47) {
+                    inBlock = 0;
+                    fmt_scan(rb, rlen, b + 2, &depth, &inBlock, &inStr);   // code after the `*/` still nests
+                    b = rlen;
+                }
+                else {
+                    b = b + 1;
+                }
+            }
+            continue;
+        }
+
+        if (inStr == 1 && directive == 0) {   // inside a multi-line string: bytes verbatim
+            fmt_scan(rb, rlen, 0, &depth, &inBlock, &inStr);
+            int ve = rlen;
+            if (inStr == 0) {
+                ve = fmt_rtrim(rb, 0, rlen);
+                if (ve > 0) {
+                    last = (int)rb[ve - 1];
+                }
+                int q = 0;                         // the string's closing quote
+                while (q < ve && rb[q] != 34) {
+                    if (rb[q] == 92 && q + 1 < ve) {
+                        q = q + 1;
+                    }
+                    q = q + 1;
+                }
+                fmt_count_brackets(&layout, rb, ve, q + 1);
+            }
+            int a = 0;
+            while (a < ve) {
+                String_push(&out, (char)rb[a]);
+                a = a + 1;
+            }
+            fmt_eol(&out, crlf);
+            continue;
+        }
+
+        if (cont == 1) {            // a continuation line: bytes verbatim
+            int a = 0;
+            while (a < rlen) {
+                String_push(&out, (char)rb[a]);
+                a = a + 1;
+            }
+            fmt_eol(&out, crlf);
+            if (ppCont == 0) {
+                fmt_scan(rb, rlen, 0, &depth, &inBlock, &inStr);
+            }
+            else {
+                int a2 = 0;
+                int ae = rlen;
+                if (prevCont == 1) {
+                    ae = rlen - 1;
+                }
+                while (a2 < ae) {
+                    String_push(&ppLine, (char)rb[a2]);
+                    a2 = a2 + 1;
+                }
+                if (prevCont == 0) {
+                    inBlock = fmt_dir_opens((*uint8)String_cstr(&ppLine), (int)String_len(&ppLine));
+                }
+            }
+            continue;
+        }
+
+        // drop leading spaces and tabs into `t` (trailing ones go after the scan)
+        int ts = 0;
+        while (ts < rlen && (rb[ts] == 32 || rb[ts] == 9)) {
+            ts = ts + 1;
+        }
+        if (ts == rlen) {
+            pendingBlank = pendingBlank + 1;
+            continue;
+        }
+        String_clear(&t);
+        int cp = ts;
+        while (cp < rlen) {
+            String_push(&t, (char)rb[cp]);
+            cp = cp + 1;
+        }
+        int tlen = (int)String_len(&t);
+        *uint8 tb = (*uint8)String_cstr(&t);
+
+        // A top-level definition is set apart from what follows it.
+        if (sepNext == 1 && pendingBlank == 0 && tb[0] != 125 && tb[0] != 35) {
+            fmt_eol(&out, crlf);
+        }
+        sepNext = 0;
+        while (pendingBlank > 0) {   // keep every blank line
+            fmt_eol(&out, crlf);
+            pendingBlank = pendingBlank - 1;
+        }
+
+        ppCont = 0;
+        if (tb[0] == 35) {
+            ppCont = 1;
+        }
+        if (tb[0] == 35) {          // '#' preprocessor line: column 0, no nesting change
+            int full = tlen;
+            tlen = fmt_rtrim(tb, 0, tlen);
+            int a = 0;
+            if (inStr == 1) {
+                while (a < rlen) {
+                    String_push(&out, (char)rb[a]);
+                    a = a + 1;
+                }
+            }
+            else {
+                while (a < tlen) {
+                    String_push(&out, (char)tb[a]);
+                    a = a + 1;
+                }
+            }
+            fmt_eol(&out, crlf);
+            int k2 = 1;
+            while (k2 < full && (tb[k2] == 32 || tb[k2] == 9)) {
+                k2 = k2 + 1;
+            }
+            int ks = k2;
+            while (k2 < full && ((tb[k2] >= 97 && tb[k2] <= 122) || (tb[k2] >= 65 && tb[k2] <= 90)
+                                 || (tb[k2] >= 48 && tb[k2] <= 57) || tb[k2] == 95)) {
+                k2 = k2 + 1;
+            }
+            String kws;
+            String_init(&kws, 8);
+            int q = ks;
+            while (q < k2) {
+                String_push(&kws, (char)tb[q]);
+                q = q + 1;
+            }
+            string kw = (string)String_cstr(&kws);
+            int nc = List_len<int>(&condStr);
+            // Each branch, and the code after `#endif`, starts from the state at the `#if`.
+            if (fmt_eq(kw, "if") == 1 || fmt_eq(kw, "ifdef") == 1 || fmt_eq(kw, "ifndef") == 1) {
+                List_push<int>(&condStr, inStr);
+                List_push<int>(&condLast, last);
+                List_push<int>(&condDepth, depth);
+                let saved: FmtLay;
+                fmt_lay_copy(&saved, &layout);
+                List_push<FmtLay>(&condLay, saved);
+            }
+            else if ((fmt_eq(kw, "elif") == 1 || fmt_eq(kw, "else") == 1) && nc > 0) {
+                inStr = List_get<int>(&condStr, nc - 1);
+                last = List_get<int>(&condLast, nc - 1);
+                depth = List_get<int>(&condDepth, nc - 1);
+                FmtLay at_if = List_get<FmtLay>(&condLay, nc - 1);
+                fmt_lay_copy(&layout, &at_if);
+            }
+            else if (fmt_eq(kw, "endif") == 1 && nc > 0) {
+                inStr = List_get<int>(&condStr, nc - 1);
+                last = List_get<int>(&condLast, nc - 1);
+                List_remove<int>(&condStr, nc - 1);
+                List_remove<int>(&condLast, nc - 1);
+                List_remove<int>(&condDepth, nc - 1);
+                List_remove<FmtLay>(&condLay, nc - 1);
+            }
+            if (prevCont == 1) {
+                String_clear(&ppLine);
+                int a3 = 0;
+                while (a3 < full - 1) {
+                    String_push(&ppLine, (char)tb[a3]);
+                    a3 = a3 + 1;
+                }
+            } else if (shebang == 0) {
+                inBlock = fmt_dir_opens(tb, full);
+            }
+            continue;
+        }
+
+        // A line inside open parentheses, or after one that did not end a statement
+        // (with `;`, `{`, `}` or a label's `:`), continues that statement: it keeps its
+        // indentation relative to the statement's first line, at least 4 more (an item
+        // of a multi-line list after a `,` keeps its own). Mirrors the C++.
+        // A block's `{` on its own line (`int f()` then `{`) starts at its block's level.
+        int blockOpen = 0;
+        if (tb[0] == 123 && fmt_top_block(&layout) == 1 && layout.paren == 0 && last != 61 && last != 44
+            && last != 40 && last != 91) {
+            blockOpen = 1;
+        }
+        int contLine = 0;
+        if (tb[0] != 125 && blockOpen == 0
+            && (layout.paren > 0 || (last != 0 && last != 59 && last != 123 && last != 125 && last != 58))) {
+            contLine = 1;
+        }
+        int listItem = 0;
+        if (last == 44 && layout.paren == 0) {
+            listItem = 1;
+        }
+        let pieces: List<string>;
+        List_init<string>(&pieces, 4);
+        int has_nul = 0;
+        int z = 0;
+        while (z < tlen) {
+            if (tb[z] == 0) {
+                has_nul = 1;
+            }
+            z = z + 1;
+        }
+        if (has_nul == 0) {
+            fmt_layout_line(&layout, tb, tlen, &last, &pieces);
+        }
+        else {     // a NUL byte: the line is left alone
+            List_push<string>(&pieces, "");
+        }
+        int pi = 0;
+        int sepPiece = 0;   // the previous piece of this line closed a top-level block
+        while (pi < List_len<string>(&pieces)) {
+            *uint8 pb = (*uint8)List_get<string>(&pieces, pi);
+            int plen = 0;
+            while (pb[plen] != 0) {
+                plen = plen + 1;
+            }
+            if (has_nul == 1) {
+                pb = tb;
+                plen = tlen;
+            }
+            if (sepPiece == 1 && pb[0] != 125) {   // as for a definition ending a line
+                fmt_eol(&out, crlf);
+            }
+            int ind = 0;
+            if (pi == 0 && contLine == 1) {
+                int diff = ts - stmtOrig;
+                if (listItem == 1) {
+                    if (diff < 0) {
+                        diff = 0;
+                    }
+                }
+                else {
+                    if (diff < 4) {
+                        diff = 4;
+                    }
+                }
+                ind = stmtNew + diff;
+            } else {
+                int lead = depth;          // a statement's indent dedents for each leading '}'
+                int k = 0;
+                while (k < plen) {
+                    if (pb[k] == 125) {
+                        lead = lead - 1;
+                        k = k + 1;
+                    }
+                    else {
+                        k = plen;
+                    }
+                }
+                if (lead < 0) {
+                    lead = 0;
+                }
+                ind = lead * 4;
+                stmtOrig = ts;
+                stmtNew = ind;
+            }
+            fmt_scan(pb, plen, 0, &depth, &inBlock, &inStr);   // update nesting from this piece's code
+            if (inStr == 0) {  // blanks inside an open string are its bytes
+                plen = fmt_rtrim(pb, 0, plen);
+            }
+            int sp = 0;
+            while (sp < ind) {
+                String_push(&out, (char)32);
+                sp = sp + 1;
+            }
+            int a = 0;
+            while (a < plen) {
+                String_push(&out, (char)pb[a]);
+                a = a + 1;
+            }
+            fmt_eol(&out, crlf);
+            sepPiece = 0;
+            if (depth == 0 && pb[0] == 125) {
+                sepPiece = 1;
+            }
+            pi = pi + 1;
+        }
+        int np = List_len<string>(&pieces);
+        if (depth == 0 && List_get<string>(&pieces, np - 1)[0] == 125) {
+            sepNext = 1;
+        }
+    }
+    return out;
+}
+
+// ── `fmt --width N`: the wrap pass, a byte-for-byte mirror of the C++ wrapLongLines ──
+// A code line longer than `width` bytes is broken after the commas of its outermost
+// bracketed list (the commas at the smallest depth of `(`, `[` or `{` inside the line,
+// at least 1): the pieces fill each line up to the width, and the lines after the
+// first are indented 8 more than it. A resulting line that is still too long is broken
+// the same way. A line with a comment, a directive, or one that starts or ends inside a
+// string or a block comment is left as written.
+
+// Append the bytes [a, b) of `s` to `out`.
+void fmt_put(String* out, *uint8 s, int a, int b) {
+    int i = a;
+    while (i < b) {
+        String_push(out, (char)s[i]);
+        i = i + 1;
+    }
+}
+
+// Break the line s[0, n) as wrapLine does, appending the resulting lines to `out`.
+void fmt_wrap_line(*uint8 s, int n, int width, List<String>* out) {
+    if (n <= width) {
+        let keep: String;
+        String_init(&keep, n + 1);
+        fmt_put(&keep, s, 0, n);
+        List_push<String>(out, keep);
+        return;
+    }
+    int indent = 0;
+    while (indent < n && (int)s[indent] == 32) {
+        indent = indent + 1;
+    }
+    List<int> cpos;
+    List_init<int>(&cpos, 8);
+    List<int> cdep;
+    List_init<int>(&cdep, 8);
+    int depth = 0;
+    int quote = 0;
+    int i = indent;
+    while (i < n) {
+        int c = (int)s[i];
+        if (quote != 0) {
+            if (c == 92) {
+                i = i + 1;
+            } else if (c == quote) {
+                quote = 0;
+            }
+        } else if (c == 34 || c == 39) {
+            quote = c;
+        } else if (c == 40 || c == 91 || c == 123) {
+            depth = depth + 1;
+        } else if (c == 41 || c == 93 || c == 125) {
+            depth = depth - 1;
+        } else if (c == 44 && depth >= 1) {
+            List_push<int>(&cpos, i);
+            List_push<int>(&cdep, depth);
+        }
+        i = i + 1;
+    }
+    int least = 0;
+    for (k in 0..List_len<int>(&cdep)) {
+        int d = List_get<int>(&cdep, k);
+        if (least == 0 || d < least) {
+            least = d;
+        }
+    }
+    List<int> starts;
+    List_init<int>(&starts, 8);
+    List<int> ends;
+    List_init<int>(&ends, 8);
+    int start = 0;
+    for (k in 0..List_len<int>(&cpos)) {
+        if (List_get<int>(&cdep, k) != least) {
+            continue;
+        }
+        List_push<int>(&starts, start);
+        List_push<int>(&ends, List_get<int>(&cpos, k) + 1);
+        start = List_get<int>(&cpos, k) + 1;
+    }
+    if (List_len<int>(&starts) == 0) {
+        let keep: String;
+        String_init(&keep, n + 1);
+        fmt_put(&keep, s, 0, n);
+        List_push<String>(out, keep);
+        return;
+    }
+    List_push<int>(&starts, start);
+    List_push<int>(&ends, n);
+    List<String> lines;
+    List_init<String>(&lines, 4);
+    let cur: String;
+    String_init(&cur, n + 1);
+    fmt_put(&cur, s, List_get<int>(&starts, 0), List_get<int>(&ends, 0));
+    for (k in 1..List_len<int>(&starts)) {
+        int a = List_get<int>(&starts, k);
+        int b = List_get<int>(&ends, k);
+        while (a < b && (int)s[a] == 32) {
+            a = a + 1;
+        }
+        if (a == b) {
+            continue;
+        }
+        if ((int)cur.len + 1 + (b - a) <= width) {
+            String_push(&cur, ' ');
+            fmt_put(&cur, s, a, b);
+        } else {
+            List_push<String>(&lines, cur);
+            let next: String;
+            String_init(&next, n + 1);
+            for (sp in 0..indent + 8) {
+                String_push(&next, ' ');
+            }
+            fmt_put(&next, s, a, b);
+            cur = next;
+        }
+    }
+    List_push<String>(&lines, cur);
+    if (List_len<String>(&lines) == 1) {
+        let keep: String;
+        String_init(&keep, n + 1);
+        fmt_put(&keep, s, 0, n);
+        List_push<String>(out, keep);
+        return;
+    }
+    for (k in 0..List_len<String>(&lines)) {
+        String l = List_get<String>(&lines, k);
+        fmt_wrap_line((*uint8)String_cstr(&l), (int)l.len, width, out);
+    }
+}
+
+String fmt_wrap(String* text, int width) {
+    let out: String;
+    String_init(&out, (int)text.len + 64);
+    *uint8 t = (*uint8)String_cstr(text);
+    int tn = (int)text.len;
+    int in_block = 0;
+    int quote = 0;
+    int pos = 0;
+    while (pos < tn) {
+        int e = pos;
+        while (e < tn && (int)t[e] != 10) {
+            e = e + 1;
+        }
+        int has_nl = e < tn ? 1 : 0;
+        int plain = in_block == 0 && quote == 0 ? 1 : 0;
+        int comment = 0;
+        int i = pos;
+        while (i < e) {
+            int c = (int)t[i];
+            int nx = i + 1 < e ? (int)t[i + 1] : 0;
+            if (in_block == 1) {
+                if (c == 42 && nx == 47) {
+                    in_block = 0;
+                    i = i + 1;
+                }
+            } else if (quote != 0) {
+                if (c == 92) {
+                    i = i + 1;
+                } else if (c == quote) {
+                    quote = 0;
+                }
+            } else if (c == 47 && nx == 47) {
+                comment = 1;
+                break;
+            } else if (c == 47 && nx == 42) {
+                in_block = 1;
+                comment = 1;
+                i = i + 1;
+            } else if (c == 34 || c == 39) {
+                quote = c;
+            }
+            i = i + 1;
+        }
+        if (quote == 39) {
+            quote = 0;
+        }
+        int first = pos;
+        while (first < e && (int)t[first] == 32) {
+            first = first + 1;
+        }
+        int directive = first < e && (int)t[first] == 35 ? 1 : 0;
+        if (plain == 1 && comment == 0 && directive == 0 && in_block == 0 && quote == 0 && e - pos > width) {
+            List<String> parts;
+            List_init<String>(&parts, 4);
+            fmt_wrap_line((*uint8)((*uint8)t + pos), e - pos, width, &parts);
+            for (k in 0..List_len<String>(&parts)) {
+                String p = List_get<String>(&parts, k);
+                String_append(&out, String_cstr(&p));
+                if (k + 1 < List_len<String>(&parts)) {
+                    String_push(&out, '\n');
+                }
+            }
+        } else {
+            fmt_put(&out, t, pos, e);
+        }
+        if (has_nl == 1) {
+            String_push(&out, '\n');
+            pos = e + 1;
+        } else {
+            pos = e;
+        }
+    }
+    return out;
+}

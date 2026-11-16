@@ -1,0 +1,509 @@
+// fmt_layout.esk: statement layout (part of fmt.esk, imported in order)
+
+// A type argument list `<...>` starting at t[p] == '<': the index of its closing `>`, or
+// -1 when t[p, n) is not one (the C++ fmtTypeArgEnd). Its tokens may only be
+// identifiers, `*`, `?`, `,`, an array suffix `[N]`, `fn(...)` parameter lists with a
+// `->` after the `)`, and nested lists after an identifier. The positions of the `<` and
+// `>` of this list and of the nested ones are added to `marks`.
+int fmt_type_arg_end(*uint8 t, int n, int p, List<int>* marks) {
+    int i = p + 1;
+    if (i < n && (t[i] == 60 || t[i] == 61)) {
+        return -1;
+    }
+    int paren = 0;
+    int brack = 0;
+    int any = 0;
+    int prev = 60;          // the previous token: 119 'w' a word, 97 'a' `->`, else itself
+    int is_fn = 0;
+    while (i < n) {
+        int c = (int)t[i];
+        if (c == 32 || c == 9) {
+            i = i + 1;
+            continue;
+        }
+        if (fmt_alpha(c) == 1 || (brack == 1 && c >= 48 && c <= 57)) {
+            int j = i;
+            while (j < n && fmt_ident((int)t[j]) == 1) {
+                j = j + 1;
+            }
+            is_fn = 0;
+            if (j - i == 2 && t[i] == 102 && t[i + 1] == 110) {
+                is_fn = 1;
+            }
+            prev = 119;
+            any = 1;
+            i = j;
+            continue;
+        }
+        if (c == 60) {
+            if (prev != 119 || brack == 1) {
+                return -1;
+            }
+            int e = fmt_type_arg_end(t, n, i, marks);
+            if (e < 0) {
+                return -1;
+            }
+            prev = 62;
+            i = e + 1;
+            continue;
+        }
+        if (c == 62) {
+            if (paren > 0 || brack == 1 || any == 0
+                || !(prev == 119 || prev == 42 || prev == 93 || prev == 41 || prev == 62)) {
+                return -1;
+            }
+            List_push<int>(marks, p);
+            List_push<int>(marks, i);
+            return i;
+        }
+        if (c == 45) {
+            if (prev != 41 || i + 1 >= n || t[i + 1] != 62) {
+                return -1;
+            }
+            prev = 97;
+            i = i + 2;
+            continue;
+        }
+        if (c == 40) {
+            if (brack == 1 || !(prev == 119 && is_fn == 1)) {
+                return -1;
+            }
+            paren = paren + 1;
+        } else if (c == 41) {
+            if (brack == 1 || paren == 0) {
+                return -1;
+            }
+            paren = paren - 1;
+        } else if (c == 91) {
+            if (brack == 1 || !(prev == 119 || prev == 93 || prev == 62 || prev == 42)) {
+                return -1;
+            }
+            brack = 1;
+        } else if (c == 93) {
+            if (brack == 0) {
+                return -1;
+            }
+            brack = 0;
+        } else if (c == 42) {
+            int j = fmt_skip_blanks(t, n, i + 1);
+            int operand_after = 0;
+            if (j < n && (fmt_ident((int)t[j]) == 1 || t[j] == 40)) {
+                operand_after = 1;
+            }
+            if (brack == 1 || ((prev == 119 || prev == 93 || prev == 62 || prev == 41) && operand_after == 1)) {
+                return -1;
+            }
+        } else if (c == 63 || c == 44) {
+            if (brack == 1) {
+                return -1;
+            }
+        } else {
+            return -1;
+        }
+        prev = c;
+        i = i + 1;
+    }
+    return -1;
+}
+
+// 1 when the `<` at t[i] opens a type argument list beyond doubt (the C++ fmtTypeArgs):
+// after an identifier that is not a keyword, directly or, for a capitalized name, after
+// blanks; type tokens only; and an identifier, `(`, `{`, `)`, `,`, `;`, `[` or `*` after
+// its `>`. The `<` and `>` positions of it and of its nested lists go into `marks`.
+int fmt_type_args(*uint8 t, int n, int i, string head, List<int>* marks) {
+    if (head[0] == 0 || (head[0] >= 48 && head[0] <= 57) || fmt_keyword(head) == 1) {
+        return 0;
+    }
+    int k = i;
+    while (k > 0 && (t[k - 1] == 32 || t[k - 1] == 9)) {
+        k = k - 1;
+    }
+    if (k == 0 || fmt_ident((int)t[k - 1]) == 0) {
+        return 0;
+    }
+    if (k < i && !(head[0] >= 65 && head[0] <= 90)) {
+        return 0;
+    }
+    let found: List<int>;
+    List_init<int>(&found, 8);
+    int e = fmt_type_arg_end(t, n, i, &found);
+    if (e < 0) {
+        return 0;
+    }
+    int j = fmt_skip_blanks(t, n, e + 1);
+    if (j >= n) {
+        return 0;
+    }
+    int f = (int)t[j];
+    if (!(fmt_alpha(f) == 1 || f == 40 || f == 123 || f == 41 || f == 44 || f == 59 || f == 91 || f == 42)) {
+        return 0;
+    }
+    int q = 0;
+    while (q < List_len<int>(&found)) {
+        List_push<int>(marks, List_get<int>(&found, q));
+        q = q + 1;
+    }
+    return 1;
+}
+
+// The substring t[a, b) as a C string.
+string fmt_sub(*uint8 t, int a, int b) {
+    let s: String;
+    String_init(&s, b - a + 1);
+    int k = a;
+    while (k < b) {
+        String_push(&s, (char)t[k]);
+        k = k + 1;
+    }
+    return (string)String_cstr(&s);
+}
+
+// Lay out one code line t[0, n) (no leading blanks): the C++ fmtLayoutLine. Fills
+// `out` with the pieces, one per output line; `last` is the last code character.
+void fmt_layout_line(FmtLay* st, *uint8 t, int n, *int last, List<string>* out) {
+    let ln: FmtLine;
+    String_init(&ln.cur, n + 16);
+    ln.need_space = 0;
+    ln.last_word = "";
+    ln.i = 0;
+    ln.last = last[0];
+    List_init<string>(&ln.pieces, 4);
+    string comment = "";
+    let tmarks: List<int>;   // the `<` and `>` of the type argument lists found so far
+    List_init<int>(&tmarks, 8);
+    int ok = 1;
+    if (n > 0 && t[n - 1] == 92) {
+        ok = 0;
+    }
+    while (ok == 1 && ln.i < n) {
+        int i = ln.i;
+        int c = (int)t[i];
+        if (c == 34 || c == 39) {
+            int j = i + 1;
+            while (j < n && (int)t[j] != c) {
+                if (t[j] == 92 && j + 1 < n) {
+                    j = j + 1;
+                }
+                j = j + 1;
+            }
+            if (j >= n) {
+                ok = 0;
+                continue;
+            }
+            fmt_emit(&ln, fmt_sub(t, i, j + 1));
+            ln.last_word = "";
+            ln.i = j + 1;
+            continue;
+        }
+        if (c == 47 && i + 1 < n && t[i + 1] == 47) {
+            int g = i;
+            while (g > 0 && (t[g - 1] == 32 || t[g - 1] == 9)) {
+                g = g - 1;
+            }
+            comment = fmt_sub(t, g, n);
+            ln.i = n;
+            continue;
+        }
+        if (c == 47 && i + 1 < n && t[i + 1] == 42) {
+            int e = i + 2;
+            while (e + 1 < n && !(t[e] == 42 && t[e + 1] == 47)) {
+                e = e + 1;
+            }
+            if (e + 1 >= n) {
+                ok = 0;
+                continue;
+            }
+            int keep = ln.last;
+            fmt_emit(&ln, fmt_sub(t, i, e + 2));
+            ln.last = keep;
+            ln.i = e + 2;
+            continue;
+        }
+        if (c == 32 || c == 9 || c == 13) {   // a lone CR is a blank to the lexer
+            int b = fmt_back(&ln.cur);
+            if (ln.cur.len > 0 && b != 32 && b != 40 && b != 91) {
+                String_push(&ln.cur, (char)32);
+            }
+            ln.i = i + 1;
+            continue;
+        }
+        if (fmt_ident(c) == 1) {
+            string w = fmt_word_at(t, n, i);
+            int j = i;
+            while (w[j - i] != 0) {
+                j = j + 1;
+            }
+            fmt_emit(&ln, w);
+            ln.i = j;
+            if ((fmt_eq(w, "if") == 1 || fmt_eq(w, "while") == 1 || fmt_eq(w, "for") == 1 || fmt_eq(w, "switch") == 1
+                 || fmt_eq(w, "catch") == 1 || fmt_eq(w, "match") == 1)
+                && j < n && t[j] == 40 && fmt_eq(ln.last_word, "operator") == 0) {
+                String_push(&ln.cur, (char)32);
+            }
+            ln.last_word = w;
+            continue;
+        }
+        // A type argument list: no blank around its `<` or before its `>` (`List<int>`),
+        // except between two `>` written apart, which would otherwise become `>>`.
+        if (c == 60 || c == 62) {
+            int marked = fmt_has_int(&tmarks, i);
+            if (marked == 0 && c == 60 && fmt_eq(ln.last_word, "operator") == 0) {
+                marked = fmt_type_args(t, n, i, ln.last_word, &tmarks);
+            }
+            if (marked == 1) {
+                int apart = 0;
+                if (ln.cur.len > 0 && fmt_back(&ln.cur) == 32) {
+                    apart = 1;
+                }
+                fmt_rtrim_str(&ln.cur);
+                if (c == 62 && apart == 1 && ln.cur.len > 0 && fmt_back(&ln.cur) == 62) {
+                    String_push(&ln.cur, (char)32);
+                }
+                String_push(&ln.cur, (char)c);
+                ln.last = c;
+                ln.need_space = 0;
+                ln.last_word = "";
+                if (c == 60) {
+                    ln.i = fmt_skip_blanks(t, n, i + 1);
+                } else {
+                    ln.i = i + 1;
+                }
+                continue;
+            }
+        }
+        if (fmt_eq(ln.last_word, "operator") == 1 && fmt_op_char(c) == 1) {   // `operator ==` as written
+            int j = i;
+            while (j < n && fmt_op_char((int)t[j]) == 1) {
+                j = j + 1;
+            }
+            fmt_emit(&ln, fmt_sub(t, i, j));
+            ln.last_word = "";
+            ln.i = j;
+            continue;
+        }
+        string op = "";
+        if (fmt_eq(ln.last_word, "operator") == 0) {
+            if (fmt_at(t, n, i, "<<=") == 1) {
+                op = "<<=";
+            }
+            else if (fmt_at(t, n, i, ">>=") == 1) {
+                op = ">>=";
+            }
+            else if (fmt_at(t, n, i, "==") == 1) {
+                op = "==";
+            }
+            else if (fmt_at(t, n, i, "!=") == 1) {
+                op = "!=";
+            }
+            else if (fmt_at(t, n, i, "<=") == 1) {
+                op = "<=";
+            }
+            else if (fmt_at(t, n, i, ">=") == 1) {
+                op = ">=";
+            }
+            else if (fmt_at(t, n, i, "&&") == 1) {
+                op = "&&";
+            }
+            else if (fmt_at(t, n, i, "||") == 1) {
+                op = "||";
+            }
+            else if (fmt_at(t, n, i, "+=") == 1) {
+                op = "+=";
+            }
+            else if (fmt_at(t, n, i, "-=") == 1) {
+                op = "-=";
+            }
+            else if (fmt_at(t, n, i, "*=") == 1) {
+                op = "*=";
+            }
+            else if (fmt_at(t, n, i, "/=") == 1) {
+                op = "/=";
+            }
+            else if (fmt_at(t, n, i, "%=") == 1) {
+                op = "%=";
+            }
+            else if (fmt_at(t, n, i, "&=") == 1) {
+                op = "&=";
+            }
+            else if (fmt_at(t, n, i, "|=") == 1) {
+                op = "|=";
+            }
+            else if (fmt_at(t, n, i, "^=") == 1) {
+                op = "^=";
+            }
+            else if (c == 61) {
+                op = "=";
+            }
+        }
+        if (op[0] != 0) {
+            fmt_rtrim_str(&ln.cur);
+            if (ln.cur.len > 0) {
+                String_push(&ln.cur, (char)32);
+            }
+            String_append(&ln.cur, op);
+            ln.last = 61;
+            ln.need_space = 1;
+            ln.last_word = "";
+            int ol = 0;
+            while (op[ol] != 0) {
+                ol = ol + 1;
+            }
+            ln.i = i + ol;
+            continue;
+        }
+        if (c == 44) {
+            fmt_rtrim_str(&ln.cur);
+            String_push(&ln.cur, (char)44);
+            ln.last = 44;
+            ln.need_space = 1;
+            ln.last_word = "";
+            ln.i = i + 1;
+            continue;
+        }
+        if (c == 59) {
+            fmt_rtrim_str(&ln.cur);
+            String_push(&ln.cur, (char)59);
+            ln.last = 59;
+            ln.last_word = "";
+            ln.i = i + 1;
+            if (st.paren == 0 && fmt_top_block(st) == 1 && fmt_rest_is_code(t, n, ln.i) == 1) {
+                fmt_flush(&ln);
+            }
+            else {
+                ln.need_space = 1;
+            }
+            continue;
+        }
+        if (c == 40 || c == 91) {
+            fmt_emit(&ln, fmt_sub(t, i, i + 1));
+            st.paren = st.paren + 1;
+            ln.last_word = "";
+            ln.i = i + 1;
+            continue;
+        }
+        if (c == 41 || c == 93) {
+            fmt_rtrim_str(&ln.cur);
+            String_push(&ln.cur, (char)c);
+            ln.last = c;
+            ln.need_space = 0;
+            st.paren = st.paren - 1;
+            ln.last_word = "";
+            ln.i = i + 1;
+            continue;
+        }
+        if (c == 123) {
+            let head: String;
+            String_init(&head, ln.cur.len + 1);
+            String_append(&head, (string)String_cstr(&ln.cur));
+            fmt_rtrim_str(&head);
+            *uint8 hb = (*uint8)String_cstr(&head);
+            int hn = (int)head.len;
+            int fs = 0;
+            while (fs < hn && hb[fs] == 32) {
+                fs = fs + 1;
+            }
+            string fw = fmt_word_at(hb, hn, fs);
+            int block = 0;
+            if (hn == 0) {
+                if (fmt_top_block(st) == 1 && st.paren == 0 && ln.last != 61 && ln.last != 44 && ln.last != 40 && ln.last != 91) {
+                    block = 1;
+                }
+            } else if (fmt_eq(fw, "enum") == 1) {
+                block = 0;
+            } else {
+                int hl = (int)hb[hn - 1];
+                if (hl == 41 || (hn >= 2 && hb[hn - 2] == 45 && hb[hn - 1] == 62)
+                    || fmt_eq(ln.last_word, "else") == 1 || fmt_eq(ln.last_word, "do") == 1 || fmt_eq(ln.last_word, "try") == 1
+                    || fmt_eq(ln.last_word, "finally") == 1 || fmt_eq(ln.last_word, "defer") == 1 || fmt_eq(ln.last_word, "errdefer") == 1
+                    || fmt_eq(fw, "struct") == 1 || fmt_eq(fw, "union") == 1 || fmt_eq(fw, "interface") == 1
+                    || fmt_eq(fw, "packed") == 1 || fmt_eq(fw, "match") == 1
+                    || (hl == 58 && (fmt_eq(fw, "case") == 1 || fmt_eq(fw, "default") == 1))) {
+                    block = 1;
+                }
+            }
+            ln.last_word = "";
+            if (block == 0) {
+                fmt_emit(&ln, "{");
+                fmt_open(st, 73);
+                ln.i = i + 1;
+                continue;
+            }
+            fmt_rtrim_str(&ln.cur);
+            if (ln.cur.len > 0) {
+                String_push(&ln.cur, (char)32);
+            }
+            int j = fmt_skip_blanks(t, n, i + 1);
+            if (j < n && t[j] == 125) {            // an empty block stays `{}`
+                String_append(&ln.cur, "{}");
+                ln.last = 125;
+                ln.need_space = 0;
+                ln.i = j + 1;
+                fmt_after_close(&ln, t, n);
+                continue;
+            }
+            String_push(&ln.cur, (char)123);
+            ln.last = 123;
+            ln.need_space = 0;
+            fmt_open(st, 66);
+            ln.i = i + 1;
+            if (fmt_rest_is_code(t, n, ln.i) == 1) {
+                fmt_flush(&ln);
+            }
+            continue;
+        }
+        if (c == 125) {
+            int kind = fmt_close(st);
+            ln.i = i + 1;
+            ln.last_word = "";
+            ln.need_space = 0;
+            if (kind == 66) {
+                fmt_flush(&ln);
+                String_push(&ln.cur, (char)125);
+                ln.last = 125;
+                fmt_after_close(&ln, t, n);
+            } else {
+                String_push(&ln.cur, (char)125);
+                ln.last = 125;
+            }
+            continue;
+        }
+        fmt_emit(&ln, fmt_sub(t, i, i + 1));
+        ln.last_word = "";
+        ln.i = i + 1;
+    }
+    last[0] = ln.last;
+    if (ok == 0) {
+        fmt_count_brackets(st, t, n, ln.i);   // the rest still counts; the text is kept
+        List_push<string>(out, fmt_sub(t, 0, n));
+        return;
+    }
+    fmt_rtrim_str(&ln.cur);
+    if (ln.cur.len > 0) {
+        List_push<string>(&ln.pieces, fmt_copy(&ln.cur));
+    }
+    // A trailing comment stays with the statement's first line (`while (x) {  // why`).
+    if (comment[0] != 0) {
+        int a = 0;
+        while (comment[a] == 32 || comment[a] == 9) {
+            a = a + 1;
+        }
+        if (List_len<string>(&ln.pieces) == 0) {
+            List_push<string>(&ln.pieces, (string)((*uint8)comment + a));
+        }
+        else {
+            let joined: String;
+            String_init(&joined, 64);
+            String_append(&joined, List_get<string>(&ln.pieces, 0));
+            String_append(&joined, comment);
+            List_set<string>(&ln.pieces, 0, (string)String_cstr(&joined));
+        }
+    }
+    if (List_len<string>(&ln.pieces) == 0) {
+        List_push<string>(&ln.pieces, fmt_sub(t, 0, n));
+    }
+    int k = 0;
+    while (k < List_len<string>(&ln.pieces)) {
+        List_push<string>(out, List_get<string>(&ln.pieces, k));
+        k = k + 1;
+    }
+}
