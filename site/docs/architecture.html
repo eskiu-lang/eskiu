@@ -249,7 +249,7 @@ figure img { border-radius: 14px; }
                                        parse_{decl,stmt,expr}.cpp          ┌──────────────┐
                                                                           │ Type Checker  │── errors → stderr
                                                                           └──────────────┘
-                                                          sema/type_checker.cpp + typecheck_{decl,stmt,expr,type}.cpp
+                                                          sema/type_checker*.cpp + typecheck_*.cpp
                                                           sema/type.{h,cpp}  (ty::Type IR)
                                                                                   │ validated AST
                                                                                   ▼
@@ -300,25 +300,25 @@ figure img { border-radius: 14px; }
 </tr>
 <tr>
 <td>Type Checker</td>
-<td><code>sema/type_checker.cpp</code> + <code>typecheck_{decl,stmt,expr,type}.cpp</code>; the structured <code>ty::Type</code> IR in <code>sema/type.{h,cpp}</code></td>
+<td><code>sema/type_checker*.cpp</code> + <code>typecheck_*.cpp</code> (split by topic); the structured <code>ty::Type</code> IR in <code>sema/type.{h,cpp}</code></td>
 <td>Two-pass visitor; registers structs/interfaces/functions then validates types and scopes; resolves every expression's type into a table</td>
 <td>Complete</td>
 </tr>
 <tr>
 <td>Async transform</td>
-<td><code>sema/async_transform.cpp</code></td>
+<td><code>sema/async_transform.cpp</code> (+ <code>async_lower*.{h,cpp}</code>: one <code>AsyncLowering</code> per function)</td>
 <td>Rewrites each <code>async fn</code> into a frame struct + <code>__name_resume</code> + a <code>*Future&lt;T&gt;</code> constructor, ordinary AST that normal codegen handles</td>
 <td>Complete</td>
 </tr>
 <tr>
 <td>Codegen</td>
-<td><code>codegen/codegen_{module,type,scope,decl,stmt,expr,call,closure,adt,cabi}.cpp</code>, <code>codegen.h</code></td>
+<td><code>codegen/codegen_*.cpp</code> (split by topic), <code>codegen.h</code></td>
 <td>Visitor over the validated AST; emits LLVM IR via <code>IRBuilder&lt;&gt;</code>; lowers <code>extern</code> aggregates to the target C ABI (<code>codegen_cabi.cpp</code>); emits native <code>.o</code></td>
 <td>Complete</td>
 </tr>
 <tr>
 <td>EIR (alternative back end)</td>
-<td><code>eir/eir_builder.cpp</code> (AST to EIR), <code>eir/eir.{h,cpp}</code> (IR + text), <code>eir/eir_vm.cpp</code> (EVM), <code>eir/eir_asm_arm64.cpp</code>, <code>eir/eir_c.cpp</code>, <code>eir/eir_obj.cpp</code>, <code>eir/eir_runtime.cpp</code></td>
+<td><code>eir/eir_builder*.cpp</code> (AST to EIR), <code>eir/eir.{h,cpp}</code> (IR + text), <code>eir/eir_vm*.cpp</code> (EVM), <code>eir/eir_asm*.cpp</code> (ARM64), <code>eir/eir_c*.cpp</code> (C99), <code>eir/eir_as*.cpp</code> (assembler), <code>eir/eir_obj.cpp</code>, <code>eir/eir_runtime.cpp</code></td>
 <td>Lowers the same checked AST to EIR instead of LLVM IR; runs it (<code>--run-eir</code>) or emits ARM64 assembly / C99 / an object (<code>--emit-asm</code>, <code>--emit-c</code>, <code>--emit-obj</code>, <code>--backend=eir</code>) without LLVM's code generator</td>
 <td>Passes the run-test corpus</td>
 </tr>
@@ -340,7 +340,7 @@ void BinaryExpr::accept(ASTVisitor* visitor) {
 <p>The visitor declares a pure-virtual <code>visit()</code> overload for every concrete node type. Any new concrete node must add an overload to <code>ASTVisitor</code> and stub it in all existing implementors.</p>
 <h3 id="how-to-add-a-new-node-5-step-checklist">How to add a new node (5-step checklist)</h3>
 <ol>
-<li>Declare the class in <code>ast/ast.h</code>, inheriting from <code>Expr</code>, <code>Stmt</code>, or <code>Decl</code>. Add the <code>accept</code> override declaration and <code>int line = 0; int col = 0;</code> (inherited from <code>ASTNode</code>). Add its name to <code>enum class NodeKind</code> and write <code>ESKIU_NODE_KIND(MyNewNode)</code> after its <code>public:</code>: passes test a node's class with <code>nodeCast&lt;MyNewNode&gt;(p)</code>, which compares that kind (a <code>dynamic_cast</code> walks the RTTI and was the type checker's largest cost).</li>
+<li>Declare the class in <code>ast/ast_expr.h</code>, <code>ast_stmt.h</code> or <code>ast_decl.h</code> (included by <code>ast/ast.h</code>), inheriting from <code>Expr</code>, <code>Stmt</code>, or <code>Decl</code>. Add the <code>accept</code> override declaration and <code>int line = 0; int col = 0;</code> (inherited from <code>ASTNode</code>). Add its name to <code>enum class NodeKind</code> and write <code>ESKIU_NODE_KIND(MyNewNode)</code> after its <code>public:</code>: passes test a node's class with <code>nodeCast&lt;MyNewNode&gt;(p)</code>, which compares that kind (a <code>dynamic_cast</code> walks the RTTI and was the type checker's largest cost).</li>
 <li>Implement <code>accept</code> in <code>ast/ast.cpp</code>: <code>visitor-&gt;visit(this);</code>.</li>
 <li>Add <code>virtual void visit(MyNewNode* node) = 0;</code> to <code>ASTVisitor</code> in <code>ast/ast.h</code>.</li>
 <li>Add an implementation to every <code>ASTVisitor</code> subclass: <code>ASTPrinter</code>, <code>TypeChecker</code>, <code>CodeGen</code>.</li>
@@ -627,7 +627,7 @@ std::vector&lt;std::map&lt;std::string, Symbol&gt;&gt; scopes;
 </ol>
 <p>Template function instantiation happens in <code>visit(TemplateCallExpr*)</code> (explicit type args) and in the inferred path of <code>visit(CallExpr*)</code>: type args are bound to type params via <code>substType()</code>, the argument types are validated, and the return type is computed. Each distinct instance (<code>pick&lt;Box&gt;</code>) is then queued (<code>queueInstance</code>) and its body is type-checked once, after the main pass, by <code>checkPendingInstances</code>: the template body is visited through a synthesized <code>FunctionDecl</code> whose parameter and return types are substituted, while <code>normalizeType</code> and <code>getExpressionType</code> map the type parameters to the instance's arguments (<code>instSubs</code>). A type error that only exists for some type arguments (a value passed where the method takes a pointer, an operator the concrete type lacks) is reported at the offending expression with <code>(in instantiation of pick&lt;Box&gt;)</code> appended. Checking an instance can queue more (nested generic calls), so the queue drains to a fixpoint, capped at 64 levels of nesting. The body's AST is shared by every instance, so while one is checked the expression-type table is swapped out and no node is stamped (<code>opFunc</code>, lambda captures, for-in element types keep their instance-independent values); warnings and escape soundness stay per template, not per instance. A lambda's env is the exception: one in a generic body, or one passed to a generic callee, is decided after every instance is checked (<code>finalizeGenericEscapes</code>). Each instance of a free generic records whether each closure parameter escaped there (<code>genericParamEscapes</code>); a parameter forwarded to another generic's non-<code>escaping</code> parameter escapes only if that one does (<code>genericParamForwards</code>, resolved as a fixpoint); a parameter no instance recorded counts as escaping. The lambda gets a stack env only when none of its uses escapes, so <code>sort&lt;T&gt;</code>'s comparator wrapper no longer allocates. The self-hosted checker mirrors it (<code>sema_generic_call_arg</code>, <code>sema_finalize_generic_escapes</code>). An inline method of a generic struct (<code>struct Box&lt;T&gt; { T get() {...} }</code>) is registered as <code>Box_int_get(*Box_int self)</code> when <code>Box&lt;int&gt;</code> is instantiated and checked the same way on its first call; codegen emits it on first call too (<code>instantiateGenericMethod</code>). The self-hosted checker mirrors this (<code>sema_queue_inst</code> / <code>sema_check_insts</code>), printing a <code>note: ... (in instantiation of pick&lt;Box&gt;)</code> line after the instance's errors.</p>
 <h3 id="interface-structural-satisfaction-check">Interface structural satisfaction check</h3>
-<p><code>isValidAssignment(lhs, rhs)</code> includes an interface check: if <code>lhs</code> is a registered interface name and <code>rhs</code> is a pointer to a struct, it calls <code>interfaceMismatch(structName, iface)</code> (<code>typecheck_type.cpp</code>), which requires, for every method in the interface, a function named <code>structName_methodName</code> in <code>functionSignatures</code> whose return type, parameter count and parameter types (after the receiver) match the interface's declaration; a type spelled with the interface's own name stands for the implementing type. It returns an empty string on success or the first mismatch, which becomes part of the diagnostic. A struct passed by value (not a pointer) is rejected with "cannot convert struct 'S' to interface 'I' by value; pass a pointer (&amp;x)". No <code>implements</code> keyword is required. This is purely structural. The same check backs bounded generics (<code>checkConstraints</code>).</p>
+<p><code>isValidAssignment(lhs, rhs)</code> includes an interface check: if <code>lhs</code> is a registered interface name and <code>rhs</code> is a pointer to a struct, it calls <code>interfaceMismatch(structName, iface)</code> (<code>typecheck_layout.cpp</code>), which requires, for every method in the interface, a function named <code>structName_methodName</code> in <code>functionSignatures</code> whose return type, parameter count and parameter types (after the receiver) match the interface's declaration; a type spelled with the interface's own name stands for the implementing type. It returns an empty string on success or the first mismatch, which becomes part of the diagnostic. A struct passed by value (not a pointer) is rejected with "cannot convert struct 'S' to interface 'I' by value; pass a pointer (&amp;x)". No <code>implements</code> keyword is required. This is purely structural. The same check backs bounded generics (<code>checkConstraints</code>).</p>
 <h3 id="error-format-sourcefilelinecol-message">Error format: <code>sourceFile:line:col: message</code></h3>
 <pre><code class="language-cpp">void TypeChecker::error(int line, int col, const std::string&amp; message) {
     hasErrors = true;

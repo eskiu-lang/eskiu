@@ -302,6 +302,16 @@ figure img { border-radius: 14px; }
 <li><code>--hover-at LINE:COL</code> runs the pipeline through the type checker and prints the inferred Eskiu type of the innermost AST node containing that position (read straight from the resolved expression-type table). Use it to confirm what type the resolver actually assigned an expression.</li>
 <li><code>--definition-at LINE:COL</code> finds the symbol at that position and prints the <code>file:line:col</code> where it was declared.</li>
 </ul>
+<p>A type name works in all three queries (<code>--hover-at</code>, <code>--definition-at</code>, <code>--references-at</code>)
+wherever a type is written: parameter, return, local, global and field types, the pointer,
+nullable, array and slice forms, generic arguments, casts, <code>sizeof(T)</code>, struct literals,
+constraints and alias targets. The parser records each named type token of the primary input
+(<code>Program::typeRefs</code>, built by <code>Parser::noteTypeRef</code>; a backtrack in <code>rewindTo</code> drops the ones
+read past it), and <code>TypeChecker::typeDefAt</code> resolves it through <code>typeDefs</code>, the declared
+structs, unions, enums, interfaces and aliases. Hover prints the declaration text
+(<code>struct Point</code>, <code>type A = Point</code>). The self-host mirrors it: <code>p_note_type</code> / <code>p_rewind</code> in
+the parser fill <code>Program.tr_*</code>, and <code>sema_tool_type_at</code> (<code>selfhost/sema_tooling_types.esk</code>)
+answers in <code>run_tool</code>.</p>
 <p>Because <code>--hover-at</code> reports the resolver's own answer, it is the quickest way to see whether a bug is "the type checker resolved the wrong type" versus "codegen lowered a correctly-resolved type wrongly."</p>
 <h2 id="note-the-type-checker-runs-twice-single-resolver">Note: the type checker runs twice (single resolver)</h2>
 <p>The pipeline runs the type checker, then the async transform rewrites the AST, then the type checker is <strong>re-run on the transformed AST</strong> to produce the per-expression <code>ty::Type</code> table that codegen consumes. Codegen does not re-derive expression types; it reads that table, and <code>getTypeFromString</code> interprets type spellings through the single <code>ty::Type::parse</code> grammar.</p>

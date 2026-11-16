@@ -706,7 +706,13 @@ holds the future any more.</p>
   async". It runs again on the transformed program, so the lowering's output is
   type-checked like user code.</li>
 <li><strong>AST transform</strong> (<code>sema/async_transform.cpp</code>): the state-machine split (§4) and
-  the drop-time cleanup states (§7). The bulk of the work.</li>
+  the drop-time cleanup states (§7). The bulk of the work. <code>AsyncTransform::run</code> lowers
+  each async function with an <code>AsyncLowering</code> (<code>sema/async_lower.h</code>), in phases: <code>setup</code>
+  and <code>collectFrame</code> (<code>async_lower_setup.cpp</code>), the await hoisting (<code>async_lower_desugar.cpp</code>,
+  one <code>desugar&lt;Kind&gt;</code> per statement kind), the state machinery (<code>async_lower_states.cpp</code>),
+  <code>lowerBody</code> and <code>lowerStmt</code> (<code>async_lower_stmt.cpp</code>, one <code>lower&lt;Kind&gt;</code> per statement
+  kind), and <code>buildCleanups</code>/<code>emitDecls</code> (<code>async_lower_frame.cpp</code>); the small AST builders
+  are in <code>async_lower_util.cpp</code>.</li>
 <li><strong>Codegen</strong>. No async-specific path: the transform emits structs/switch/closures/
   casts/atomics that codegen already handles.</li>
 </ul>

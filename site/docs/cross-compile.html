@@ -300,7 +300,9 @@ is defined.</p>
 <code>__wasm__</code> and <code>__wasm32__</code> (plus <code>__EMSCRIPTEN__</code> for emscripten and <code>__wasi__</code> for WASI),
 an Android triple defines <code>__ANDROID__</code> next to <code>__linux__</code>, and an iOS triple defines
 <code>TARGET_OS_IPHONE</code> and <code>TARGET_OS_IOS</code> next to <code>__APPLE__</code> (plus <code>TARGET_IPHONE_SIMULATOR</code>
-for a simulator).</p>
+for a simulator). A visionOS triple defines <code>TARGET_OS_IPHONE</code> and <code>TARGET_OS_VISION</code> (plus
+<code>TARGET_OS_SIMULATOR</code>), as Apple's TargetConditionals.h does: UIKit code for iOS builds
+there too, and <code>TARGET_OS_VISION</code> tells the headset apart.</p>
 <p><code>--freestanding</code> additionally predefines <code>__ESKIU_FREESTANDING__</code> and routes <code>alloc</code>/<code>free</code>
 to caller-supplied <code>esk_alloc</code>/<code>esk_free</code> instead of libc.</p>
 <h2 id="hard-float-arm">Hard-float ARM</h2>
@@ -435,13 +437,21 @@ xcodebuild -create-xcframework -library ios/libtracker.a -library sim/libtracker
 </code></pre>
 <p>The C ABI is the Darwin AArch64 one, as on macOS. <code>tests/mobile/check.sh</code> runs the test
 corpus on a booted simulator (<code>xcrun simctl spawn</code>).</p>
+<h2 id="visionos">visionOS</h2>
+<p><code>arm64-apple-xros1.0</code> builds for Apple Vision Pro and <code>arm64-apple-xros1.0-simulator</code> for
+its simulator, linked through <code>xcrun -sdk xros clang</code> (<code>xrsimulator</code>). The C ABI is the
+Darwin AArch64 one. A program runs on a booted simulator with <code>xcrun simctl spawn</code>, as on
+iOS:</p>
+<pre><code class="language-bash">eskiuc hello.esk --target arm64-apple-xros1.0-simulator -o hello
+xcrun simctl spawn &quot;Apple Vision Pro&quot; ./hello
+</code></pre>
 <h2 id="windows-gui-programs">Windows GUI programs</h2>
 <p>A program that opens its own window, such as one using the <code>gpu</code> package, links for the GUI
 subsystem with <code>--subsystem=windows</code>, so Windows does not open a console for it. The entry
 point stays <code>main</code>: the driver passes <code>-mwindows</code> to a mingw link, and <code>/subsystem:windows</code>
 with <code>/entry:mainCRTStartup</code> to an MSVC one. On other targets the option has no effect.</p>
     </main>
-    <nav class="toc" aria-label="On this page"><span class="grp">On this page</span><a href="#platform-macros">Platform macros</a><a href="#hard-float-arm">Hard-float ARM</a><a href="#example-nintendo-3ds">Example: Nintendo 3DS</a><a href="#example-windows-x86-64">Example: Windows (x86-64)</a><a href="#c-types-whose-width-depends-on-the-target">C types whose width depends on the target</a><a href="#webassembly">WebAssembly</a><a href="#android">Android</a><a href="#ios">iOS</a><a href="#windows-gui-programs">Windows GUI programs</a></nav>
+    <nav class="toc" aria-label="On this page"><span class="grp">On this page</span><a href="#platform-macros">Platform macros</a><a href="#hard-float-arm">Hard-float ARM</a><a href="#example-nintendo-3ds">Example: Nintendo 3DS</a><a href="#example-windows-x86-64">Example: Windows (x86-64)</a><a href="#c-types-whose-width-depends-on-the-target">C types whose width depends on the target</a><a href="#webassembly">WebAssembly</a><a href="#android">Android</a><a href="#ios">iOS</a><a href="#visionos">visionOS</a><a href="#windows-gui-programs">Windows GUI programs</a></nav>
   </div>
   <footer class="foot">
     <div class="bar foot-in">

@@ -267,7 +267,7 @@ Changes to the stdlib, the docs or the C++ driver alone usually do not touch <co
 <ol>
 <li>Lexer and parser (<code>lexer/</code>, <code>parser/parse_{decl,stmt,expr}.cpp</code>). New type spellings go
    through <code>ty::Type::parse</code> in <code>sema/type.cpp</code>; do not add a second type-string parser.</li>
-<li>A new AST node goes in <code>ast/ast.h</code> with a <code>visit</code> method on <code>ASTVisitor</code>; the build then
+<li>A new AST node goes in <code>ast/ast_expr.h</code>, <code>ast_stmt.h</code> or <code>ast_decl.h</code> with a <code>visit</code> method on <code>ASTVisitor</code>; the build then
    fails until <code>ASTPrinter</code>, <code>TypeChecker</code> and <code>CodeGen</code> handle it.</li>
 <li>Type checking in <code>sema/typecheck_*.cpp</code>, code generation in <code>codegen/codegen_*.cpp</code>.</li>
 <li>The same steps in <code>selfhost/</code> (<code>parser.esk</code>, <code>sema.esk</code>, <code>codegen.esk</code>).</li>
@@ -300,6 +300,10 @@ listed in it. Details are in <a href="https://github.com/eskiu-lang/eskiu/blob/m
 <li>AST nodes are <code>shared_ptr</code> (<code>ExprPtr</code>, <code>StmtPtr</code>, <code>DeclPtr</code>): struct-method bodies and template bodies
   are shared by several declarations, so do not convert them to <code>unique_ptr</code>.</li>
 <li>Commit subjects are short and imperative, with no trailing period.</li>
+<li>A source file stays under about 600 lines: a longer one is split by topic, moving code unchanged.
+  An Eskiu module imports its parts in order; the parts of an importable module (the stdlib, a
+  package's <code>src/</code>) live in its private directory (<code>stdlib/_regex/vm.esk</code>, imported as
+  <code>import "_regex/vm.esk";</code>), so they are not modules of their own.</li>
 </ul>
 <h2 id="proposals">Proposals</h2>
 <p>Open an issue before a new language feature or a design change; scoped fixes can go

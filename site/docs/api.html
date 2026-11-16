@@ -459,7 +459,7 @@ object file for <code>targetTriple</code> (or the host) and writes it to <code>f
 returning <code>true</code> on success.</p>
 <hr>
 <h2 id="driver-support">Driver Support</h2>
-<p>Header: <code>main_support.h</code> (the <code>cl::opt</code>-free half of the driver, in <code>main_support.cpp</code>)</p>
+<p>Header: <code>main_support.h</code> (the <code>cl::opt</code>-free half of the driver, in <code>main_support.cpp</code>, <code>fmt.cpp</code> and <code>main_build.cpp</code>)</p>
 <pre><code class="language-cpp">std::shared_ptr&lt;Program&gt; loadProgram(const std::vector&lt;std::string&gt;&amp; inputs, const std::string&amp; triple,
                                      bool freestanding,
                                      std::map&lt;std::string, Macro&gt;* macrosOut = nullptr,
