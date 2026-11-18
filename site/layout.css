@@ -1,0 +1,99 @@
+/* Shared frame and interaction states for the website and reference pages. */
+:root { --site-width: 1120px; --gutter: 24px; --faint: #737373; }
+@media (prefers-color-scheme: dark) { :root { --faint: #999; } }
+.bar, .wrap { width: 100%; max-width: calc(var(--site-width) + 2 * var(--gutter)); margin-inline: auto; padding-inline: var(--gutter); }
+.top-in { gap: 24px; }
+.brand, .menu-btn { flex-shrink: 0; }
+.top .brand { letter-spacing: -0.02em; }
+.top-right { gap: 12px; }
+.top { border-bottom: 1px solid var(--rule); }
+.top .nav { gap: 0; }
+.top .nav-t { padding-inline: 9px; font-size: 15px; }
+.top .nav-m { width: 300px; }
+.top .nav-g:last-of-type .nav-m { left: auto; right: 0; }
+.top.nav-js .nav-g:not(.is-open) > .nav-m { display: none; }
+.top.nav-js .nav-g.is-open > .nav-m { display: flex; }
+.top.nav-js .nav-g:not(.is-open) > .nav-t svg { transform: none; }
+.top.nav-js .nav-g.is-open > .nav-t svg { transform: rotate(180deg); }
+.top .nav { display: none; }
+.top .menu-btn { display: flex; color: var(--ink); }
+.top .drawer { max-height: calc(100dvh - 72px); overflow-y: auto; overscroll-behavior: contain; }
+.top .drawer a { min-height: 44px; display: flex; align-items: center; padding-block: 10px; }
+.top .btn-install { border-radius: 999px; }
+.foot-in { flex-wrap: wrap; gap: 16px 28px; }
+.foot-links { flex-wrap: wrap; gap: 8px 24px; }
+.foot-links a { min-height: 44px; display: inline-flex; align-items: center; }
+.article { max-width: calc(var(--site-width) + 2 * var(--gutter)); }
+.article > p, .article > ul, .article > ol, .article > blockquote { max-width: 76ch; }
+.article > pre { max-width: 100%; }
+.pkg-grid em { position: static; align-self: flex-start; order: -1; }
+.pkg-example summary { min-height: 44px; }
+#pg-run { scroll-margin-top: 96px; }
+main .sec-head { max-width: 760px; }
+main > .sec:first-child { padding-top: 48px; }
+main > .pg:first-child { border-top: 0; padding-top: 0; }
+main > .pg:first-child .pg-in { padding-top: 48px; }
+main > .dev-note:first-child { padding-top: 48px; }
+.note-card { max-width: 860px; margin-left: 0; padding: 32px; }
+.note-card p { max-width: 70ch; }
+.note-card h1 { font-size: clamp(30px, 4vw, 44px); line-height: 1.15; margin: 0 0 24px; }
+.tiny { padding-block: 48px 64px; }
+.tiny h2 { font-size: clamp(30px, 4vw, 40px); }
+.tiny-pics { min-width: 0; }
+.lcard h2 { font-size: 23px; line-height: 1.25; }
+.pg-grid, .pg-editor, .pg-side, .lang-grid, .lcard { min-width: 0; }
+.pg-ex button { min-height: 44px; height: auto; padding: 10px 14px; }
+.pg-editor textarea { font-size: 16px; }
+.pg-bar { flex-wrap: wrap; }
+.pg-out { max-height: 520px; }
+.pg-out .lbl { color: #b7b0c9; }
+.pg-out a { color: #c9b8ff; text-decoration: underline; }
+.install-box { max-width: 760px; scroll-margin-top: 192px; }
+.install-box .cmd { white-space: pre-wrap; overflow-wrap: anywhere; }
+.install-box .btn { flex-shrink: 0; }
+.os-tabs button { min-height: 44px; }
+.os-tabs button[aria-selected="true"] { color: var(--purple); border-color: var(--purple); }
+.install-box .lbl { display: none; }
+.home-install .downloads { padding-top: 16px; margin-top: 0; }
+.home-status p, .home-built p { max-width: 76ch; }
+section[id], h1[id], h2[id], h3[id], .pkg[id] { scroll-margin-top: 96px; }
+:focus-visible { outline: 2px solid var(--purple); outline-offset: 4px; }
+.pg-editor textarea:focus-visible { outline-offset: -3px; }
+.skip-link { position: fixed; top: 8px; left: 16px; z-index: 100; transform: translateY(-150%); background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 8px; }
+.skip-link:focus { transform: none; color: var(--paper); }
+@media (min-width: 900px) {
+  :root { --gutter: 48px; }
+  .layout, .layout.has-toc { grid-template-columns: 190px minmax(0, 1fr); gap: 32px; }
+  .layout .toc { display: none; }
+  .content { max-width: none; }
+  .foot-in { align-items: flex-start; }
+  .foot-links { margin-left: 0; flex-basis: 100%; }
+  .note-card { padding: 40px; }
+  .cta-in { gap: 32px; }
+}
+@media (min-width: 1360px) {
+  .top .nav { display: flex; }
+  .top .menu-btn, .top .drawer, .top.open .drawer { display: none; }
+  .layout.has-toc { grid-template-columns: 170px minmax(0, 1fr) 160px; gap: 24px; }
+  .layout.has-toc .toc { display: block; }
+}
+@media (max-width: 899px) {
+  .top .btn-install { display: none; }
+  .cta-band .cta-in { align-items: stretch; }
+}
+@media (max-width: 599px) {
+  :root { --gutter: 20px; }
+  .top-in { gap: 12px; }
+  .top .brand { font-size: 22px; gap: 8px; }
+  .top .brand .v { display: none; }
+  .top-right { gap: 8px; }
+  .note-card { padding: 24px 20px; }
+  .tiny { gap: 32px; }
+  .install-box { padding: 16px; }
+  .install-box .btn { align-self: flex-start; min-width: 88px; }
+  .article h1, .content h1 { font-size: clamp(32px, 8vw, 40px); overflow-wrap: anywhere; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .nav-t svg, .pkg-grid a { transition: none; }
+}

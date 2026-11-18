@@ -24,12 +24,13 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="../home.css?v=8ff21347f0" />
-  </head>
-  <body class="home-compact">
+  <link rel="stylesheet" href="../layout.css?v=9354225791" />
+</head>
+  <body class="home-compact"><a class="skip-link" href="#main-content">Ir al contenido</a>
     <header class="top">
       <div class="wrap top-in">
         <a class="brand" href="#"><img src="../../assets/logo.png" alt="" />eskiu<span class="v">v0.16.1</span></a>
-        <nav class="nav" aria-label="Principal"><div class="nav-g"><button type="button" class="nav-t">Lenguaje<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="language.html#language"><b>El lenguaje</b><span>Memoria, tipos, errores e interoperabilidad con C</span></a><a href="language.html#compare"><b>Cómo se compara</b><span>Las decisiones de Eskiu</span></a><a href="language.html#status"><b>Estabilidad y madurez</b><span>Qué esperar antes de 1.0</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Aprende<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="quickstart.html"><b>Empieza</b><span>Instálalo y corre un primer programa</span></a><a href="playground.html"><b>Playground</b><span>Corre código en el navegador</span></a><a href="../the-book-of-eskiu.html"><b>El libro de Eskiu</b><span>El lenguaje, capítulo por capítulo</span></a><a href="agents.html"><b>Para agentes</b><span>Instala, maneja y prueba Eskiu desde un agente</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Documentación<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="../docs/index.html"><b>Referencia</b><span>El lenguaje, la biblioteca estándar y el compilador</span></a><a href="platforms.html"><b>Plataformas</b><span>Destinos de compilación, herramientas y requisitos</span></a><a href="../docs/stability.html"><b>Política de estabilidad</b><span>Compatibilidad entre versiones</span></a><a href="../changelog.html"><b>Notas de versión</b><span>Qué cambió en cada versión</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Ecosistema<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="packages.html"><b>Paquetes</b><span>Bibliotecas que amplían el lenguaje</span></a><a href="showcase.html"><b>Hecho con Eskiu</b><span>Proyectos y casos de uso</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+        <nav class="nav" aria-label="Principal"><div class="nav-g"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-language">Lenguaje<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-language"><a href="language.html#language"><b>El lenguaje</b><span>Memoria, tipos, errores e interoperabilidad con C</span></a><a href="language.html#compare"><b>Cómo se compara</b><span>Las decisiones de Eskiu</span></a><a href="language.html#status"><b>Estabilidad y madurez</b><span>Qué esperar antes de 1.0</span></a></div></div><div class="nav-g"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-learn">Aprende<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-learn"><a href="quickstart.html"><b>Empieza</b><span>Instálalo y corre un primer programa</span></a><a href="playground.html"><b>Playground</b><span>Corre código en el navegador</span></a><a href="../the-book-of-eskiu.html"><b>El libro de Eskiu</b><span>El lenguaje, capítulo por capítulo</span></a><a href="agents.html"><b>Para agentes</b><span>Instala, maneja y prueba Eskiu desde un agente</span></a></div></div><div class="nav-g"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-docs">Documentación<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-docs"><a href="../docs/index.html"><b>Referencia</b><span>El lenguaje, la biblioteca estándar y el compilador</span></a><a href="platforms.html"><b>Plataformas</b><span>Destinos de compilación, herramientas y requisitos</span></a><a href="../docs/stability.html"><b>Política de estabilidad</b><span>Compatibilidad entre versiones</span></a><a href="../changelog.html"><b>Notas de versión</b><span>Qué cambió en cada versión</span></a></div></div><div class="nav-g"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-ecosystem">Ecosistema<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-ecosystem"><a href="packages.html"><b>Paquetes</b><span>Bibliotecas que amplían el lenguaje</span></a><a href="showcase.html"><b>Hecho con Eskiu</b><span>Proyectos y casos de uso</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
         <div class="top-right">
           <span class="lang"><a href="../index.html" onclick="try{localStorage.setItem('eskiu-lang','en')}catch(e){}">EN</a> / <span aria-current="page">ES</span></span>
           <a class="btn-install" href="#install">Instalar 0.16.1</a>
@@ -41,7 +42,7 @@
       <nav class="drawer" id="drawer" aria-label="Principal"><div class="dr-g"><span class="dr-h">Lenguaje</span><a href="language.html#language">El lenguaje</a><a href="language.html#compare">Cómo se compara</a><a href="language.html#status">Estabilidad y madurez</a></div><div class="dr-g"><span class="dr-h">Aprende</span><a href="quickstart.html">Empieza</a><a href="playground.html">Playground</a><a href="../the-book-of-eskiu.html">El libro de Eskiu</a><a href="agents.html">Para agentes</a></div><div class="dr-g"><span class="dr-h">Documentación</span><a href="../docs/index.html">Referencia</a><a href="platforms.html">Plataformas</a><a href="../docs/stability.html">Política de estabilidad</a><a href="../changelog.html">Notas de versión</a></div><div class="dr-g"><span class="dr-h">Ecosistema</span><a href="packages.html">Paquetes</a><a href="showcase.html">Hecho con Eskiu</a></div><a class="dr-gh" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
     </header>
 
-    <main>
+    <main id="main-content">
       <section class="wrap hero">
         <div class="hero-txt">
 
@@ -98,9 +99,7 @@ max = 7</pre>
       <div class="wrap foot-in">
         <span class="brand">eskiu</span>
         <span>Parte de la familia <a href="https://reactvision.xyz">ReactVision</a> / MIT</span>
-        <nav class="foot-links" aria-label="Pie de página">
-          <a href="about.html">Acerca de Eskiu</a>
-          <a href="../docs/index.html">Docs</a>
+        <nav class="foot-links" aria-label="Pie de página"><a href="about.html">Acerca de Eskiu</a><a href="../docs/index.html">Docs</a>
           <a href="../the-book-of-eskiu.html">Libro</a>
           <a href="../docs/internals.html">Internals</a>
           <a href="../changelog.html">Cambios</a>
@@ -113,6 +112,7 @@ max = 7</pre>
 
     <script>try { localStorage.setItem('eskiu-lang', 'es'); } catch (e) {}</script>
     <script>if(location.hash === "#playground" || location.hash === "#toolchain") location.replace("playground.html"); else if(location.hash === "#compare") location.replace("language.html#compare");</script>
-    <script src="../home.js?v=2b7b0778d7"></script>
-  </body>
+    <script src="../home.js?v=1eb6f5e142"></script>
+  <script src="../navigation.js?v=cdf0e91001"></script>
+</body>
 </html>

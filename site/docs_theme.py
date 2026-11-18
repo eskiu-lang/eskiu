@@ -256,7 +256,6 @@ SHELL = """<!doctype html>
       </nav>
     </div>
   </footer>
-  <script>(function(){{var t=document.querySelector(".top"),b=document.querySelector(".menu-btn");if(!t||!b)return;b.addEventListener("click",function(){{var o=t.classList.toggle("open");b.setAttribute("aria-expanded",o?"true":"false");}});}})();</script>
 </body>
 </html>
 """

@@ -143,21 +143,8 @@ int main() {
 (function () {
   var ES = document.documentElement.lang === "es";
   var T = ES
-    ? { empty: "No hay nada que ejecutar. Escribe código primero.", running: "Ejecutando", compiling: "Compilando y ejecutando…", noout: "(sin salida)", timeout: "tiempo agotado", trunc: "salida truncada", fail: "La solicitud falló.", offline: "No se pudo contactar al servidor del playground.", hint: "El runner puede estar fuera de línea. Ejecútalo localmente; consulta el inicio rápido.", run: "Ejecutar", copied: "Copiado", idle: "La salida aparece aquí. Presiona Ejecutar (o ⌘/Ctrl + Enter)." }
-    : { empty: "Nothing to run. Write some code first.", running: "Running", compiling: "Compiling &amp; running…", noout: "(no output)", timeout: "timed out", trunc: "output truncated", fail: "Request failed.", offline: "Could not reach the playground server.", hint: "The live runner may be offline. Run locally instead; see the quickstart.", run: "Run", copied: "Copied", idle: "Output appears here. Press Run (or ⌘/Ctrl + Enter)." };
-
-  /* Mobile menu */
-  var top = document.querySelector(".top");
-  var mb = document.querySelector(".menu-btn");
-  if (top && mb) {
-    mb.addEventListener("click", function () {
-      var open = top.classList.toggle("open");
-      mb.setAttribute("aria-expanded", open ? "true" : "false");
-    });
-    top.querySelectorAll(".drawer a").forEach(function (a) {
-      a.addEventListener("click", function () { top.classList.remove("open"); mb.setAttribute("aria-expanded", "false"); });
-    });
-  }
+    ? { empty: "No hay nada que ejecutar. Escribe código primero.", running: "Ejecutando", compiling: "Compilando y ejecutando…", noout: "(sin salida)", timeout: "tiempo agotado", trunc: "salida truncada", fail: "La solicitud falló.", offline: "No se pudo contactar al servidor del playground.", hint: "Revisa tu conexión o ejecútalo localmente; consulta el inicio rápido.", run: "Ejecutar", copied: "Copiado", idle: "La salida aparece aquí. Presiona Ejecutar (o ⌘/Ctrl + Enter)." }
+    : { empty: "Nothing to run. Write some code first.", running: "Running", compiling: "Compiling &amp; running…", noout: "(no output)", timeout: "timed out", trunc: "output truncated", fail: "Request failed.", offline: "Could not reach the playground server.", hint: "Check your connection or run locally; see the quickstart.", run: "Run", copied: "Copied", idle: "Output appears here. Press Run (or ⌘/Ctrl + Enter)." };
 
   /* Copy buttons */
   // The install box's tabs: the command for each system, Windows first on Windows.
@@ -166,23 +153,51 @@ int main() {
     if (!box) return;
     var buttons = tabs.querySelectorAll("button");
     function pick(t) {
-      buttons.forEach(function (o) { o.setAttribute("aria-selected", o === t ? "true" : "false"); });
+      buttons.forEach(function (o) {
+        o.setAttribute("aria-selected", o === t ? "true" : "false");
+        o.tabIndex = o === t ? 0 : -1;
+      });
+      box.setAttribute("aria-labelledby", t.id);
       box.querySelector(".cmd").textContent = t.getAttribute("data-cmd");
       box.querySelector(".lbl").textContent = t.getAttribute("data-lbl");
       box.querySelector("[data-copy]").setAttribute("data-copy", t.getAttribute("data-cmd"));
     }
-    buttons.forEach(function (t) { t.addEventListener("click", function () { pick(t); }); });
+    buttons.forEach(function (t, i) {
+      t.id = "install-os-" + i;
+      t.setAttribute("aria-controls", box.id);
+      t.tabIndex = i === 0 ? 0 : -1;
+      t.addEventListener("click", function () { pick(t); });
+      t.addEventListener("keydown", function (e) {
+        var next;
+        if (e.key === "ArrowRight") next = (i + 1) % buttons.length;
+        else if (e.key === "ArrowLeft") next = (i + buttons.length - 1) % buttons.length;
+        else if (e.key === "Home") next = 0;
+        else if (e.key === "End") next = buttons.length - 1;
+        else return;
+        e.preventDefault(); pick(buttons[next]); buttons[next].focus();
+      });
+    });
+    box.setAttribute("role", "tabpanel");
+    box.setAttribute("aria-labelledby", buttons[0].id);
     if (/Windows/.test(navigator.userAgent) && buttons.length > 1) pick(buttons[1]);
   });
 
   document.querySelectorAll("[data-copy]").forEach(function (b) {
     b.addEventListener("click", function () {
       var label = b.textContent;
-      if (!navigator.clipboard) return;
+      function failed() {
+        b.textContent = ES ? "Copia el comando" : "Select and copy";
+        var selection = window.getSelection();
+        var range = document.createRange();
+        range.selectNodeContents(document.querySelector(".install-box .cmd"));
+        selection.removeAllRanges(); selection.addRange(range);
+        setTimeout(function () { b.textContent = label; }, 2400);
+      }
+      if (!navigator.clipboard) { failed(); return; }
       navigator.clipboard.writeText(b.getAttribute("data-copy")).then(function () {
         b.textContent = T.copied;
         setTimeout(function () { b.textContent = label; }, 1600);
-      }, function () {});
+      }, failed);
     });
   });
 
@@ -203,13 +218,17 @@ int main() {
   var runLabel = btn.innerHTML;
 
   async function run() {
+    if (btn.disabled) return;
     var code = ta.value;
     if (!code.trim()) { res.innerHTML = '<span class="err">' + T.empty + "</span>"; return; }
     btn.disabled = true;
     btn.innerHTML = '<span class="spin"></span> ' + T.running;
     res.innerHTML = '<span class="meta">$ eskiuc run main.esk</span>\n<span class="meta">' + T.compiling + "</span>";
+    var controller = new AbortController();
+    var timeout = setTimeout(function () { controller.abort(); }, 30000);
+    res.setAttribute("aria-busy", "true");
     try {
-      var r = await fetch(PLAYGROUND_API + "/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: code }) });
+      var r = await fetch(PLAYGROUND_API + "/run", { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal, body: JSON.stringify({ code: code }) });
       var data = await r.json();
       if (!data.ok) { res.innerHTML = '<span class="err">' + esc(data.error || T.fail) + "</span>"; return; }
       var html = '<span class="meta">$ eskiuc run main.esk</span>\n';
@@ -225,8 +244,10 @@ int main() {
       html += '\n\n<span class="meta">' + parts.join(" / ") + "</span>";
       res.innerHTML = html;
     } catch (e) {
-      res.innerHTML = '<span class="err">' + T.offline + '</span>\n<span class="hint">' + T.hint + "</span>";
+      res.innerHTML = '<span class="err">' + T.offline + '</span>\n<span class="hint">' + T.hint + '</span>\n<a href="quickstart.html">' + (ES ? "Inicio rápido" : "Quickstart") + '</a>';
     } finally {
+      clearTimeout(timeout);
+      res.setAttribute("aria-busy", "false");
       btn.disabled = false;
       btn.innerHTML = runLabel;
     }

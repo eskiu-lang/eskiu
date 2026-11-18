@@ -10,7 +10,7 @@ from docs_config import ROOT, GH
 
 # Every page names its stylesheets and scripts with ?v=<hash of the file>, so a browser
 # that cached an old copy fetches the new one when the file changes, and only then.
-ASSETS = ("page.css", "home.css", "home.js")
+ASSETS = ("page.css", "home.css", "home.js", "layout.css", "navigation.js", "reader.css")
 
 
 # The main navigation of every page, defined once: apply_nav rewrites each page's header
@@ -92,8 +92,8 @@ def nav_html(rel):
             cur = ' aria-current="page"' if here else ""
             links.append((href(target), html.escape(title), html.escape(desc), cur))
         gcls = "nav-g cur" if key == cur_group else "nav-g"
-        nav.append(f'<div class="{gcls}"><button type="button" class="nav-t">{label}{CHEVRON}</button>'
-                   '<div class="nav-m">' +
+        nav.append(f'<div class="{gcls}"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-{key}">{label}{CHEVRON}</button>'
+                   f'<div class="nav-m" id="nav-{key}">' +
                    "".join(f'<a href="{h}"{c}><b>{t}</b><span>{d}</span></a>' for h, t, d, c in links) +
                    "</div></div>")
         drawer.append(f'<div class="dr-g"><span class="dr-h">{label}</span>' +
@@ -120,6 +120,23 @@ def apply_nav():
                 continue
             nav, drawer = nav_html(rel)
             new = NAV_RE.sub(lambda m: m.group(1) + (nav if m.group(2) == "nav" else drawer) + m.group(4), text)
+            for before, after in ((" →", ""), ("← ", ""), ("↓ ", ""), (" · ", " / "), (" — ", ". "), (" – ", ": "), ("→", " to "), ("–", "-"), ("—", ", "), ("·", "/")):
+                new = new.replace(before, after)
+            prefix = "../" if "/" in rel else ""
+            if 'layout.css' not in new:
+                new = new.replace("</head>", f'<link rel="stylesheet" href="{prefix}layout.css" />\n</head>')
+            if 'navigation.js' not in new:
+                new = new.replace("</body>", f'<script src="{prefix}navigation.js"></script>\n</body>')
+            if 'class="skip-link"' not in new:
+                label = "Ir al contenido" if rel.startswith("es/") else "Skip to content"
+                new = re.sub(r"(<body[^>]*>)", lambda m: m[1] + f'<a class="skip-link" href="#main-content">{label}</a>', new, count=1)
+                new = re.sub(r"<main(\s[^>]*)?>", lambda m: '<main' + (m[1] or '') + ' id="main-content">', new, count=1)
+            about_prefix = "../" if rel.startswith("docs/") else ""
+            about_label = "Acerca de Eskiu" if rel.startswith("es/") else "About Eskiu"
+            def footer_links(match):
+                links = re.sub(r'<a href="(?:\.\./)?about\.html">.*?</a>\s*', "", match[2]).lstrip()
+                return match[1] + f'<a href="{about_prefix}about.html">{about_label}</a>' + links + match[3]
+            new = re.sub(r'(<nav class="foot-links"[^>]*>)(.*?)(</nav>)', footer_links, new, flags=re.S)
             if new != text:
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(new)

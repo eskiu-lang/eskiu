@@ -250,7 +250,6 @@ PAGE_SHELL = """<!doctype html>
       <nav class="foot-links" aria-label="{footlabel}"><a href="{p}docs/index.html">Docs</a><a href="{p}the-book-of-eskiu.html">{book}</a><a href="{p}docs/internals.html">Internals</a><a href="{p}changelog.html">{changelog}</a><a href="{p}llms.txt">llms.txt</a><a href="{gh}">GitHub</a><a href="https://reactvision.xyz">ReactVision</a></nav>
     </div>
   </footer>
-  <script>(function(){{var t=document.querySelector(".top"),b=document.querySelector(".menu-btn");if(!t||!b)return;b.addEventListener("click",function(){{var o=t.classList.toggle("open");b.setAttribute("aria-expanded",o?"true":"false");}});}})();</script>
 </body>
 </html>
 """

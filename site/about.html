@@ -25,12 +25,13 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="home.css?v=8ff21347f0" />
-  </head>
-  <body>
+  <link rel="stylesheet" href="layout.css?v=9354225791" />
+</head>
+  <body><a class="skip-link" href="#main-content">Skip to content</a>
     <header class="top">
       <div class="wrap top-in">
         <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.16.1</span></a>
-        <nav class="nav" aria-label="Main"><div class="nav-g"><button type="button" class="nav-t">Language<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="language.html#language"><b>The language</b><span>Memory, types, errors and C interop</span></a><a href="language.html#compare"><b>How it compares</b><span>The choices behind Eskiu</span></a><a href="language.html#status"><b>Stability and maturity</b><span>What to expect before 1.0</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Learn<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="quickstart.html"><b>Get started</b><span>Install it and run a first program</span></a><a href="playground.html"><b>Playground</b><span>Run code in the browser</span></a><a href="the-book-of-eskiu.html"><b>The Book of Eskiu</b><span>The language, chapter by chapter</span></a><a href="agents.html"><b>For agents</b><span>Install, drive and test Eskiu from an agent</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Documentation<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="docs/index.html"><b>Reference</b><span>The language, standard library and compiler</span></a><a href="platforms.html"><b>Platforms</b><span>Targets, toolchains and requirements</span></a><a href="docs/stability.html"><b>Stability policy</b><span>Compatibility between releases</span></a><a href="changelog.html"><b>Release notes</b><span>What changed in each version</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Ecosystem<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="packages.html"><b>Packages</b><span>Libraries that extend the language</span></a><a href="showcase.html"><b>Built with Eskiu</b><span>Projects and case studies</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+        <nav class="nav" aria-label="Main"><div class="nav-g"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-language">Language<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-language"><a href="language.html#language"><b>The language</b><span>Memory, types, errors and C interop</span></a><a href="language.html#compare"><b>How it compares</b><span>The choices behind Eskiu</span></a><a href="language.html#status"><b>Stability and maturity</b><span>What to expect before 1.0</span></a></div></div><div class="nav-g"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-learn">Learn<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-learn"><a href="quickstart.html"><b>Get started</b><span>Install it and run a first program</span></a><a href="playground.html"><b>Playground</b><span>Run code in the browser</span></a><a href="the-book-of-eskiu.html"><b>The Book of Eskiu</b><span>The language, chapter by chapter</span></a><a href="agents.html"><b>For agents</b><span>Install, drive and test Eskiu from an agent</span></a></div></div><div class="nav-g"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-docs">Documentation<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-docs"><a href="docs/index.html"><b>Reference</b><span>The language, standard library and compiler</span></a><a href="platforms.html"><b>Platforms</b><span>Targets, toolchains and requirements</span></a><a href="docs/stability.html"><b>Stability policy</b><span>Compatibility between releases</span></a><a href="changelog.html"><b>Release notes</b><span>What changed in each version</span></a></div></div><div class="nav-g"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-ecosystem">Ecosystem<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-ecosystem"><a href="packages.html"><b>Packages</b><span>Libraries that extend the language</span></a><a href="showcase.html"><b>Built with Eskiu</b><span>Projects and case studies</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
         <div class="top-right">
           <span class="lang"><span aria-current="page">EN</span> / <a href="es/about.html" onclick="try{localStorage.setItem('eskiu-lang','es')}catch(e){}">ES</a></span>
           <a class="btn-install" href="index.html#install">Install 0.16.1</a>
@@ -42,11 +43,11 @@
       <nav class="drawer" id="drawer" aria-label="Main"><div class="dr-g"><span class="dr-h">Language</span><a href="language.html#language">The language</a><a href="language.html#compare">How it compares</a><a href="language.html#status">Stability and maturity</a></div><div class="dr-g"><span class="dr-h">Learn</span><a href="quickstart.html">Get started</a><a href="playground.html">Playground</a><a href="the-book-of-eskiu.html">The Book of Eskiu</a><a href="agents.html">For agents</a></div><div class="dr-g"><span class="dr-h">Documentation</span><a href="docs/index.html">Reference</a><a href="platforms.html">Platforms</a><a href="docs/stability.html">Stability policy</a><a href="changelog.html">Release notes</a></div><div class="dr-g"><span class="dr-h">Ecosystem</span><a href="packages.html">Packages</a><a href="showcase.html">Built with Eskiu</a></div><a class="dr-gh" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
     </header>
 
-    <main>
+    <main id="main-content">
       <section class="wrap dev-note" id="note" aria-labelledby="note-h">
         <div class="note-card">
-          <span class="eyebrow">A note from the developer</span>
-          <h1 id="note-h" class="sr-only">A note from the developer</h1>
+
+          <h1 id="note-h" >A note from the developer</h1>
           <p>I learned to program with Ruby, but the more I built, the more I found C underneath everything, Ruby and Python included. I came to love its simplicity. Rust and Zig are well made, but for my work they always felt more complicated than they needed to be.</p>
           <p>So I wrote the language I wanted: the simplicity of C, with the conveniences I kept reaching for in other languages. Today it builds itself and runs in production at ReactVision. If you build something with it, I would like to hear about it.</p>
           <p>I made Eskiu with love and care, and I hope you enjoy it as much as I have enjoyed building it.</p>
@@ -71,9 +72,7 @@
       <div class="wrap foot-in">
         <span class="brand">eskiu</span>
         <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family / MIT</span>
-        <nav class="foot-links" aria-label="Footer">
-          <a href="about.html">About Eskiu</a>
-          <a href="docs/index.html">Docs</a>
+        <nav class="foot-links" aria-label="Footer"><a href="about.html">About Eskiu</a><a href="docs/index.html">Docs</a>
           <a href="the-book-of-eskiu.html">Book</a>
           <a href="docs/internals.html">Internals</a>
           <a href="changelog.html">Changelog</a>
@@ -84,6 +83,7 @@
       </div>
     </footer>
 
-    <script src="home.js?v=2b7b0778d7"></script>
-  </body>
+    <script src="home.js?v=1eb6f5e142"></script>
+  <script src="navigation.js?v=cdf0e91001"></script>
+</body>
 </html>

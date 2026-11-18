@@ -1,0 +1,32 @@
+/* The book keeps its reading navigation within the website's outer frame. */
+@media screen {
+  body { max-width: 1216px; margin-inline: auto; font-family: "Inter", -apple-system, "Segoe UI", sans-serif; }
+  #sidebar { left: max(0px, calc((100vw - 1216px) / 2)); }
+  #sidebar a { font-size: 14px; padding-block: 7px; }
+  #sidebar a.toc-sec { font-size: 13px; padding-block: 5px; }
+  #sidebar a.toc-ch { font-size: 14px; }
+  #main { max-width: 956px; padding-inline: 48px; }
+  p, li { font-size: 17px; line-height: 1.75; text-align: left; }
+  h2.section { font-size: 24px; }
+  h3.subsection { font-size: 20px; }
+  code, pre { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 14px; }
+  pre { max-width: 100%; overflow-x: auto; }
+  .toc-entry a, .toc-entry-desc { font-size: 15px; }
+  :focus-visible { outline: 2px solid #7964e8; outline-offset: 3px; }
+  #navToggle { min-width: 44px; min-height: 44px; }
+}
+@media screen and (max-width: 900px) {
+  #main { padding: 72px 20px 60px; }
+  #sidebar { left: 0; }
+  .cover-title { font-size: clamp(32px, 8vw, 48px); }
+  .cover-row { gap: 16px; }
+  .cover-logo { max-width: 28%; height: auto; object-fit: contain; }
+}
+@media screen and (prefers-color-scheme: dark) {
+  :root { --bg: #0d0d0d; --d1: #fafafa; --d2: #d4d4d4; --d3: #aaa; --d4: #999; --d5: #444; --d6: #181818; --bar: #ccc; }
+  #sidebar, #navToggle { background: #141414; }
+  #sidebar a { color: #bdbdbd; }
+  #sidebar .sidebar-logo { border-color: #333; }
+  #sidebar a:hover { background: #262626; color: #fff; }
+}
+@media screen and (prefers-reduced-motion: reduce) { #sidebar { transition: none; } }
