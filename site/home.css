@@ -517,3 +517,31 @@ h1, h2, h3 { letter-spacing: -0.03em; }
   .user-morrow img { filter: none; }
   .hero-fig .hc-cat { background: var(--surface); }
 }
+
+/* Compact language homepage */
+.home-compact .hero { padding-block: 64px 56px; }
+.home-compact .hero-fig { order: 0; }
+.home-compact .hero h1 { font-size: clamp(38px, 4.5vw, 56px); text-wrap: initial; }
+.home-compact .hero-code { margin: 0; width: 100%; }
+.home-compact .hero-code pre { font-size: 13px; }
+.home-principles { display: grid; gap: 28px; padding-block: 32px 48px; }
+.home-principles h2, .home-install h2, .home-status h2, .home-built h2 { font-size: 23px; line-height: 1.25; margin: 0 0 12px; }
+.home-principles p, .home-status p, .home-built p { margin: 0 0 12px; color: var(--ink2); font-size: 16px; }
+.home-install, .home-status, .home-built { padding-block: 32px; }
+.home-install .install-box { margin-top: 0; }
+.home-install .os-tabs { margin-top: 20px; }
+.home-install .downloads { margin-bottom: 0; }
+.home-compact .foot { margin-top: 32px; }
+:focus-visible { outline: 2px solid var(--purple); outline-offset: 4px; }
+.pg-editor textarea:focus-visible { outline: 2px solid var(--purple); outline-offset: -3px; }
+@media (min-width: 900px) {
+  .home-principles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; }
+  .home-compact .hero { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+@media (max-width: 599px) {
+  .home-compact .hero { padding-block: 32px; }
+  .home-compact .hero-code pre { font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+.sec-head h1, .pg h1 { margin: 0; font-size: clamp(32px, 4vw, 48px); line-height: 1.1; }
+.note-card h1 { margin: 0; }

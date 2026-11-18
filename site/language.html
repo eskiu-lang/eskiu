@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>try{if(localStorage.getItem("eskiu-lang")==="es")location.replace("es/language.html"+location.hash);}catch(e){}</script>
+    <link rel="canonical" href="https://eskiu-lang.org/language.html" />
+    <title>The language · Eskiu</title>
+    <meta name="description" content="The language" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Eskiu" />
+  <meta property="og:title" content="The language" />
+  <meta property="og:description" content="The language" />
+  <meta property="og:url" content="https://eskiu-lang.org/language.html" />
+  <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#fafafa" />
+    <link rel="icon" type="image/png" href="../assets/logo.png" />
+    <link rel="alternate" hreflang="en" href="https://eskiu-lang.org/language.html" />
+    <link rel="alternate" hreflang="es" href="https://eskiu-lang.org/es/language.html" />
+    <link rel="alternate" hreflang="x-default" href="https://eskiu-lang.org/language.html" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="home.css?v=0e651c7b4d" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="wrap top-in">
+        <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.16.1</span></a>
+        <nav class="nav" aria-label="Main"><div class="nav-g cur"><button type="button" class="nav-t">Language<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="language.html#language"><b>The language</b><span>Memory, types, errors and C interop</span></a><a href="language.html#compare"><b>How it compares</b><span>The choices behind Eskiu</span></a><a href="language.html#status"><b>Stability and maturity</b><span>What to expect before 1.0</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Learn<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="quickstart.html"><b>Get started</b><span>Install it and run a first program</span></a><a href="playground.html"><b>Playground</b><span>Run code in the browser</span></a><a href="the-book-of-eskiu.html"><b>The Book of Eskiu</b><span>The language, chapter by chapter</span></a><a href="agents.html"><b>For agents</b><span>Install, drive and test Eskiu from an agent</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Documentation<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="docs/index.html"><b>Reference</b><span>The language, standard library and compiler</span></a><a href="platforms.html"><b>Platforms</b><span>Targets, toolchains and requirements</span></a><a href="docs/stability.html"><b>Stability policy</b><span>Compatibility between releases</span></a><a href="changelog.html"><b>Release notes</b><span>What changed in each version</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Ecosystem<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="packages.html"><b>Packages</b><span>Libraries that extend the language</span></a><a href="showcase.html"><b>Built with Eskiu</b><span>Projects and case studies</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+        <div class="top-right">
+          <span class="lang"><span aria-current="page">EN</span> / <a href="es/language.html" onclick="try{localStorage.setItem('eskiu-lang','es')}catch(e){}">ES</a></span>
+          <a class="btn-install" href="index.html#install">Install 0.16.1</a>
+          <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="drawer">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg>
+          </button>
+        </div>
+      </div>
+      <nav class="drawer" id="drawer" aria-label="Main"><div class="dr-g"><span class="dr-h">Language</span><a href="language.html#language">The language</a><a href="language.html#compare">How it compares</a><a href="language.html#status">Stability and maturity</a></div><div class="dr-g"><span class="dr-h">Learn</span><a href="quickstart.html">Get started</a><a href="playground.html">Playground</a><a href="the-book-of-eskiu.html">The Book of Eskiu</a><a href="agents.html">For agents</a></div><div class="dr-g"><span class="dr-h">Documentation</span><a href="docs/index.html">Reference</a><a href="platforms.html">Platforms</a><a href="docs/stability.html">Stability policy</a><a href="changelog.html">Release notes</a></div><div class="dr-g"><span class="dr-h">Ecosystem</span><a href="packages.html">Packages</a><a href="showcase.html">Built with Eskiu</a></div><a class="dr-gh" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+    </header>
+
+    <main>
+      <section class="wrap sec" id="language">
+        <div class="sec-head">
+          <span class="eyebrow">The language</span>
+          <h1>C's model, with what C is missing.</h1>
+          <p>Memory is yours and calls are C calls. On top of that, Eskiu adds the parts people reach for other languages to get, with cleanup and control flow compiled into your program.</p>
+        </div>
+        <div class="lang-grid">
+          <div class="lcard">
+            <span class="eyebrow">Errors and cleanup</span>
+            <h3>Errors are values, cleanup is <code>defer</code></h3>
+            <p><code>Result</code> carries the error, <code>?</code> passes it up, and <code>defer</code> runs on every way out of the function.</p>
+<pre><span class="ty">Result</span>&lt;<span class="kw">int</span>, <span class="kw">string</span>&gt; serve(<span class="kw">string</span> arg) {
+    <span class="kw">int</span> port = parse_port(arg)?;
+    *<span class="kw">uint8</span> buf = (*<span class="kw">uint8</span>)malloc(4096);
+    <span class="kw">defer</span> free(buf);
+    printf(<span class="st">"serving on %d\n"</span>, port);
+    <span class="kw">return</span> <span class="ty">Ok</span>&lt;<span class="kw">int</span>, <span class="kw">string</span>&gt;(0);
+}</pre>
+          </div>
+          <div class="lcard">
+            <span class="eyebrow">Types</span>
+            <h3>Sum types and checked null</h3>
+            <p>An enum can carry data and <code>match</code> must cover every case. A <code>?*T</code> has to be checked before it is used.</p>
+<pre><span class="kw">enum</span> <span class="ty">Shape</span> { Circle(<span class="kw">float</span>), Rect(<span class="kw">float</span>, <span class="kw">float</span>) }
+
+<span class="kw">float</span> area(<span class="ty">Shape</span> s) {
+    <span class="kw">match</span> s {
+        Circle(r) -&gt; { <span class="kw">return</span> 3.14159 * r * r; }
+        Rect(w, h) -&gt; { <span class="kw">return</span> w * h; }
+    }
+    <span class="kw">return</span> 0.0;
+}</pre>
+          </div>
+          <div class="lcard">
+            <span class="eyebrow">Concurrency</span>
+            <h3><code>async</code> and <code>await</code>, compiled</h3>
+            <p>An async function becomes a state machine at compile time. The event loop is a library in the standard library, not a runtime underneath your program.</p>
+<pre><span class="kw">async</span> <span class="kw">int</span> read_once(<span class="ty">EventLoop</span>* lp, <span class="kw">int</span> fd) {
+    <span class="kw">int</span> n = <span class="kw">await</span> net_read_async(lp, fd, &amp;buf[0], 64);
+    <span class="kw">return</span> n;
+}</pre>
+          </div>
+          <div class="lcard">
+            <span class="eyebrow">C interop</span>
+            <h3>Inside a C or C++ codebase</h3>
+            <p><code>export</code> makes a function callable from C, C++ or Rust and <code>--emit-header</code> writes its header. A module drops into an existing engine one file at a time.</p>
+<pre><span class="kw">export</span> <span class="kw">int</span> checksum(*<span class="kw">uint8</span> data, <span class="kw">int</span> n) {
+    <span class="kw">int</span> sum = 0;
+    <span class="kw">for</span> (i <span class="kw">in</span> 0..n) sum = sum * 31 + data[i];
+    <span class="kw">return</span> sum;
+}
+
+<span class="cm">$ eskiuc lib.esk --emit-header lib.h</span></pre>
+          </div>
+        </div>
+        <p class="aside">The compiler is written in Eskiu too, and both compilers, C++ and Eskiu, are held to the same output on every program in the test suite. <a href="the-book-of-eskiu.html">Read the Book →</a></p>
+      </section>
+
+      <section class="wrap sec" id="status">
+        <div class="sec-head">
+          <span class="eyebrow">What to expect</span>
+          <h2>A young language, with explicit choices.</h2>
+          <p>Eskiu is in the 0.16 series. Memory is managed manually; <code>defer</code> helps release resources, and bounds, overflow and null checks are enabled with <code>--safe</code>. There is no borrow checker.</p>
+        </div>
+        <p>Minor releases can change the language and standard library. Read the <a href="docs/stability.html">stability policy</a>, <a href="changelog.html">release notes</a> and <a href="platforms.html">requirements for each target</a> before choosing it for a project.</p>
+      </section>
+
+      <section class="wrap sec" id="compare">
+        <div class="sec-head">
+          <span class="eyebrow">How it compares</span>
+          <h2>Where it sits.</h2>
+          <p>Eskiu is younger than all of these, and says so.</p>
+        </div>
+        <div class="compare-scroll"><table class="compare"><thead><tr><th scope="col"></th><th scope="col">Eskiu</th><th scope="col">C</th><th scope="col">Zig</th><th scope="col">Rust</th><th scope="col">Go</th></tr></thead><tbody><tr><th scope="row">Memory</th><td>Manual, with <code>defer</code></td><td>Manual</td><td>Manual, with <code>defer</code></td><td>Ownership, checked</td><td>Garbage collected</td></tr><tr><th scope="row">Calling C</th><td><code>extern</code>, structs by value in each target's ABI</td><td>Native</td><td><code>@cImport</code>, translate-c</td><td><code>extern "C"</code>, bindgen</td><td>cgo</td></tr><tr><th scope="row">Errors</th><td><code>Result</code> and <code>?</code>, or <code>try</code> / <code>catch</code></td><td>Return codes, <code>errno</code></td><td>Error unions and <code>try</code></td><td><code>Result</code> and <code>?</code></td><td>Multiple returns</td></tr><tr><th scope="row">Run-time checks</th><td>Opt-in: <code>--safe=bounds,overflow,null</code></td><td>No</td><td>In Debug and ReleaseSafe</td><td>Bounds always, overflow in debug</td><td>Bounds always</td></tr><tr><th scope="row">Generics</th><td>Monomorphized, interface bounds</td><td>Macros</td><td><code>comptime</code></td><td>Traits</td><td>Type parameters</td></tr><tr><th scope="row">Sum types, exhaustive <code>match</code></th><td>Yes</td><td>No</td><td>Tagged unions</td><td>Yes</td><td>No</td></tr><tr><th scope="row">Null safety</th><td>Opt-in <code>?*T</code></td><td>No</td><td>Optionals</td><td><code>Option</code></td><td>No</td></tr><tr><th scope="row">Run a file as a script</th><td><code>eskiuc run</code>, shebang</td><td>No</td><td><code>zig run</code></td><td>Through Cargo</td><td><code>go run</code></td></tr><tr><th scope="row">async / await</th><td>Yes</td><td>No</td><td>Through <code>std.Io</code>, no keywords</td><td>Yes</td><td>Goroutines</td></tr><tr><th scope="row">Age</th><td>0.16, young</td><td>Decades</td><td>Pre-1.0</td><td>Stable since 2015</td><td>Stable since 2012</td></tr></tbody></table></div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div class="wrap foot-in">
+        <span class="brand">eskiu</span>
+        <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family · MIT</span>
+        <nav class="foot-links" aria-label="Footer">
+          <a href="about.html">About Eskiu</a>
+          <a href="docs/index.html">Docs</a>
+          <a href="the-book-of-eskiu.html">Book</a>
+          <a href="docs/internals.html">Internals</a>
+          <a href="changelog.html">Changelog</a>
+          <a href="llms.txt">llms.txt</a>
+          <a href="https://github.com/eskiu-lang/eskiu">GitHub</a>
+          <a href="https://reactvision.xyz">ReactVision</a>
+        </nav>
+      </div>
+    </footer>
+
+    <script src="home.js?v=5a287e135e"></script>
+  </body>
+</html>

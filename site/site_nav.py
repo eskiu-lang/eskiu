@@ -18,17 +18,17 @@ ASSETS = ("page.css", "home.css", "home.js")
 # page that exists only in English (the Spanish pages link to it with "../").
 NAV = [
     ("language", "Language", "Lenguaje", [
-        ("index.html#language", "The language", "Memory, types, errors and C interop",
+        ("language.html#language", "The language", "Memory, types, errors and C interop",
          "El lenguaje", "Memoria, tipos, errores e interoperabilidad con C"),
-        ("index.html#compare", "How it compares", "The choices behind Eskiu",
+        ("language.html#compare", "How it compares", "The choices behind Eskiu",
          "Cómo se compara", "Las decisiones de Eskiu"),
-        ("index.html#status", "Stability and maturity", "What to expect before 1.0",
+        ("language.html#status", "Stability and maturity", "What to expect before 1.0",
          "Estabilidad y madurez", "Qué esperar antes de 1.0"),
     ]),
     ("learn", "Learn", "Aprende", [
         ("quickstart.html", "Get started", "Install it and run a first program",
          "Empieza", "Instálalo y corre un primer programa"),
-        ("index.html#playground", "Playground", "Run code in the browser",
+        ("playground.html", "Playground", "Run code in the browser",
          "Playground", "Corre código en el navegador"),
         ("@the-book-of-eskiu.html", "The Book of Eskiu", "The language, chapter by chapter",
          "El libro de Eskiu", "El lenguaje, capítulo por capítulo"),
@@ -53,7 +53,7 @@ NAV = [
     ]),
 ]
 NAV_CURRENT = {"quickstart.html": "learn", "agents.html": "learn", "docs/": "docs",
-               "the-book-of-eskiu.html": "learn", "changelog.html": "docs",
+               "the-book-of-eskiu.html": "learn", "playground.html": "learn", "language.html": "language", "changelog.html": "docs",
                "platforms.html": "docs", "packages.html": "ecosystem",
                "vision.html": "ecosystem", "gpu.html": "ecosystem", "showcase.html": "ecosystem",
                "case-study-reactvision.html": "ecosystem", "case-study-3ds.html": "ecosystem",
@@ -137,7 +137,7 @@ CTA_BAND = {
       </div>
       <div class="cta-btns">
         <a class="cta-dark" href="quickstart.html">Get started</a>
-        <a class="cta-line" href="index.html#playground">Try it in the browser</a>
+        <a class="cta-line" href="playground.html">Try it in the browser</a>
       </div>
     </div>
   </section>
@@ -150,7 +150,7 @@ CTA_BAND = {
       </div>
       <div class="cta-btns">
         <a class="cta-dark" href="quickstart.html">Empieza</a>
-        <a class="cta-line" href="index.html#playground">Pruébalo en el navegador</a>
+        <a class="cta-line" href="playground.html">Pruébalo en el navegador</a>
       </div>
     </div>
   </section>

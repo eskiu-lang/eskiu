@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>try{if(localStorage.getItem("eskiu-lang")==="es")location.replace("es/playground.html"+location.hash);}catch(e){}</script>
+    <link rel="canonical" href="https://eskiu-lang.org/playground.html" />
+    <title>Playground · Eskiu</title>
+    <meta name="description" content="Playground" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Eskiu" />
+  <meta property="og:title" content="Playground" />
+  <meta property="og:description" content="Playground" />
+  <meta property="og:url" content="https://eskiu-lang.org/playground.html" />
+  <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#fafafa" />
+    <link rel="icon" type="image/png" href="../assets/logo.png" />
+    <link rel="alternate" hreflang="en" href="https://eskiu-lang.org/playground.html" />
+    <link rel="alternate" hreflang="es" href="https://eskiu-lang.org/es/playground.html" />
+    <link rel="alternate" hreflang="x-default" href="https://eskiu-lang.org/playground.html" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="home.css?v=0e651c7b4d" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="wrap top-in">
+        <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.16.1</span></a>
+        <nav class="nav" aria-label="Main"><div class="nav-g"><button type="button" class="nav-t">Language<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="language.html#language"><b>The language</b><span>Memory, types, errors and C interop</span></a><a href="language.html#compare"><b>How it compares</b><span>The choices behind Eskiu</span></a><a href="language.html#status"><b>Stability and maturity</b><span>What to expect before 1.0</span></a></div></div><div class="nav-g cur"><button type="button" class="nav-t">Learn<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="quickstart.html"><b>Get started</b><span>Install it and run a first program</span></a><a href="playground.html" aria-current="page"><b>Playground</b><span>Run code in the browser</span></a><a href="the-book-of-eskiu.html"><b>The Book of Eskiu</b><span>The language, chapter by chapter</span></a><a href="agents.html"><b>For agents</b><span>Install, drive and test Eskiu from an agent</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Documentation<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="docs/index.html"><b>Reference</b><span>The language, standard library and compiler</span></a><a href="platforms.html"><b>Platforms</b><span>Targets, toolchains and requirements</span></a><a href="docs/stability.html"><b>Stability policy</b><span>Compatibility between releases</span></a><a href="changelog.html"><b>Release notes</b><span>What changed in each version</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Ecosystem<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="packages.html"><b>Packages</b><span>Libraries that extend the language</span></a><a href="showcase.html"><b>Built with Eskiu</b><span>Projects and case studies</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+        <div class="top-right">
+          <span class="lang"><span aria-current="page">EN</span> / <a href="es/playground.html" onclick="try{localStorage.setItem('eskiu-lang','es')}catch(e){}">ES</a></span>
+          <a class="btn-install" href="index.html#install">Install 0.16.1</a>
+          <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="drawer">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg>
+          </button>
+        </div>
+      </div>
+      <nav class="drawer" id="drawer" aria-label="Main"><div class="dr-g"><span class="dr-h">Language</span><a href="language.html#language">The language</a><a href="language.html#compare">How it compares</a><a href="language.html#status">Stability and maturity</a></div><div class="dr-g"><span class="dr-h">Learn</span><a href="quickstart.html">Get started</a><a href="playground.html" aria-current="page">Playground</a><a href="the-book-of-eskiu.html">The Book of Eskiu</a><a href="agents.html">For agents</a></div><div class="dr-g"><span class="dr-h">Documentation</span><a href="docs/index.html">Reference</a><a href="platforms.html">Platforms</a><a href="docs/stability.html">Stability policy</a><a href="changelog.html">Release notes</a></div><div class="dr-g"><span class="dr-h">Ecosystem</span><a href="packages.html">Packages</a><a href="showcase.html">Built with Eskiu</a></div><a class="dr-gh" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+    </header>
+
+    <main>
+      <section class="pg" id="playground">
+        <span id="toolchain"></span>
+        <div class="wrap pg-in">
+          <div class="pg-head-row">
+            <div class="pg-head">
+              <span class="eyebrow">Playground</span>
+              <h1>Try it in the browser.</h1>
+              <p>Edit the program and run it. The server compiles it with LLVM through the same <code>eskiuc run</code>.</p>
+            </div>
+            <div class="pg-ex" role="group" aria-label="Examples">
+              <button type="button" data-ex="hello" aria-pressed="true">hello</button>
+              <button type="button" data-ex="basics" aria-pressed="false">basics</button>
+              <button type="button" data-ex="match" aria-pressed="false">match</button>
+              <button type="button" data-ex="generics" aria-pressed="false">generics</button>
+              <button type="button" data-ex="operators" aria-pressed="false">operators</button>
+              <button type="button" data-ex="async" aria-pressed="false">async</button>
+            </div>
+          </div>
+          <div class="pg-grid">
+            <div class="pg-editor">
+              <div class="pg-bar"><label for="pg-code">main.esk</label><span>⌘/Ctrl + Enter to run</span></div>
+              <textarea id="pg-code" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+            </div>
+            <div class="pg-side">
+              <pre class="pg-out" aria-live="polite"><span class="lbl">STDOUT</span><span id="pg-res"></span></pre>
+              <button class="btn btn-purple" id="pg-run" type="button"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 1.5v11l9-5.5z"/></svg>Run</button>
+              <p class="note">Sandboxed: no network, time- and memory-limited, output capped.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div class="wrap foot-in">
+        <span class="brand">eskiu</span>
+        <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family · MIT</span>
+        <nav class="foot-links" aria-label="Footer">
+          <a href="about.html">About Eskiu</a>
+          <a href="docs/index.html">Docs</a>
+          <a href="the-book-of-eskiu.html">Book</a>
+          <a href="docs/internals.html">Internals</a>
+          <a href="changelog.html">Changelog</a>
+          <a href="llms.txt">llms.txt</a>
+          <a href="https://github.com/eskiu-lang/eskiu">GitHub</a>
+          <a href="https://reactvision.xyz">ReactVision</a>
+        </nav>
+      </div>
+    </footer>
+
+    <script src="home.js?v=5a287e135e"></script>
+  </body>
+</html>
