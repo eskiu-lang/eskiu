@@ -13,6 +13,20 @@ int main() {
     return 0;
 }
 `,
+        defer: `import <io>;
+import <libc>;
+
+int main() {
+    {
+        *int value = alloc<int>(1);
+        defer { free(value); println("Resource released."); }
+        value[0] = 42;
+        printf("value = %d\\n", value[0]);
+    }
+    println("Block finished.");
+    return 0;
+}
+`,
         basics: `import <io>;
 
 // A counter that remembers its state across calls (static local).
@@ -258,5 +272,6 @@ int main() {
   ta.addEventListener("keydown", function (e) {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); run(); }
   });
-  load("hello");
+  var requested = new URLSearchParams(window.location.search).get("example");
+  load(Object.prototype.hasOwnProperty.call(EXAMPLES, requested) ? requested : "hello");
 })();

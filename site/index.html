@@ -25,7 +25,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="home.css?v=8ff21347f0" />
-  <link rel="stylesheet" href="layout.css?v=9354225791" />
+  <link rel="stylesheet" href="layout.css?v=00ed1e5cf8" />
 </head>
   <body class="home-compact"><a class="skip-link" href="#main-content">Skip to content</a>
     <header class="top">
@@ -48,7 +48,7 @@
         <div class="hero-txt">
 
           <h1>A systems language with C’s simplicity.</h1>
-          <p class="lede">Native compilation through LLVM. Explicit memory, direct C interop, generics and async/await.</p>
+          <p class="lede">C’s control with modern language features. Native compilation through LLVM, explicit memory and direct C interop.</p>
           <div class="cta">
             <a class="btn btn-dark" href="quickstart.html">Get started</a>
             <a class="btn btn-line" href="playground.html"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 1.5v11l9-5.5z"/></svg>Try it in the browser</a>
@@ -78,9 +78,9 @@ max = 7</pre>
       </section>
 
       <section class="wrap home-principles" id="language" aria-label="The language">
-<article><h2>Control memory.</h2><p>Allocate and free explicitly. Use <code>defer</code> to release resources when a block exits.</p></article>
+<article><h2>Control memory.</h2><p>Allocate and free explicitly. Use <code>defer</code> to release resources when a block exits.</p><a class="more" href="playground.html?example=defer">See a defer example</a></article>
 <article><h2>Call C directly.</h2><p>Use C libraries and export functions through the C ABI. Bring Eskiu into an existing project.</p></article>
-<article><h2>Write less plumbing.</h2><p>Generics, sum types, exhaustive <code>match</code> and <code>async/await</code>.</p></article>
+<article><h2>Less boilerplate.</h2><p>Generics, sum types, exhaustive <code>match</code> and <code>async/await</code>.</p></article>
       </section>
 
       <section class="wrap home-install" id="start"><h2>Install Eskiu.</h2>          <div class="os-tabs" data-os-tabs role="tablist" aria-label="Install"><button type="button" role="tab" aria-selected="true" data-lbl="Install on macOS or Linux" data-cmd="curl -fsSL https://eskiu-lang.org/install.sh | sh">macOS / Linux</button><button type="button" role="tab" aria-selected="false" data-lbl="Install on Windows (PowerShell)" data-cmd="powershell -c &quot;irm https://eskiu-lang.org/install.ps1 | iex&quot;">Windows</button></div>
@@ -112,7 +112,7 @@ max = 7</pre>
     </footer>
 
     <script>if(location.hash === "#playground" || location.hash === "#toolchain") location.replace("playground.html"); else if(location.hash === "#compare") location.replace("language.html#compare");</script>
-    <script src="home.js?v=1eb6f5e142"></script>
+    <script src="home.js?v=d36d1fe2ed"></script>
   <script src="navigation.js?v=cdf0e91001"></script>
 </body>
 </html>

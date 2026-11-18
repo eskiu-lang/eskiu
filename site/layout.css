@@ -56,7 +56,7 @@ main > .dev-note:first-child { padding-top: 48px; }
 .install-box .lbl { display: none; }
 .home-install .downloads { padding-top: 16px; margin-top: 0; }
 .home-status p, .home-built p { max-width: 76ch; }
-section[id], h1[id], h2[id], h3[id], .pkg[id] { scroll-margin-top: 96px; }
+section[id], h1[id], h2[id], h3[id], .pkg[id], .lcard[id] { scroll-margin-top: 96px; }
 :focus-visible { outline: 2px solid var(--purple); outline-offset: 4px; }
 .pg-editor textarea:focus-visible { outline-offset: -3px; }
 .skip-link { position: fixed; top: 8px; left: 16px; z-index: 100; transform: translateY(-150%); background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 8px; }
@@ -66,7 +66,7 @@ section[id], h1[id], h2[id], h3[id], .pkg[id] { scroll-margin-top: 96px; }
   .layout, .layout.has-toc { grid-template-columns: 190px minmax(0, 1fr); gap: 32px; }
   .layout .toc { display: none; }
   .content { max-width: none; }
-  .foot-in { align-items: flex-start; }
+  .foot-in { align-items: baseline; }
   .foot-links { margin-left: 0; flex-basis: 100%; }
   .note-card { padding: 40px; }
   .cta-in { gap: 32px; }
@@ -97,3 +97,5 @@ section[id], h1[id], h2[id], h3[id], .pkg[id] { scroll-margin-top: 96px; }
   html { scroll-behavior: auto; }
   .nav-t svg, .pkg-grid a { transition: none; }
 }
+
+.lcard .example-context { margin-top: 16px; font-size: 14px; line-height: 1.6; color: var(--muted); }

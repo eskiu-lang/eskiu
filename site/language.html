@@ -25,7 +25,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="home.css?v=8ff21347f0" />
-  <link rel="stylesheet" href="layout.css?v=9354225791" />
+  <link rel="stylesheet" href="layout.css?v=00ed1e5cf8" />
 </head>
   <body><a class="skip-link" href="#main-content">Skip to content</a>
     <header class="top">
@@ -51,10 +51,10 @@
           <p>Memory is yours and calls are C calls. On top of that, Eskiu adds the parts people reach for other languages to get, with cleanup and control flow compiled into your program.</p>
         </div>
         <div class="lang-grid">
-          <div class="lcard">
+          <div class="lcard" id="cleanup">
             <span class="eyebrow">Errors and cleanup</span>
             <h2>Errors are values, cleanup is <code>defer</code></h2>
-            <p><code>Result</code> carries the error, <code>?</code> passes it up, and <code>defer</code> runs on every way out of the function.</p>
+            <p><code>Result</code> carries the error, <code>?</code> passes it up, and <code>defer</code> releases resources when the enclosing block exits.</p>
 <pre><span class="ty">Result</span>&lt;<span class="kw">int</span>, <span class="kw">string</span>&gt; serve(<span class="kw">string</span> arg) {
     <span class="kw">int</span> port = parse_port(arg)?;
     *<span class="kw">uint8</span> buf = (*<span class="kw">uint8</span>)malloc(4096);
@@ -62,6 +62,7 @@
     printf(<span class="st">"serving on %d\n"</span>, port);
     <span class="kw">return</span> <span class="ty">Ok</span>&lt;<span class="kw">int</span>, <span class="kw">string</span>&gt;(0);
 }</pre>
+            <p class="example-context">Function fragment. Requires <code>&lt;io&gt;</code>, <code>&lt;libc&gt;</code>, <code>&lt;result&gt;</code> and a <code>parse_port</code> function returning <code>Result&lt;int, string&gt;</code>.</p>
           </div>
           <div class="lcard">
             <span class="eyebrow">Types</span>
@@ -76,15 +77,19 @@
     }
     <span class="kw">return</span> 0.0;
 }</pre>
+            <p class="example-context">Type and function fragment. Add a <code>main</code> that creates a shape and calls <code>area</code> to run it.</p>
           </div>
           <div class="lcard">
             <span class="eyebrow">Concurrency</span>
             <h2><code>async</code> and <code>await</code>, compiled</h2>
             <p>An async function becomes a state machine at compile time. The event loop is a library in the standard library, not a runtime underneath your program.</p>
 <pre><span class="kw">async</span> <span class="kw">int</span> read_once(<span class="ty">EventLoop</span>* lp, <span class="kw">int</span> fd) {
-    <span class="kw">int</span> n = <span class="kw">await</span> net_read_async(lp, fd, &amp;buf[0], 64);
+    *<span class="kw">uint8</span> buf = alloc&lt;<span class="kw">uint8</span>&gt;(64);
+    <span class="kw">defer</span> free(buf);
+    <span class="kw">int</span> n = <span class="kw">await</span> net_read_async(lp, fd, buf, (<span class="kw">int64</span>)64);
     <span class="kw">return</span> n;
 }</pre>
+            <p class="example-context">Function fragment. Requires <code>&lt;net_async&gt;</code> and <code>&lt;libc&gt;</code>, an event loop and a readable descriptor. The buffer remains allocated during <code>await</code> and is freed when the block exits.</p>
           </div>
           <div class="lcard">
             <span class="eyebrow">C interop</span>
@@ -97,6 +102,7 @@
 }
 
 <span class="cm">$ eskiuc lib.esk --emit-header lib.h</span></pre>
+            <p class="example-context">Complete library module. Save it as <code>lib.esk</code> and run the command shown to generate its C header.</p>
           </div>
         </div>
         <p class="aside">The compiler is written in Eskiu too, and both compilers, C++ and Eskiu, are held to the same output on every program in the test suite. <a href="the-book-of-eskiu.html">Read the Book</a></p>
@@ -136,7 +142,7 @@
       </div>
     </footer>
 
-    <script src="home.js?v=1eb6f5e142"></script>
+    <script src="home.js?v=d36d1fe2ed"></script>
   <script src="navigation.js?v=cdf0e91001"></script>
 </body>
 </html>

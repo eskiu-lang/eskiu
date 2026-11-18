@@ -24,7 +24,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="../home.css?v=8ff21347f0" />
-  <link rel="stylesheet" href="../layout.css?v=9354225791" />
+  <link rel="stylesheet" href="../layout.css?v=00ed1e5cf8" />
 </head>
   <body><a class="skip-link" href="#main-content">Ir al contenido</a>
     <header class="top">
@@ -50,10 +50,10 @@
           <p>La memoria es tuya y las llamadas son llamadas de C. Encima de eso, Eskiu suma lo que la gente va a buscar a otros lenguajes, con limpieza y flujo de control compilados dentro de tu programa.</p>
         </div>
         <div class="lang-grid">
-          <div class="lcard">
+          <div class="lcard" id="cleanup">
             <span class="eyebrow">Errores y limpieza</span>
             <h2>Los errores son valores, la limpieza es <code>defer</code></h2>
-            <p><code>Result</code> lleva el error, <code>?</code> lo pasa hacia arriba y <code>defer</code> corre en cada salida de la función.</p>
+            <p><code>Result</code> lleva el error, <code>?</code> lo pasa hacia arriba y <code>defer</code> libera recursos al salir del bloque que lo contiene.</p>
 <pre><span class="ty">Result</span>&lt;<span class="kw">int</span>, <span class="kw">string</span>&gt; serve(<span class="kw">string</span> arg) {
     <span class="kw">int</span> port = parse_port(arg)?;
     *<span class="kw">uint8</span> buf = (*<span class="kw">uint8</span>)malloc(4096);
@@ -61,6 +61,7 @@
     printf(<span class="st">"serving on %d\n"</span>, port);
     <span class="kw">return</span> <span class="ty">Ok</span>&lt;<span class="kw">int</span>, <span class="kw">string</span>&gt;(0);
 }</pre>
+            <p class="example-context">Fragmento de función. Requiere <code>&lt;io&gt;</code>, <code>&lt;libc&gt;</code>, <code>&lt;result&gt;</code> y una función <code>parse_port</code> que devuelva <code>Result&lt;int, string&gt;</code>.</p>
           </div>
           <div class="lcard">
             <span class="eyebrow">Tipos</span>
@@ -75,15 +76,19 @@
     }
     <span class="kw">return</span> 0.0;
 }</pre>
+            <p class="example-context">Fragmento de tipos y función. Añade un <code>main</code> que cree una figura y llame a <code>area</code> para ejecutarlo.</p>
           </div>
           <div class="lcard">
             <span class="eyebrow">Concurrencia</span>
             <h2><code>async</code> y <code>await</code>, compilados</h2>
             <p>Una función async se vuelve una máquina de estados al compilar. El event loop es una biblioteca de la biblioteca estándar, no un runtime debajo de tu programa.</p>
 <pre><span class="kw">async</span> <span class="kw">int</span> read_once(<span class="ty">EventLoop</span>* lp, <span class="kw">int</span> fd) {
-    <span class="kw">int</span> n = <span class="kw">await</span> net_read_async(lp, fd, &amp;buf[0], 64);
+    *<span class="kw">uint8</span> buf = alloc&lt;<span class="kw">uint8</span>&gt;(64);
+    <span class="kw">defer</span> free(buf);
+    <span class="kw">int</span> n = <span class="kw">await</span> net_read_async(lp, fd, buf, (<span class="kw">int64</span>)64);
     <span class="kw">return</span> n;
 }</pre>
+            <p class="example-context">Fragmento de función. Requiere <code>&lt;net_async&gt;</code> y <code>&lt;libc&gt;</code>, un event loop y un descriptor legible. El búfer permanece asignado durante el <code>await</code> y se libera al salir del bloque.</p>
           </div>
           <div class="lcard">
             <span class="eyebrow">Interop con C</span>
@@ -96,6 +101,7 @@
 }
 
 <span class="cm">$ eskiuc lib.esk --emit-header lib.h</span></pre>
+            <p class="example-context">Módulo de biblioteca completo. Guárdalo como <code>lib.esk</code> y ejecuta el comando mostrado para generar su cabecera de C.</p>
           </div>
         </div>
         <p class="aside">El compilador también está escrito en Eskiu, y los dos compiladores, el de C++ y el de Eskiu, tienen que dar la misma salida en cada programa de la suite de pruebas. <a href="../the-book-of-eskiu.html">Lee el libro</a></p>
@@ -136,7 +142,7 @@
     </footer>
 
     <script>try { localStorage.setItem('eskiu-lang', 'es'); } catch (e) {}</script>
-    <script src="../home.js?v=1eb6f5e142"></script>
+    <script src="../home.js?v=d36d1fe2ed"></script>
   <script src="../navigation.js?v=cdf0e91001"></script>
 </body>
 </html>
