@@ -4,14 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Eskiu: un lenguaje de sistemas auto-hospedado</title>
-    <meta name="description" content="Eskiu es un lenguaje de sistemas que se compila a sí mismo, con backend LLVM, memoria explícita e interoperabilidad directa con C. Un solo compilador genera programas para macOS, Linux, Windows, WebAssembly, Android e iOS, y hay paquetes para cómputo en GPU, machine learning y más." />
+    <meta name="description" content="Eskiu es un lenguaje de sistemas sobre LLVM que se compila a sí mismo, con memoria explícita, interoperabilidad directa con C, genéricos y async/await. Pruébalo en el navegador o instala el compilador." />
     <meta name="theme-color" content="#fafafa" />
     <link rel="icon" type="image/png" href="../../assets/logo.png" />
     <link rel="canonical" href="https://eskiu-lang.org/es/index.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
   <meta property="og:title" content="Eskiu: un lenguaje de sistemas auto-hospedado" />
-  <meta property="og:description" content="Eskiu es un lenguaje de sistemas que se compila a sí mismo, con backend LLVM, memoria explícita e interoperabilidad directa con C. Un solo compilador genera programas para macOS, Linux, Windows, WebAssembly, Android e iOS, y hay paquetes para cómputo en GPU, machine learning y más." />
+  <meta property="og:description" content="Eskiu es un lenguaje de sistemas sobre LLVM que se compila a sí mismo, con memoria explícita, interoperabilidad directa con C, genéricos y async/await. Pruébalo en el navegador o instala el compilador." />
   <meta property="og:url" content="https://eskiu-lang.org/es/index.html" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
   <meta property="og:image:width" content="1200" />
@@ -29,7 +29,7 @@
     <header class="top">
       <div class="wrap top-in">
         <a class="brand" href="#"><img src="../../assets/logo.png" alt="" />eskiu<span class="v">v0.16.1</span></a>
-        <nav class="nav" aria-label="Principal"><div class="nav-g"><button type="button" class="nav-t">Aprende<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="quickstart.html"><b>Empieza</b><span>Instálalo y corre un primer programa</span></a><a href="#playground"><b>Playground</b><span>Corre código en el navegador</span></a><a href="agents.html"><b>Para agentes</b><span>Instala, maneja y prueba Eskiu desde un agente</span></a><a href="../the-book-of-eskiu.html"><b>El libro de Eskiu</b><span>El lenguaje, capítulo por capítulo</span></a><a href="../docs/index.html"><b>Docs</b><span>La especificación, la biblioteca estándar y el compilador</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Plataformas<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="platforms.html"><b>Resumen</b><span>Un compilador, todas las plataformas</span></a><a href="platforms.html#wasm"><b>WebAssembly</b><span>El navegador, con emscripten</span></a><a href="platforms.html#ios"><b>iOS</b><span>Bibliotecas estáticas para Swift y Objective-C</span></a><a href="platforms.html#visionos"><b>visionOS</b><span>Apple Vision Pro y su simulador</span></a><a href="platforms.html#quest"><b>Meta Quest</b><span>Android con OpenXR</span></a><a href="platforms.html#android"><b>Android</b><span>Bibliotecas compartidas para Kotlin y Java</span></a><a href="platforms.html#bare-metal"><b>Bare metal</b><span>Kernels y tarjetas sin sistema operativo</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Paquetes<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="packages.html"><b>Todos los paquetes</b><span>Cada uno a un eskiuc add de distancia</span></a><a href="ui.html"><b>ui</b><span>Apps nativas para el celular, la web y el escritorio</span></a><a href="gpu.html"><b>gpu</b><span>Cómputo con WebGPU, modelos 3D y Llama</span></a><a href="vision.html"><b>vision</b><span>Visión por computadora, bit por bit con C++</span></a><a href="packages.html#onnx"><b>onnx</b><span>Inferencia con ONNX Runtime</span></a><a href="packages.html#jni"><b>jni</b><span>Java y Android sin código de C de por medio</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Proyectos<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="showcase.html"><b>Hecho con Eskiu</b><span>Lo que corre con Eskiu hoy</span></a><a href="case-study-reactvision.html"><b>ReactVision</b><span>Eskiu en todo un stack de AR, en producción</span></a><a href="case-study-identity.html"><b>Identidad digital</b><span>Un núcleo ISO/IEC 39794-5 para la web y el teléfono</span></a><a href="case-study-3ds.html"><b>Nintendo 3DS</b><span>AR en el ARM de 32 bits de una 3DS, hecho por diversión</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+        <nav class="nav" aria-label="Principal"><div class="nav-g"><button type="button" class="nav-t">Lenguaje<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="#language"><b>El lenguaje</b><span>Memoria, tipos, errores e interoperabilidad con C</span></a><a href="#compare"><b>Cómo se compara</b><span>Las decisiones de Eskiu</span></a><a href="#status"><b>Estabilidad y madurez</b><span>Qué esperar antes de 1.0</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Aprende<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="quickstart.html"><b>Empieza</b><span>Instálalo y corre un primer programa</span></a><a href="#playground"><b>Playground</b><span>Corre código en el navegador</span></a><a href="../the-book-of-eskiu.html"><b>El libro de Eskiu</b><span>El lenguaje, capítulo por capítulo</span></a><a href="agents.html"><b>Para agentes</b><span>Instala, maneja y prueba Eskiu desde un agente</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Documentación<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="../docs/index.html"><b>Referencia</b><span>El lenguaje, la biblioteca estándar y el compilador</span></a><a href="platforms.html"><b>Plataformas</b><span>Destinos de compilación, herramientas y requisitos</span></a><a href="../docs/stability.html"><b>Política de estabilidad</b><span>Compatibilidad entre versiones</span></a><a href="../changelog.html"><b>Notas de versión</b><span>Qué cambió en cada versión</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Ecosistema<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="packages.html"><b>Paquetes</b><span>Bibliotecas que amplían el lenguaje</span></a><a href="showcase.html"><b>Hecho con Eskiu</b><span>Proyectos y casos de uso</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
         <div class="top-right">
           <span class="lang"><a href="../index.html" onclick="try{localStorage.setItem('eskiu-lang','en')}catch(e){}">EN</a> / <span aria-current="page">ES</span></span>
           <a class="btn-install" href="#install">Instalar 0.16.1</a>
@@ -38,17 +38,17 @@
           </button>
         </div>
       </div>
-      <nav class="drawer" id="drawer" aria-label="Principal"><div class="dr-g"><span class="dr-h">Aprende</span><a href="quickstart.html">Empieza</a><a href="#playground">Playground</a><a href="agents.html">Para agentes</a><a href="../the-book-of-eskiu.html">El libro de Eskiu</a><a href="../docs/index.html">Docs</a></div><div class="dr-g"><span class="dr-h">Plataformas</span><a href="platforms.html">Resumen</a><a href="platforms.html#wasm">WebAssembly</a><a href="platforms.html#ios">iOS</a><a href="platforms.html#visionos">visionOS</a><a href="platforms.html#quest">Meta Quest</a><a href="platforms.html#android">Android</a><a href="platforms.html#bare-metal">Bare metal</a></div><div class="dr-g"><span class="dr-h">Paquetes</span><a href="packages.html">Todos los paquetes</a><a href="ui.html">ui</a><a href="gpu.html">gpu</a><a href="vision.html">vision</a><a href="packages.html#onnx">onnx</a><a href="packages.html#jni">jni</a></div><div class="dr-g"><span class="dr-h">Proyectos</span><a href="showcase.html">Hecho con Eskiu</a><a href="case-study-reactvision.html">ReactVision</a><a href="case-study-identity.html">Identidad digital</a><a href="case-study-3ds.html">Nintendo 3DS</a></div><a class="dr-gh" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+      <nav class="drawer" id="drawer" aria-label="Principal"><div class="dr-g"><span class="dr-h">Lenguaje</span><a href="#language">El lenguaje</a><a href="#compare">Cómo se compara</a><a href="#status">Estabilidad y madurez</a></div><div class="dr-g"><span class="dr-h">Aprende</span><a href="quickstart.html">Empieza</a><a href="#playground">Playground</a><a href="../the-book-of-eskiu.html">El libro de Eskiu</a><a href="agents.html">Para agentes</a></div><div class="dr-g"><span class="dr-h">Documentación</span><a href="../docs/index.html">Referencia</a><a href="platforms.html">Plataformas</a><a href="../docs/stability.html">Política de estabilidad</a><a href="../changelog.html">Notas de versión</a></div><div class="dr-g"><span class="dr-h">Ecosistema</span><a href="packages.html">Paquetes</a><a href="showcase.html">Hecho con Eskiu</a></div><a class="dr-gh" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
     </header>
 
     <main>
       <section class="wrap hero">
         <div class="hero-txt">
-          <div class="hero-meta"><a class="new-badge" href="../changelog.html"><b>NUEVO</b>Eskiu 0.16: Apple Vision Pro como plataforma</a><a class="gh-star" href="https://github.com/eskiu-lang/eskiu"><span aria-hidden="true">★</span> Estrella en GitHub</a></div>
+          <div class="hero-meta"><a class="new-badge" href="../changelog.html"><b>NUEVO</b>Eskiu 0.16.1 · Lee las notas de la versión</a><a class="gh-star" href="https://github.com/eskiu-lang/eskiu"><span aria-hidden="true">★</span> Estrella en GitHub</a></div>
           <h1>Escríbelo como un script. <em>Compílalo como&nbsp;C.</em></h1>
-          <p class="lede">Un lenguaje de sistemas sobre LLVM que se compila a sí mismo, con memoria explícita e interoperabilidad directa con C. Un solo compilador para escritorio, la web y celulares.</p>
+          <p class="lede">Un lenguaje de sistemas sobre LLVM que se compila a sí mismo, con memoria explícita e interoperabilidad directa con C. Para herramientas, bibliotecas y aplicaciones nativas.</p>
           <div class="cta">
-            <a class="btn btn-dark" href="#start">Empieza</a>
+            <a class="btn btn-dark" href="quickstart.html">Empieza</a>
             <a class="btn btn-line" href="#playground"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 1.5v11l9-5.5z"/></svg>Pruébalo en el navegador</a>
           </div>
           <div class="os-tabs" data-os-tabs role="tablist" aria-label="Instalar"><button type="button" role="tab" aria-selected="true" data-lbl="Instalar en macOS o Linux" data-cmd="curl -fsSL https://eskiu-lang.org/install.sh | sh">macOS · Linux</button><button type="button" role="tab" aria-selected="false" data-lbl="Instalar en Windows (PowerShell)" data-cmd="powershell -c &quot;irm https://eskiu-lang.org/install.ps1 | iex&quot;">Windows</button></div>
@@ -83,13 +83,43 @@ llvm/llvm-project has 41179 stars
         </div>
       </section>
 
-      <div class="rv-stats"><div class="wrap"><div class="rv-stat"><b>574</b><span>programas, iguales con los dos compiladores</span></div><div class="rv-stat"><b>8</b><span>plataformas, del celular y la web al bare metal</span></div><div class="rv-stat"><b>14%</b><span>del código nativo del motor en C++ al que reemplaza en ViroReact</span></div><div class="rv-stat"><b>MIT</b><span>código abierto</span></div></div></div>
+      <section class="pg" id="playground">
+        <span id="toolchain"></span>
+        <div class="wrap pg-in">
+          <div class="pg-head-row">
+            <div class="pg-head">
+              <span class="eyebrow">Playground</span>
+              <h2>Pruébalo en el navegador.</h2>
+              <p>Edita el programa y córrelo. El servidor lo compila con LLVM y lo ejecuta con el mismo <code>eskiuc run</code>.</p>
+            </div>
+            <div class="pg-ex" role="group" aria-label="Ejemplos">
+              <button type="button" data-ex="hello" aria-pressed="true">hello</button>
+              <button type="button" data-ex="basics" aria-pressed="false">basics</button>
+              <button type="button" data-ex="match" aria-pressed="false">match</button>
+              <button type="button" data-ex="generics" aria-pressed="false">generics</button>
+              <button type="button" data-ex="operators" aria-pressed="false">operators</button>
+              <button type="button" data-ex="async" aria-pressed="false">async</button>
+            </div>
+          </div>
+          <div class="pg-grid">
+            <div class="pg-editor">
+              <div class="pg-bar"><label for="pg-code">main.esk</label><span>⌘/Ctrl + Enter para ejecutar</span></div>
+              <textarea id="pg-code" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+            </div>
+            <div class="pg-side">
+              <pre class="pg-out" aria-live="polite"><span class="lbl">SALIDA</span><span id="pg-res"></span></pre>
+              <button class="btn btn-purple" id="pg-run" type="button"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 1.5v11l9-5.5z"/></svg>Ejecutar</button>
+              <p class="note">En sandbox: sin red, con límites de tiempo y memoria, y salida acotada.</p>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section class="wrap sec" id="language">
         <div class="sec-head">
           <span class="eyebrow">El lenguaje</span>
           <h2>El modelo de C, con lo que a C le falta.</h2>
-          <p>La memoria es tuya y las llamadas son llamadas de C. Encima de eso, Eskiu suma lo que la gente va a buscar a otros lenguajes, y nada de eso necesita un runtime.</p>
+          <p>La memoria es tuya y las llamadas son llamadas de C. Encima de eso, Eskiu suma lo que la gente va a buscar a otros lenguajes, con limpieza y flujo de control compilados dentro de tu programa.</p>
         </div>
         <div class="lang-grid">
           <div class="lcard">
@@ -143,6 +173,27 @@ llvm/llvm-project has 41179 stars
         <p class="aside">El compilador también está escrito en Eskiu, y los dos compiladores, el de C++ y el de Eskiu, tienen que dar la misma salida en cada programa de la suite de pruebas. <a href="../the-book-of-eskiu.html">Lee el libro →</a></p>
       </section>
 
+      <section class="wrap sec" id="start">
+        <div class="sec-head">
+          <span class="eyebrow">Empieza</span>
+          <h2>De hello a async y bare metal.</h2>
+        </div>
+        <div class="start-next">
+          <a class="btn btn-dark" href="quickstart.html">Inicio rápido</a>
+          <a class="btn btn-line" href="../the-book-of-eskiu.html">Lee el libro de Eskiu</a>
+          <p>El libro es gratis y está en línea. El código que compila con 0.16.0 sigue compilando en cada 0.16.x (<a href="../docs/stability.html">política de estabilidad</a>).</p>
+        </div>
+      </section>
+
+      <section class="wrap sec" id="status">
+        <div class="sec-head">
+          <span class="eyebrow">Qué esperar</span>
+          <h2>Un lenguaje joven, con decisiones explícitas.</h2>
+          <p>Eskiu está en la serie 0.16. La memoria se administra manualmente; <code>defer</code> ayuda a liberar recursos y las comprobaciones de límites, overflow y null se activan con <code>--safe</code>. No tiene un verificador de préstamos.</p>
+        </div>
+        <p>Las versiones menores pueden cambiar el lenguaje y la biblioteca estándar. Consulta la <a href="../docs/stability.html">política de estabilidad</a>, los <a href="../changelog.html">cambios</a> y los <a href="platforms.html">requisitos de cada plataforma</a> antes de elegirlo para un proyecto.</p>
+      </section>
+
       <section class="wrap sec" id="compare">
         <div class="sec-head">
           <span class="eyebrow">Cómo se compara</span>
@@ -154,92 +205,20 @@ llvm/llvm-project has 41179 stars
 
       <section class="wrap sec" id="built">
         <div class="sec-head">
-          <span class="eyebrow">En producción</span>
-          <h2>El motor de ViroReact, reescrito en Eskiu.</h2>
-          <p>ReactVision está reemplazando el motor en C++ de ViroReact por uno escrito en Eskiu. Implementa toda la API pública de ViroReact 3.2 en iOS, Android, Meta Quest y Apple Vision Pro, y corre sin cambios la app de showcase de ReactVision. Está en pruebas en dispositivos antes de reemplazar al motor nativo.</p>
+          <span class="eyebrow">Hecho con Eskiu</span>
+          <h2>Del compilador a aplicaciones reales.</h2>
+          <p>El propio compilador está escrito también en Eskiu y se comprueba contra la implementación en C++. ReactVision está probando en dispositivos un motor de ViroReact escrito en el lenguaje. Otros proyectos exploran identidad digital y AR en Nintendo 3DS.</p>
         </div>
-        <div class="prod-grid">
-          <a class="pcard pcard-lead" href="case-study-reactvision.html#engine">
-            <span class="tag">ViroReact · iOS · Android · Quest · Vision Pro</span>
-            <h3>La misma app, una fracción del motor</h3>
-            <p>La misma app de showcase compilada dos veces, una con ViroReact 3.1 de npm y otra sobre el motor en Eskiu, las dos en Release.</p>
-            <div class="pstat"><span><strong>47k</strong> líneas de código nativo contra 346k (14%)</span><span><strong>25%</strong> menos de descarga en iOS</span><span><strong>12 MB</strong> el paquete de npm, antes 102 MB</span></div>
-            <span class="more">Caso de estudio de ReactVision →</span>
-          </a>
-          <a class="pcard" href="vision.html">
-            <span class="tag">tinyvio · vision</span>
-            <h3>Tracking de AR en el navegador</h3>
-            <p>El tracker visual-inercial de ViroReact corre sobre un motor escrito en Eskiu y compilado a WebAssembly. Su núcleo de visión por computadora calcula los mismos bits que el C++ al que reemplazó.</p>
-            <div class="pstat"><span><strong>217,582</strong> casos comparados bit por bit</span><span><strong>0</strong> diferencias</span></div>
-            <span class="more">El paquete vision →</span>
-          </a>
-        </div>
-        <div class="users">
-          <span class="lbl">Lo usan</span>
-          <a href="https://reactvision.xyz" class="user"><img src="../../assets/reactvision.png" alt="" width="541" height="319" />ReactVision</a>
-          <a href="https://themorrow.digital" class="user user-morrow"><img src="../../assets/morrow.png" alt="The Morrow Digital" width="622" height="88" /></a>
-          <a href="case-study-identity.html" class="user">Identidad digital</a>
-        </div>
+        <div class="start-next"><a class="btn btn-line" href="showcase.html">Explora los proyectos</a><a class="more" href="case-study-reactvision.html">El caso de ReactVision →</a></div>
       </section>
 
-      <section class="pg" id="playground">
-        <span id="toolchain"></span>
-        <div class="wrap pg-in">
-          <div class="pg-head-row">
-            <div class="pg-head">
-              <span class="eyebrow">Playground</span>
-              <h2>Pruébalo en el navegador.</h2>
-              <p>Edita el programa y córrelo. El servidor lo compila con LLVM y lo ejecuta con el mismo <code>eskiuc run</code>.</p>
-            </div>
-            <div class="pg-ex" role="group" aria-label="Ejemplos">
-              <button type="button" data-ex="hello" aria-pressed="true">hello</button>
-              <button type="button" data-ex="basics" aria-pressed="false">basics</button>
-              <button type="button" data-ex="match" aria-pressed="false">match</button>
-              <button type="button" data-ex="generics" aria-pressed="false">generics</button>
-              <button type="button" data-ex="operators" aria-pressed="false">operators</button>
-              <button type="button" data-ex="async" aria-pressed="false">async</button>
-            </div>
-          </div>
-          <div class="pg-grid">
-            <div class="pg-editor">
-              <div class="pg-bar"><label for="pg-code">main.esk</label><span>⌘/Ctrl + Enter para ejecutar</span></div>
-              <textarea id="pg-code" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
-            </div>
-            <div class="pg-side">
-              <pre class="pg-out" aria-live="polite"><span class="lbl">SALIDA</span><span id="pg-res"></span></pre>
-              <button class="btn btn-purple" id="pg-run" type="button"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 1.5v11l9-5.5z"/></svg>Ejecutar</button>
-              <p class="note">En sandbox: sin red, con límites de tiempo y memoria, y salida acotada.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="pkgs" id="ecosystem">
-        <div class="wrap pkgs-in">
-          <div class="pkgs-txt">
-            <span class="eyebrow">Paquetes</span>
-            <h2>Lo demás está a un paquete.</h2>
-            <p>El cómputo en GPU y el 3D, el machine learning, la AR y las apps nativas viven en paquetes, fuera del lenguaje. Cada uno está a un <code>eskiuc add</code> y compila en cada plataforma que soportan sus bibliotecas.</p>
-            <div class="pkg-list"><a href="ui.html">ui</a><a href="gpu.html">gpu</a><a href="packages.html#scene">scene</a><a href="packages.html#ar">ar</a><a href="packages.html#onnx">onnx</a><a href="packages.html#tflite">tflite</a><a href="vision.html">vision</a><a href="packages.html#video">video</a><a href="packages.html#audio">audio</a><a href="packages.html#jni">jni</a><a href="packages.html#quickjs">quickjs</a></div>
-            <a class="more" href="packages.html">Todos los paquetes →</a>
-          </div>
-<pre class="term"><span class="cm">$</span> eskiuc new viewer &amp;&amp; cd viewer
-<span class="cm">$</span> eskiuc add gpu --git https://github.com/eskiu-packages/gpu --rev v0.7.1
-<span class="cm">$</span> eskiuc run
-<span class="cm"># el primer build descarga wgpu-native y SDL3 para esta máquina</span></pre>
-        </div>
-      </section>
-
-      <section class="wrap sec" id="start">
+      <section class="wrap sec" id="ecosystem">
         <div class="sec-head">
-          <span class="eyebrow">Empieza</span>
-          <h2>De hello a async y bare metal.</h2>
+          <span class="eyebrow">El ecosistema</span>
+          <h2>Bibliotecas para ir más lejos.</h2>
+          <p>Los paquetes amplían el lenguaje con interfaces nativas, GPU, visión y más. Cada paquete documenta sus dependencias y plataformas compatibles.</p>
         </div>
-        <div class="start-next">
-          <a class="btn btn-dark" href="../the-book-of-eskiu.html">Lee el libro de Eskiu</a>
-          <a class="btn btn-line" href="quickstart.html">Inicio rápido</a>
-          <p>El libro es gratis y está en línea. El código que compila con 0.16.0 sigue compilando en cada 0.16.x (<a href="../docs/stability.html">política de estabilidad</a>).</p>
-        </div>
+        <a class="more" href="packages.html">Explora los paquetes →</a>
       </section>
 
       <section class="wrap dev-note" id="note" aria-labelledby="note-h">

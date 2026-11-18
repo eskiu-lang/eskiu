@@ -4,12 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script>try{if(localStorage.getItem("eskiu-lang")==="es")location.replace("es/index.html"+location.hash);}catch(e){}</script>
+    <link rel="canonical" href="https://eskiu-lang.org/" />
     <title>Eskiu: a self-hosting systems language</title>
-    <meta name="description" content="Eskiu is a self-hosting systems language with an LLVM backend, explicit memory and direct C interop. One compiler builds for macOS, Linux, Windows, WebAssembly, Android and iOS, and packages add GPU compute, machine learning and more." />
+    <meta name="description" content="Eskiu is a self-hosting systems language on LLVM with explicit memory, direct C interop, generics and async/await. Try it in the browser or install the compiler." />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
   <meta property="og:title" content="Eskiu: a self-hosting systems language" />
-  <meta property="og:description" content="Eskiu is a self-hosting systems language with an LLVM backend, explicit memory and direct C interop. One compiler builds for macOS, Linux, Windows, WebAssembly, Android and iOS, and packages add GPU compute, machine learning and more." />
+  <meta property="og:description" content="Eskiu is a self-hosting systems language on LLVM with explicit memory, direct C interop, generics and async/await. Try it in the browser or install the compiler." />
   <meta property="og:url" content="https://eskiu-lang.org/" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
   <meta property="og:image:width" content="1200" />
@@ -29,7 +30,7 @@
     <header class="top">
       <div class="wrap top-in">
         <a class="brand" href="#"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.16.1</span></a>
-        <nav class="nav" aria-label="Main"><div class="nav-g"><button type="button" class="nav-t">Learn<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="quickstart.html"><b>Get started</b><span>Install it and run a first program</span></a><a href="#playground"><b>Playground</b><span>Run code in the browser</span></a><a href="agents.html"><b>For agents</b><span>Install, drive and test Eskiu from an agent</span></a><a href="the-book-of-eskiu.html"><b>The Book of Eskiu</b><span>The language, chapter by chapter</span></a><a href="docs/index.html"><b>Docs</b><span>The specification, the standard library and the compiler</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Platforms<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="platforms.html"><b>Overview</b><span>One compiler, every target</span></a><a href="platforms.html#wasm"><b>WebAssembly</b><span>The browser, through emscripten</span></a><a href="platforms.html#ios"><b>iOS</b><span>Static libraries for Swift and Objective-C</span></a><a href="platforms.html#visionos"><b>visionOS</b><span>Apple Vision Pro and its simulator</span></a><a href="platforms.html#quest"><b>Meta Quest</b><span>Android with OpenXR</span></a><a href="platforms.html#android"><b>Android</b><span>Shared libraries for Kotlin and Java</span></a><a href="platforms.html#bare-metal"><b>Bare metal</b><span>Kernels and boards with no operating system</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Packages<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="packages.html"><b>All packages</b><span>Each one is one eskiuc add away</span></a><a href="ui.html"><b>ui</b><span>Native apps for phones, the web and the desktop</span></a><a href="gpu.html"><b>gpu</b><span>WebGPU compute, 3D models and Llama</span></a><a href="vision.html"><b>vision</b><span>Computer vision, bit for bit with C++</span></a><a href="packages.html#onnx"><b>onnx</b><span>ONNX Runtime inference</span></a><a href="packages.html#jni"><b>jni</b><span>Java and Android with no C glue</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Showcase<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="showcase.html"><b>Built with Eskiu</b><span>What runs on it today</span></a><a href="case-study-reactvision.html"><b>ReactVision</b><span>Eskiu across an AR stack, in production</span></a><a href="case-study-identity.html"><b>Digital identity</b><span>An ISO/IEC 39794-5 core for the web and the phone</span></a><a href="case-study-3ds.html"><b>Nintendo 3DS</b><span>AR on a 3DS&#x27;s 32-bit ARM, built for fun</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+        <nav class="nav" aria-label="Main"><div class="nav-g"><button type="button" class="nav-t">Language<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="#language"><b>The language</b><span>Memory, types, errors and C interop</span></a><a href="#compare"><b>How it compares</b><span>The choices behind Eskiu</span></a><a href="#status"><b>Stability and maturity</b><span>What to expect before 1.0</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Learn<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="quickstart.html"><b>Get started</b><span>Install it and run a first program</span></a><a href="#playground"><b>Playground</b><span>Run code in the browser</span></a><a href="the-book-of-eskiu.html"><b>The Book of Eskiu</b><span>The language, chapter by chapter</span></a><a href="agents.html"><b>For agents</b><span>Install, drive and test Eskiu from an agent</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Documentation<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="docs/index.html"><b>Reference</b><span>The language, standard library and compiler</span></a><a href="platforms.html"><b>Platforms</b><span>Targets, toolchains and requirements</span></a><a href="docs/stability.html"><b>Stability policy</b><span>Compatibility between releases</span></a><a href="changelog.html"><b>Release notes</b><span>What changed in each version</span></a></div></div><div class="nav-g"><button type="button" class="nav-t">Ecosystem<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m"><a href="packages.html"><b>Packages</b><span>Libraries that extend the language</span></a><a href="showcase.html"><b>Built with Eskiu</b><span>Projects and case studies</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
         <div class="top-right">
           <span class="lang"><span aria-current="page">EN</span> / <a href="es/index.html" onclick="try{localStorage.setItem('eskiu-lang','es')}catch(e){}">ES</a></span>
           <a class="btn-install" href="#install">Install 0.16.1</a>
@@ -38,17 +39,17 @@
           </button>
         </div>
       </div>
-      <nav class="drawer" id="drawer" aria-label="Main"><div class="dr-g"><span class="dr-h">Learn</span><a href="quickstart.html">Get started</a><a href="#playground">Playground</a><a href="agents.html">For agents</a><a href="the-book-of-eskiu.html">The Book of Eskiu</a><a href="docs/index.html">Docs</a></div><div class="dr-g"><span class="dr-h">Platforms</span><a href="platforms.html">Overview</a><a href="platforms.html#wasm">WebAssembly</a><a href="platforms.html#ios">iOS</a><a href="platforms.html#visionos">visionOS</a><a href="platforms.html#quest">Meta Quest</a><a href="platforms.html#android">Android</a><a href="platforms.html#bare-metal">Bare metal</a></div><div class="dr-g"><span class="dr-h">Packages</span><a href="packages.html">All packages</a><a href="ui.html">ui</a><a href="gpu.html">gpu</a><a href="vision.html">vision</a><a href="packages.html#onnx">onnx</a><a href="packages.html#jni">jni</a></div><div class="dr-g"><span class="dr-h">Showcase</span><a href="showcase.html">Built with Eskiu</a><a href="case-study-reactvision.html">ReactVision</a><a href="case-study-identity.html">Digital identity</a><a href="case-study-3ds.html">Nintendo 3DS</a></div><a class="dr-gh" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+      <nav class="drawer" id="drawer" aria-label="Main"><div class="dr-g"><span class="dr-h">Language</span><a href="#language">The language</a><a href="#compare">How it compares</a><a href="#status">Stability and maturity</a></div><div class="dr-g"><span class="dr-h">Learn</span><a href="quickstart.html">Get started</a><a href="#playground">Playground</a><a href="the-book-of-eskiu.html">The Book of Eskiu</a><a href="agents.html">For agents</a></div><div class="dr-g"><span class="dr-h">Documentation</span><a href="docs/index.html">Reference</a><a href="platforms.html">Platforms</a><a href="docs/stability.html">Stability policy</a><a href="changelog.html">Release notes</a></div><div class="dr-g"><span class="dr-h">Ecosystem</span><a href="packages.html">Packages</a><a href="showcase.html">Built with Eskiu</a></div><a class="dr-gh" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
     </header>
 
     <main>
       <section class="wrap hero">
         <div class="hero-txt">
-          <div class="hero-meta"><a class="new-badge" href="changelog.html"><b>NEW</b>Eskiu 0.16: Apple Vision Pro as a target</a><a class="gh-star" href="https://github.com/eskiu-lang/eskiu"><span aria-hidden="true">★</span> Star on GitHub</a></div>
+          <div class="hero-meta"><a class="new-badge" href="changelog.html"><b>NEW</b>Eskiu 0.16.1 · Read the release notes</a><a class="gh-star" href="https://github.com/eskiu-lang/eskiu"><span aria-hidden="true">★</span> Star on GitHub</a></div>
           <h1>Write it like a script. <em>Ship it like&nbsp;C.</em></h1>
-          <p class="lede">A self-hosting systems language on LLVM, with explicit memory and direct C interop. One compiler for desktops, the web and phones.</p>
+          <p class="lede">A self-hosting systems language on LLVM, with explicit memory and direct C interop. For native tools, libraries and applications.</p>
           <div class="cta">
-            <a class="btn btn-dark" href="#start">Get started</a>
+            <a class="btn btn-dark" href="quickstart.html">Get started</a>
             <a class="btn btn-line" href="#playground"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 1.5v11l9-5.5z"/></svg>Try it in the browser</a>
           </div>
           <div class="os-tabs" data-os-tabs role="tablist" aria-label="Install"><button type="button" role="tab" aria-selected="true" data-lbl="Install on macOS or Linux" data-cmd="curl -fsSL https://eskiu-lang.org/install.sh | sh">macOS · Linux</button><button type="button" role="tab" aria-selected="false" data-lbl="Install on Windows (PowerShell)" data-cmd="powershell -c &quot;irm https://eskiu-lang.org/install.ps1 | iex&quot;">Windows</button></div>
@@ -83,13 +84,43 @@ llvm/llvm-project has 41179 stars
         </div>
       </section>
 
-      <div class="rv-stats"><div class="wrap"><div class="rv-stat"><b>574</b><span>programs, the same from both compilers</span></div><div class="rv-stat"><b>8</b><span>targets, from phones and the web to bare metal</span></div><div class="rv-stat"><b>14%</b><span>of the native code of the C++ engine it replaces in ViroReact</span></div><div class="rv-stat"><b>MIT</b><span>open source</span></div></div></div>
+      <section class="pg" id="playground">
+        <span id="toolchain"></span>
+        <div class="wrap pg-in">
+          <div class="pg-head-row">
+            <div class="pg-head">
+              <span class="eyebrow">Playground</span>
+              <h2>Try it in the browser.</h2>
+              <p>Edit the program and run it. The server compiles it with LLVM through the same <code>eskiuc run</code>.</p>
+            </div>
+            <div class="pg-ex" role="group" aria-label="Examples">
+              <button type="button" data-ex="hello" aria-pressed="true">hello</button>
+              <button type="button" data-ex="basics" aria-pressed="false">basics</button>
+              <button type="button" data-ex="match" aria-pressed="false">match</button>
+              <button type="button" data-ex="generics" aria-pressed="false">generics</button>
+              <button type="button" data-ex="operators" aria-pressed="false">operators</button>
+              <button type="button" data-ex="async" aria-pressed="false">async</button>
+            </div>
+          </div>
+          <div class="pg-grid">
+            <div class="pg-editor">
+              <div class="pg-bar"><label for="pg-code">main.esk</label><span>⌘/Ctrl + Enter to run</span></div>
+              <textarea id="pg-code" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+            </div>
+            <div class="pg-side">
+              <pre class="pg-out" aria-live="polite"><span class="lbl">STDOUT</span><span id="pg-res"></span></pre>
+              <button class="btn btn-purple" id="pg-run" type="button"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 1.5v11l9-5.5z"/></svg>Run</button>
+              <p class="note">Sandboxed: no network, time- and memory-limited, output capped.</p>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section class="wrap sec" id="language">
         <div class="sec-head">
           <span class="eyebrow">The language</span>
           <h2>C's model, with what C is missing.</h2>
-          <p>Memory is yours and calls are C calls. On top of that, Eskiu adds the parts people reach for other languages to get, and none of them needs a runtime.</p>
+          <p>Memory is yours and calls are C calls. On top of that, Eskiu adds the parts people reach for other languages to get, with cleanup and control flow compiled into your program.</p>
         </div>
         <div class="lang-grid">
           <div class="lcard">
@@ -143,6 +174,27 @@ llvm/llvm-project has 41179 stars
         <p class="aside">The compiler is written in Eskiu too, and both compilers, C++ and Eskiu, are held to the same output on every program in the test suite. <a href="the-book-of-eskiu.html">Read the Book →</a></p>
       </section>
 
+      <section class="wrap sec" id="start">
+        <div class="sec-head">
+          <span class="eyebrow">Get started</span>
+          <h2>From hello to async and bare metal.</h2>
+        </div>
+        <div class="start-next">
+          <a class="btn btn-dark" href="quickstart.html">Quickstart</a>
+          <a class="btn btn-line" href="the-book-of-eskiu.html">Read the Book of Eskiu</a>
+          <p>The Book is free and online. Code that compiles with 0.16.0 keeps compiling in every 0.16.x (<a href="docs/stability.html">stability policy</a>).</p>
+        </div>
+      </section>
+
+      <section class="wrap sec" id="status">
+        <div class="sec-head">
+          <span class="eyebrow">What to expect</span>
+          <h2>A young language, with explicit choices.</h2>
+          <p>Eskiu is in the 0.16 series. Memory is managed manually; <code>defer</code> helps release resources, and bounds, overflow and null checks are enabled with <code>--safe</code>. There is no borrow checker.</p>
+        </div>
+        <p>Minor releases can change the language and standard library. Read the <a href="docs/stability.html">stability policy</a>, <a href="changelog.html">release notes</a> and <a href="platforms.html">requirements for each target</a> before choosing it for a project.</p>
+      </section>
+
       <section class="wrap sec" id="compare">
         <div class="sec-head">
           <span class="eyebrow">How it compares</span>
@@ -154,92 +206,20 @@ llvm/llvm-project has 41179 stars
 
       <section class="wrap sec" id="built">
         <div class="sec-head">
-          <span class="eyebrow">In production</span>
-          <h2>ViroReact's engine, rewritten in Eskiu.</h2>
-          <p>ReactVision is replacing the C++ engine under ViroReact with one written in Eskiu. It implements ViroReact 3.2's whole public API on iOS, Android, Meta Quest and Apple Vision Pro, and runs ReactVision's showcase app unchanged. It is in device testing before it replaces the native engine.</p>
+          <span class="eyebrow">Built with Eskiu</span>
+          <h2>From the compiler to real applications.</h2>
+          <p>The compiler itself is also written in Eskiu and checked against the C++ implementation. ReactVision is testing a ViroReact engine written in the language on devices. Other projects explore digital identity and AR on Nintendo 3DS.</p>
         </div>
-        <div class="prod-grid">
-          <a class="pcard pcard-lead" href="case-study-reactvision.html#engine">
-            <span class="tag">ViroReact · iOS · Android · Quest · Vision Pro</span>
-            <h3>The same app, a fraction of the engine</h3>
-            <p>The same showcase app built twice, once with ViroReact 3.1 from npm and once on the Eskiu engine, both in Release.</p>
-            <div class="pstat"><span><strong>47k</strong> lines of native code against 346k (14%)</span><span><strong>25%</strong> smaller iOS download</span><span><strong>12 MB</strong> npm package, from 102 MB</span></div>
-            <span class="more">ReactVision case study →</span>
-          </a>
-          <a class="pcard" href="vision.html">
-            <span class="tag">tinyvio · vision</span>
-            <h3>AR tracking in the browser</h3>
-            <p>ViroReact's visual-inertial tracker runs on an engine written in Eskiu and compiled to WebAssembly. Its computer vision core computes the same bits as the C++ it replaced.</p>
-            <div class="pstat"><span><strong>217,582</strong> cases compared bit for bit</span><span><strong>0</strong> mismatches</span></div>
-            <span class="more">The vision package →</span>
-          </a>
-        </div>
-        <div class="users">
-          <span class="lbl">Used by</span>
-          <a href="https://reactvision.xyz" class="user"><img src="../assets/reactvision.png" alt="" width="541" height="319" />ReactVision</a>
-          <a href="https://themorrow.digital" class="user user-morrow"><img src="../assets/morrow.png" alt="The Morrow Digital" width="622" height="88" /></a>
-          <a href="case-study-identity.html" class="user">Digital identity</a>
-        </div>
+        <div class="start-next"><a class="btn btn-line" href="showcase.html">Explore the projects</a><a class="more" href="case-study-reactvision.html">The ReactVision case study →</a></div>
       </section>
 
-      <section class="pg" id="playground">
-        <span id="toolchain"></span>
-        <div class="wrap pg-in">
-          <div class="pg-head-row">
-            <div class="pg-head">
-              <span class="eyebrow">Playground</span>
-              <h2>Try it in the browser.</h2>
-              <p>Edit the program and run it. The server compiles it with LLVM through the same <code>eskiuc run</code>.</p>
-            </div>
-            <div class="pg-ex" role="group" aria-label="Examples">
-              <button type="button" data-ex="hello" aria-pressed="true">hello</button>
-              <button type="button" data-ex="basics" aria-pressed="false">basics</button>
-              <button type="button" data-ex="match" aria-pressed="false">match</button>
-              <button type="button" data-ex="generics" aria-pressed="false">generics</button>
-              <button type="button" data-ex="operators" aria-pressed="false">operators</button>
-              <button type="button" data-ex="async" aria-pressed="false">async</button>
-            </div>
-          </div>
-          <div class="pg-grid">
-            <div class="pg-editor">
-              <div class="pg-bar"><label for="pg-code">main.esk</label><span>⌘/Ctrl + Enter to run</span></div>
-              <textarea id="pg-code" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
-            </div>
-            <div class="pg-side">
-              <pre class="pg-out" aria-live="polite"><span class="lbl">STDOUT</span><span id="pg-res"></span></pre>
-              <button class="btn btn-purple" id="pg-run" type="button"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 1.5v11l9-5.5z"/></svg>Run</button>
-              <p class="note">Sandboxed: no network, time- and memory-limited, output capped.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="pkgs" id="ecosystem">
-        <div class="wrap pkgs-in">
-          <div class="pkgs-txt">
-            <span class="eyebrow">Packages</span>
-            <h2>The rest is a package away.</h2>
-            <p>GPU compute and 3D, machine learning, AR and native apps live in packages, outside the language. Each one is one <code>eskiuc add</code> away and builds on every target its libraries support.</p>
-            <div class="pkg-list"><a href="ui.html">ui</a><a href="gpu.html">gpu</a><a href="packages.html#scene">scene</a><a href="packages.html#ar">ar</a><a href="packages.html#onnx">onnx</a><a href="packages.html#tflite">tflite</a><a href="vision.html">vision</a><a href="packages.html#video">video</a><a href="packages.html#audio">audio</a><a href="packages.html#jni">jni</a><a href="packages.html#quickjs">quickjs</a></div>
-            <a class="more" href="packages.html">All packages →</a>
-          </div>
-<pre class="term"><span class="cm">$</span> eskiuc new viewer &amp;&amp; cd viewer
-<span class="cm">$</span> eskiuc add gpu --git https://github.com/eskiu-packages/gpu --rev v0.7.1
-<span class="cm">$</span> eskiuc run
-<span class="cm"># the first build fetches wgpu-native and SDL3 for this machine</span></pre>
-        </div>
-      </section>
-
-      <section class="wrap sec" id="start">
+      <section class="wrap sec" id="ecosystem">
         <div class="sec-head">
-          <span class="eyebrow">Get started</span>
-          <h2>From hello to async and bare metal.</h2>
+          <span class="eyebrow">The ecosystem</span>
+          <h2>Libraries to take it further.</h2>
+          <p>Packages extend the language with native interfaces, GPU computing, vision and more. Each package documents its dependencies and supported platforms.</p>
         </div>
-        <div class="start-next">
-          <a class="btn btn-dark" href="the-book-of-eskiu.html">Read the Book of Eskiu</a>
-          <a class="btn btn-line" href="quickstart.html">Quickstart</a>
-          <p>The Book is free and online. Code that compiles with 0.16.0 keeps compiling in every 0.16.x (<a href="docs/stability.html">stability policy</a>).</p>
-        </div>
+        <a class="more" href="packages.html">Explore the packages →</a>
       </section>
 
       <section class="wrap dev-note" id="note" aria-labelledby="note-h">
