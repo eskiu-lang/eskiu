@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ABI · Eskiu docs</title>
+  <title>ABI / Eskiu docs</title>
   <meta name="description" content="How Eskiu types and constructs lower to LLVM IR, and the calling/layout" />
   <meta name="theme-color" content="#fbf8f3" />
   <link rel="canonical" href="https://eskiu-lang.org/docs/abi.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
-  <meta property="og:title" content="ABI · Eskiu docs" />
+  <meta property="og:title" content="ABI / Eskiu docs" />
   <meta property="og:description" content="How Eskiu types and constructs lower to LLVM IR, and the calling/layout" />
   <meta property="og:url" content="https://eskiu-lang.org/docs/abi.html" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
@@ -88,7 +88,7 @@ a:hover { color: var(--ink); }
   padding: 0 18px; font-weight: 700; color: var(--ink); cursor: pointer; list-style: none; }
 .side-m summary::-webkit-details-marker { display: none; }
 .side-m summary::after { content: "+"; font-family: var(--mono); font-size: 20px; color: var(--purple); }
-.side-m[open] summary::after { content: "–"; }
+.side-m[open] summary::after { content: "-"; }
 .side-m .inner { padding: 4px 8px 16px; border-top: 1px solid var(--rule); }
 .side-m .grp { padding: 14px 12px 0; }
 .toc { display: none; }
@@ -230,7 +230,7 @@ figure img { border-radius: 14px; }
   <div class="bar layout has-toc">
     <aside class="side" aria-label="Documentation"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html" aria-current="page">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></aside>
     <main class="content">
-      <details class="side-m"><summary>Compiler internals · ABI</summary><div class="inner"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html" aria-current="page">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></div></details>
+      <details class="side-m"><summary>Compiler internals / ABI</summary><div class="inner"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html" aria-current="page">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></div></details>
 <h1 id="eskiu-abi">Eskiu ABI</h1>
 <p>How Eskiu types and constructs lower to LLVM IR, and the calling/layout
 conventions a foreign caller must follow. This reflects the code generator
@@ -351,7 +351,7 @@ multiple of <code>min(natural-align, N)</code>, with <code>[k x i8]</code> paddi
 and the total size rounded up to the struct's alignment (<code>min(max-field-align,
 N)</code>). The result is emitted as a packed LLVM struct (padding is explicit) and
 matches the C <code>#pragma pack(N)</code> ABI. Field access goes through a
-logical→physical index map (padding shifts indices).</p>
+logicalphysical index map (padding shifts indices).</p>
 <p>LLVM sees such a struct as 1-aligned, so its C alignment (<code>min(max-field-align,
 N)</code>) is recorded beside the type (<code>cAlignOverride</code> / <code>cg_set_calign</code>) and read
 through <code>cAlignOf</code> / <code>cg_c_align</code> wherever C alignment matters: a struct with a
@@ -455,33 +455,33 @@ converts to and from it, so it links against C compiled by clang/gcc:</p>
 <tbody>
 <tr>
 <td>AArch64 (AAPCS64, Darwin + Linux)</td>
-<td>HFA of 1-4 <code>float</code>/<code>double</code> → <code>[N x fp]</code> in FP registers (with <code>alignstack(8)</code> off Darwin); ≤ 8 bytes → <code>i64</code>; ≤ 16 → <code>[2 x i64]</code>; larger → pointer to a caller-made copy</td>
-<td>HFA → <code>{ fp, ... }</code>; ≤ 8 bytes → <code>iN</code>; ≤ 16 → <code>[2 x i64]</code>; larger → <code>sret</code> (x8)</td>
+<td>HFA of 1-4 <code>float</code>/<code>double</code> <code>[N x fp]</code> in FP registers (with <code>alignstack(8)</code> off Darwin); ≤ 8 bytes <code>i64</code>; ≤ 16 <code>[2 x i64]</code>; larger pointer to a caller-made copy</td>
+<td>HFA <code>{ fp, ... }</code>; ≤ 8 bytes <code>iN</code>; ≤ 16 <code>[2 x i64]</code>; larger <code>sret</code> (x8)</td>
 </tr>
 <tr>
 <td>x86-64 System V (Linux, macOS)</td>
-<td>each eightbyte classified INTEGER/SSE → one or two register values (<code>i64</code>, <code>i32</code>, <code>double</code>, <code>&lt;2 x float&gt;</code>, <code>ptr</code>, ...), as wide as the data in it (a union's widest member decides: <code>union { int; double; }</code> is <code>i64</code>, <code>union { float; double; }</code> is <code>double</code>); &gt; 16 bytes, a misaligned field, or no free registers left → <code>byval</code></td>
-<td>the same classes as a <code>{ lo, hi }</code> pair or one value; &gt; 16 bytes → <code>sret</code></td>
+<td>each eightbyte classified INTEGER/SSE one or two register values (<code>i64</code>, <code>i32</code>, <code>double</code>, <code>&lt;2 x float&gt;</code>, <code>ptr</code>, ...), as wide as the data in it (a union's widest member decides: <code>union { int; double; }</code> is <code>i64</code>, <code>union { float; double; }</code> is <code>double</code>); &gt; 16 bytes, a misaligned field, or no free registers left <code>byval</code></td>
+<td>the same classes as a <code>{ lo, hi }</code> pair or one value; &gt; 16 bytes <code>sret</code></td>
 </tr>
 <tr>
 <td>Windows x64</td>
-<td>size 1/2/4/8 → <code>iN</code>; otherwise pointer to a caller-made copy</td>
-<td>size 1/2/4/8 → <code>iN</code>; otherwise <code>sret</code></td>
+<td>size 1/2/4/8 <code>iN</code>; otherwise pointer to a caller-made copy</td>
+<td>size 1/2/4/8 <code>iN</code>; otherwise <code>sret</code></td>
 </tr>
 <tr>
 <td>32-bit ARM (AAPCS)</td>
-<td>hard-float HFA → <code>{ fp, ... }</code>; ≤ 64 bytes → <code>[N x i32]</code> (<code>[N x i64]</code> if 8-aligned); larger → <code>byval</code></td>
-<td>hard-float HFA → <code>{ fp, ... }</code>; ≤ 4 bytes → <code>i32</code>; otherwise <code>sret</code></td>
+<td>hard-float HFA <code>{ fp, ... }</code>; ≤ 64 bytes <code>[N x i32]</code> (<code>[N x i64]</code> if 8-aligned); larger <code>byval</code></td>
+<td>hard-float HFA <code>{ fp, ... }</code>; ≤ 4 bytes <code>i32</code>; otherwise <code>sret</code></td>
 </tr>
 <tr>
 <td>32-bit x86 (cdecl: i386 SysV, Darwin, Windows)</td>
-<td>≤ 16 bytes made only of 32/64-bit scalars (<code>int</code>, <code>int64</code>, <code>float</code>, <code>double</code>, pointers) with no padding → those scalars as separate arguments (<code>{ int, double }</code> → <code>i32, double</code>; not on Windows, where <code>double</code> is 8-aligned and leaves padding); anything else → <code>byval</code> in a 4-byte-aligned stack slot</td>
-<td>Linux (and other SysV i386 systems): always <code>sret</code>. Darwin, Windows and the BSDs: 1, 2, 4 or 8 bytes whose fields are each register-sized → <code>iN</code> in EAX:EDX, except a single-element struct of a <code>float</code>/<code>double</code> (in ST0; not under MSVC's rules, mingw keeps it) or a pointer, returned as that scalar; otherwise <code>sret</code></td>
+<td>≤ 16 bytes made only of 32/64-bit scalars (<code>int</code>, <code>int64</code>, <code>float</code>, <code>double</code>, pointers) with no padding those scalars as separate arguments (<code>{ int, double }</code> <code>i32, double</code>; not on Windows, where <code>double</code> is 8-aligned and leaves padding); anything else <code>byval</code> in a 4-byte-aligned stack slot</td>
+<td>Linux (and other SysV i386 systems): always <code>sret</code>. Darwin, Windows and the BSDs: 1, 2, 4 or 8 bytes whose fields are each register-sized <code>iN</code> in EAX:EDX, except a single-element struct of a <code>float</code>/<code>double</code> (in ST0; not under MSVC's rules, mingw keeps it) or a pointer, returned as that scalar; otherwise <code>sret</code></td>
 </tr>
 <tr>
 <td>wasm32 (emscripten, WASI)</td>
-<td>a single-element struct (one scalar through one-field structs, one-element arrays and one-member unions) → that scalar; anything else → <code>byval</code> at its alignment</td>
-<td>single-element struct → that scalar; otherwise <code>sret</code></td>
+<td>a single-element struct (one scalar through one-field structs, one-element arrays and one-member unions) that scalar; anything else <code>byval</code> at its alignment</td>
+<td>single-element struct that scalar; otherwise <code>sret</code></td>
 </tr>
 </tbody>
 </table></div>
@@ -670,7 +670,7 @@ contract for the runtime side.</p>
   <footer class="foot">
     <div class="bar foot-in">
       <span class="brand">eskiu</span>
-      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family · MIT</span>
+      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family / MIT</span>
       <nav class="foot-links" aria-label="Footer">
         <a href="index.html">Docs</a>
         <a href="../the-book-of-eskiu.html">Book</a>

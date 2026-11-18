@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Getting started · Eskiu docs</title>
+  <title>Getting started / Eskiu docs</title>
   <meta name="description" content="A hands-on introduction to the Eskiu language. You will go from zero to writing" />
   <meta name="theme-color" content="#fbf8f3" />
   <link rel="canonical" href="https://eskiu-lang.org/docs/getting-started.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
-  <meta property="og:title" content="Getting started · Eskiu docs" />
+  <meta property="og:title" content="Getting started / Eskiu docs" />
   <meta property="og:description" content="A hands-on introduction to the Eskiu language. You will go from zero to writing" />
   <meta property="og:url" content="https://eskiu-lang.org/docs/getting-started.html" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
@@ -88,7 +88,7 @@ a:hover { color: var(--ink); }
   padding: 0 18px; font-weight: 700; color: var(--ink); cursor: pointer; list-style: none; }
 .side-m summary::-webkit-details-marker { display: none; }
 .side-m summary::after { content: "+"; font-family: var(--mono); font-size: 20px; color: var(--purple); }
-.side-m[open] summary::after { content: "–"; }
+.side-m[open] summary::after { content: "-"; }
 .side-m .inner { padding: 4px 8px 16px; border-top: 1px solid var(--rule); }
 .side-m .grp { padding: 14px 12px 0; }
 .toc { display: none; }
@@ -230,7 +230,7 @@ figure img { border-radius: 14px; }
   <div class="bar layout has-toc">
     <aside class="side" aria-label="Documentation"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html" aria-current="page">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></aside>
     <main class="content">
-      <details class="side-m"><summary>Language · Getting started</summary><div class="inner"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html" aria-current="page">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></div></details>
+      <details class="side-m"><summary>Language / Getting started</summary><div class="inner"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html" aria-current="page">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></div></details>
 <h1 id="getting-started-with-eskiu">Getting Started with Eskiu</h1>
 <p>A hands-on introduction to the Eskiu language. You will go from zero to writing
 and inspecting real compiled programs in about 30 minutes.</p>
@@ -587,12 +587,12 @@ bool inv = !x;        // false
 </code></pre>
 <h3 id="bitwise">Bitwise</h3>
 <pre><code class="language-eskiu">int flags = 0xFF;
-int low   = flags &amp; 0x0F;   // AND  → 15
-int hi    = flags | 0x100;  // OR   → 511
-int xord  = flags ^ 0x55;   // XOR  → 170
-int shl   = 1 &lt;&lt; 4;         // shift left  → 16
-int shr   = flags &gt;&gt; 4;     // shift right → 15
-int inv2  = ~0;              // bitwise NOT → -1
+int low   = flags &amp; 0x0F;   // AND  15
+int hi    = flags | 0x100;  // OR   511
+int xord  = flags ^ 0x55;   // XOR  170
+int shl   = 1 &lt;&lt; 4;         // shift left  16
+int shr   = flags &gt;&gt; 4;     // shift right 15
+int inv2  = ~0;              // bitwise NOT -1
 </code></pre>
 <h3 id="compound-assignment">Compound assignment</h3>
 <pre><code class="language-eskiu">int x = 10;
@@ -610,7 +610,7 @@ x &gt;&gt;= 1;   // x = 4
 <h3 id="address-of-and-dereference">Address-of and dereference</h3>
 <pre><code class="language-eskiu">int n = 42;
 let ptr: *int = &amp;n;   // address-of
-int copy = *ptr;      // dereference → 42
+int copy = *ptr;      // dereference 42
 </code></pre>
 <h3 id="pointer-arithmetic">Pointer arithmetic</h3>
 <pre><code class="language-eskiu">import &lt;mem&gt;;     // alloc&lt;T&gt; / free
@@ -629,7 +629,7 @@ int main() {
 <p><code>ptr + n</code> advances by <code>n * sizeof(*ptr)</code> bytes: typed arithmetic. Adding <code>1</code> to a <code>*uint8</code> moves one byte; adding <code>1</code> to a <code>*int</code> moves four bytes. <code>*void</code> and <code>*char</code> are the exceptions: they always use byte-level stride.</p>
 <h3 id="cast">Cast</h3>
 <pre><code class="language-eskiu">float f = 3.99;
-int   i = (int)f;      // truncates → 3
+int   i = (int)f;      // truncates 3
 uint8 b = (uint8)255;
 </code></pre>
 <hr>
@@ -1267,7 +1267,7 @@ import &lt;math&gt;;
 </tr>
 <tr>
 <td><code>&lt;json&gt;</code></td>
-<td><code>Json</code> builder + <code>json_parse</code> → <code>JsonValue</code> tree; build and edit with <code>JsonValue_object</code>/<code>_array</code>/<code>_set</code>/<code>_push</code>/<code>_remove</code>, print with <code>JsonValue_stringify</code>/<code>_pretty</code>, paths with <code>json_get</code>; <code>json_parse_doc</code> → read-only <code>JsonDoc</code> in one arena, about 3x faster</td>
+<td><code>Json</code> builder + <code>json_parse</code> <code>JsonValue</code> tree; build and edit with <code>JsonValue_object</code>/<code>_array</code>/<code>_set</code>/<code>_push</code>/<code>_remove</code>, print with <code>JsonValue_stringify</code>/<code>_pretty</code>, paths with <code>json_get</code>; <code>json_parse_doc</code> read-only <code>JsonDoc</code> in one arena, about 3x faster</td>
 </tr>
 <tr>
 <td><code>&lt;csv&gt;</code></td>
@@ -1919,7 +1919,7 @@ int64 add(int64 a, int64 b) {
 <li>Operands are <code>"constraint"(expression)</code> pairs, referenced in the template as <code>$0</code>, <code>$1</code>, ... (outputs first, then inputs).</li>
 <li>An output constraint starts with <code>=</code> (written) or <code>+</code> (read and written), and its operand must be a writable variable, field, element or dereference.</li>
 <li><code>"memory"</code> in the clobber list acts as a compiler barrier.</li>
-<li>Common constraints: <code>"r"</code> → any register, <code>"m"</code> → memory, <code>"i"</code> → an immediate. On x86 the GCC register letters <code>"a"</code>, <code>"b"</code>, <code>"c"</code>, <code>"d"</code>, <code>"S"</code> and <code>"D"</code> pick one register (al/ax/eax/rax by width for <code>"a"</code>), and <code>"Nd"</code> is an 8-bit immediate or dx. LLVM's explicit form, a register in braces such as <code>"{ax}"</code> or <code>"N{dx}"</code>, works too; the GCC letters are translated to it.</li>
+<li>Common constraints: <code>"r"</code> any register, <code>"m"</code> memory, <code>"i"</code> an immediate. On x86 the GCC register letters <code>"a"</code>, <code>"b"</code>, <code>"c"</code>, <code>"d"</code>, <code>"S"</code> and <code>"D"</code> pick one register (al/ax/eax/rax by width for <code>"a"</code>), and <code>"Nd"</code> is an 8-bit immediate or dx. LLVM's explicit form, a register in braces such as <code>"{ax}"</code> or <code>"N{dx}"</code>, works too; the GCC letters are translated to it.</li>
 </ul>
 <p>See spec §15 for the full rules.</p>
 <h3 id="freestanding-mode">Freestanding mode</h3>
@@ -2019,7 +2019,7 @@ them, as in C: with <code>let q: *int = buf + 3;</code>, <code>q - buf</code> is
   <footer class="foot">
     <div class="bar foot-in">
       <span class="brand">eskiu</span>
-      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family · MIT</span>
+      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family / MIT</span>
       <nav class="foot-links" aria-label="Footer">
         <a href="index.html">Docs</a>
         <a href="../the-book-of-eskiu.html">Book</a>

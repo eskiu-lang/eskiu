@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Compiler internals · Eskiu docs</title>
+  <title>Compiler internals / Eskiu docs</title>
   <meta name="description" content="This section covers the internals of the compiler: its full compilation pipeline, AST design, type system, semantic analysis, and LLVM-based code generatio" />
   <meta name="theme-color" content="#fbf8f3" />
   <link rel="canonical" href="https://eskiu-lang.org/docs/internals.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
-  <meta property="og:title" content="Compiler internals · Eskiu docs" />
+  <meta property="og:title" content="Compiler internals / Eskiu docs" />
   <meta property="og:description" content="This section covers the internals of the compiler: its full compilation pipeline, AST design, type system, semantic analysis, and LLVM-based code generatio" />
   <meta property="og:url" content="https://eskiu-lang.org/docs/internals.html" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
@@ -88,7 +88,7 @@ a:hover { color: var(--ink); }
   padding: 0 18px; font-weight: 700; color: var(--ink); cursor: pointer; list-style: none; }
 .side-m summary::-webkit-details-marker { display: none; }
 .side-m summary::after { content: "+"; font-family: var(--mono); font-size: 20px; color: var(--purple); }
-.side-m[open] summary::after { content: "–"; }
+.side-m[open] summary::after { content: "-"; }
 .side-m .inner { padding: 4px 8px 16px; border-top: 1px solid var(--rule); }
 .side-m .grp { padding: 14px 12px 0; }
 .toc { display: none; }
@@ -230,7 +230,7 @@ figure img { border-radius: 14px; }
   <div class="bar layout has-toc">
     <aside class="side" aria-label="Documentation"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html" aria-current="page">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></aside>
     <main class="content">
-      <details class="side-m"><summary>Compiler internals · Compiler internals</summary><div class="inner"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html" aria-current="page">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></div></details>
+      <details class="side-m"><summary>Compiler internals / Compiler internals</summary><div class="inner"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html" aria-current="page">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></div></details>
 <h1 id="eskiu-compiler-developer-documentation">Eskiu Compiler: Developer Documentation</h1>
 <p>This section covers the internals of the compiler: its full compilation pipeline, AST design, type system, semantic analysis, and LLVM-based code generation layer. It is written for contributors who want to understand how the compiler works, add a new language feature, fix a bug, or extend the test suite. Familiarity with C++17 and a basic understanding of LLVM IR are assumed; no prior compiler experience is required.</p>
 <hr>
@@ -266,7 +266,7 @@ clang hello.o -o hello
 <tbody>
 <tr>
 <td><a href="architecture.html"><code>architecture.md</code></a></td>
-<td>Pipeline stages, AST node hierarchy, visitor pattern, type mappings (Eskiu → LLVM)</td>
+<td>Pipeline stages, AST node hierarchy, visitor pattern, type mappings (Eskiu LLVM)</td>
 </tr>
 <tr>
 <td><a href="https://github.com/eskiu-lang/eskiu/blob/main/docs/dev/diagnostics.md"><code>diagnostics.md</code></a></td>
@@ -387,10 +387,10 @@ clang hello.o -o hello
 </tr>
 </tbody>
 </table></div>
-<p><strong>Pipeline.</strong> lexer → parser → type checker → async transform → <strong>type checker RE-RUN on the transformed AST (the single resolver, producing a per-expression <code>ty::Type</code> table)</strong> → codegen (consumes that table; <code>getTypeFromString</code> dispatches on <code>ty::Type::parse</code>, the one grammar interpreter; codegen does not re-derive expression types).</p>
+<p><strong>Pipeline.</strong> lexer parser type checker async transform <strong>type checker RE-RUN on the transformed AST (the single resolver, producing a per-expression <code>ty::Type</code> table)</strong> codegen (consumes that table; <code>getTypeFromString</code> dispatches on <code>ty::Type::parse</code>, the one grammar interpreter; codegen does not re-derive expression types).</p>
 <p><strong>Where to look first:</strong></p>
 <ul>
-<li>Adding a new statement or expression type: <code>ast/ast.h</code> → <code>parser/</code> → <code>sema/</code> (<code>type_checker.cpp</code> + the <code>typecheck_*.cpp</code> split) → <code>codegen/</code>, in that order.</li>
+<li>Adding a new statement or expression type: <code>ast/ast.h</code> <code>parser/</code> <code>sema/</code> (<code>type_checker.cpp</code> + the <code>typecheck_*.cpp</code> split) <code>codegen/</code>, in that order.</li>
 <li>Fixing a type error: start in <code>sema/type_checker.cpp</code> and the <code>typecheck_*.cpp</code> split; the struct registry and scope stack are both local to those files.</li>
 <li>Wrong IR output: run with <code>--test-codegen</code> and inspect the IR; the visitor method for the relevant AST node is in the relevant <code>codegen/codegen_*.cpp</code>.</li>
 <li>Tracing a diagnostic: error messages include file, line, and column; the source location is threaded through every AST node from the lexer onward.</li>
@@ -401,7 +401,7 @@ clang hello.o -o hello
   <footer class="foot">
     <div class="bar foot-in">
       <span class="brand">eskiu</span>
-      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family · MIT</span>
+      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family / MIT</span>
       <nav class="foot-links" aria-label="Footer">
         <a href="index.html">Docs</a>
         <a href="../the-book-of-eskiu.html">Book</a>

@@ -4,12 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script>try{if(localStorage.getItem("eskiu-lang")==="es")location.replace("es/showcase.html"+location.hash);}catch(e){}</script>
-  <title>Showcase · Eskiu</title>
+  <title>Showcase / Eskiu</title>
   <meta name="description" content="What has been built with Eskiu: Llama 2 inference on Metal at 45 tokens per second, a glTF viewer with physically based shading, an AR demo on the Nintendo 3DS, ReactVision's rendering engine and web AR tracker, and the compiler itself." />
   <link rel="canonical" href="https://eskiu-lang.org/showcase.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
-  <meta property="og:title" content="Showcase · Eskiu" />
+  <meta property="og:title" content="Showcase / Eskiu" />
   <meta property="og:description" content="What has been built with Eskiu: Llama 2 inference on Metal at 45 tokens per second, a glTF viewer with physically based shading, an AR demo on the Nintendo 3DS, ReactVision's rendering engine and web AR tracker, and the compiler itself." />
   <meta property="og:url" content="https://eskiu-lang.org/showcase.html" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
@@ -70,7 +70,7 @@
       and Java, is now one Eskiu module for both platforms in production, with its Android JNI
       layer written in Eskiu through the <a href="packages.html#jni"><code>jni</code></a> package.
     </p>
-    <p><a class="more" href="case-study-reactvision.html">Read the ReactVision case study →</a></p>
+    <p><a class="more" href="case-study-reactvision.html">Read the ReactVision case study</a></p>
 
     <h2 id="tinyvio">tinyvio: AR tracking in the browser</h2>
     <p>
@@ -91,7 +91,7 @@
       Its computer vision core is also an Eskiu package, <a href="vision.html">vision</a>,
       checked bit for bit against tinyvio's C++ on every commit.
     </p>
-    <p><a class="more" href="case-study-reactvision.html#tinyvio">How it was checked →</a></p>
+    <p><a class="more" href="case-study-reactvision.html#tinyvio">How it was checked</a></p>
 
     <h2 id="identity">Digital identity: ISO/IEC 39794-5 face records</h2>
     <p>
@@ -102,7 +102,7 @@
       browser and compile to native libraries with a C ABI for Android and iOS, and every
       capture is processed on the user's device.
     </p>
-    <p><a class="more" href="case-study-identity.html">Read the case study →</a></p>
+    <p><a class="more" href="case-study-identity.html">Read the case study</a></p>
 
     <h2 id="llama">Llama 2 on Metal</h2>
     <p>
@@ -143,7 +143,7 @@
       normal maps, alpha modes, skinning and animation. The same code runs on Metal, Vulkan and
       DirectX 12.
     </p>
-    <p><a class="more" href="https://github.com/eskiu-packages/gpu">github.com/eskiu-packages/gpu →</a></p>
+    <p><a class="more" href="https://github.com/eskiu-packages/gpu">github.com/eskiu-packages/gpu</a></p>
 
     <h2 id="selfhost">The compiler, written in Eskiu</h2>
     <p>
@@ -153,14 +153,14 @@
       <code>clang</code> to assemble and link it. CMake builds it as <code>eskiuc-esk</code>, and
       CI checks that both compilers agree on every runnable program in the test suite.
     </p>
-    <pre><code>preprocessor → lexer → parser → sema → async lowering → codegen (LLVM IR text) → clang</code></pre>
+    <pre><code>preprocessor lexer parser sema async lowering codegen (LLVM IR text) clang</code></pre>
     <p>
       It is also checked against itself. The C++ <code>eskiuc</code> builds <code>cc0</code>,
       <code>cc0</code> builds <code>cc1</code>, and <code>cc1</code> builds <code>cc2</code>; the
       bootstrap reaches a fixpoint when <code>cc1</code> and <code>cc2</code> produce identical IR
       for the compiler's own source.
     </p>
-    <p><a class="more" href="docs/self-hosting.html">How self-hosting is checked →</a></p>
+    <p><a class="more" href="docs/self-hosting.html">How self-hosting is checked</a></p>
     <section class="labs" id="labs">
       <div class="eyebrow">Labs</div>
       <p class="labs-intro">Experiments made to see how far Eskiu goes. They work, and they are not products.</p>
@@ -174,7 +174,7 @@
       is written in Eskiu, compiled for the console's 32-bit ARM11, and its rendering goes through
       ViroCore on citro3d. It was verified on real 3DS hardware.
     </p>
-    <p><a class="more" href="case-study-3ds.html">Read the 3DS case study →</a></p>
+    <p><a class="more" href="case-study-3ds.html">Read the 3DS case study</a></p>
     </section>
   </main>
   <section class="cta-band" aria-label="Get started">
@@ -192,7 +192,7 @@
   <footer class="foot">
     <div class="bar foot-in">
       <span class="brand">eskiu</span>
-      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family · MIT</span>
+      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family / MIT</span>
       <nav class="foot-links" aria-label="Footer"><a href="docs/index.html">Docs</a><a href="the-book-of-eskiu.html">Book</a><a href="docs/internals.html">Internals</a><a href="changelog.html">Changelog</a><a href="llms.txt">llms.txt</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a><a href="https://reactvision.xyz">ReactVision</a></nav>
     </div>
   </footer>

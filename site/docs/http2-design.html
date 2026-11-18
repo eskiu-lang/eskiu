@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>HTTP/2 design · Eskiu docs</title>
+  <title>HTTP/2 design / Eskiu docs</title>
   <meta name="description" content="&lt;http2&gt; brings HTTP/2 (RFC 7540, as revised by RFC 9113) to Eskiu over the async &lt;eventloop&gt;. HTTP/2 is" />
   <meta name="theme-color" content="#fbf8f3" />
   <link rel="canonical" href="https://eskiu-lang.org/docs/http2-design.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
-  <meta property="og:title" content="HTTP/2 design · Eskiu docs" />
+  <meta property="og:title" content="HTTP/2 design / Eskiu docs" />
   <meta property="og:description" content="&lt;http2&gt; brings HTTP/2 (RFC 7540, as revised by RFC 9113) to Eskiu over the async &lt;eventloop&gt;. HTTP/2 is" />
   <meta property="og:url" content="https://eskiu-lang.org/docs/http2-design.html" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
@@ -88,7 +88,7 @@ a:hover { color: var(--ink); }
   padding: 0 18px; font-weight: 700; color: var(--ink); cursor: pointer; list-style: none; }
 .side-m summary::-webkit-details-marker { display: none; }
 .side-m summary::after { content: "+"; font-family: var(--mono); font-size: 20px; color: var(--purple); }
-.side-m[open] summary::after { content: "–"; }
+.side-m[open] summary::after { content: "-"; }
 .side-m .inner { padding: 4px 8px 16px; border-top: 1px solid var(--rule); }
 .side-m .grp { padding: 14px 12px 0; }
 .toc { display: none; }
@@ -230,7 +230,7 @@ figure img { border-radius: 14px; }
   <div class="bar layout has-toc">
     <aside class="side" aria-label="Documentation"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html" aria-current="page">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></aside>
     <main class="content">
-      <details class="side-m"><summary>Compiler internals · HTTP/2 design</summary><div class="inner"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html" aria-current="page">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></div></details>
+      <details class="side-m"><summary>Compiler internals / HTTP/2 design</summary><div class="inner"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html" aria-current="page">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></div></details>
 <h1 id="http2-architecture">HTTP/2 architecture</h1>
 <p><code>&lt;http2&gt;</code> brings HTTP/2 (RFC 7540, as revised by RFC 9113) to Eskiu over the async <code>&lt;eventloop&gt;</code>. HTTP/2 is
 a binary, multiplexed protocol: one TCP (TLS) connection carries many concurrent
@@ -252,8 +252,8 @@ PING/PONG (<code>h2_write_ping</code>/<code>h2_send_pong</code>), and GOAWAY
 (<code>h2_write_goaway</code>/<code>h2_read_goaway</code>/<code>H2Conn_send_goaway</code>) with the §7 error codes. An
 <code>H2Conn</code> holds per-connection state. I/O is async over the event loop:
 <code>h2_read_full_async</code> (partial-read loop), <code>h2_read_frame_async</code> (header +
-payload), and <code>h2_server_handshake_async</code> (validate preface → read + apply client
-SETTINGS → send ours + ACK). A server advertises <code>SETTINGS_ENABLE_PUSH = 0</code> (no
+payload), and <code>h2_server_handshake_async</code> (validate preface read + apply client
+SETTINGS send ours + ACK). A server advertises <code>SETTINGS_ENABLE_PUSH = 0</code> (no
 server push, §6.5.2). Tested by <code>http2_conn</code> (pure codecs) and <code>http2_handshake</code>
 (the async handshake over a socketpair).</p>
 <h3 id="hpack-header-compression-stdlibhpackesk-stdlibhpack_huffmanesk">HPACK header compression (<code>stdlib/hpack.esk</code>, <code>stdlib/hpack_huffman.esk</code>)</h3>
@@ -264,15 +264,15 @@ indexing; dynamic-table size update). The decoder maintains the dynamic table; t
 encoder is stateless (indexed static matches, else literal-without-indexing).</p>
 <p>Huffman coding (§5.2 + Appendix B) is a decode trie plus bit-packed encode over
 the 257-symbol table. The table is <strong>generated</strong> from the RFC text by
-<code>tools/gen_hpack_huffman.py</code> (→ <code>stdlib/hpack_huffman.esk</code>) rather than
+<code>tools/gen_hpack_huffman.py</code> ( <code>stdlib/hpack_huffman.esk</code>) rather than
 hand-transcribed; the generator asserts the worked example (sym 47 = 0x18/6), the
 EOS length, and completeness. The decoder validates padding (trailing bits must be
 the EOS prefix) and rejects a literal EOS; the encoder picks the smaller of
 raw/Huffman per string. Validated against the RFC vectors, §C.1.1 (integer),
-§C.3.1 (raw request), §C.4.1 (Huffman request), plus encode→decode round-trips
+§C.3.1 (raw request), §C.4.1 (Huffman request), plus encodedecode round-trips
 (<code>tests/hpack</code>).</p>
 <h3 id="streams-and-flow-control-stdlibhttp2esk">Streams and flow control (<code>stdlib/http2.esk</code>)</h3>
-<p>The per-stream state machine (<code>H2Stream</code>: idle → open → half-closed-local/remote →
+<p>The per-stream state machine (<code>H2Stream</code>: idle open half-closed-local/remote
 closed, via <code>H2Stream_on_recv</code>/<code>H2Stream_on_send</code>); credit-based flow control
 (<code>H2Conn_can_send</code>/<code>H2Conn_account_sent</code>/<code>H2Conn_account_recv</code>/<code>H2Conn_grant_window</code>) over
 per-stream and connection windows; and the stream-frame codecs: HEADERS, DATA,
@@ -376,7 +376,7 @@ are the <code>H2_*</code> / <code>H2_FLAG_*</code> constants.</p>
   <footer class="foot">
     <div class="bar foot-in">
       <span class="brand">eskiu</span>
-      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family · MIT</span>
+      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family / MIT</span>
       <nav class="foot-links" aria-label="Footer">
         <a href="index.html">Docs</a>
         <a href="../the-book-of-eskiu.html">Book</a>

@@ -74,10 +74,10 @@ NAV_LANG = [
     ("build.html", "Tooling"),
     ("stability.html", "Stability"),
     ("glossary.html", "Glossary"),
-    ("internals.html", "Internals →"),
+    ("internals.html", "Internals"),
 ]
 NAV_DEV = [
-    ("index.html", "← Language docs"),
+    ("index.html", "Language docs"),
     ("internals.html", "Overview"),
     ("architecture.html", "Architecture"),
     ("design.html", "Design"),
@@ -132,7 +132,6 @@ def build_sidebar(active, d):
     for group, links in SIDEBAR:
         out.append(f'<span class="grp">{html.escape(group)}</span><nav>')
         for href, label in links:
-            label = label.replace(" →", "")
             cur = ' aria-current="page"' if href == active else ""
             out.append(f'<a href="{d}{href}"{cur}>{html.escape(label)}</a>')
         out.append("</nav>")
@@ -267,12 +266,12 @@ def main():
             "</table>", "</table></div>"
         )
         page = render(
-            title=f"{title} · Eskiu docs",
+            title=f"{title} / Eskiu docs",
             desc=first_paragraph(text),
             canon=f"docs/{out}",
             p="../", d="", a="../../assets/",
             current="docs", active=out,
-            summary=f"{section_of(out)} · {title}",
+            summary=f"{section_of(out)} / {title}",
             body=body,
             toc_tokens=md.toc_tokens,
         )
@@ -290,7 +289,7 @@ def main():
         "</table>", "</table></div>"
     )
     cl_page = render(
-        title="Changelog · Eskiu",
+        title="Changelog / Eskiu",
         desc=first_paragraph(cl_text),
         canon="changelog.html",
         p="", d="docs/", a="../assets/",

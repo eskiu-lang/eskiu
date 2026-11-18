@@ -559,7 +559,7 @@ pre.code-block {
 <p>Every chapter follows the same pattern. A concept is explained in plain language. Then shown in code. Each chapter ends with a summary and exercises. Do the exercises, even the easy ones, especially the easy ones.</p>
 <p>By the end you will have read the complete language, managed memory explicitly, called C libraries directly, spawned threads, and read through a real cryptographic pipeline that runs 2.5× faster than the hand-written C it replaced.</p>
 <p>Eskiu is named after a cat.</p>
-<p class="etymology">Tiny → Minusculiny (minúscula + tiny) → Kulini → Eskiulini → Eskiu.</p>
+<p class="etymology">Tiny Minusculiny (minúscula + tiny) Kulini Eskiulini Eskiu.</p>
 <p>Eskiu is self-hosting: the whole compiler (lexer, preprocessor, parser, type checker, and code generator) is written in Eskiu itself (<code>selfhost/</code>), reaches a three-stage bootstrap fixpoint, and its code generator is feature-complete against the reference C++ compiler. Chapter 27 tells that story.</p>
 <div class="chapter-start" id="chapter-1"><span class="chapter-label">Chapter 1</span>
 <h1 class="chapter-title">Hello, Eskiu</h1><hr class="chapter-rule"></div>
@@ -614,15 +614,15 @@ pre.code-block {
 <pre class="code-block">           Type        Size        Example       Use it for</pre>
 <pre class="code-block">           int         32 bits     42, -7        Everyday whole numbers</pre>
 <pre class="code-block">           int64       64 bits     9999999999    Large values, file sizes, timestamps</pre>
-<pre class="code-block">           uint8       8 bits      0–255         Bytes, raw binary data, pixel values</pre>
-<pre class="code-block">           uint32      32 bits     0–4 billion   Large unsigned counts, bit masks</pre>
+<pre class="code-block">           uint8       8 bits      0-255         Bytes, raw binary data, pixel values</pre>
+<pre class="code-block">           uint32      32 bits     0-4 billion   Large unsigned counts, bit masks</pre>
 <pre class="code-block">           float       32 bits     3.14          Decimal numbers</pre>
 <pre class="code-block">           double      64 bits     3.14159265    High-precision decimal numbers</pre>
 <pre class="code-block">           bool        1 bit       true, false   Yes/no conditions</pre>
-<pre class="code-block">           char        8 bits      &#x27;A&#x27;, &#x27;\n&#x27;     Single byte, unsigned (0–255)</pre>
+<pre class="code-block">           char        8 bits      &#x27;A&#x27;, &#x27;\n&#x27;     Single byte, unsigned (0-255)</pre>
 <pre class="code-block">           string      pointer     &quot;hello&quot;       Immutable text literals</pre>
 <p>Eskiu also has <code>int8</code>, <code>int16</code>, <code>int32</code>, <code>uint16</code>, <code>uint64</code>. For most code, <code>int</code> and <code>uint8</code> cover the majority of cases.</p>
-<p>Integer literals can be written in hexadecimal with a 0x prefix, and a leading <code>0</code> means octal, as in C (<code>017</code> is 15). A literal with a digit its base does not allow (<code>08</code>), a bare <code>0x</code>, or a suffix of any kind (<code>0b101</code>, <code>1_000</code>, <code>3.5f</code>) is a compile error. Character and string literals support C&#x27;s escapes: <code>\n \t \r \f \v \a \b \\ \" \' \?</code>, an octal escape <code>\NNN</code> of one to three digits (<code>"\101"</code> is <code>A</code>, <code>"\012"</code> a newline, <code>\0</code> a NUL byte), and <code>\xNN</code>, which writes a raw byte from one or two hex digits (so <code>"\xC3\x91"</code> is <code>Ñ</code> in UTF-8). Any other escape (<code>\q</code>), an octal escape above <code>\377</code> and a <code>\x</code> with no hex digit are compile errors located at the backslash. <code>char</code> is an unsigned 8-bit type (0–255); when widened to <code>int</code> it zero-extends, not sign-extends:</p>
+<p>Integer literals can be written in hexadecimal with a 0x prefix, and a leading <code>0</code> means octal, as in C (<code>017</code> is 15). A literal with a digit its base does not allow (<code>08</code>), a bare <code>0x</code>, or a suffix of any kind (<code>0b101</code>, <code>1_000</code>, <code>3.5f</code>) is a compile error. Character and string literals support C&#x27;s escapes: <code>\n \t \r \f \v \a \b \\ \" \' \?</code>, an octal escape <code>\NNN</code> of one to three digits (<code>"\101"</code> is <code>A</code>, <code>"\012"</code> a newline, <code>\0</code> a NUL byte), and <code>\xNN</code>, which writes a raw byte from one or two hex digits (so <code>"\xC3\x91"</code> is <code>Ñ</code> in UTF-8). Any other escape (<code>\q</code>), an octal escape above <code>\377</code> and a <code>\x</code> with no hex digit are compile errors located at the backslash. <code>char</code> is an unsigned 8-bit type (0-255); when widened to <code>int</code> it zero-extends, not sign-extends:</p>
 <pre class="code-block"> int flags = 0xFF;                    // hex literal = 255
  uint32 mask = 0xDEADBEEF; // larger hex</pre>
 <pre class="code-block"> char a = &#x27;A&#x27;;                        // character literal
@@ -638,7 +638,7 @@ pre.code-block {
 <p>Numeric conversions are mostly implicit: Eskiu widens and narrows between integer and float widths on its own. The one numeric conversion that needs an explicit cast is float to integer, which discards the fractional part. Pointer reinterpretation is always explicit too:</p>
 <pre class="code-block"> double x = 3.99;
  int n          = (int)x;         // 3: fractional part discarded
- uint8 b        = (uint8)n;       // fine if n fits in 0–255
+ uint8 b        = (uint8)n;       // fine if n fits in 0-255
  float f        = (float)n;       // widen to float</pre>
 <p>Arithmetic follows C&#x27;s integer promotions. An operand narrower than <code>int</code> (<code>bool</code>, <code>char</code>, <code>int8</code>, <code>int16</code>, <code>uint8</code>, <code>uint16</code>) becomes an <code>int</code> before the operation, so the result does not wrap at 8 or 16 bits and comparisons between signed and unsigned bytes behave as they do in C. The value only narrows again when you store it into a narrow variable:</p>
 <pre class="code-block"> uint8 a = (uint8)200;
@@ -3880,7 +3880,7 @@ pre.code-block {
 <h1 class="chapter-title">Self-Hosting</h1><hr class="chapter-rule"></div>
 <p>There is a moment in a language's life when it grows up: the day its compiler is written in itself. Until then the language depends on another: Eskiu's reference compiler, <code>eskiuc</code>, is written in C++. A self-hosted compiler is one the language can build on its own, and reaching it proves something concrete: the language is expressive enough, and the compiler correct enough, to take on a program as demanding as a compiler. Eskiu is there.</p>
 <p>The whole pipeline is reimplemented in Eskiu, under <code>selfhost/</code>: a lexer, a preprocessor, a parser, a type checker, and a code generator, each a faithful translation of its C++ counterpart. They chain together exactly as the reference compiler does:</p>
-<pre class="code-block"> lexer → preprocessor → parser → type checker → code generator → LLVM IR</pre>
+<pre class="code-block"> lexer preprocessor parser type checker code generator LLVM IR</pre>
 <p>The code generator is the interesting one. It does not link against the LLVM libraries. Instead it writes LLVM IR out as plain text, which <code>clang</code> then assembles and links. That choice keeps the self-hosted compiler dependency-free, and it is how most bootstrapping compilers do it.</p>
 <h2 class="section" id="sec-27-1">27.1 Trust, but verify</h2>
 <p>A compiler that is subtly wrong is worse than no compiler at all, so every pass is checked against the reference. The method changes with what can be observed. For the lexer, parser, and preprocessor there is an exact answer to compare against: their output is diffed <em>byte-for-byte</em> against <code>eskiuc</code>'s debug dumps. For the type checker, the ground truth is a verdict: does it accept the same programs and reject the same mistakes, with the same error messages? For the code generator, the generated IR can't be compared character by character (LLVM renumbers values and folds constants), so the test is <em>behavioural</em>: compile the program both ways, run both binaries, and check that they print the same thing and exit the same way. Every one of these comparisons runs in continuous integration; a divergence fails the build.</p>
@@ -4200,7 +4200,7 @@ pre.code-block {
 <pre class="code-block">        eskiuc file.esk -fstrict-aliasing        Give the optimizer C&#x27;s type-based aliasing</pre>
 <pre class="code-block">        eskiuc file.esk --target TRIPLE          Cross-compile for target triple</pre>
 <pre class="code-block">        eskiuc ... --mcpu CPU --mattr F --reloc R   Tune the target (CPU, features, relocation)</pre>
-<pre class="code-block">        eskiuc file.esk --freestanding           No libc; alloc/free → esk_alloc/esk_free</pre>
+<pre class="code-block">        eskiuc file.esk --freestanding           No libc; alloc/free esk_alloc/esk_free</pre>
 <pre class="code-block">        eskiuc file.esk --test-lexer             Dump token stream</pre>
 <pre class="code-block">        eskiuc file.esk --test-parser            Dump AST</pre>
 <pre class="code-block">        eskiuc file.esk --test-typechecker       Type-check only; print errors</pre>
@@ -4221,7 +4221,7 @@ pre.code-block {
 <pre class="code-block">        armv6k-none-eabihf                       32-bit ARM, hard-float (Nintendo 3DS)</pre>
 <pre class="code-block">        i686-pc-linux-gnu                        Linux 32-bit x86</pre>
 <h3 class="subsection">Linker detection order</h3>
-<p><code>eskiuc</code> finds the system linker via: $CC → cc → clang → gcc. A C toolchain must be installed for linking. With --freestanding or a .o output, no linking occurs.</p>
+<p><code>eskiuc</code> finds the system linker via: $CC cc clang gcc. A C toolchain must be installed for linking. With --freestanding or a .o output, no linking occurs.</p>
 <div class="chapter-start" id="ref-r10"><span class="chapter-label ref">Ref R10</span>
 <h1 class="chapter-title">Undefined Behaviour</h1><hr class="chapter-rule"></div>
 <p>The following operations have undefined behaviour in Eskiu. The compiler makes no guarantees about what the generated code does when these occur. Bugs in these categories may crash, produce wrong results, corrupt memory, or appear to work correctly under some conditions and fail under others.</p>

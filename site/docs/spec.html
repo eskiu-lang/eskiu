@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Language spec · Eskiu docs</title>
+  <title>Language spec / Eskiu docs</title>
   <meta name="description" content="Version: v0.16.1" />
   <meta name="theme-color" content="#fbf8f3" />
   <link rel="canonical" href="https://eskiu-lang.org/docs/spec.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
-  <meta property="og:title" content="Language spec · Eskiu docs" />
+  <meta property="og:title" content="Language spec / Eskiu docs" />
   <meta property="og:description" content="Version: v0.16.1" />
   <meta property="og:url" content="https://eskiu-lang.org/docs/spec.html" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
@@ -88,7 +88,7 @@ a:hover { color: var(--ink); }
   padding: 0 18px; font-weight: 700; color: var(--ink); cursor: pointer; list-style: none; }
 .side-m summary::-webkit-details-marker { display: none; }
 .side-m summary::after { content: "+"; font-family: var(--mono); font-size: 20px; color: var(--purple); }
-.side-m[open] summary::after { content: "–"; }
+.side-m[open] summary::after { content: "-"; }
 .side-m .inner { padding: 4px 8px 16px; border-top: 1px solid var(--rule); }
 .side-m .grp { padding: 14px 12px 0; }
 .toc { display: none; }
@@ -230,7 +230,7 @@ figure img { border-radius: 14px; }
   <div class="bar layout has-toc">
     <aside class="side" aria-label="Documentation"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html" aria-current="page">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></aside>
     <main class="content">
-      <details class="side-m"><summary>Language · Language spec</summary><div class="inner"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html" aria-current="page">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></div></details>
+      <details class="side-m"><summary>Language / Language spec</summary><div class="inner"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html" aria-current="page">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></div></details>
 <h1 id="eskiu-language-specification">Eskiu Language Specification</h1>
 <p><strong>Version:</strong> v0.16.1</p>
 <hr>
@@ -270,7 +270,7 @@ clang file.o -o file        # link it yourself
 */
 </code></pre>
 <h3 id="22-identifiers">2.2 Identifiers</h3>
-<p>An identifier begins with a letter (<code>a</code>–<code>z</code>, <code>A</code>–<code>Z</code>) or underscore (<code>_</code>), followed by zero or more letters, digits (<code>0</code>–<code>9</code>), or underscores. Identifiers are case-sensitive: <code>point</code> and <code>Point</code> are distinct. Identifiers and operators are ASCII: a UTF-8 character outside a string literal, a character literal or a comment is a lexical error that names it (<code>non-ASCII character 'ñ' outside a string or comment</code>). Strings and comments may hold any UTF-8 text.</p>
+<p>An identifier begins with a letter (<code>a</code>-<code>z</code>, <code>A</code>-<code>Z</code>) or underscore (<code>_</code>), followed by zero or more letters, digits (<code>0</code>-<code>9</code>), or underscores. Identifiers are case-sensitive: <code>point</code> and <code>Point</code> are distinct. Identifiers and operators are ASCII: a UTF-8 character outside a string literal, a character literal or a comment is a lexical error that names it (<code>non-ASCII character 'ñ' outside a string or comment</code>). Strings and comments may hold any UTF-8 text.</p>
 <pre><code class="language-eskiu">my_var    _internal    Count    x1
 </code></pre>
 <h3 id="23-keywords">2.3 Keywords</h3>
@@ -293,7 +293,7 @@ sizeof  free_closure  union  enum
 <p><strong>Integer decimal literals</strong> are sequences of decimal digits:</p>
 <pre><code class="language-eskiu">0    42    1000
 </code></pre>
-<p><strong>Integer hex literals</strong> are prefixed with <code>0x</code> followed by hexadecimal digits (<code>0</code>–<code>9</code>, <code>a</code>–<code>f</code>, <code>A</code>–<code>F</code>):</p>
+<p><strong>Integer hex literals</strong> are prefixed with <code>0x</code> followed by hexadecimal digits (<code>0</code>-<code>9</code>, <code>a</code>-<code>f</code>, <code>A</code>-<code>F</code>):</p>
 <pre><code class="language-eskiu">0xFF    0x0F    0xDEAD    0xBEEF
 </code></pre>
 <p><strong>Integer binary literals</strong> are prefixed with <code>0b</code> (or <code>0B</code>) followed by <code>0</code> and <code>1</code> digits:</p>
@@ -310,7 +310,7 @@ forms work in a <code>#if</code> expression.</p>
 </code></pre>
 <p>Negative literals are first-class values and can be used in any expression context, including global variable initialisers and struct field initialisers.</p>
 <p><strong>Float literals</strong> contain a decimal point. They have type <code>double</code> (f64) by default;
-assigning one to a <code>float</code> (f32) variable or field coerces it down (a <code>double</code>→<code>float</code>
+assigning one to a <code>float</code> (f32) variable or field coerces it down (a <code>double</code><code>float</code>
 cast). Integer literals are <code>int</code> (i32), widening to <code>int64</code> when they exceed 32 bits.
 A float literal may carry an exponent (<code>1e10</code>, <code>2.5e-3</code>), which needs at least one
 digit. An integer literal that does not fit in 64 bits is a lexical error.</p>
@@ -820,7 +820,7 @@ r = &amp;w;     // allowed: the pointer is rebindable
 c = &amp;w;     // error: cannot assign to read-only location 'c'  (binding is const)
 *c = 10;    // allowed: the pointee is writable
 </code></pre>
-<p>Const-correctness is enforced on conversions: adding const (<code>*int</code> → <code>const *int</code>) is always allowed, but any conversion that would <strong>drop</strong> a const qualifier (in an initializer, assignment, call argument, or return) is a compile error. <code>const</code> has no ABI effect; it is stripped before code generation. It applies uniformly to locals, parameters, struct fields and return types.</p>
+<p>Const-correctness is enforced on conversions: adding const (<code>*int</code> <code>const *int</code>) is always allowed, but any conversion that would <strong>drop</strong> a const qualifier (in an initializer, assignment, call argument, or return) is a compile error. <code>const</code> has no ABI effect; it is stripped before code generation. It applies uniformly to locals, parameters, struct fields and return types.</p>
 <p>A method call <code>x.m()</code> passes <code>&amp;x</code> as <code>self</code>, so on a <code>const</code> value (or through a <code>const T*</code>) it is allowed only when the method declares a read-only receiver, <code>int P_get(const P* self)</code>. A method whose <code>self</code> is a plain <code>*P</code> may write through it and is rejected there.</p>
 <h3 id="47-static-locals-static">4.7 Static Locals (<code>static</code>)</h3>
 <p>The <code>static</code> qualifier gives a <strong>local</strong> variable a single instance that persists across calls, exactly as in C. Its storage lives for the whole program, not the enclosing call, so it retains its value between invocations:</p>
@@ -2052,7 +2052,7 @@ payload is checked against them: <code>Option&lt;int64&gt; a = Some(42)</code> b
 <code>Option&lt;int64&gt;</code>, <code>Option&lt;Option&lt;int64&gt;&gt; b = Some(Some(5))</code> an <code>Option&lt;int64&gt;</code> inside,
 and a bare <code>None</code> or an under-determining <code>Left(7)</code> is accepted there. Elsewhere the type
 arguments are inferred from the payload arguments when they determine them (<code>Some(42)</code>
-→ <code>Option&lt;int&gt;</code>); otherwise (a payload-free variant like <code>None</code>, or one that
+ <code>Option&lt;int&gt;</code>); otherwise (a payload-free variant like <code>None</code>, or one that
 under-determines the type like <code>Either</code>'s <code>Left</code>) write them explicitly (<code>None&lt;int&gt;()</code>,
 <code>Left&lt;int, string&gt;(7)</code>). Inside a generic function only a type as written is used (a
 declared type, the declared return type): <code>return None;</code> in an <code>Option&lt;T&gt;</code> function is
@@ -2642,7 +2642,7 @@ qsort((*void)&amp;arr[0], (int64)5, (int64)4, cmp);
 </tr>
 <tr>
 <td><code>stdlib/map.esk</code></td>
-<td><code>Map&lt;V&gt;</code>, a string-keyed hash map (open addressing, linear probing, grows at 0.75 load): <code>Map_init</code>, <code>Map_at</code> (get-or-insert → <code>*V</code> slot, sets <code>*created</code>), <code>Map_get</code>, <code>Map_free</code>. Plus <code>HashMap&lt;K,V&gt;</code>, keyed on any value type via <code>hash</code>/<code>eq</code> function pointers passed to <code>HashMap_init</code> (built-in <code>int_hash</code>/<code>int_eq</code>, and <code>cstr_hash</code>/<code>cstr_eq</code> for <code>string</code> keys by content); same <code>_at</code>/<code>_get</code>/<code>_free</code> shape. Both have <code>_has</code>, <code>_get_or</code>, <code>_len</code>, <code>_remove</code>, <code>_keys</code>, <code>_values</code>, <code>_each</code>. <code>Set&lt;T&gt;</code> is a hash set over <code>HashMap</code>: <code>Set_init</code>, <code>Set_add</code>, <code>Set_has</code>, <code>Set_remove</code>, <code>Set_len</code>, <code>Set_each</code>, <code>Set_items</code>, <code>Set_free</code> (see <a href="#map-hashmap-and-set">Map, HashMap and Set</a>)</td>
+<td><code>Map&lt;V&gt;</code>, a string-keyed hash map (open addressing, linear probing, grows at 0.75 load): <code>Map_init</code>, <code>Map_at</code> (get-or-insert <code>*V</code> slot, sets <code>*created</code>), <code>Map_get</code>, <code>Map_free</code>. Plus <code>HashMap&lt;K,V&gt;</code>, keyed on any value type via <code>hash</code>/<code>eq</code> function pointers passed to <code>HashMap_init</code> (built-in <code>int_hash</code>/<code>int_eq</code>, and <code>cstr_hash</code>/<code>cstr_eq</code> for <code>string</code> keys by content); same <code>_at</code>/<code>_get</code>/<code>_free</code> shape. Both have <code>_has</code>, <code>_get_or</code>, <code>_len</code>, <code>_remove</code>, <code>_keys</code>, <code>_values</code>, <code>_each</code>. <code>Set&lt;T&gt;</code> is a hash set over <code>HashMap</code>: <code>Set_init</code>, <code>Set_add</code>, <code>Set_has</code>, <code>Set_remove</code>, <code>Set_len</code>, <code>Set_each</code>, <code>Set_items</code>, <code>Set_free</code> (see <a href="#map-hashmap-and-set">Map, HashMap and Set</a>)</td>
 </tr>
 <tr>
 <td><code>stdlib/threading.esk</code></td>
@@ -4264,7 +4264,7 @@ splits it either way). <code>env -S</code> is in GNU coreutils 8.30 and later an
   <footer class="foot">
     <div class="bar foot-in">
       <span class="brand">eskiu</span>
-      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family · MIT</span>
+      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family / MIT</span>
       <nav class="foot-links" aria-label="Footer">
         <a href="index.html">Docs</a>
         <a href="../the-book-of-eskiu.html">Book</a>

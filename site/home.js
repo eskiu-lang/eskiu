@@ -222,7 +222,7 @@ int main() {
       else parts.push('<span class="err">exit ' + data.exit_code + "</span>");
       if (typeof data.duration_ms === "number") parts.push(data.duration_ms + "ms");
       if (data.truncated) parts.push(T.trunc);
-      html += '\n\n<span class="meta">' + parts.join(" · ") + "</span>";
+      html += '\n\n<span class="meta">' + parts.join(" / ") + "</span>";
       res.innerHTML = html;
     } catch (e) {
       res.innerHTML = '<span class="err">' + T.offline + '</span>\n<span class="hint">' + T.hint + "</span>";

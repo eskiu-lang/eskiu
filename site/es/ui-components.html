@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Componentes y APIs · Eskiu UI</title>
+  <title>Componentes y APIs / Eskiu UI</title>
   <meta name="description" content="Cada elemento, hook y servicio del framework ui de Eskiu: layout, entrada, listas, overlays, movimiento, estado, navegación, el sistema, código nativo y el kit." />
   <link rel="canonical" href="https://eskiu-lang.org/es/ui-components.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
-  <meta property="og:title" content="Componentes y APIs · Eskiu UI" />
+  <meta property="og:title" content="Componentes y APIs / Eskiu UI" />
   <meta property="og:description" content="Cada elemento, hook y servicio del framework ui de Eskiu: layout, entrada, listas, overlays, movimiento, estado, navegación, el sistema, código nativo y el kit." />
   <meta property="og:url" content="https://eskiu-lang.org/es/ui-components.html" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
@@ -64,57 +64,57 @@
       </section>
       <section class="uc-group" id="layout">
         <h2>Layout</h2>
-        <p>Los contenedores reciben su contenido como un bloque, y cada elemento recibe un Style. <a href="https://github.com/eskiu-packages/ui/blob/main/docs/components.md">La guía &rarr;</a></p>
+        <p>Los contenedores reciben su contenido como un bloque, y cada elemento recibe un Style. <a href="https://github.com/eskiu-packages/ui/blob/main/docs/components.md">La guía </a></p>
         <div class="uc-items"><div><code>Column(Style, block)</code>Hijos de arriba abajo.</div><div><code>Row(Style, block)</code>Hijos de izquierda a derecha.</div><div><code>Scroll(Style, block)</code>Una columna cuyo contenido se desplaza cuando es más alto que el espacio que tiene.</div><div><code>Pressable(Style, on_press, block)</code>Una columna que responde a un toque en cualquier parte.</div><div><code>Scope(name, Key, block)</code>El scope propio de un componente: su estado, su identidad y su nombre en los diagnósticos.</div><div><code>Style</code>Tamaño, flexbox, colores, gradientes lineales, bordes, radio, sombra, un blur de vidrio esmerilado, un archivo de fuente de los assets, transformaciones y transiciones.</div></div>
       </section>
       <section class="uc-group" id="text">
         <h2>Texto, botones y entrada</h2>
-        <p>El texto, los botones y los controles son los de la plataforma, con su accesibilidad. <a href="https://github.com/eskiu-packages/ui/blob/main/docs/components.md">La guía &rarr;</a></p>
+        <p>El texto, los botones y los controles son los de la plataforma, con su accesibilidad. <a href="https://github.com/eskiu-packages/ui/blob/main/docs/components.md">La guía </a></p>
         <div class="uc-items"><div><code>Text, TextWith</code>Texto, copiado al recibirlo.</div><div><code>Button, ButtonWith</code>Un botón con título.</div><div><code>TextInput(Input, on_change)</code>Un campo de texto controlado, que avisa cada edición y, si se pide, el foco.</div><div><code>Switch(Style, value, on_change)</code>Un interruptor controlado.</div><div><code>Slider(Style, value, min, max, on_change)</code>Un slider controlado en pasos enteros: UISlider, SeekBar o un input de rango.</div></div>
       </section>
       <section class="uc-group" id="lists">
         <h2>Medios y listas</h2>
-        <p>Las listas montan solo las filas cerca de lo visible, así que un millón de filas cuesta lo que una pantalla. <a href="https://github.com/eskiu-packages/ui/blob/main/docs/components.md">La guía &rarr;</a></p>
+        <p>Las listas montan solo las filas cerca de lo visible, así que un millón de filas cuesta lo que una pantalla. <a href="https://github.com/eskiu-packages/ui/blob/main/docs/components.md">La guía </a></p>
         <div class="uc-items"><div><code>Image(Style, source)</code>Una imagen desde una URL, los assets de la app o un archivo; con pixelated escala el pixel art sin suavizado.</div><div><code>ActivityIndicator(Style, animating)</code>El indicador de actividad de la plataforma.</div><div><code>FlatList(Style, count, height, render)</code>Una lista virtual de filas de altura fija.</div><div><code>SectionList(Style, sizes, header, height, render)</code>Lo mismo, en secciones con encabezados.</div><div><code>RefreshControl(refreshing, on_refresh)</code>Jalar para actualizar en el scroll o la lista que le sigue.</div></div>
       </section>
       <section class="uc-group" id="overlays">
         <h2>Overlays</h2>
-        <p>Capas sobre la pantalla. Atrás en Android, Escape en la web y un toque afuera las cierran. <a href="https://github.com/eskiu-packages/ui/blob/main/docs/components.md">La guía &rarr;</a></p>
+        <p>Capas sobre la pantalla. Atrás en Android, Escape en la web y un toque afuera las cierran. <a href="https://github.com/eskiu-packages/ui/blob/main/docs/components.md">La guía </a></p>
         <div class="uc-items"><div><code>Modal(visible, on_request_close, block)</code>Contenido sobre toda la pantalla, con un fondo oscurecido.</div><div><code>Overlay(visible, on_dismiss, block)</code>La misma capa sin oscurecer, para contenido junto a algo.</div><div><code>Alert(title, message, buttons, on_choice)</code>La alerta de la plataforma.</div></div>
       </section>
       <section class="uc-group" id="motion">
         <h2>Movimiento y gestos</h2>
-        <p>Las transformaciones se dibujan, no cambian el layout, y la plataforma las anima. <a href="https://github.com/eskiu-packages/ui/blob/main/docs/style-and-layout.md">La guía &rarr;</a></p>
+        <p>Las transformaciones se dibujan, no cambian el layout, y la plataforma las anima. <a href="https://github.com/eskiu-packages/ui/blob/main/docs/style-and-layout.md">La guía </a></p>
         <div class="uc-items"><div><code>translate_x, translate_y, scale, rotate</code>Mueven, escalan y giran el elemento dibujado.</div><div><code>transition_ms, easing</code>Animan los cambios de la opacidad, las transformaciones y los colores; una de las curvas es un resorte.</div><div><code>use_animated(target, ms, easing)</code>Un número en camino a un nuevo valor.</div><div><code>use_animated_then, use_repeat, use_sequence</code>Una animación que avisa cuando termina, una que se repite (también de ida y vuelta) y keyframes uno tras otro.</div><div><code>use_frame(running, fn(Tick))</code>Código en cada frame del display, con el tiempo desde el anterior, para juegos y dibujo.</div><div><code>ui_on_long_press(fn())</code>Una presión larga sobre el siguiente elemento.</div><div><code>ui_on_pan(fn(Pan))</code>Un arrastre sobre el siguiente elemento, con su distancia y su velocidad.</div><div><code>ui_on_hover(fn(bool))</code>Un puntero sobre el siguiente elemento.</div><div><code>ui_on_layout(fn(Frame))</code>El marco del siguiente elemento, en su padre y en la ventana.</div></div>
       </section>
       <section class="uc-group" id="state">
         <h2>Estado</h2>
-        <p>Un bloque registra las señales que lee y vuelve a correr cuando una cambia. <a href="https://github.com/eskiu-packages/ui/blob/main/docs/state.md">La guía &rarr;</a></p>
+        <p>Un bloque registra las señales que lee y vuelve a correr cuando una cambia. <a href="https://github.com/eskiu-packages/ui/blob/main/docs/state.md">La guía </a></p>
         <div class="uc-items"><div><code>use_signal&lt;T&gt;(initial)</code>Estado que el scope conserva mientras está montado.</div><div><code>use_memo&lt;T&gt;(compute)</code>Un valor derivado, calculado al leerlo.</div><div><code>use_effect(callback), on_cleanup</code>Trabajo después de un commit, con su limpieza.</div><div><code>use_string(initial)</code>Estado de texto, con conteo de referencias.</div><div><code>signal_new&lt;T&gt;(initial)</code>Una señal del modelo que ningún scope posee.</div><div><code>use_interval, use_timeout</code>Temporizadores con el reloj de la plataforma.</div><div><code>ErrorBoundary(fallback, block)</code>Si un render adentro lanza una excepción, muestra el fallback en su lugar, hasta <code>ui_boundary_reset</code>.</div><div><code>ui_on_error(handler)</code>Recibe cada error que el runtime atrapa: en renders, handlers y efectos.</div></div>
       </section>
       <section class="uc-group" id="navigation">
         <h2>Navegación</h2>
-        <p>Una pila de rutas: pantallas en el teléfono, URLs e historial en la web. <a href="https://github.com/eskiu-packages/ui/blob/main/docs/navigation.md">La guía &rarr;</a></p>
+        <p>Una pila de rutas: pantallas en el teléfono, URLs e historial en la web. <a href="https://github.com/eskiu-packages/ui/blob/main/docs/navigation.md">La guía </a></p>
         <div class="uc-items"><div><code>router_new(root)</code>Una pila de rutas, del modelo de la app.</div><div><code>Navigator(router, screen)</code>La pila como pantallas; las de abajo siguen montadas.</div><div><code>push, back, replace, reset</code>Cambian la pila.</div><div><code>route_param(pattern, route, index)</code>Un parámetro de la ruta para su pantalla, que dura mientras la ruta está en la pila.</div><div><code>route_match(pattern, route, params)</code>&quot;/places/:id&quot; contra una ruta.</div><div><code>use_back(handler)</code>Toma el botón o gesto de atrás mientras está montado.</div><div><code>ui_link(), ui_open_url(url)</code>El link con que se abrió la app, y abrir uno.</div></div>
       </section>
       <section class="uc-group" id="system">
         <h2>El sistema</h2>
-        <p>Un nombre en todas las plataformas, respondido por el servicio de cada plataforma. <a href="https://github.com/eskiu-packages/ui/blob/main/docs/platform.md">La guía &rarr;</a></p>
+        <p>Un nombre en todas las plataformas, respondido por el servicio de cada plataforma. <a href="https://github.com/eskiu-packages/ui/blob/main/docs/platform.md">La guía </a></p>
         <div class="uc-items"><div><code>ui_platform()</code>iOS, Android, la web o macOS.</div><div><code>ui_color_scheme()</code>Claro u oscuro, como el sistema.</div><div><code>ui_screen_reader(), ui_reduce_motion(), ui_font_scale()</code>Los ajustes de accesibilidad.</div><div><code>ui_locale(), ui_is_rtl()</code>El idioma y su dirección.</div><div><code>ui_insets(), ui_window(), ui_is_active()</code>El área segura y el teclado, la ventana, el primer plano.</div><div><code>StatusBar(style, hidden)</code>La barra de estado del sistema.</div><div><code>ui_fetch(request, on_result)</code>HTTP con la red de la plataforma.</div><div><code>ui_storage_get, set, remove</code>Valores pequeños que sobreviven a la app.</div><div><code>ui_data_dir()</code>El directorio de datos de la app, para archivos.</div><div><code>ui_share(text, url)</code>La hoja para compartir del sistema.</div><div><code>ui_clipboard_set, ui_clipboard_get</code>Copiar y pegar.</div><div><code>ui_haptic(kind)</code>Vibraciones de selección, impacto y notificación.</div><div><code>ui_announce(text)</code>Lee un texto en voz alta con el lector de pantalla.</div><div><code>ui_keyboard_dismiss()</code>Oculta el teclado en pantalla.</div><div><code>use_app_state(fn(bool))</code>Avisa cuando la app pasa a segundo plano y cuando regresa.</div><div><code>ui_app_version(), ui_config(key)</code>La versión y el build, y valores de [env] en ui.toml, con [env.release] para las tiendas.</div><div><code>ui_splash_hold(), ui_splash_hide()</code>Mantiene la pantalla de arranque mientras cargan las fuentes o el estado guardado.</div><div><code>use_cached_file(url)</code>Un archivo remoto descargado una sola vez a la caché de la app, como ruta.</div><div><code>ui_asset_path(name)</code>Un archivo de los assets de la app como ruta, para paquetes que leen archivos.</div><div><code>ui_open_settings()</code>La página de la app en los ajustes del sistema, después de negar un permiso.</div></div>
       </section>
       <section class="uc-group" id="native">
         <h2>Código nativo</h2>
-        <p>Código por plataforma en native/, llamado con funciones extern. <a href="https://github.com/eskiu-packages/ui/blob/main/docs/native.md">La guía &rarr;</a></p>
+        <p>Código por plataforma en native/, llamado con funciones extern. <a href="https://github.com/eskiu-packages/ui/blob/main/docs/native.md">La guía </a></p>
         <div class="uc-items"><div><code>NativeView(Style, type, on_event)</code>Una vista que la app registró en cada host.</div><div><code>ui_native_prop(name, value)</code>Una prop con nombre para el NativeView que le sigue.</div><div><code>use_native_event(channel, handler)</code>Los eventos de un módulo nativo mientras está montado.</div><div><code>ui.toml</code>Frameworks, permisos, entradas del plist, bibliotecas de Maven y paquetes de Swift.</div></div>
       </section>
       <section class="uc-group" id="packages">
         <h2>Paquetes</h2>
-        <p>Paquetes para apps de ui: servicios de la plataforma con su código nativo y sus permisos, y dibujo. <a href="https://github.com/eskiu-packages/ui-package-template">La guía &rarr;</a></p>
+        <p>Paquetes para apps de ui: servicios de la plataforma con su código nativo y sus permisos, y dibujo. <a href="https://github.com/eskiu-packages/ui-package-template">La guía </a></p>
         <div class="uc-items"><div><code>location: use_location(precise)</code>Dónde está el dispositivo, con CoreLocation, LocationManager y la geolocalización del navegador.</div><div><code>location_distance(a, b)</code>La distancia entre dos posiciones sobre la superficie de la Tierra.</div><div><code>notifications: notification_schedule(id, title, body, seconds)</code>Una notificación local, que se muestra también con la app cerrada; use_notification_opened recibe la que el usuario abre.</div><div><code>camera: CameraView, camera_capture</code>La cámara en vivo, y lo que muestra como foto.</div><div><code>camera: camera_pick_photo, camera_take_photo</code>La galería y la cámara del sistema.</div><div><code>barcode: BarcodeScanner(Style, formats, scanning, on_code)</code>Códigos QR y de barras leídos en vivo con la cámara.</div><div><code>pedometer: use_steps(), use_steps_between(from, to)</code>Pasos caminados, en vivo y entre dos momentos, también los que se dieron con la app cerrada.</div><div><code>securestore: secure_set, secure_get, secure_remove</code>Secretos pequeños en el Keychain y el Android Keystore.</div><div><code>svg: Svg(Style, svg)</code>Dibujos SVG escalados a su caja y teñidos con el color del estilo.</div><div><code>canvas: CanvasView(Style, running, draw)</code>Un canvas 2D dibujado en cada frame: sprites, celdas de un atlas y pixel art, en la GPU en teléfonos.</div><div><code>ui-package-template</code>Un paquete para empezar: código nativo en cada plataforma, pruebas y un ejemplo.</div></div>
       </section>
       <section class="uc-group" id="kit">
         <h2>El kit</h2>
-        <p>import &lt;ui/kit&gt;: componentes con tema hechos con los elementos de arriba, claros y oscuros. <a href="https://github.com/eskiu-packages/ui/blob/main/docs/components.md">La guía &rarr;</a></p>
+        <p>import &lt;ui/kit&gt;: componentes con tema hechos con los elementos de arriba, claros y oscuros. <a href="https://github.com/eskiu-packages/ui/blob/main/docs/components.md">La guía </a></p>
         <div class="uc-items"><div><code>Title, Heading, Body, Secondary, Caption</code>Texto en la escala tipográfica del tema.</div><div><code>Card, Badge, Avatar, Separator</code>Superficies, etiquetas e imágenes.</div><div><code>KitButton, TextField, Checkbox</code>Botones en variantes, campos y checkboxes.</div><div><code>RadioGroup, SegmentedControl, TabBar</code>Una opción entre varias.</div><div><code>NavBar, Toolbar, ListItem</code>Barras y filas.</div><div><code>Collapsible, Accordion</code>Secciones que se abren y se cierran.</div><div><code>ProgressBar</code>Un progreso que avanza a su nuevo valor.</div><div><code>Popover, DropdownMenu, Select, Tooltip</code>Paneles y menús junto a lo que los abrió.</div><div><code>Calendar, DatePicker, ColorPicker</code>Elegir un día o un color.</div><div><code>kit_toast, ToastHost</code>Un mensaje breve abajo.</div><div><code>SwipeToDelete</code>Una fila que el usuario quita arrastrándola.</div><div><code>kit_light, kit_dark, kit_follow_system</code>Los temas.</div></div>
       </section>
     </div>
@@ -134,7 +134,7 @@
   <footer class="foot">
     <div class="bar foot-in">
       <span class="brand">eskiu</span>
-      <span>Parte de la familia <a href="https://reactvision.xyz">ReactVision</a> · MIT</span>
+      <span>Parte de la familia <a href="https://reactvision.xyz">ReactVision</a> / MIT</span>
       <nav class="foot-links" aria-label="Pie de página"><a href="../docs/index.html">Docs</a><a href="../the-book-of-eskiu.html">Libro</a><a href="../docs/internals.html">Internals</a><a href="../changelog.html">Cambios</a><a href="../llms.txt">llms.txt</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a><a href="https://reactvision.xyz">ReactVision</a></nav>
     </div>
   </footer>

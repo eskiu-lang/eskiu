@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Architecture · Eskiu docs</title>
+  <title>Architecture / Eskiu docs</title>
   <meta name="description" content="Internal reference for compiler contributors. Assumes familiarity with C++17 and LLVM IRBuilder." />
   <meta name="theme-color" content="#fbf8f3" />
   <link rel="canonical" href="https://eskiu-lang.org/docs/architecture.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
-  <meta property="og:title" content="Architecture · Eskiu docs" />
+  <meta property="og:title" content="Architecture / Eskiu docs" />
   <meta property="og:description" content="Internal reference for compiler contributors. Assumes familiarity with C++17 and LLVM IRBuilder." />
   <meta property="og:url" content="https://eskiu-lang.org/docs/architecture.html" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
@@ -88,7 +88,7 @@ a:hover { color: var(--ink); }
   padding: 0 18px; font-weight: 700; color: var(--ink); cursor: pointer; list-style: none; }
 .side-m summary::-webkit-details-marker { display: none; }
 .side-m summary::after { content: "+"; font-family: var(--mono); font-size: 20px; color: var(--purple); }
-.side-m[open] summary::after { content: "–"; }
+.side-m[open] summary::after { content: "-"; }
 .side-m .inner { padding: 4px 8px 16px; border-top: 1px solid var(--rule); }
 .side-m .grp { padding: 14px 12px 0; }
 .toc { display: none; }
@@ -230,7 +230,7 @@ figure img { border-radius: 14px; }
   <div class="bar layout has-toc">
     <aside class="side" aria-label="Documentation"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html" aria-current="page">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></aside>
     <main class="content">
-      <details class="side-m"><summary>Compiler internals · Architecture</summary><div class="inner"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html" aria-current="page">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></div></details>
+      <details class="side-m"><summary>Compiler internals / Architecture</summary><div class="inner"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html" aria-current="page">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></div></details>
 <h1 id="eskiu-compiler-architecture-reference">Eskiu Compiler: Architecture Reference</h1>
 <p>Internal reference for compiler contributors. Assumes familiarity with C++17 and LLVM IRBuilder.</p>
 <hr>
@@ -247,26 +247,26 @@ figure img { border-radius: 14px; }
                                                └──────────┘                       │
                                        parser/parser.cpp                          ▼
                                        parse_{decl,stmt,expr}.cpp          ┌──────────────┐
-                                                                          │ Type Checker  │── errors → stderr
+                                                                          │ Type Checker  │── errors stderr
                                                                           └──────────────┘
                                                           sema/type_checker*.cpp + typecheck_*.cpp
                                                           sema/type.{h,cpp}  (ty::Type IR)
                                                                                   │ validated AST
                                                                                   ▼
                                                                           ┌────────────────┐
-                                                                          │ Async transform │  async function → frame + resume + Future ctor
+                                                                          │ Async transform │  async function frame + resume + Future ctor
                                                                           └────────────────┘
                                                                           sema/async_transform.cpp
                                                                                   │ transformed AST
                                                                                   ▼
                                                                           ┌──────────────┐
-                                                                          │ Type Checker  │  RE-RUN: single resolver →
+                                                                          │ Type Checker  │  RE-RUN: single resolver
                                                                           │   (re-run)    │  per-expression ty::Type table
                                                                           └──────────────┘
                                                                                   │ AST + resolved type table
                                                                                   ▼
                                                                           ┌─────────┐   llvm::Module*
-                                                                          │ Codegen │────────────────► .o file → Binary
+                                                                          │ Codegen │────────────────► .o file Binary
                                                                           └─────────┘   (consumes the type table; does NOT
                                                                         codegen/codegen_*.cpp  re-derive expression types)
 </code></pre>
@@ -465,11 +465,11 @@ void BinaryExpr::accept(ASTVisitor* visitor) {
   1. consume any leading STAR tokens, count them (leading_pointers)
   2. consume one type keyword or IDENT
   3. if IDENT and next is '&lt;': recursively parse comma-separated type args until '&gt;'
-     → type += &quot;&lt;arg1,arg2,...&gt;&quot;
+     type += &quot;&lt;arg1,arg2,...&gt;&quot;
   4. consume any trailing STAR tokens, append &quot;*&quot; for each
   5. prepend &quot;*&quot; for each leading star
   6. consume &quot;[&quot; size_tokens &quot;]&quot; sequences, append &quot;[N]&quot; to type string
-     → array size is captured (not discarded) e.g. &quot;uint8[64]&quot;
+     array size is captured (not discarded) e.g. &quot;uint8[64]&quot;
 </code></pre>
 <p>The resulting type string examples: <code>"*Point"</code>, <code>"int**"</code>, <code>"uint8[64]"</code>, <code>"Result&lt;int,string&gt;"</code>, <code>"List&lt;int&gt;*"</code>.</p>
 <h3 id="template-parsing">Template parsing</h3>
@@ -479,8 +479,8 @@ void BinaryExpr::accept(ASTVisitor* visitor) {
 <p><strong>Template type in <code>parseType()</code>:</strong> <code>Result&lt;int, string&gt;</code> in type position is handled directly by <code>parseType()</code> which recurses for each type argument.</p>
 <h3 id="struct-init-syntax-ident-field-expr-expr">Struct init syntax: <code>IDENT { [field: expr | expr] }</code></h3>
 <p><code>parsePrimary()</code> detects <code>IDENT</code> followed by <code>LBRACE</code> and calls <code>parseStructInit(name)</code>. Inside:
-- Named: <code>IDENT COLON expr</code> → field_name is non-empty
-- Positional: <code>expr</code> → field_name is <code>""</code></p>
+- Named: <code>IDENT COLON expr</code> field_name is non-empty
+- Positional: <code>expr</code> field_name is <code>""</code></p>
 <p>Both forms produce <code>StructInitExpr</code> with <code>vector&lt;pair&lt;string, ExprPtr&gt;&gt;</code>.</p>
 <h3 id="operator-precedence-chain">Operator precedence chain</h3>
 <p>From lowest to highest:</p>
@@ -601,12 +601,12 @@ Program                    (declarations: vector&lt;DeclPtr&gt;)  (root node)
 <h3 id="two-pass-strategy">Two-pass strategy</h3>
 <p><code>TypeChecker::check(Program*)</code> runs two sequential passes over <code>program-&gt;declarations</code>:</p>
 <p><strong>Pass 1 (registration only, no type checking):</strong>
-- <code>InterfaceDecl</code> → insert into <code>interfaceDecls</code> map
-- <code>StructDecl</code> (template) → insert into <code>templateDecls</code> map
-- <code>StructDecl</code> (concrete) → insert into <code>structs</code> map (<code>map&lt;string, StructInfo&gt;</code>); register methods as mangled functions <code>StructName_methodName</code> with implicit <code>*StructName</code> self parameter
-- <code>FunctionDecl</code> (template) → insert into <code>funcTemplateDecls</code>; skip normal registration
-- <code>FunctionDecl</code> (concrete) → insert into <code>functionSignatures</code>
-- <code>ExternDecl</code> → insert into <code>functionSignatures</code></p>
+- <code>InterfaceDecl</code> insert into <code>interfaceDecls</code> map
+- <code>StructDecl</code> (template) insert into <code>templateDecls</code> map
+- <code>StructDecl</code> (concrete) insert into <code>structs</code> map (<code>map&lt;string, StructInfo&gt;</code>); register methods as mangled functions <code>StructName_methodName</code> with implicit <code>*StructName</code> self parameter
+- <code>FunctionDecl</code> (template) insert into <code>funcTemplateDecls</code>; skip normal registration
+- <code>FunctionDecl</code> (concrete) insert into <code>functionSignatures</code>
+- <code>ExternDecl</code> insert into <code>functionSignatures</code></p>
 <p><strong>Pass 2 (full visitor traversal):</strong>
 Each declaration calls <code>decl-&gt;accept(this)</code> which dispatches to the appropriate <code>visit()</code>. Template function bodies are skipped at declaration time (<code>visit(FunctionDecl*)</code> returns immediately if <code>typeParams</code> is non-empty); they are type-checked lazily when instantiated via <code>visit(TemplateCallExpr*)</code>.</p>
 <p>This two-pass design lets the type checker accept forward references: functions can call functions declared later, and struct fields can reference structs declared in any order. Codegen upholds the same guarantee through its three-phase program lowering (see <em>Three-phase program lowering</em> under Codegen): both passes must agree, or a program that type-checks would fail to generate.</p>
@@ -647,7 +647,7 @@ std::vector&lt;std::map&lt;std::string, Symbol&gt;&gt; scopes;
 <ul>
 <li><code>ty::Type::parse(spelling)</code>, the one grammar interpreter: turns a surface type string (<code>"Result&lt;int,string&gt;"</code>, <code>"List&lt;int&gt;*"</code>, <code>"*Point"</code>, <code>"uint8[64]"</code>) into structured form (nominal name, type arguments, pointer levels, array extents).</li>
 <li><code>str()</code>: render a <code>ty::Type</code> back to its canonical spelling.</li>
-<li><code>substitute(subs)</code>: apply a type-parameter → concrete-type map (template/generic instantiation), recursing through type arguments and pointer levels.</li>
+<li><code>substitute(subs)</code>: apply a type-parameter concrete-type map (template/generic instantiation), recursing through type arguments and pointer levels.</li>
 <li><code>nominalName()</code>: extract the underlying nominal name, peeling pointers/qualifiers; the canonical replacement for the older ad-hoc strip sites (these ad-hoc strips were the origin of the two-evaluator divergence).</li>
 </ul>
 <p>Because both phases share <code>ty::Type::parse</code>, there is exactly one interpretation of any type spelling. Codegen's <code>getTypeFromString</code> dispatches on <code>ty::Type::parse</code>; it does not implement a second, independent type evaluator. This is what makes the type checker the single resolver (see <em>Pipeline Overview</em> and Decision 14 in <code>design.md</code>).</p>
@@ -675,11 +675,11 @@ std::unique_ptr&lt;llvm::IRBuilder&lt;&gt;&gt; builder;
 <p><code>varTypeStack</code> is a <code>vector&lt;map&lt;string,string&gt;&gt;</code> that parallels <code>scopeStack</code>, storing the Eskiu type string for each named variable. It is managed by <code>pushScope()</code>/<code>popScope()</code> alongside the LLVM value table.</p>
 <p>The type checker is the <strong>single resolver</strong> (see <em>Pipeline Overview</em>): on its re-run over the transformed AST it resolves every expression's type into a per-expression table, and codegen <strong>consumes that table</strong> rather than independently re-deriving expression types. <code>varTypeStack</code> is the codegen-side mirror of that resolved information for named variables, and <code>getTypeFromString</code> interprets every type spelling through the one shared grammar interpreter, <code>ty::Type::parse</code>; codegen never runs a second, divergent type evaluator.</p>
 <p><code>getExprEskiuType(const ExprPtr&amp;)</code> is the codegen-side accessor that returns an expression's resolved Eskiu type from this shared information:
-- <code>IdentExpr</code> → <code>lookupVarType(name)</code>
-- <code>MemberExpr</code> → resolves base type from <code>varTypeStack</code>, looks up the field in <code>structFields</code>
-- <code>UnaryExpr</code> with <code>&amp;</code> → prepends <code>"*"</code> to the operand's type
-- <code>UnaryExpr</code> with <code>*</code> → strips leading <code>"*"</code> from the operand's type
-- <code>IndexExpr</code> → strips <code>[N]</code> or leading/trailing <code>*</code> from the base type</p>
+- <code>IdentExpr</code> <code>lookupVarType(name)</code>
+- <code>MemberExpr</code> resolves base type from <code>varTypeStack</code>, looks up the field in <code>structFields</code>
+- <code>UnaryExpr</code> with <code>&amp;</code> prepends <code>"*"</code> to the operand's type
+- <code>UnaryExpr</code> with <code>*</code> strips leading <code>"*"</code> from the operand's type
+- <code>IndexExpr</code> strips <code>[N]</code> or leading/trailing <code>*</code> from the base type</p>
 <p>This is used by <code>visit(MemberExpr*)</code>, <code>visit(IndexExpr*)</code>, and <code>visit(CallExpr*)</code> for method and interface dispatch. All of these are consistent with the resolver's table by construction, because both phases interpret type spellings through <code>ty::Type::parse</code>.</p>
 <h3 id="template-struct-instantiation-ensuretemplateinstantiated">Template struct instantiation: <code>ensureTemplateInstantiated()</code></h3>
 <p>Called whenever a template type appears in codegen (in <code>getTypeFromString</code>, <code>visit(MemberExpr*)</code>, <code>visit(CallExpr*)</code>). If <code>structTypes[mangled]</code> does not yet exist:
@@ -718,7 +718,7 @@ result = builder-&gt;CreateGEP(ptrElemType(), left, neg, &quot;ptr.sub&quot;);
 <h3 id="bitfield-layout">Bitfield layout</h3>
 <p>A struct with any <code>: N</code> field gets a packed layout in <code>structLayout[name]</code>: consecutive bitfields are placed into storage words of their declared type, and each field records <code>{physIndex, bitOffset, bitWidth, storageType, isSigned}</code>. Reads <code>lshr</code>+mask (and sign-extend signed fields); writes are read-modify-write (<code>storeBitfieldInto</code>). Structs without bitfields keep the trivial 1:1 field layout, so nothing else changes.</p>
 <h3 id="enums-and-type-aliases">Enums and type aliases</h3>
-<p>Enums register member→value constants and the enum type name (→ <code>i32</code>); <code>visit(IdentExpr*)</code> resolves a bare member to a <code>ConstantInt</code>. Type aliases register <code>name → underlying</code>; <code>getTypeFromString</code> and <code>getExprEskiuType</code> expand aliases (peeling pointers) before any other resolution, so the rest of codegen never sees the alias name.</p>
+<p>Enums register membervalue constants and the enum type name ( <code>i32</code>); <code>visit(IdentExpr*)</code> resolves a bare member to a <code>ConstantInt</code>. Type aliases register <code>name underlying</code>; <code>getTypeFromString</code> and <code>getExprEskiuType</code> expand aliases (peeling pointers) before any other resolution, so the rest of codegen never sees the alias name.</p>
 <h3 id="bitwise-operations">Bitwise operations</h3>
 <div class="tablewrap"><table>
 <thead>
@@ -759,7 +759,7 @@ result = builder-&gt;CreateGEP(ptrElemType(), left, neg, &quot;ptr.sub&quot;);
 <h3 id="emitobjectfile-llvm-targetmachine-legacy-passmanager"><code>emitObjectFile()</code>: LLVM TargetMachine + legacy PassManager</h3>
 <pre><code class="language-cpp">bool CodeGen::emitObjectFile(const std::string&amp; filename) {
     // initCodegenTargets (AArch64, X86, ARM backends + asm printers)
-    // --target triple or getDefaultTargetTriple → makeTargetMachine
+    // --target triple or getDefaultTargetTriple makeTargetMachine
     // setDataLayout from TargetMachine
     // optional --asan / --ubsan instrumentation (new pass manager)
     // raw_fd_ostream to filename
@@ -773,33 +773,33 @@ result = builder-&gt;CreateGEP(ptrElemType(), left, neg, &quot;ptr.sub&quot;);
 <div class="tablewrap"><table>
 <thead>
 <tr>
-<th>Source → Destination</th>
+<th>Source Destination</th>
 <th>Instruction</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>i32</code> → <code>i8</code> (wider → narrower integer)</td>
+<td><code>i32</code> <code>i8</code> (wider narrower integer)</td>
 <td><code>CreateTrunc</code></td>
 </tr>
 <tr>
-<td><code>i8</code> → <code>i32</code> (narrower → wider integer)</td>
+<td><code>i8</code> <code>i32</code> (narrower wider integer)</td>
 <td><code>CreateSExt</code> for signed sources, <code>CreateZExt</code> for unsigned (chosen from the source's signedness)</td>
 </tr>
 <tr>
-<td><code>i1</code> → <code>i32</code> (bool → wider integer)</td>
+<td><code>i1</code> <code>i32</code> (bool wider integer)</td>
 <td><code>CreateZExt</code> (zero-extend, not sign-extend)</td>
 </tr>
 <tr>
-<td>integer → float/double</td>
+<td>integer float/double</td>
 <td><code>CreateSIToFP</code></td>
 </tr>
 <tr>
-<td>float/double → integer</td>
+<td>float/double integer</td>
 <td><code>CreateFPToSI</code></td>
 </tr>
 <tr>
-<td>float → double or vice versa</td>
+<td>float double or vice versa</td>
 <td><code>CreateFPCast</code></td>
 </tr>
 </tbody>
@@ -920,7 +920,7 @@ result = builder-&gt;CreateGEP(ptrElemType(), left, neg, &quot;ptr.sub&quot;);
 <tr>
 <td><code>T[N]</code> (fixed-size array)</td>
 <td><code>[N x T]</code> (<code>llvm::ArrayType</code>)</td>
-<td>e.g. <code>uint8[64]</code> → <code>[64 x i8]</code></td>
+<td>e.g. <code>uint8[64]</code> <code>[64 x i8]</code></td>
 </tr>
 <tr>
 <td><code>T[]</code> (slice)</td>
@@ -965,7 +965,7 @@ result = builder-&gt;CreateGEP(ptrElemType(), left, neg, &quot;ptr.sub&quot;);
   <footer class="foot">
     <div class="bar foot-in">
       <span class="brand">eskiu</span>
-      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family · MIT</span>
+      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family / MIT</span>
       <nav class="foot-links" aria-label="Footer">
         <a href="index.html">Docs</a>
         <a href="../the-book-of-eskiu.html">Book</a>

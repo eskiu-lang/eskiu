@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Documentation · Eskiu docs</title>
+  <title>Documentation / Eskiu docs</title>
   <meta name="description" content="Eskiu is a statically typed systems language with the power of C and the immediacy of a scripting language: it compiles to native code through LLVM, and es" />
   <meta name="theme-color" content="#fbf8f3" />
   <link rel="canonical" href="https://eskiu-lang.org/docs/index.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
-  <meta property="og:title" content="Documentation · Eskiu docs" />
+  <meta property="og:title" content="Documentation / Eskiu docs" />
   <meta property="og:description" content="Eskiu is a statically typed systems language with the power of C and the immediacy of a scripting language: it compiles to native code through LLVM, and es" />
   <meta property="og:url" content="https://eskiu-lang.org/docs/index.html" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
@@ -88,7 +88,7 @@ a:hover { color: var(--ink); }
   padding: 0 18px; font-weight: 700; color: var(--ink); cursor: pointer; list-style: none; }
 .side-m summary::-webkit-details-marker { display: none; }
 .side-m summary::after { content: "+"; font-family: var(--mono); font-size: 20px; color: var(--purple); }
-.side-m[open] summary::after { content: "–"; }
+.side-m[open] summary::after { content: "-"; }
 .side-m .inner { padding: 4px 8px 16px; border-top: 1px solid var(--rule); }
 .side-m .grp { padding: 14px 12px 0; }
 .toc { display: none; }
@@ -230,7 +230,7 @@ figure img { border-radius: 14px; }
   <div class="bar layout has-toc">
     <aside class="side" aria-label="Documentation"><span class="grp">Language</span><nav><a href="index.html" aria-current="page">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></aside>
     <main class="content">
-      <details class="side-m"><summary>Language · Documentation</summary><div class="inner"><span class="grp">Language</span><nav><a href="index.html" aria-current="page">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></div></details>
+      <details class="side-m"><summary>Language / Documentation</summary><div class="inner"><span class="grp">Language</span><nav><a href="index.html" aria-current="page">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></div></details>
 <h1 id="eskiu-language-reference">Eskiu Language Reference</h1>
 <p>Eskiu is a statically typed systems language with the power of C and the immediacy of a scripting language: it compiles to native code through LLVM, and <code>eskiuc run file.esk</code> runs a source file directly, like Python or Ruby. This is the full language reference. New to Eskiu? Start with the <a href="getting-started.html">tutorial</a>.</p>
 <p><strong>Current version: v0.16.1</strong>; 0.13.0 was the first public release. Code that compiles with 0.16.0 keeps
@@ -292,7 +292,7 @@ compiling in every 0.16.x, and later changes are announced by warnings first
 <tbody>
 <tr>
 <td><strong>Types</strong></td>
-<td><code>int</code>, <code>int8</code>–<code>int64</code>, <code>uint</code>–<code>uint64</code>, <code>float</code>, <code>double</code>, <code>bool</code>, <code>char</code>, <code>string</code>, <code>void</code>, <code>*T</code> pointers, <code>?*T</code> checked nullable pointers, <code>T[N]</code> fixed arrays, <code>T[]</code> slices, <code>union</code>, <code>type</code> aliases</td>
+<td><code>int</code>, <code>int8</code>-<code>int64</code>, <code>uint</code>-<code>uint64</code>, <code>float</code>, <code>double</code>, <code>bool</code>, <code>char</code>, <code>string</code>, <code>void</code>, <code>*T</code> pointers, <code>?*T</code> checked nullable pointers, <code>T[N]</code> fixed arrays, <code>T[]</code> slices, <code>union</code>, <code>type</code> aliases</td>
 </tr>
 <tr>
 <td><strong>Literals</strong></td>
@@ -368,7 +368,7 @@ compiling in every 0.16.x, and later changes are announced by warnings first
 </tr>
 <tr>
 <td><strong>Multi-file</strong></td>
-<td><code>import &lt;result&gt;</code> stdlib modules · <code>import "file.esk"</code> relative local files</td>
+<td><code>import &lt;result&gt;</code> stdlib modules / <code>import "file.esk"</code> relative local files</td>
 </tr>
 <tr>
 <td><strong>Preprocessor</strong></td>
@@ -390,7 +390,7 @@ compiling in every 0.16.x, and later changes are announced by warnings first
 </table></div>
 <hr>
 <h2 id="quick-reference">Quick Reference</h2>
-<h3 id="type-llvm">Type → LLVM</h3>
+<h3 id="type-llvm">Type LLVM</h3>
 <div class="tablewrap"><table>
 <thead>
 <tr>
@@ -445,7 +445,7 @@ compiling in every 0.16.x, and later changes are announced by warnings first
 </tr>
 </tbody>
 </table></div>
-<h3 id="operator-precedence-lowest-highest">Operator precedence (lowest → highest)</h3>
+<h3 id="operator-precedence-lowest-highest">Operator precedence (lowest highest)</h3>
 <pre><code>assignment  = += -= *= /= %= &amp;= |= ^= &lt;&lt;= &gt;&gt;=
 ternary     ?:
 logical     || &amp;&amp;
@@ -579,7 +579,7 @@ postfix     f() a[i] a.b ++ -- ?
   <footer class="foot">
     <div class="bar foot-in">
       <span class="brand">eskiu</span>
-      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family · MIT</span>
+      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family / MIT</span>
       <nav class="foot-links" aria-label="Footer">
         <a href="index.html">Docs</a>
         <a href="../the-book-of-eskiu.html">Book</a>

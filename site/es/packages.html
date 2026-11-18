@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Paquetes · Eskiu</title>
+  <title>Paquetes / Eskiu</title>
   <meta name="description" content="Paquetes de Eskiu: gpu (cómputo, renderizado, modelos glTF y OBJ, inferencia y entrenamiento de Llama sobre WebGPU), onnx, tflite, compress, audio, font, jni, quickjs y nds, cada uno se agrega con un eskiuc add." />
   <link rel="canonical" href="https://eskiu-lang.org/es/packages.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
-  <meta property="og:title" content="Paquetes · Eskiu" />
+  <meta property="og:title" content="Paquetes / Eskiu" />
   <meta property="og:description" content="Paquetes de Eskiu: gpu (cómputo, renderizado, modelos glTF y OBJ, inferencia y entrenamiento de Llama sobre WebGPU), onnx, tflite, compress, audio, font, jni, quickjs y nds, cada uno se agrega con un eskiuc add." />
   <meta property="og:url" content="https://eskiu-lang.org/es/packages.html" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
@@ -54,7 +54,7 @@ eskiuc run</code></pre>
       <h2>gpu</h2>
       <div class="pkg-meta"><span class="tag">v0.7.1</span><a href="https://github.com/eskiu-packages/gpu/actions/workflows/ci.yml"><img src="https://github.com/eskiu-packages/gpu/actions/workflows/ci.yml/badge.svg" alt="Estado de CI: gpu" width="90" height="20" loading="lazy" /></a><a href="https://github.com/eskiu-packages/gpu">github.com/eskiu-packages/gpu</a></div>
       <p><strong>Cómputo en GPU, renderizado, modelos 3D y machine learning para Eskiu, sobre WebGPU.</strong></p>
-      <p>Una sola API corre sobre Metal (macOS, iOS), Vulkan (Linux, Android) y DirectX 12 (Windows) a través de wgpu-native, con shaders en WGSL. Dibuja modelos glTF y OBJ con sombreado físico (PBR), corre modelos Llama desde archivos GGUF o safetensors (Llama 2 7B Q4_0 a 45 tokens por segundo en un M4 Pro; llama.cpp da 58 en la misma máquina) y entrena redes pequeñas (97% de precisión en MNIST). Trae lo que necesita un motor 3D: varios render targets, cube maps, mipmaps en la GPU, mapas de sombras, iluminación basada en imágenes, morph targets, texturas KTX2 y HDR, y cuadros de cámara y video dibujados desde YUV. En iOS y Android dibuja en un <code>GpuView</code> de una app de ui, y los mismos programas compilan para el navegador con emdawnwebgpu, con un backend de WebGL2 donde el navegador no tiene WebGPU. Las ventanas de escritorio reciben teclado, mouse, toque y gamepads. <a href="gpu.html">Qué hace, con sus mediciones →</a></p>
+      <p>Una sola API corre sobre Metal (macOS, iOS), Vulkan (Linux, Android) y DirectX 12 (Windows) a través de wgpu-native, con shaders en WGSL. Dibuja modelos glTF y OBJ con sombreado físico (PBR), corre modelos Llama desde archivos GGUF o safetensors (Llama 2 7B Q4_0 a 45 tokens por segundo en un M4 Pro; llama.cpp da 58 en la misma máquina) y entrena redes pequeñas (97% de precisión en MNIST). Trae lo que necesita un motor 3D: varios render targets, cube maps, mipmaps en la GPU, mapas de sombras, iluminación basada en imágenes, morph targets, texturas KTX2 y HDR, y cuadros de cámara y video dibujados desde YUV. En iOS y Android dibuja en un <code>GpuView</code> de una app de ui, y los mismos programas compilan para el navegador con emdawnwebgpu, con un backend de WebGL2 donde el navegador no tiene WebGPU. Las ventanas de escritorio reciben teclado, mouse, toque y gamepads. <a href="gpu.html">Qué hace, con sus mediciones</a></p>
       <p class="note">Nada que instalar: el primer build descarga wgpu-native 29, y SDL3 para una ventana de escritorio (<code>&lt;gpu/window&gt;</code>). Con Eskiu 0.15.1, <code>ESKIU_SYSTEM_LIBS=SDL3</code> enlaza el SDL3 del sistema en su lugar.</p>
       <h3>Instalación</h3>
       <pre><code>eskiuc add gpu --git https://github.com/eskiu-packages/gpu --rev v0.7.1
@@ -659,7 +659,7 @@ secure_remove("session");</code></pre>
     <section class="pkg pkg-soon" id="vision">
       <h2>vision</h2>
       <div class="pkg-meta"><span class="tag">privado por ahora</span></div>
-      <p>Esquinas, flujo óptico, geometría multivista y planos, en Eskiu puro. Sale de tinyvio, el tracker detrás del AR web de ViroReact, y calcula los mismos bits que su C++. El repositorio es privado por ahora. <a href="vision.html">Qué hace y cómo se verificó →</a></p>
+      <p>Esquinas, flujo óptico, geometría multivista y planos, en Eskiu puro. Sale de tinyvio, el tracker detrás del AR web de ViroReact, y calcula los mismos bits que su C++. El repositorio es privado por ahora. <a href="vision.html">Qué hace y cómo se verificó</a></p>
     </section>
     <h2 id="index">Del índice</h2>
     <p>Paquetes publicados por quienes los mantienen. El proyecto Eskiu no los revisa: lee un paquete antes de depender de él.</p>
@@ -688,7 +688,7 @@ secure_remove("session");</code></pre>
   <footer class="foot">
     <div class="bar foot-in">
       <span class="brand">eskiu</span>
-      <span>Parte de la familia <a href="https://reactvision.xyz">ReactVision</a> · MIT</span>
+      <span>Parte de la familia <a href="https://reactvision.xyz">ReactVision</a> / MIT</span>
       <nav class="foot-links" aria-label="Pie de página"><a href="../docs/index.html">Docs</a><a href="../the-book-of-eskiu.html">Libro</a><a href="../docs/internals.html">Internals</a><a href="../changelog.html">Cambios</a><a href="../llms.txt">llms.txt</a><a href="https://github.com/eskiu-lang/eskiu">GitHub</a><a href="https://reactvision.xyz">ReactVision</a></nav>
     </div>
   </footer>

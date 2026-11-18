@@ -28,7 +28,7 @@ PACKAGES_CATALOG = [
                    "On iOS and Android it draws into a <code>GpuView</code> of a ui app, and the same "
                    "programs build for the browser through emdawnwebgpu, with a WebGL2 backend where the "
                    "browser has no WebGPU. Desktop windows take keyboard, mouse, touch and gamepads. "
-                   "<a href=\"gpu.html\">What it does, with its benchmarks →</a>",
+                   "<a href=\"gpu.html\">What it does, with its benchmarks</a>",
         "note_es": "Una sola API corre sobre Metal (macOS, iOS), Vulkan (Linux, Android) y DirectX 12 (Windows) a "
                    "través de wgpu-native, con shaders en WGSL. Dibuja modelos glTF y OBJ con "
                    "sombreado físico (PBR), corre modelos Llama desde archivos GGUF o safetensors "
@@ -40,7 +40,7 @@ PACKAGES_CATALOG = [
                    "app de ui, y los mismos programas compilan para el navegador con emdawnwebgpu, con un "
                    "backend de WebGL2 donde el navegador no tiene WebGPU. Las ventanas de escritorio "
                    "reciben teclado, mouse, toque y gamepads. "
-                   "<a href=\"gpu.html\">Qué hace, con sus mediciones →</a>",
+                   "<a href=\"gpu.html\">Qué hace, con sus mediciones</a>",
         "needs_en": "Nothing to install: the first build downloads wgpu-native 29, and SDL3 for a "
                     "desktop window (<code>&lt;gpu/window&gt;</code>). With Eskiu 0.15.1, "
                     "<code>ESKIU_SYSTEM_LIBS=SDL3</code> links the system's SDL3 instead.",

@@ -96,7 +96,7 @@ def highlight_comments(code):
 
 PKG_TEXT = {
     "en": {
-        "lang": "en", "title": "Packages · Eskiu", "eyebrow": "Packages", "h1": "Packages",
+        "lang": "en", "title": "Packages / Eskiu", "eyebrow": "Packages", "h1": "Packages",
         "desc": "Eskiu packages: gpu (compute, rendering, glTF and OBJ models, Llama "
                 "inference and training over WebGPU), onnx, tflite, compress, audio, font, jni, quickjs and nds, "
                 "each added with one eskiuc add.",
@@ -124,7 +124,7 @@ PKG_TEXT = {
         "soon_p": "Corners, optical flow, multi-view geometry and planes, in pure Eskiu. It comes from "
                   "tinyvio, the tracker behind ViroReact's web AR, and computes the same bits as its "
                   "C++. The repository is private for now. "
-                  "<a href=\"{p}vision.html\">What it does and how it was checked →</a>",
+                  "<a href=\"{p}vision.html\">What it does and how it was checked</a>",
         "repo": "Repository", "ci": "CI status",
         "index_h": "From the index",
         "index_p": "Packages published by their own maintainers. They are not reviewed by the Eskiu "
@@ -140,7 +140,7 @@ PKG_TEXT = {
                  "more examples and the details for each operating system.",
     },
     "es": {
-        "lang": "es", "title": "Paquetes · Eskiu", "eyebrow": "Paquetes", "h1": "Paquetes",
+        "lang": "es", "title": "Paquetes / Eskiu", "eyebrow": "Paquetes", "h1": "Paquetes",
         "desc": "Paquetes de Eskiu: gpu (cómputo, renderizado, modelos glTF y OBJ, "
                 "inferencia y entrenamiento de Llama sobre WebGPU), onnx, tflite, compress, audio, "
                 "font, jni, quickjs y nds, cada uno se agrega con un eskiuc add.",
@@ -169,7 +169,7 @@ PKG_TEXT = {
         "soon_p": "Esquinas, flujo óptico, geometría multivista y planos, en Eskiu puro. Sale de tinyvio, "
                   "el tracker detrás del AR web de ViroReact, y calcula los mismos bits que su C++. El "
                   "repositorio es privado por ahora. "
-                  "<a href=\"vision.html\">Qué hace y cómo se verificó →</a>",
+                  "<a href=\"vision.html\">Qué hace y cómo se verificó</a>",
         "repo": "Repositorio", "ci": "Estado de CI",
         "index_h": "Del índice",
         "index_p": "Paquetes publicados por quienes los mantienen. El proyecto Eskiu no los revisa: "
@@ -281,8 +281,8 @@ def render_site_page(lang, page, current, title, desc, body):
         version=VERSION, vnum=VERSION.lstrip("v"), gh=GH,
         navlabel="Main" if en else "Principal", nav=site_nav(lang, current), switch=switch,
         installbtn="Install" if en else "Instalar", menulabel="Open menu" if en else "Abrir menú",
-        family=("Part of the <a href=\"https://reactvision.xyz\">ReactVision</a> family · MIT" if en else
-                "Parte de la familia <a href=\"https://reactvision.xyz\">ReactVision</a> · MIT"),
+        family=("Part of the <a href=\"https://reactvision.xyz\">ReactVision</a> family / MIT" if en else
+                "Parte de la familia <a href=\"https://reactvision.xyz\">ReactVision</a> / MIT"),
         footlabel="Footer" if en else "Pie de página", book="Book" if en else "Libro",
         changelog="Changelog" if en else "Cambios", body=body,
     )

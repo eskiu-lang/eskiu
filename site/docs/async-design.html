@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Async design · Eskiu docs</title>
+  <title>Async design / Eskiu docs</title>
   <meta name="description" content="This note is the contract reference for Eskiu&#x27;s async runtime: the Future&lt;T&gt;" />
   <meta name="theme-color" content="#fbf8f3" />
   <link rel="canonical" href="https://eskiu-lang.org/docs/async-design.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
-  <meta property="og:title" content="Async design · Eskiu docs" />
+  <meta property="og:title" content="Async design / Eskiu docs" />
   <meta property="og:description" content="This note is the contract reference for Eskiu&#x27;s async runtime: the Future&lt;T&gt;" />
   <meta property="og:url" content="https://eskiu-lang.org/docs/async-design.html" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
@@ -88,7 +88,7 @@ a:hover { color: var(--ink); }
   padding: 0 18px; font-weight: 700; color: var(--ink); cursor: pointer; list-style: none; }
 .side-m summary::-webkit-details-marker { display: none; }
 .side-m summary::after { content: "+"; font-family: var(--mono); font-size: 20px; color: var(--purple); }
-.side-m[open] summary::after { content: "–"; }
+.side-m[open] summary::after { content: "-"; }
 .side-m .inner { padding: 4px 8px 16px; border-top: 1px solid var(--rule); }
 .side-m .grp { padding: 14px 12px 0; }
 .toc { display: none; }
@@ -230,7 +230,7 @@ figure img { border-radius: 14px; }
   <div class="bar layout has-toc">
     <aside class="side" aria-label="Documentation"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html" aria-current="page">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></aside>
     <main class="content">
-      <details class="side-m"><summary>Compiler internals · Async design</summary><div class="inner"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html" aria-current="page">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></div></details>
+      <details class="side-m"><summary>Compiler internals / Async design</summary><div class="inner"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html" aria-current="page">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></div></details>
 <h1 id="async-await-design-contract">Async / Await: Design &amp; Contract</h1>
 <p>This note is the contract reference for Eskiu's async runtime: the <code>Future&lt;T&gt;</code>
 ABI, the atomic four-state handshake, and the waker model. These are the parts
@@ -242,7 +242,7 @@ locked, what is free"), so they are fixed here.</p>
 function, so it needs a heap env: escape analysis + the <code>escaping</code> qualifier +
 <code>free_closure</code>, spec §6.5). On top sit the Executor and leaf futures
 (<code>&lt;executor&gt;</code>/<code>&lt;net_async&gt;</code>), the <code>async</code>/<code>await</code> frontend, and the
-AST→state-machine transform (<code>sema/async_transform.cpp</code>). Supported: single and
+ASTstate-machine transform (<code>sema/async_transform.cpp</code>). Supported: single and
 multiple <code>await</code> (fast path + suspend over real reactor reads, values threaded
 through frame fields across N+1 states), <code>return await</code>, bare <code>await</code>, <code>async
 void</code>, cancellation, and all control flow around <code>await</code> (<code>if</code>/<code>while</code>/C-style
@@ -278,7 +278,7 @@ monomorphic templates, the <code>&lt;eventloop&gt;</code> reactor, and <code>&lt
   add timers, channels, and <code>select</code>/<code>join</code> combinators.</li>
 <li>Reuse the existing compiler: closures (resume/drop continuations), monomorphic
   templates (<code>Future&lt;T&gt;</code>), AST-visitor passes. The state-machine split is an
-  <strong>AST→AST transform</strong>: its output is ordinary AST that the type checker re-checks,
+  <strong>ASTAST transform</strong>: its output is ordinary AST that the type checker re-checks,
   it reuses existing codegen, and it needs no LLVM coroutine intrinsics.</li>
 <li>Manual memory, no GC, no hidden refcounting.</li>
 </ul>
@@ -557,7 +557,7 @@ cleanup runs) is released with <code>__cxa_free_exception</code> when the frame 
 <td>no</td>
 </tr>
 <tr>
-<td><strong>UI: bg work → UI-thread continuation</strong></td>
+<td><strong>UI: bg work UI-thread continuation</strong></td>
 <td>worker §3.2; waker enqueues on UI executor</td>
 <td>parent <code>on_drop</code></td>
 <td>no</td>
@@ -702,7 +702,7 @@ holds the future any more.</p>
   <code>net_write_async</code> (plus the readiness-only <code>net_readable_async</code>/<code>net_writable_async</code>)
   with a real <code>on_drop</code>.</li>
 <li><strong>Lexer/parser</strong>: the <code>async</code> modifier, the <code>await</code> expression, and their tokens.</li>
-<li><strong>Type checker</strong>: async return → <code>Future&lt;T&gt;*</code>; <code>await</code> typing; "await only in
+<li><strong>Type checker</strong>: async return <code>Future&lt;T&gt;*</code>; <code>await</code> typing; "await only in
   async". It runs again on the transformed program, so the lowering's output is
   type-checked like user code.</li>
 <li><strong>AST transform</strong> (<code>sema/async_transform.cpp</code>): the state-machine split (§4) and
@@ -756,7 +756,7 @@ future is generated against.</p>
   <footer class="foot">
     <div class="bar foot-in">
       <span class="brand">eskiu</span>
-      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family · MIT</span>
+      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family / MIT</span>
       <nav class="foot-links" aria-label="Footer">
         <a href="index.html">Docs</a>
         <a href="../the-book-of-eskiu.html">Book</a>

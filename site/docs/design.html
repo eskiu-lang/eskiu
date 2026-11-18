@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Design · Eskiu docs</title>
+  <title>Design / Eskiu docs</title>
   <meta name="description" content="This document records the reasoning behind the architectural and language choices in Eskiu. Each section states the decision, lists the alternatives consid" />
   <meta name="theme-color" content="#fbf8f3" />
   <link rel="canonical" href="https://eskiu-lang.org/docs/design.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
-  <meta property="og:title" content="Design · Eskiu docs" />
+  <meta property="og:title" content="Design / Eskiu docs" />
   <meta property="og:description" content="This document records the reasoning behind the architectural and language choices in Eskiu. Each section states the decision, lists the alternatives consid" />
   <meta property="og:url" content="https://eskiu-lang.org/docs/design.html" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
@@ -88,7 +88,7 @@ a:hover { color: var(--ink); }
   padding: 0 18px; font-weight: 700; color: var(--ink); cursor: pointer; list-style: none; }
 .side-m summary::-webkit-details-marker { display: none; }
 .side-m summary::after { content: "+"; font-family: var(--mono); font-size: 20px; color: var(--purple); }
-.side-m[open] summary::after { content: "–"; }
+.side-m[open] summary::after { content: "-"; }
 .side-m .inner { padding: 4px 8px 16px; border-top: 1px solid var(--rule); }
 .side-m .grp { padding: 14px 12px 0; }
 .toc { display: none; }
@@ -230,7 +230,7 @@ figure img { border-radius: 14px; }
   <div class="bar layout has-toc">
     <aside class="side" aria-label="Documentation"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html" aria-current="page">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></aside>
     <main class="content">
-      <details class="side-m"><summary>Compiler internals · Design</summary><div class="inner"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html" aria-current="page">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></div></details>
+      <details class="side-m"><summary>Compiler internals / Design</summary><div class="inner"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html" aria-current="page">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></div></details>
 <h1 id="eskiu-design-decisions">Eskiu Design Decisions</h1>
 <p>This document records the reasoning behind the architectural and language choices in Eskiu. Each section states the decision, lists the alternatives considered, and explains why they were rejected.</p>
 <hr>
@@ -378,7 +378,7 @@ popScope()
 <li><em>Require explicit casts in the source (<code>(int)byte == 0x30</code>)</em>: Correct but verbose. Such code iterates byte buffers and compares to ASCII constants; requiring an explicit cast on every comparison would make the code harder to read than equivalent C.</li>
 <li><em>Truncate the wider operand to the narrower width</em>: <code>ICmpEQ(i8 %byte, trunc i32 0x30 to i8)</code> works for equality but is incorrect for relational comparisons: <code>(uint8)200 &lt; (int)256</code> should be true, but truncating 256 to <code>i8</code> gives 0, making the comparison <code>200 &lt; 0</code> which is false.</li>
 </ul>
-<p><strong>Why widen by signedness:</strong> Zero-extension from <code>i8</code> to <code>i32</code> correctly represents unsigned byte values in the range 0–255 as <code>i32</code> values in the range 0–255, preserving the ordering relationship for all relational operators; sign-extension does the same for signed values such as <code>(int8)-1</code>.</p>
+<p><strong>Why widen by signedness:</strong> Zero-extension from <code>i8</code> to <code>i32</code> correctly represents unsigned byte values in the range 0-255 as <code>i32</code> values in the range 0-255, preserving the ordering relationship for all relational operators; sign-extension does the same for signed values such as <code>(int8)-1</code>.</p>
 <hr>
 <h2 id="14-structured-tytype-ir-and-a-single-type-resolver">14. Structured <code>ty::Type</code> IR and a Single Type Resolver</h2>
 <p><strong>Decision:</strong> Types are represented internally by a structured <code>ty::Type</code> IR (<code>sema/type.{h,cpp}</code>) with one grammar interpreter, <code>ty::Type::parse</code>, and the type checker is the <strong>single resolver</strong>: it resolves every expression's type into a per-expression table that codegen consumes. Codegen does not re-derive expression types; its <code>getTypeFromString</code> dispatches on <code>ty::Type::parse</code>, the same grammar interpreter the type checker uses.</p>
@@ -408,7 +408,7 @@ popScope()
   <footer class="foot">
     <div class="bar foot-in">
       <span class="brand">eskiu</span>
-      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family · MIT</span>
+      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family / MIT</span>
       <nav class="foot-links" aria-label="Footer">
         <a href="index.html">Docs</a>
         <a href="../the-book-of-eskiu.html">Book</a>
