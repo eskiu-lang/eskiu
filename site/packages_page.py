@@ -280,8 +280,7 @@ def render_site_page(lang, page, current, title, desc, body):
         version=VERSION, vnum=VERSION.lstrip("v"), gh=GH,
         navlabel="Main" if en else "Principal", nav=site_nav(lang, current), switch=switch,
         installbtn="Install" if en else "Instalar", menulabel="Open menu" if en else "Abrir menú",
-        family=("Part of the <a href=\"https://reactvision.xyz\">ReactVision</a> family / MIT" if en else
-                "Parte de la familia <a href=\"https://reactvision.xyz\">ReactVision</a> / MIT"),
+        family="MIT",
         footlabel="Footer" if en else "Pie de página", book="Book" if en else "Libro",
         changelog="Changelog" if en else "Cambios", body=body,
     )

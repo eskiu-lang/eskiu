@@ -244,7 +244,7 @@ SHELL = """<!doctype html>
   <footer class="foot">
     <div class="bar foot-in">
       <span class="brand">eskiu</span>
-      <span>Part of the <a href="https://reactvision.xyz">ReactVision</a> family / MIT</span>
+      <span>MIT</span>
       <nav class="foot-links" aria-label="Footer">
         <a href="{d}index.html">Docs</a>
         <a href="{p}the-book-of-eskiu.html">Book</a>
