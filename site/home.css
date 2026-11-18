@@ -401,8 +401,7 @@ pre.term .cm { color: #8f88a8; }
 .hc-src .kw { color: #b6a6ff; } .hc-src .ty { color: #f0a868; } .hc-src .st { color: #9ad38e; } .hc-src .cm, .hc-term .cm { color: #8f88a8; }
 .hc-term { background: #0b0915; border-top: 1px solid var(--head-bg); color: #d8d2e6; }
 .hero-code figcaption { padding: 12px 20px 16px; font-size: 14px; color: #b8b0d0; background: #0b0915; border-radius: 0 0 20px 20px; }
-.hero-fig .hc-cat { position: absolute; top: -34px; right: -18px; width: 86px; height: 86px; border-radius: 50%; border: 5px solid var(--lilac); background: var(--surface); }
-@media (max-width: 899px) { .hero-fig .hc-cat { width: 64px; height: 64px; top: -26px; right: -6px; } .hero-code pre { font-size: 11.5px; } }
+@media (max-width: 899px) { .hero-code pre { font-size: 11.5px; } }
 
 /* How it compares. */
 .compare-scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 20px; background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04); }
@@ -453,7 +452,6 @@ h1, h2, h3 { letter-spacing: -0.03em; }
 .hc-src .kw { color: var(--code-kw); } .hc-src .ty { color: var(--code-ty); } .hc-src .st { color: var(--code-st); } .hc-src .cm, .hc-term .cm { color: var(--muted); }
 .hc-term { background: var(--surface); border-top: 1px solid var(--rule); color: var(--ink); }
 .hero-code figcaption { background: var(--surface); color: var(--muted); border-top: 1px solid var(--rule); border-radius: 0 0 14px 14px; }
-.hero-fig .hc-cat { border: 1px solid var(--rule); }
 .compare-scroll { border-radius: 14px; }
 .compare thead th { font-family: var(--sans); font-weight: 600; font-size: 12px; letter-spacing: 0.08em; }
 .sec-head h2, .sec h2 { font-weight: 800; font-size: clamp(30px, 3.6vw, 40px); line-height: 1.1; }
@@ -515,7 +513,6 @@ h1, h2, h3 { letter-spacing: -0.03em; }
 @media (prefers-color-scheme: dark) {
   .user img { filter: invert(1); mix-blend-mode: normal; }
   .user-morrow img { filter: none; }
-  .hero-fig .hc-cat { background: var(--surface); }
 }
 
 /* Compact language homepage */
