@@ -64,3 +64,9 @@ Icon
 AGENTS.md
 CLAUDE.md
 /output_eir
+
+# Local Codex configuration
+/.codex/
+
+# IntelliJ generated output
+/editor/intellij/plugin/bin/
