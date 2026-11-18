@@ -545,3 +545,25 @@ h1, h2, h3 { letter-spacing: -0.03em; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 .sec-head h1, .pg h1 { margin: 0; font-size: clamp(32px, 4vw, 48px); line-height: 1.1; }
 .note-card h1 { margin: 0; }
+
+/* The closing sections share a centred installation and balanced detail columns. */
+.home-bottom { padding-block: 0 40px; }
+.home-bottom .home-install { width: 100%; max-width: 760px; margin-inline: auto; padding-block: 24px 48px; }
+.home-bottom .home-install h2 { text-align: center; font-size: 30px; }
+.home-bottom .os-tabs { justify-content: center; }
+.home-bottom .install-box { max-width: none; }
+.home-bottom .downloads { text-align: center; }
+.home-details { display: grid; gap: 32px; border-top: 1px solid var(--rule); padding-top: 32px; }
+.home-details .home-status, .home-details .home-built { min-width: 0; padding-block: 0; }
+@media (min-width: 900px) {
+  .home-details { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 64px; }
+}
+@media (max-width: 599px) {
+  .home-bottom { padding-top: 0; }
+  .home-bottom .downloads { text-align: left; }
+}
+@media (min-width: 600px) and (max-width: 899px) {
+  .home-bottom .install-box { flex-direction: row; align-items: center; padding: 12px 12px 12px 20px; }
+  .home-bottom .install-box .cmd { min-width: 0; flex: 1; }
+  .home-bottom .install-box .btn { align-self: center; }
+}
