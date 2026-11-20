@@ -7,6 +7,21 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- A struct, union or array parameter over 16 bytes passes between Eskiu functions as a
+  pointer to a copy the caller makes, on every target and every call path (direct, method,
+  generic, interface, function value, closure, async). By-value semantics are unchanged. LLVM
+  no longer spreads such a record into one argument per field at each call, so a call that
+  takes a large struct literal is much smaller: a `Row(Style{padding: 8}) {}` element of the
+  ui package costs about 105 bytes of WebAssembly instead of 468. A struct literal starts as
+  a copy of its type's constant default value and stores only the fields it gives. Extern C
+  functions, `export` entries and C callbacks keep the C ABI. Both compilers.
+
+---
+
 ## [0.16.1] - 2026-11-16
 
 ### Added

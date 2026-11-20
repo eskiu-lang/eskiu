@@ -172,19 +172,32 @@ Structs ≤ 16 bytes are returned by value (the target ABI splits them into
 registers as usual). This is the convention between Eskiu functions; calls to
 `extern` C functions follow the C ABI lowering below.
 
-**Large aggregates on WebAssembly.** WebAssembly gives each scalar of an aggregate
-argument a parameter of its own, and engines accept at most 1000 parameters per function
-(V8), so a function taking a large struct by value (`Ok<Big, E>(b)`) would not load. On a
-wasm32 target the C++ compiler rewrites every function and every call (direct, through a
-function value, `invoke` included) whose parameter is an aggregate of more than 64 scalars:
-the parameter becomes a pointer to a copy the caller makes in its frame, which the callee
-loads at entry (`passLargeAggregatesByPointer`, run after code generation). By-value
-semantics are unchanged; the callee still works on its own copy. The self-hosted compiler
-does not do this yet, so it cannot build such a program for WebAssembly. Test
-`large_struct_arg`.
+**Records passed by pointer.** Between Eskiu functions a struct, union or array
+parameter larger than **16 bytes** (`getTypeAllocSize > 16`, the sret threshold) is a
+`ptr noalias noundef align A dereferenceable(N)` to a copy the caller makes in its frame. The
+callee owns that copy for the call and uses it as the parameter's storage, so by-value
+semantics are unchanged: a change in the callee never reaches the caller, and an argument is
+copied where it is evaluated, so a later argument cannot change it. A struct literal or a
+sret result is already such a temporary and is passed as it is. As a first-class value LLVM
+would spread the record into one argument per scalar at every call (on WebAssembly one
+parameter each, of which engines accept at most 1000) and the caller would rebuild it field by
+field. Records of 16 bytes or less (closures, interface values, slices) stay first-class
+values. This holds for every Eskiu function and every call to one: direct, method, generic
+instance, interface vtable, function value and closure, `invoke` included. `extern` C
+functions, `export` entries and C callback thunks keep the C convention below.
+
+The C++ compiler rewrites the module after code generation (`passAggregatesByPointer`,
+`codegen/codegen_byptr.cpp`): the copy of a loaded value is a `memcpy` at the load (a load and
+a store under `--freestanding`), and the callee's parameter slot becomes the pointer. The
+self-hosted compiler emits the same convention directly (`cg_byptr`, `cg_arg_text`,
+`cg_lit_arg` in `selfhost/codegen_types_byptr.esk`). A struct literal over 16 bytes starts as a
+copy of its type's default value, a private constant holding the field defaults (C++
+`structDefaultImage`, self-host `cg_default_image`), or as a memset when it has none, and
+stores only the fields it gives. Tests
+`struct_by_value_args`, `large_struct_arg`, `tests/ir_golden.sh` `ir/byptr`.
 
 **Aggregates across `extern` (C ABI).** Between Eskiu functions a struct or
-union argument/result is a first-class LLVM value. An `extern` function that
+union argument/result follows the rules above. An `extern` function that
 takes or returns one by value is instead declared with the lowered C signature
 (`codegen/codegen_cabi.cpp`, mirrored by the self-hosted codegen), and each call
 converts to and from it, so it links against C compiled by clang/gcc:
