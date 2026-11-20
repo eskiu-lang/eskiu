@@ -4,13 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Language spec / Eskiu docs</title>
-  <meta name="description" content="Version: v0.16.1" />
+  <meta name="description" content="Version: v0.16.2" />
   <meta name="theme-color" content="#fbf8f3" />
   <link rel="canonical" href="https://eskiu-lang.org/docs/spec.html" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Eskiu" />
   <meta property="og:title" content="Language spec / Eskiu docs" />
-  <meta property="og:description" content="Version: v0.16.1" />
+  <meta property="og:description" content="Version: v0.16.2" />
   <meta property="og:url" content="https://eskiu-lang.org/docs/spec.html" />
   <meta property="og:image" content="https://eskiu-lang.org/assets/og.png" />
   <meta property="og:image:width" content="1200" />
@@ -217,10 +217,10 @@ figure img { border-radius: 14px; }
 <body><a class="skip-link" href="#main-content">Skip to content</a>
   <header class="top">
     <div class="bar top-in">
-      <a class="brand" href="../index.html"><img src="../../assets/logo.png" alt="" />eskiu<span class="v">v0.16.1</span></a>
+      <a class="brand" href="../index.html"><img src="../../assets/logo.png" alt="" />eskiu<span class="v">v0.16.2</span></a>
       <nav class="nav" aria-label="Main"><div class="nav-g"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-language">Language<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-language"><a href="../language.html#language"><b>The language</b><span>Memory, types, errors and C interop</span></a><a href="../language.html#compare"><b>How it compares</b><span>The choices behind Eskiu</span></a><a href="../language.html#status"><b>Stability and maturity</b><span>What to expect before 1.0</span></a></div></div><div class="nav-g"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-learn">Learn<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-learn"><a href="../quickstart.html"><b>Get started</b><span>Install it and run a first program</span></a><a href="../playground.html"><b>Playground</b><span>Run code in the browser</span></a><a href="../the-book-of-eskiu.html"><b>The Book of Eskiu</b><span>The language, chapter by chapter</span></a><a href="../agents.html"><b>For agents</b><span>Install, drive and test Eskiu from an agent</span></a></div></div><div class="nav-g cur"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-docs">Documentation<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-docs"><a href="../docs/index.html"><b>Reference</b><span>The language, standard library and compiler</span></a><a href="../platforms.html"><b>Platforms</b><span>Targets, toolchains and requirements</span></a><a href="../docs/stability.html"><b>Stability policy</b><span>Compatibility between releases</span></a><a href="../changelog.html"><b>Release notes</b><span>What changed in each version</span></a></div></div><div class="nav-g"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-ecosystem">Ecosystem<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-ecosystem"><a href="../packages.html"><b>Packages</b><span>Libraries that extend the language</span></a><a href="../showcase.html"><b>Built with Eskiu</b><span>Projects and case studies</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
       <div class="top-right">
-        <a class="btn-install" href="../index.html#install">Install 0.16.1</a>
+        <a class="btn-install" href="../index.html#install">Install 0.16.2</a>
         <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="drawer">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg>
         </button>
@@ -233,7 +233,7 @@ figure img { border-radius: 14px; }
     <main class="content" id="main-content">
       <details class="side-m"><summary>Language / Language spec</summary><div class="inner"><span class="grp">Language</span><nav><a href="index.html">Overview</a><a href="getting-started.html">Getting started</a><a href="spec.html" aria-current="page">Spec</a><a href="grammar.html">Grammar</a><a href="build.html">Tooling</a><a href="stability.html">Stability</a><a href="glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="internals.html">Overview</a><a href="architecture.html">Architecture</a><a href="design.html">Design</a><a href="abi.html">ABI</a><a href="async-design.html">Async</a><a href="self-hosting.html">Self-hosting</a><a href="http2-design.html">HTTP/2</a><a href="api.html">C++ API</a><a href="debugging.html">Debugging</a><a href="contributing.html">Contributing</a><a href="roadmap.html">Roadmap</a></nav></div></details>
 <h1 id="eskiu-language-specification">Eskiu Language Specification</h1>
-<p><strong>Version:</strong> v0.16.1</p>
+<p><strong>Version:</strong> v0.16.2</p>
 <hr>
 <h2 id="1-overview">1. Overview</h2>
 <p>Eskiu is a statically typed, compiled systems language. It lowers to native code through LLVM, manages memory explicitly (no garbage collector), and interoperates directly with C. A <code>.esk</code> file can also be run on the spot with <code>eskiuc run</code> (or a <code>#!/usr/bin/env -S eskiuc run</code> shebang), so the same source is both a compiled artifact and a runnable script. This document is the language reference: syntax, type system, semantics, and ABI.</p>
@@ -3324,7 +3324,7 @@ up by name in any case, <code>Response_text</code> returns the body as a NUL-ter
 <code>method</code> (<code>"GET"</code>), <code>timeout_ms</code> (30000, for the whole call including redirects; 0 for
 none; the host name lookup is not bounded by it), <code>follow_redirects</code> (1),
 <code>max_redirects</code> (10), <code>max_body</code> (64 MiB; a longer body is <code>FETCH_ERR_TOO_LARGE</code>),
-<code>user_agent</code> (<code>"eskiu/0.16.1"</code>; empty sends none), <code>verify_tls</code> (1), <code>ca_file</code> (a PEM
+<code>user_agent</code> (<code>"eskiu/0.16.2"</code>; empty sends none), <code>verify_tls</code> (1), <code>ca_file</code> (a PEM
 bundle trusted besides the system store) and <code>body_sent</code> (null; when set, the body's bytes
 sent so far are stored there with an atomic store as they go, so another thread can show an
 upload's progress). <code>FetchOptions_header(&amp;o, name, value)</code> returns

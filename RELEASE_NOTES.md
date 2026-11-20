@@ -1,34 +1,29 @@
-# Eskiu 0.16.1
+# Eskiu 0.16.2
 
-Eskiu 0.16.1 fixes HTTPS on Windows with MSYS2's OpenSSL 4 and WebAssembly builds with newer
-emsdks, says which toolchain is missing for a cross build, and adds the star-first spelling
-of a const pointer and `-Wformat` checks for printf-style functions a program declares.
+Eskiu 0.16.2 passes large structs between functions by pointer, which makes programs that pass
+them by value smaller and faster, most of all on WebAssembly.
+
+## Changed
+
+- **Large structs pass by pointer.** A struct, union or array parameter over 16 bytes now
+  passes between Eskiu functions as a pointer to a copy the caller makes, on every target and
+  call path (direct, method, generic, interface, function value, closure, async). LLVM used to
+  spread such a struct into one argument per field at each call. A call taking a large struct
+  literal shrinks to about a fifth: an element of the ui package (`Row(Style{padding: 8}) {}`)
+  costs about 105 bytes of WebAssembly instead of 468, and a ui app's module is 16% smaller.
+  A struct literal also starts as a copy of its type's constant defaults and stores only the
+  fields it gives. By-value semantics are unchanged: a function that changes its parameter
+  never changes the caller's value. `extern` C functions, `export` entries and C callbacks
+  keep the C ABI.
+- **Rebuild everything.** Objects built by 0.16.1 do not link with objects built by 0.16.2.
 
 ## Fixed
 
-- **HTTPS with OpenSSL 4.** `<fetch>` also loads OpenSSL 4 (`libssl-4-x64.dll`,
-  `libssl.so.4`, `libssl.4.dylib`, Homebrew's `openssl@4`). MSYS2 ships OpenSSL 4.1, so an
-  `https://` request on Windows failed with `FETCH_ERR_NO_TLS`.
-- **WebAssembly with exceptions.** Newer emsdks no longer link in C++ mode by default when
-  the driver is emcc, so a program that throws or catches had `__cxa_begin_catch` and
-  `__cxa_end_catch` undefined. eskiuc now passes `-sDEFAULT_TO_CXX=1` when the program uses
-  exceptions.
-- **A missing cross toolchain is named.** A build for WebAssembly, Android, iOS or visionOS
-  without emcc, the NDK or xcrun says which one is missing and how to get it, instead of
-  falling back to the host's cc and its "unrecognized option" errors.
-- **Self-hosted compiler.** A member access through a const pointer emitted invalid IR, and
-  reassigning a local `int* const` was not an error.
+- **Self-hosted compiler.** "cannot assign to read-only location" names the location, as
+  eskiuc does.
 
-## Added
-
-- **`*T const`.** A const pointer can be written star first, `*T const` (and
-  `const *T const`), the same type as `T* const`. The docs and the Book now write every
-  pointer star first: `*T`, `const *T`, `*T const`.
-- **`-Wformat` for your own printf-style functions.** A variadic function or extern whose
-  last fixed parameter is `string fmt` has its calls checked like printf's.
-
-Code that compiles with 0.16.0 compiles with 0.16.1. The full list is in the
-[changelog](https://eskiu-lang.org/changelog.html).
+Code that compiles with 0.16.1 compiles with 0.16.2. The full list is in the
+[CHANGELOG](https://github.com/eskiu-lang/eskiu/blob/main/CHANGELOG.md).
 
 ## Install
 

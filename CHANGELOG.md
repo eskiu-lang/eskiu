@@ -7,7 +7,7 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
-## [Unreleased]
+## [0.16.2] - 2026-11-20
 
 ### Changed
 
@@ -18,11 +18,17 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   takes a large struct literal is much smaller: a `Row(Style{padding: 8}) {}` element of the
   ui package costs about 105 bytes of WebAssembly instead of 468. A struct literal starts as
   a copy of its type's constant default value and stores only the fields it gives. Extern C
-  functions, `export` entries and C callbacks keep the C ABI. Both compilers.
+  functions, `export` entries and C callbacks keep the C ABI. Both compilers. Objects built
+  by 0.16.1 do not link with ones built by 0.16.2: rebuild everything.
+
+### Fixed
+
+- The self-hosted compiler names the location in "cannot assign to read-only location 'b'",
+  as eskiuc does.
 
 ---
 
-## [0.16.1] - 2026-11-16
+## [0.16.1]
 
 ### Added
 
