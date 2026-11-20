@@ -328,6 +328,46 @@ int sema_is_readonly_lvalue(Sema* s, *ExprNode e) {
     return 0;
 }
 
+// The root identifier of an lvalue (through `*`, `.` and `[]`), for a readable diagnostic;
+// "" when there is none.
+string sema_root_name(*ExprNode e) {
+    while (e != null) {
+        if (e.kind == EK_IDENT) {
+            return e.sval;
+        }
+        if (e.kind == EK_UNARY || e.kind == EK_MEMBER || e.kind == EK_INDEX) {
+            e = e.a;
+        } else {
+            return "";
+        }
+    }
+    return "";
+}
+
+// The name a read-only lvalue is reported by (as eskiuc's assignsToConst): a const variable's
+// name; through a pointer to const, the pointer's root name, or the member written.
+string sema_readonly_name(Sema* s, *ExprNode e) {
+    while (e != null) {
+        if (e.kind == EK_IDENT) {
+            return e.sval;
+        }
+        if (e.kind == EK_UNARY) {
+            return sema_root_name(e.a);
+        }
+        if (e.kind == EK_MEMBER || e.kind == EK_INDEX) {
+            string bt = sema_strip_nullable(sema_infer_type(s, e.a));
+            string bc = sema_canon(s, bt);
+            if ((int)bc[0] == 42) {
+                return e.kind == EK_MEMBER ? e.sval : sema_root_name(e.a);
+            }
+            e = e.a;
+        } else {
+            return "";
+        }
+    }
+    return "";
+}
+
 // Owned substring s[a, b) with leading/trailing spaces trimmed.
 string sema_trim_sub(string s, int a, int b) {
     while (a < b && (int)s[a] == 32) {

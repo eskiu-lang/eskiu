@@ -133,7 +133,9 @@ void sema_expr_binary(Sema* s, *ExprNode e, int k) {
         sema_error(s, "cannot assign to this expression: it is not a variable, field, element, or dereference");
     }
     if (sema_is_assign(e.sval) == 1 && sema_is_readonly_lvalue(s, e.a) == 1) {
-        sema_error(s, "cannot assign to read-only location");
+        string cname = sema_readonly_name(s, e.a);
+        dprintf(2, "error: %s:%d:%d: cannot assign to read-only location '%s'\n", s.filename, s.line, s.col, cname);
+        s.had_error = 1;
     }
     if (sema_is_assign(e.sval) == 1) {
         sema_check_captured_write(s, e.a);
