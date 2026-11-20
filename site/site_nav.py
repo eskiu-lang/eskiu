@@ -46,6 +46,10 @@ NAV = [
          "Notas de versión", "Qué cambió en cada versión"),
     ]),
     ("ecosystem", "Ecosystem", "Ecosistema", [
+        ("ui.html", "Eskiu UI", "Native apps for phones, desktops and the web",
+         "Eskiu UI", "Apps nativas para teléfonos, escritorio y la web"),
+        ("gpu.html", "GPU", "Compute, 3D models and machine learning on WebGPU",
+         "GPU", "Cómputo, modelos 3D y aprendizaje automático sobre WebGPU"),
         ("packages.html", "Packages", "Libraries that extend the language",
          "Paquetes", "Bibliotecas que amplían el lenguaje"),
         ("showcase.html", "Built with Eskiu", "Projects and case studies",
