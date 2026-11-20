@@ -120,8 +120,9 @@ first-class in the language without giving up general systems use.
   A reverse proxy in front of an Eskiu HTTP/1.1 or HTTP/2 server covers most uses today.
 - **ui on the web beyond one page.** Prerendering routes to HTML at build time, then
   server-side rendering with hydration, then server functions the ui tool generates.
-- **More ui hosts.** Windows and Linux, and a desktop renderer on `gpu` and `font` without
-  a webview.
+- **A desktop renderer for ui on `gpu` and `font`.** The native macOS, Linux (GTK 4) and
+  Windows (Win32) hosts exist (in Preview); a renderer of its own would draw the same on
+  every desktop, without the platform's widgets or a webview.
 - **Compile-time `derive`.** Generating code such as serializers from a struct's fields at
   compile time, with no metadata left in the binary. It adds language surface, so it waits
   until after 1.0.
