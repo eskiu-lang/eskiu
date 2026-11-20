@@ -8,6 +8,7 @@
 #   - `personality` function and `landingpad` on exception blocks
 #   - `@__cabi_*` callback thunks for C function pointers
 #   - `noundef` on scalar parameters and results, `nounwind` only where nothing can throw
+#   - a record over 16 bytes passed between Eskiu functions as a pointer to a copy
 #
 # Usage: ./tests/ir_golden.sh [path-to-eskiuc]
 
@@ -125,6 +126,29 @@ if "$ESKIUC" "$work/attrs.esk" --test-codegen > "$ir" 2>&1; then
 else
     bad "ir/noundef" "codegen failed: $(head -3 "$ir")"
 fi
+
+# 6. A record over 16 bytes goes between Eskiu functions as a pointer to the caller's copy
+#    (a struct literal is its own copy); 16 bytes or less stays a first-class value.
+cat > "$work/byptr.esk" <<'EOF'
+struct Big { int64 a; int64 b; int64 c; }
+struct Small { int64 a; int64 b; }
+int64 take(Big b, Small s) { b.a = b.a + s.a; return b.a; }
+int64 call(int64 x) { return take(Big{x, 2, 3}, Small{x, 1}); }
+int main() { return (int)call(1); }
+EOF
+for target in "arm64-apple-darwin" "x86_64-unknown-linux-gnu" "wasm32-unknown-emscripten"; do
+    ir="$work/byptr_$target.ll"
+    if "$ESKIUC" "$work/byptr.esk" --test-codegen --target "$target" > "$ir" 2>&1; then
+        if grep -q "^define noundef i64 @take(ptr noalias noundef align 8 dereferenceable(24) %b, %Small %s)" "$ir" &&
+                grep -q "call i64 @take(ptr %Big.init, %Small " "$ir"; then
+            ok "ir/byptr ($target)"
+        else
+            bad "ir/byptr ($target)" "$(grep -E '@take\(' "$ir")"
+        fi
+    else
+        bad "ir/byptr ($target)" "codegen failed"
+    fi
+done
 
 echo ""
 echo "Summary: $pass passed, $fail failed."

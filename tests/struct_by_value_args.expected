@@ -1,0 +1,22 @@
+sum 10 after 1 4
+twice 15 after 2
+literal 100
+result 23
+nested 10
+order 53 51
+rec 54432 after 51
+defaults 63 54
+method 104 208
+after method 51
+interface 312 after 51
+generic 9 51
+generic box 6
+fn value 60 after 51
+closure 151 151 after 51
+fn result 55 51
+closure result 9
+defaults image 18 after 7 1
+defaults literal 56
+array 15 after 1
+in try 60
+async 115 after 51

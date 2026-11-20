@@ -42,11 +42,12 @@ INPUTS="tests/c_abi_struct.esk tests/c_abi_callback.esk tests/c_abi_va_callback.
 
 # The lowered signatures in an IR file, one per line, sorted: `NAME<TAB>signature`. The C++
 # names a union's storage type `%U.union` and the self-host `%U`; only the spelling differs.
+# LLVM intrinsics (`@llvm.memset...`) are no C functions and are left out.
 sigs() {
     # An `export` function's C entry keeps its name; its Eskiu body is `NAME.esk`.
     local ex
     ex="$(grep -oE '^define internal [^@]*@[A-Za-z0-9_]+\.esk\(' "$1" | sed -E 's/.*@([A-Za-z0-9_]+)\.esk\(/\1/' | paste -sd'|' -)"
-    { grep -E '^(declare .*@|define internal .*@__cabi_)' "$1"
+    { grep -E '^(declare .*@|define internal .*@__cabi_)' "$1" | grep -v '@llvm\.'
       if [ -n "$ex" ]; then grep -E "^define (dso_local )?[^@]*@($ex)\\(" "$1"; fi; } \
         | sed -E 's/ %[A-Za-z0-9_.]+([,)])/\1/g; s/ *\{$//; s/^define (internal|dso_local) /define /; s/(%[A-Za-z0-9_]+)\.union/\1/g; s/ #[0-9]+//; s/noundef //g' \
         | sed -E "s/^([a-z]+ [^@]*@)([A-Za-z0-9_.]+)(\\(.*)$/\\2$TAB\\1\\2\\3/" \

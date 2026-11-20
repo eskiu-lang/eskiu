@@ -1,0 +1,175 @@
+// A struct over 16 bytes passed by value goes as a pointer to a copy the caller makes, on
+// every path: direct, method and generic calls, interfaces, function values, closures,
+// recursion, defaults and async. The callee's copy is its own: a change in it never
+// reaches the caller, and an argument is copied when it is evaluated.
+import <future>;
+import <futureval>;
+extern int printf(string fmt, ...);
+
+struct S {
+    int64 a;
+    int64 b;
+    int64 c;
+    int tag;
+}
+
+struct D {
+    int a = 7;
+    int b;
+    int64 c = -1;
+    S s = S{1, 2, 3, 4};
+    double d = 2.5;
+}
+
+struct Box<T> {
+    T v;
+    int n;
+}
+
+interface Summer {
+    int64 add(S s);
+}
+
+struct Acc {
+    int64 total;
+    int64 add(S s) {
+        s.a = s.a * 2;
+        self.total = self.total + s.a + s.b;
+        return self.total;
+    }
+}
+
+int64 sum(S s) {
+    int64 r = s.a + s.b + s.c + (int64)s.tag;
+    s.a = 1000;
+    s.tag = -1;
+    return r;
+}
+
+int64 twice(S s) {
+    s.b = s.b + 1;
+    int64 inner = sum(s);
+    return inner + s.b + s.a;
+}
+
+S make(int64 k) {
+    return S{k, k + 1, k + 2, (int)k};
+}
+
+S shift(S s, int64 d) {
+    s.a = s.a + d;
+    s.c = s.c - d;
+    return s;
+}
+
+int64 bump(S* p) {
+    p.a = p.a + 50;
+    return 0;
+}
+
+int64 pair(S x, int64 z, S y) {
+    x.a = 0;
+    return x.b + y.a + z;
+}
+
+int64 rec(S s, int n) {
+    if (n == 0) return s.a;
+    s.a = s.a + 1;
+    int64 deeper = rec(s, n - 1);
+    return deeper * 10 + s.a % 10;
+}
+
+int64 withdef(S s, int k = 3, S t = S{a: 9}) {
+    s.a = s.a + (int64)k;
+    return s.a + t.a + t.b;
+}
+
+T ident<T>(T x) {
+    return x;
+}
+
+int64 firsts<T>(Box<T> b, T extra) {
+    return (int64)b.n;
+}
+
+int64 dsum(D d) {
+    int64 r = (int64)d.a + (int64)d.b + d.c + d.s.a + d.s.tag + (int64)d.d;
+    d.a = 0;
+    d.s.a = 0;
+    return r;
+}
+
+int64 arr(int64[5] v) {
+    int64 s = 0;
+    for (i in 0..5) s += v[i];
+    v[0] = 77;
+    return s;
+}
+
+Future<T>* ready<T>(T v) {
+    Future<T>* f = future_new<T>();
+    Future_complete<T>(f, v);
+    return f;
+}
+
+async int64 later(S s, int64 k) {
+    int64 q = await ready<int64>(k);
+    s.a = s.a + q;
+    S u = shift(s, 1);
+    return s.a + u.a + u.c;
+}
+
+int main() {
+    S s = S{1, 2, 3, 4};
+    printf("sum %lld after %lld %d\n", sum(s), s.a, s.tag);
+    printf("twice %lld after %lld\n", twice(s), s.b);
+    printf("literal %lld\n", sum(S{10, 20, 30, 40}));
+    printf("result %lld\n", sum(make(5)));
+    printf("nested %lld\n", sum(shift(shift(s, 1), 2)));
+    printf("order %lld %lld\n", pair(s, bump(&s), s), s.a);
+    printf("rec %lld after %lld\n", rec(s, 3), s.a);
+    printf("defaults %lld %lld\n", withdef(s), withdef(s, 1, S{1, 1, 1, 1}));
+
+    Acc acc = Acc{0};
+    printf("method %lld %lld\n", acc.add(s), acc.add(s));
+    printf("after method %lld\n", s.a);
+    Summer sm = &acc;
+    printf("interface %lld after %lld\n", sm.add(s), s.a);
+
+    S g = ident<S>(s);
+    g.a = 9;
+    printf("generic %lld %lld\n", g.a, s.a);
+    Box<S> bx = Box<S>{s, 6};
+    printf("generic box %lld\n", firsts<S>(bx, s));
+
+    fn(S)->int64 f = sum;
+    printf("fn value %lld after %lld\n", f(s), s.a);
+    int64 extra = 100;
+    fn(S)->int64 cl = int64(S x) {
+        x.a = x.a + extra;
+        return x.a;
+    };
+    printf("closure %lld %lld after %lld\n", cl(s), cl(s), s.a);
+    fn(S, int64)->S mover = shift;
+    S m = mover(s, 4);
+    printf("fn result %lld %lld\n", m.a, s.a);
+    fn(int64)->S mk = S(int64 k) { return S{k, k, k, 0}; };
+    printf("closure result %lld\n", sum(mk(3)));
+
+    D d = D{b: 5};
+    printf("defaults image %lld after %d %lld\n", dsum(d), d.a, d.s.a);
+    printf("defaults literal %lld\n", dsum(D{a: (int)s.a, d: 1.0}));
+
+    int64[5] v = {1, 2, 3, 4, 5};
+    printf("array %lld after %lld\n", arr(v), v[0]);
+
+    try {
+        printf("in try %lld\n", sum(s));
+    } catch (int e) {
+        printf("caught %d\n", e);
+    }
+
+    Future<int64>* fu = later(s, 5);
+    printf("async %lld after %lld\n", fu.value, s.a);
+    return 0;
+}
