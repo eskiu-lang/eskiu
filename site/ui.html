@@ -26,57 +26,70 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="page.css?v=02bd79b37f" />
   <style>
-    .ui-hero { padding-block: 64px 24px; text-align: center; }
+    .ui-hero { padding-block: 64px 8px; text-align: center; }
     .ui-hero .eyebrow { margin-bottom: 18px; }
     .ui-hero h1 { margin: 0 auto 22px; max-width: 900px; font-family: var(--serif); font-weight: 800;
                   font-size: clamp(42px, 7vw, 76px); line-height: 1.02; letter-spacing: -0.035em; color: var(--ink); }
-    .ui-hero .lede { margin: 0 auto 32px; max-width: 720px; }
+    .ui-hero .lede { margin: 0 auto 32px; max-width: 680px; }
     .ui-cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
-    .ui-cta a { display: inline-flex; align-items: center; height: 54px; padding: 0 26px; border-radius: 14px;
+    .ui-cta a { display: inline-flex; align-items: center; height: 54px; padding: 0 26px; border-radius: 9999px;
                 font-weight: 700; font-size: 16px; border: 1px solid var(--rule); }
     .ui-cta .dark { background: var(--ink); color: var(--paper); }
-    .ui-cta .dark:hover { background: var(--purple); border-color: var(--purple); color: var(--on-accent); }
+    .ui-cta .dark:hover { opacity: 0.85; }
     .ui-cta .line { color: var(--ink); background: var(--surface); }
     .ui-cta .line:hover { background: var(--ink); color: var(--paper); }
     .ui-shot { max-width: 1100px; margin: 40px auto 0; }
-    .ui-shot img { display: block; width: 100%; height: auto; border: 0; border-radius: 0; box-shadow: none; }
-    .ui-row { display: grid; gap: 28px; padding-block: 64px; border-top: 1px solid var(--rule); align-items: center;
-              max-width: 1180px; margin: 0 auto; scroll-margin-top: 96px; }
-    .ui-row h2 { margin: 0 0 14px; font-family: var(--serif); font-weight: 700; font-size: clamp(30px, 3.4vw, 40px);
+    .ui-shot img, .ui-wide img { display: block; width: 100%; height: auto; border: 0; border-radius: 0; box-shadow: none; }
+    .ui-plat { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; max-width: 1180px;
+               margin: 40px auto 0; padding: 0; list-style: none; }
+    .ui-plat li { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; border: 1px solid var(--rule);
+                  border-radius: 14px; background: var(--surface); font-size: 14px; color: var(--muted); }
+    .ui-plat b { color: var(--ink); font-size: 16px; }
+    .ui-plat em { align-self: flex-start; margin-top: 6px; padding: 1px 8px; border-radius: 9999px; font-style: normal;
+                  font-size: 12px; font-weight: 600; background: var(--lilac-2); color: var(--ink2); }
+    .ui-sec { padding-block: 72px; border-top: 1px solid var(--rule); max-width: 1180px; margin: 0 auto; scroll-margin-top: 96px; }
+    .ui-sec h2 { margin: 0 0 14px; font-family: var(--serif); font-weight: 700; font-size: clamp(30px, 3.4vw, 40px);
                  line-height: 1.1; letter-spacing: -0.02em; color: var(--ink); }
-    .ui-row p { margin: 0 0 16px; }
-    .ui-row pre { margin: 0; }
-    .ui-row img { display: block; width: 100%; height: auto; border-radius: 20px; }
-    .ui-row ul { margin: 0 0 16px; padding-left: 1.2em; }
-    .ui-row li { margin-bottom: 6px; }
-    .ui-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-    .ui-stat { background: var(--surface); border: 1px solid var(--rule); border-radius: 16px; padding: 18px; }
-    .ui-stat b { display: block; font-family: var(--serif); font-weight: 800; font-size: 34px; color: var(--ink);
-                 letter-spacing: -0.02em; line-height: 1.1; }
-    .ui-stat span { font-size: 15px; color: var(--muted); }
-    .ui-hosts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 8px; }
-    .ui-hosts div { background: var(--lilac-2); border-radius: 14px; padding: 14px 16px; font-size: 15px; line-height: 1.5; }
-    .ui-hosts b { display: block; color: var(--ink); }
-    .ui-note { max-width: 1180px; margin: 0 auto; }
-    .ui-wide { padding-block: 64px; border-top: 1px solid var(--rule); max-width: 1180px; margin: 0 auto;
-               scroll-margin-top: 96px; }
-    .ui-wide h2 { margin: 0 0 14px; font-family: var(--serif); font-weight: 700; font-size: clamp(30px, 3.4vw, 40px);
-                  line-height: 1.1; letter-spacing: -0.02em; color: var(--ink); }
-    .ui-wide > p { margin: 0 0 16px; max-width: 760px; }
+    .ui-sec > p { margin: 0 0 16px; max-width: 720px; }
+    .ui-pillars { display: grid; gap: 16px; }
+    .ui-pillars article { background: var(--surface); border: 1px solid var(--rule); border-radius: 20px; padding: 26px; }
+    .ui-pillars h3 { margin: 0 0 10px; font-size: 20px; color: var(--ink); }
+    .ui-pillars p { margin: 0 0 14px; font-size: 16px; line-height: 1.55; }
+    .ui-pillars ul { margin: 0; padding-left: 1.1em; font-size: 15px; line-height: 1.6; color: var(--ink2); }
+    .ui-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; align-items: center; }
+    .ui-split > *, .ui-pillars > *, .ui-nums > *, .ui-steps > *, .ui-links > * { min-width: 0; }
+    .ui-split pre { overflow-x: auto; }
+    .ui-split pre { margin: 20px 0 0; }
+    .ui-split img { display: block; width: 100%; height: auto; border-radius: 20px; }
     .ui-wide figure { margin: 32px 0 0; }
-    .ui-wide img { display: block; width: 100%; height: auto; border: 0; border-radius: 0; box-shadow: none; }
-    .ui-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin-top: 28px; }
-    .ui-grid div { background: var(--surface); border: 1px solid var(--rule); border-radius: 16px; padding: 18px; font-size: 15px;
-                   line-height: 1.5; color: var(--ink2); }
-    .ui-grid b { display: block; margin-bottom: 4px; color: var(--ink); font-size: 16px; }
-    .ui-grid code { font-size: 13px; }
-    @media (min-width: 960px) {
-      .ui-wide > p { font-size: 18px; }
-      .ui-row { grid-template-columns: 1fr 1.1fr; gap: 64px; }
-      .ui-row.flip > :first-child { order: 2; }
-      .ui-row p, .ui-row li { font-size: 18px; }
+    .ui-more { display: inline-block; margin-top: 8px; font-weight: 600; }
+    .ui-nums { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .ui-nums div { background: var(--surface); border: 1px solid var(--rule); border-radius: 16px; padding: 20px; }
+    .ui-nums b { display: block; font-family: var(--serif); font-weight: 800; font-size: 36px; color: var(--ink);
+                 letter-spacing: -0.02em; line-height: 1.1; }
+    .ui-nums span { font-size: 15px; color: var(--muted); }
+    .ui-steps { display: grid; gap: 12px; margin: 28px 0 0; padding: 0; list-style: none; counter-reset: step; }
+    .ui-steps li { counter-increment: step; background: var(--surface); border: 1px solid var(--rule); border-radius: 16px;
+                   padding: 20px; font-size: 15px; line-height: 1.55; }
+    .ui-steps li::before { content: counter(step); display: inline-grid; place-items: center; width: 28px; height: 28px;
+                           margin-bottom: 10px; border-radius: 9999px; background: var(--ink); color: var(--paper);
+                           font-weight: 700; font-size: 14px; }
+    .ui-steps .cmd { display: block; margin-bottom: 6px; font-size: 15px; color: var(--ink); }
+    .ui-links { display: grid; gap: 12px; margin-top: 28px; }
+    .ui-links a { display: block; padding: 18px 20px; border: 1px solid var(--rule); border-radius: 16px; background: var(--surface); }
+    .ui-links b { display: block; color: var(--ink); }
+    .ui-links span { font-size: 15px; color: var(--muted); }
+    .ui-note { max-width: 1180px; margin: 0 auto; }
+    @media (min-width: 720px) {
+      .ui-plat { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+      .ui-nums { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .ui-steps, .ui-links { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }
-      .ui-cta a { border-radius: 9999px; } .ui-cta .dark:hover { background: var(--ink); border-color: var(--ink); opacity: 0.85; color: var(--paper); }
+    @media (min-width: 960px) {
+      .ui-pillars { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .ui-split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; }
+      .ui-sec > p { font-size: 18px; }
+    }
   </style>
 <link rel="stylesheet" href="layout.css?v=00ed1e5cf8" />
 </head>
@@ -97,11 +110,7 @@
     <section class="bar ui-hero">
       <div class="eyebrow">eskiu-packages/ui / v0.7.0</div>
       <h1>Native apps, written in Eskiu</h1>
-      <p class="lede">
-        Write the interface once as Eskiu functions. It draws UIKit views on iOS,
-        <code>android.view</code> views on Android, the DOM on the web, AppKit on macOS, GTK 4 on
-        Linux and Win32 on Windows, from the same code.
-      </p>
+      <p class="lede">One codebase for iOS, Android, the web and the desktop. Each platform draws its own controls, so the app looks and behaves the way people expect there.</p>
       <div class="ui-cta">
         <a class="dark" href="https://github.com/eskiu-packages/ui/blob/main/docs/getting-started.md">Get started</a>
         <a class="line" href="https://github.com/eskiu-packages/ui">View on GitHub</a>
@@ -109,24 +118,35 @@
       <figure class="ui-shot">
         <img src="../assets/ui-platforms.png" alt="The same Eskiu travel app on iOS, Android and the web: a list of places, the page for Oaxaca and the page for Kyoto" width="1187" height="875" />
       </figure>
+      <ul class="ui-plat" aria-label="Platforms"><li><b>iOS</b>UIKit</li><li><b>Android</b>android.view</li><li><b>Web</b>The DOM, from WebAssembly</li><li><b>macOS</b>AppKit<em>Preview</em></li><li><b>Linux</b>GTK 4<em>Preview</em></li><li><b>Windows</b>Win32<em>Preview</em></li></ul>
     </section>
 
     <div class="bar">
-      <section class="ui-row" id="apps">
-        <div>
-          <h2>Create native apps for Android, iOS and the web</h2>
-          <p>
-            A component is an ordinary Eskiu function. It calls <code>Column</code>,
-            <code>Text</code> and <code>Button</code> to build the view, and keeps its state in
-            signals. The app compiles to machine code on iOS and Android and to WebAssembly on
-            the web.
-          </p>
-          <p>
-            Text, buttons, fields, switches, lists, modals and alerts are the platform's own
-            controls, with the platform's accessibility.
-          </p>
+      <section class="ui-sec" id="why" aria-label="What you get">
+        <div class="ui-pillars">
+          <article>
+            <h3>Native, not a lookalike</h3>
+            <p>Text, buttons, fields, lists and alerts are the platform's own controls, laid out by Yoga, the engine React Native uses.</p>
+            <ul><li>VoiceOver, TalkBack and the system's text size</li><li>Passwords, keyboards and autofill in forms</li><li>Dark mode, safe areas, haptics, sharing</li><li>Camera, location and notifications as packages</li></ul>
+          </article>
+          <article>
+            <h3>Quick to build</h3>
+            <p>Save a file and the running app changes in a third of a second, on the same screen, with its state kept.</p>
+            <ul><li>A themed kit: forms, pickers, menus, toasts</li><li>Navigation that is screens on phones and URLs on the web</li><li>Errors that name the element and its source line</li><li>Native code in Swift, Kotlin or JavaScript when you need it</li></ul>
+          </article>
+          <article>
+            <h3>Made for agents and tests</h3>
+            <p>A coding agent can build a screen, look at it and tap through it without a person in the loop.</p>
+            <ul><li><code>ui agent</code>: the tree, screenshots, taps and typing</li><li><code>ui test</code>: one <code>.uitest</code> file for every platform</li><li>A clock the test controls, so tests never sleep</li><li>Nothing of it in a release build</li></ul>
+          </article>
         </div>
-        <pre><code>import &lt;ui&gt;;
+      </section>
+
+      <section class="ui-sec ui-split" id="code">
+        <div>
+          <h2>A screen is an Eskiu function</h2>
+          <p>Components are ordinary functions that keep their state in signals. When a signal changes, only the blocks that read it run again. The app compiles to machine code on phones and desktops and to WebAssembly on the web, with no JavaScript bridge in between.</p>
+          <pre><code>import &lt;ui&gt;;
 
 void Counter() {
     Column(Style{padding: 24, gap: 12}) {
@@ -138,395 +158,38 @@ void Counter() {
         }
     }
 }</code></pre>
-      </section>
-
-      <section class="ui-row flip" id="how">
-        <div>
-          <h2>Written in Eskiu, drawn by the platform</h2>
-          <p>
-            Components, state and layout rules are the same Eskiu code everywhere. Each frame,
-            the core sends the platform one buffer with the changes, and a thin host applies
-            it to real views laid out by Yoga, the engine React Native uses.
-          </p>
-          <div class="ui-hosts">
-            <div><b>iOS</b>UIKit, from Objective-C++</div>
-            <div><b>Android</b>android.view, from Java and JNI</div>
-            <div><b>Web</b>The DOM, from WebAssembly</div>
-            <div><b>macOS</b>AppKit, from Objective-C++</div>
-            <div><b>Linux</b>GTK 4, from C++</div>
-            <div><b>Windows</b>Win32 common controls, from C++</div>
-          </div>
         </div>
         <img src="../assets/ui-lab.png" alt="An Eskiu task app on iOS and Android: a progress card, filters and a list of tasks with colored tags" width="1200" height="1200" loading="lazy" />
       </section>
 
-      <section class="ui-row" id="access">
-        <div>
-          <h2>Accessible, with forms that work</h2>
-          <p>
-            Every element says what it is to VoiceOver, TalkBack and the other screen readers:
-            <code>Style</code> gives it a role (a checkbox, a tab, a heading, a progress bar), its
-            state (checked, selected, expanded) and words for its value and hint, and
-            <code>disabled</code> turns off a control and everything inside it. The kit's
-            components set them for you, and text follows the size the user chose in the
-            system's settings.
-          </p>
-          <p>
-            A field can be a password, ask for an email or a number, label its return key, take
-            several lines and let the platform fill in a saved login or a one-time code;
-            <code>ui_on_submit</code> gets the text when the user presses return. The kit speaks
-            English and Spanish, or your own words.
-          </p>
-        </div>
-        <pre><code>Pressable(Style{label: "Agree", role: RoleCheckbox,
-                checked: agree.get() ? CheckOn : CheckOff},
-    void() { agree.set(!agree.get()); }) { ... }
-
-ui_on_submit(void(string text) { sign_in(text); });
-TextInput(Input{value: password.get(), label: "Password",
-                secure: true, return_key: ReturnGo,
-                autofill: AutofillPassword},
-    void(string text) { password.set(text); });</code></pre>
-      </section>
-
-      <section class="ui-row flip" id="fast">
-        <div>
-          <h2>Updates that touch only what changed</h2>
-          <p>
-            A block records the signals it reads. When one changes, only that block runs again
-            and its children are matched by key, so a list keeps each row's state when it is
-            reordered. Virtual lists mount only the rows near the viewport, so a million rows
-            cost what a screenful does.
-          </p>
-          <p>
-            Hooks, keys and memos are checked as the app runs, and a mistake stops with where
-            it happened: <code>in Column[0] &gt; TodoRow[key 3]</code>.
-          </p>
-          <p>
-            An exception does not close the app. A render that throws shows the nearest
-            <code>ErrorBoundary</code>&rsquo;s fallback, and nothing of that render reaches the
-            screen. A handler or an effect that throws is reported, and the app goes on.
-          </p>
-        </div>
-        <div class="ui-stats">
-          <div class="ui-stat"><b>8.1 ms</b><span>to mount 10,000 rows</span></div>
-          <div class="ui-stat"><b>5.9 ms</b><span>to reverse all 10,000</span></div>
-          <div class="ui-stat"><b>1.2 ms</b><span>when a signal every row reads changes</span></div>
-          <div class="ui-stat"><b>0</b><span>allocations left after 10,000 mounts and unmounts</span></div>
-        </div>
-      </section>
-
-      <section class="ui-row" id="dev">
-        <div>
-          <h2>See each change in a third of a second</h2>
-          <p>
-            <code>ui serve</code> watches the app and the packages it depends on, and builds
-            again when a file changes. On the web the page reloads, keeping its URL and its
-            saved data. On the simulator and on Android the running app starts again on the new
-            code in the same process, so nothing is installed or launched again.
-          </p>
-          <p>
-            A reload keeps the screen you were on and the values of your signals. A build that
-            fails shows the compiler's errors over the app until the next one works.
-          </p>
-          <div class="ui-stats">
-            <div class="ui-stat"><b>0.3 s</b><span>from saving to the change on the iOS simulator</span></div>
-            <div class="ui-stat"><b>0.4 s</b><span>on an Android emulator</span></div>
-            <div class="ui-stat"><b>0.6 s</b><span>in the browser</span></div>
-            <div class="ui-stat"><b>0</b><span>reinstalls, unless the native code changes</span></div>
-          </div>
-        </div>
-        <pre><code>$ ui serve ios
-ui: built in 2.4 s
-Watching for changes
-ui: changed, building
-Restarted the app on the new build
-ui: built in 0.3 s
-
-<span class="c"># measured with the kit gallery on an Apple-silicon Mac</span></code></pre>
-      </section>
-
-      <section class="ui-row flip" id="agents">
-        <div>
-          <h2>Built for agents and tests</h2>
-          <p>
-            <code>ui agent</code> drives the running app on the web, iOS, Android, macOS, Linux
-            and Windows with one small set of operations: read the element tree and the layout,
-            take a screenshot, tap, type, scroll, go back, and read the state, the logs and the
-            frame times. A coding agent can build a screen, look at it and try it without a
-            person in the loop.
-          </p>
-          <p>
-            The test owns the clock. Animations and timers move only when a step says
-            <code>clock +300</code> or <code>clock settle</code>, so nothing changes between two
-            steps and a test never sleeps. <code>ui test</code> runs the same
-            <code>.uitest</code> files on every host, and checks text, state, frames and
-            screenshots. With Eskiu 0.15 the tree and runtime errors name each element's source
-            line.
-          </p>
-          <p>
-            None of this is in a release build: the driver is compiled out. Every
-            <code>ui new</code> app starts with a test and an <code>AGENTS.md</code>, and the
-            ui repository's CI runs the same checks on every host with speed budgets.
-          </p>
-        </div>
-        <pre><code>$ ui agent web tree "tap add" "type title Milk" "screenshot out.png"
-$ ui agent ios --json tap add clock settle layout
-
-<span class="c"># tests/ui/counter.uitest</span>
-expect count text "Count: 0"
-tap Increment
-repeat 2 tap Increment
-expect count text "Count: 3"
-expect screenshot counted 0.5%
-
-$ ui test web ios android macos</code></pre>
-      </section>
-
-      <section class="ui-wide" id="kit">
-        <h2>Overlays, pickers and toasts</h2>
-        <p>
-          <code>&lt;ui/kit&gt;</code> is a set of themed components built from the same
-          elements: cards, buttons, fields, checkboxes, tabs and bars, and the things that open
-          over the content. A <code>Popover</code> places itself next to what opened it, above
-          or below, inside the window. <code>DatePicker</code>, <code>Select</code>,
-          <code>DropdownMenu</code>, <code>ColorPicker</code> and <code>Tooltip</code> are built
-          on it, and <code>kit_toast</code> shows a message for a few seconds.
-        </p>
-        <p>The theme follows the system's light or dark appearance, or one you set.</p>
+      <section class="ui-sec ui-wide" id="kit">
+        <h2>Components that come ready</h2>
+        <p><code>&lt;ui/kit&gt;</code> has cards, buttons, fields, checkboxes, tabs, bars, a calendar, menus, popovers and toasts, themed in light and dark, in English or Spanish, with their roles and states for screen readers.</p>
+        <a class="ui-more" href="ui-components.html">See every component and API &rarr;</a>
         <figure>
           <img src="../assets/ui-overlays.png" alt="The Explore app's trip planner: a calendar open under the date field on iOS, the travelers menu open on Android, and a toast saying the trip to Kyoto is saved on the web" width="1187" height="875" loading="lazy" />
         </figure>
       </section>
 
-      <section class="ui-row" id="motion">
-        <div>
-          <h2>Motion and gestures</h2>
-          <p>
-            A style can move, scale and turn an element and fade it, and
-            <code>transition_ms</code> animates each change on the platform: UIKit animations,
-            Android's view animator and CSS transitions. A spring is one of the curves.
-          </p>
-          <p>
-            <code>ui_on_pan</code> reports a drag with its distance and speed, and takes over
-            from a button inside once the finger moves. <code>use_animated</code> moves a number
-            to its new value, for what the platform cannot animate. The kit's
-            <code>SwipeToDelete</code> is built from the two.
-          </p>
-          <p>
-            Animations run on the display's own clock (<code>CADisplayLink</code>,
-            <code>Choreographer</code>, <code>requestAnimationFrame</code>): they can repeat, go
-            back and forth, chain keyframes and say when they end. <code>use_frame</code> hands
-            the same clock to a game loop, and the <a href="packages.html#canvas">canvas</a>
-            package draws sprites on it.
-          </p>
-        </div>
-        <pre><code>*Signal&lt;int&gt; dx = use_signal&lt;int&gt;(0);
-*Signal&lt;bool&gt; held = use_signal&lt;bool&gt;(false);
-ui_on_pan(void(Pan p) {
-    held.set(p.phase == PanBegan || p.phase == PanMoved);
-    dx.set(held.get() ? p.dx : 0);
-});
-Row(Style{translate_x: dx.get(),
-          transition_ms: held.get() ? 0 : 250,
-          easing: EaseSpring}) {
-    Text("Drag me");
-}</code></pre>
+      <section class="ui-sec" id="numbers" aria-label="Numbers">
+        <div class="ui-nums"><div><b>0.3 s</b><span>from saving a file to the change on the iOS simulator</span></div><div><b>8.1 ms</b><span>to mount a list of 10,000 rows</span></div><div><b>6</b><span>platforms from one codebase</span></div><div><b>0</b><span>reinstalls while you work, unless native code changes</span></div></div>
       </section>
 
-      <section class="ui-wide" id="system">
-        <h2>The phone's services, from one API</h2>
-        <p>
-          What an app asks of the system has one name on every platform, and each host answers
-          with the platform's own service.
-        </p>
-        <div class="ui-grid">
-          <div><b>Light and dark</b><code>ui_color_scheme()</code> and the kit's themes follow the system as it changes.</div>
-          <div><b>Accessibility</b>Labels for VoiceOver, TalkBack and screen readers, the text size, reduced motion and announcements.</div>
-          <div><b>Language</b>The user's locale and whether it reads right to left.</div>
-          <div><b>Network</b><code>ui_fetch</code> through <code>NSURLSession</code>, <code>HttpURLConnection</code> and the browser's <code>fetch</code>.</div>
-          <div><b>Saved data</b>Small values that outlive the app, and a data directory for files.</div>
-          <div><b>Share and clipboard</b>The system's share sheet, copy and paste.</div>
-          <div><b>Haptics</b>Selection, impact and notification feedback, a vibration on the web.</div>
-          <div><b>Timers</b><code>use_interval</code> and <code>use_timeout</code>, kept by the platform's clock.</div>
-          <div><b>Keyboard and insets</b>The safe area and the keyboard, or the whole screen edge to edge; a focused field scrolls into view.</div>
-          <div><b>Lifecycle</b><code>use_app_state</code> is told when the app goes to the background and comes back.</div>
-          <div><b>Launch screen</b>A color and an image from <code>ui.toml</code>, held while fonts and saved state load.</div>
-          <div><b>App settings</b>The version and build, and <code>[env]</code> values that differ between development and the stores.</div>
-          <div><b>Cached files</b>A remote image or sound downloaded once, kept as a file across launches.</div>
-        </div>
-      </section>
-
-      <section class="ui-row flip" id="navigation">
-        <div>
-          <h2>Screens on the phone, pages on the web</h2>
-          <p>
-            A router holds a stack of routes and a navigator draws it. On iOS and Android each
-            route is a screen that slides in, with the back button and the edge swipe. On the
-            web each route is a URL, and the browser's back and forward buttons move the app.
-            Deep links open their screen on all three.
-          </p>
-          <p>The screens under the top stay mounted, so going back finds them as they were.</p>
-          <p>
-            In a wide window, a tablet or a browser on a computer, the kit's text and controls
-            get denser and the starter moves its tabs to a sidebar, so the web build reads as a
-            web app and the phone keeps its own layout.
-          </p>
-        </div>
-        <pre><code>Navigator(router, void(string route) {
-    string id = route_param("/places/:id", route, 0);
-    if (id != null) { PlacePage(router, atoi(id)); }
-    else { PlaceList(router); }
-});
-
-<span class="c">// elsewhere</span>
-router.push("/places/2");
-router.back();</code></pre>
-      </section>
-
-      <section class="ui-row" id="native">
-        <div>
-          <h2>Native code when you need it</h2>
-          <p>
-            An app or a package ships code per platform in <code>native/</code>: Objective-C or
-            Swift on iOS, Java, Kotlin or C on Android, JavaScript on the web. Eskiu calls it
-            through <code>extern</code> functions, it answers with events, and it can register
-            its own views for <code>NativeView</code>.
-          </p>
-          <p>
-            Third-party libraries come from <code>ui.toml</code>: Maven dependencies build through
-            Gradle and Swift packages through Xcode, and a package brings its own to every app
-            that uses it. Packages made this way add the
-            <a href="packages.html#location">location</a>, <a href="packages.html#camera">camera</a>,
-            <a href="packages.html#barcode">barcode scanning</a>, <a href="packages.html#pedometer">step
-            counting</a>, <a href="packages.html#securestore">secure storage</a> and
-            <a href="packages.html#svg">SVG drawings</a>.
-          </p>
-        </div>
-        <pre><code><span class="c"># ui.toml</span>
-[app]
-name = "Explore"
-scheme = "places"
-
-[ios.spm]
-Collections = { url = "https://github.com/apple/swift-collections", from = "1.1.0" }
-
-[android]
-dependencies = ["com.google.android.material:material:1.12.0"]
-permissions = ["android.permission.CAMERA"]</code></pre>
-      </section>
-
-      <section class="ui-row flip" id="webapp">
-        <div>
-          <h2>Web apps on the desktop</h2>
-          <p>
-            An Eskiu program can also be the backend of a web front end, the way Tauri does it for
-            Rust. <code>&lt;ui/webapp&gt;</code> opens the page (a React bundle, or any HTML) in the
-            system&#x27;s webview: WKWebView on macOS, WebView2 on Windows and WebKitGTK on Linux.
-            The page calls the program&#x27;s commands with JSON arguments and gets JSON, strings or
-            bytes back, events go both ways, and the program serves files through URL schemes of
-            its own and opens the system&#x27;s dialogs.
-          </p>
-          <p>
-            The page talks to it through <code>@eskiu/webapp</code>, which has the shape of
-            <code>@tauri-apps/api</code> (<code>invoke</code>, <code>listen</code>,
-            <code>emit</code>, dialogs, the window), with TypeScript types. A project with
-            <code>[webapp] frontend</code> in <code>ui.toml</code> builds with
-            <code>ui build macos</code>, <code>linux</code> or <code>windows</code>, and
-            <code>--dev</code> loads the bundler&#x27;s dev server.
-          </p>
-        </div>
-        <pre><code>import &lt;ui/webapp&gt;;
-
-int main() {
-    webapp_command("greet", void(*WebappCall call) {
-        string name = call.string("name");
-        if (name == null) { call.reject("greet: no name"); return; }
-        call.resolve_string(name);
-    });
-    webapp_window(WebappWindow{title: "My App", width: 1280, height: 800});
-    return webapp_run();
-}
-
-<span class="c">// the page, with @eskiu/webapp</span>
-const hello = await invoke("greet", { name: "Ada" });</code></pre>
-      </section>
-
-      <section class="ui-row" id="ship">
-        <div>
-          <h2>From your editor to the stores</h2>
-          <p>
-            <code>ui open ios</code> and <code>ui open android</code> make the app's Xcode and
-            Android Studio projects and open them there. Each Run builds the Eskiu code first, so
-            an edit to a <code>.esk</code> file is in the next Run, with the native debugger, the
-            profilers and your own phone.
-          </p>
-          <p>
-            <code>ui release</code> builds for the App Store and Google Play: an IPA signed for
-            your team, and an App Bundle signed with an upload key it makes and keeps for you.
-            It checks the icon and the app's id before building, takes the build number from the
-            clock, and with <code>--upload</code> sends the iOS build to TestFlight. For the
-            desktop and the web it makes a signed <code>.app</code>, a Linux binary and a Windows
-            <code>.exe</code>, each with an archive to distribute, and a zip of the web build to
-            deploy.
-          </p>
-          <p>
-            <code>ui publish</code> makes a signed update of images, sounds and other assets that
-            installed apps pick up without a store release. On the web the first screen is
-            rendered into the page at build time, so it shows before the WebAssembly loads.
-          </p>
-        </div>
-        <pre><code><span class="c"># ui.toml</span>
-[app]
-name = "Explore"
-id = "com.yourcompany.explore"
-icon = "icon.png"
-version = "1.0.0"
-
-<span class="c"># Xcode, with each Run building the Eskiu code</span>
-$ ui open ios
-
-<span class="c"># the App Store and Google Play</span>
-$ ui release
-ios: build/ui/ios/release/Explore.ipa
-android: build/ui/android/release/Explore.aab</code></pre>
-      </section>
-
-      <section class="ui-row" id="start">
-        <div>
-          <h2>From nothing to a running app</h2>
-          <p>
-            The <code>ui</code> tool makes a project and builds or runs it on each platform. It
-            needs emscripten for the web, Xcode for iOS and the Android SDK for Android, and on
-            the desktop Xcode's command line tools on macOS, a C++ compiler with GTK 4 on Linux,
-            or MinGW-w64 on Windows.
-          </p>
-          <p>
-            Every element, hook and service is listed in
-            <a href="ui-components.html">Components and APIs</a>.
-          </p>
-          <p>
-            To start from a whole app, <a href="https://github.com/eskiu-packages/ui-starter">ui-starter</a>
-            has tabs, screens with links, a list from the network and a saved theme. For a package
-            with native code, start from
-            <a href="https://github.com/eskiu-packages/ui-package-template">ui-package-template</a>.
-          </p>
-        </div>
+      <section class="ui-sec" id="start">
+        <h2>From an empty folder to the stores</h2>
+        <p>The <code>ui</code> tool makes the project, runs it while you work and builds what you ship.</p>
+        <ol class="ui-steps"><li><code class="cmd">ui new myapp</code>A project with an app, a test and an <code>AGENTS.md</code> for coding agents.</li><li><code class="cmd">ui serve ios</code>Runs the app and rebuilds it on every save. Also <code>android</code>, <code>web</code>, <code>macos</code>, <code>linux</code> and <code>windows</code>.</li><li><code class="cmd">ui release</code>Signed builds for the App Store and Google Play, the desktop and the web. <code>ui open ios</code> works from Xcode.</li></ol>
+        <p style="margin-top: 28px">Install the tool:</p>
         <pre><code>git clone https://github.com/eskiu-packages/ui
-eskiuc ui/tools/ui/main.esk -o ~/.eskiu/bin/ui
-
-ui new myapp &amp;&amp; cd myapp
-ui serve          <span class="c"># or ui serve ios, android, macos</span></code></pre>
+eskiuc ui/tools/ui/main.esk -o ~/.eskiu/bin/ui</code></pre>
       </section>
 
-      <p class="note ui-note">
-        Views are written with trailing blocks: <code>Column(Style{padding: 16}) { ... }</code>
-        passes the block as the call's last argument. ui 0.7 needs Eskiu 0.16.2 or newer. The core,
-        the kit and the iOS, Android and web hosts are on their way to 1.0; the macOS, Linux and
-        Windows hosts and the device packages are in Preview, which means they can still change
-        in a minor release and are not yet checked on their platform the way the rest is
-        (<a href="https://github.com/eskiu-packages/ui/blob/main/docs/stability.md">stability</a>).
-      </p>
+      <section class="ui-sec" id="more">
+        <h2>Go further</h2>
+        <div class="ui-links"><a href="ui-components.html"><b>Components and APIs</b><span>Every element, hook and service</span></a><a href="https://github.com/eskiu-packages/ui-starter"><b>ui-starter</b><span>A whole app to start from: tabs, screens, a list from the network</span></a><a href="https://github.com/eskiu-packages/ui/blob/main/docs/webapp.md"><b>Web front ends on the desktop</b><span>A React bundle in the system's webview, with an Eskiu backend</span></a></div>
+      </section>
+
+      <p class="note ui-note">ui 0.7 needs Eskiu 0.16.2 or newer. The core, the kit and the iOS, Android and web hosts are on their way to 1.0. The macOS, Linux and Windows hosts and the device packages are in Preview: they can still change in a minor release and are not yet tested on their platform the way the rest is (<a href="https://github.com/eskiu-packages/ui/blob/main/docs/stability.md">stability</a>).</p>
     </div>
   </main>
   <section class="cta-band" aria-label="Get started">
