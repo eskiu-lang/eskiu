@@ -289,7 +289,11 @@ def render_site_page(lang, page, current, title, desc, body):
 def build_packages():
     data = []
     for pkg in PACKAGES_CATALOG:
-        text = fetch_readme(pkg.get("repo", pkg["name"]), pkg.get("rev", PKG_REV))
+        # Each package at its latest release (git ls-remote), so a release never leaves the
+        # catalog behind; the entry's "rev" only when the repository has no tag yet.
+        repo_url = f"https://github.com/{PKG_ORG}/{pkg.get('repo', pkg['name'])}"
+        pkg["rev"] = latest_tag(repo_url) or pkg.get("rev", PKG_REV)
+        text = fetch_readme(pkg.get("repo", pkg["name"]), pkg["rev"])
         data.append((pkg, readme_tagline(text, pkg["name"]),
                      readme_example(text, pkg["name"], pkg["section"])))
     # The index's packages that have no section of their own here (anyone's).
@@ -298,6 +302,7 @@ def build_packages():
     for e in fetch_index():
         if e["name"] not in curated:
             others.append((e, latest_tag(e["git"])))
+    compress_rev = next((pkg["rev"] for pkg, _, _ in data if pkg["name"] == "compress"), PKG_REV)
     for lang in ("en", "es"):
         T = PKG_TEXT[lang]
         p = "" if lang == "en" else "../"
@@ -315,7 +320,9 @@ def build_packages():
              f'<em>{T["soon_tag"]}</em></a></nav>',
              f'    <h2 id="using">{T["how_h"]}</h2>',
              f'    <p>{T["how_p"]}</p>',
-             "    <pre><code>" + "\n".join(html.escape(c) for c in T["how_cmd"]) + "</code></pre>",
+             # The example adds compress at its latest release too.
+             "    <pre><code>" + "\n".join(html.escape(c.replace("--rev v0.1.0", f"--rev {compress_rev}"))
+                                           for c in T["how_cmd"]) + "</code></pre>",
              f'    <p>{T["how_p2"].format(p=p)}</p>']
         for pkg, tagline, example in data:
             n = pkg["name"]

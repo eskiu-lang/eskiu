@@ -10,7 +10,7 @@
 # and the Spanish tagline.
 
 PKG_ORG = "eskiu-packages"
-PKG_REV = "v0.1.0"   # the release a package is shown at, unless its entry has "rev"
+PKG_REV = "v0.1.0"   # a package's latest tag is used; this or its "rev" only when it has none
 
 PACKAGES_CATALOG = [
     {
