@@ -96,6 +96,14 @@ ui agent web --stop</code></pre>
       Linux que corre como root, Chrome necesita <code>UI_CHROME_ARGS=--no-sandbox</code>.
     </p>
     <p>
+      En la web la app corre en una ventana del tamaño de un teléfono, 390 por 844 puntos
+      (<code>UI_AGENT_WINDOW=WxH</code> la cambia), y las capturas muestran esa ventana. El árbol
+      da el rol de cada elemento, sus estados (marcado, seleccionado, expandido, deshabilitado),
+      su valor y su ayuda, así que un agente puede revisar lo que dirá un lector de pantalla.
+      Cuando la app no compila o se detiene al correr, la respuesta dice por qué, con la línea
+      del código.
+    </p>
+    <p>
       Las mismas operaciones manejan la app en ventanas de macOS, Linux y Windows, en el
       simulador de iOS y en Android, cuando la máquina los tiene: <code>ui agent ios ...</code>,
       <code>ui agent android ...</code>.
@@ -125,7 +133,7 @@ ui test web --json</code></pre>
       Busca en el compilador, la biblioteca estándar y la documentación, y corre código en un
       worker: <code>eskiu_run</code> compila y corre un archivo, <code>eskiu_ui_render</code>
       construye una app de ui para la web, aplica operaciones de <code>ui agent</code> y regresa
-      una captura, y <code>eskiu_ui_test</code> corre un archivo <code>.uitest</code> contra ella.
+      una captura, y <code>eskiu_ui_test</code> corre un archivo <code>.uitest</code> contra ella. Las dos responden con los diagnósticos del compilador cuando la app no compila, y con el resultado de cada paso.
     </p>
 
     <h2>Referencia</h2>

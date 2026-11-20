@@ -95,7 +95,7 @@
   </header>
   <main id="main-content">
     <section class="bar ui-hero">
-      <div class="eyebrow">eskiu-packages/ui / v0.5.0 / preview</div>
+      <div class="eyebrow">eskiu-packages/ui / v0.7.0</div>
       <h1>Native apps, written in Eskiu</h1>
       <p class="lede">
         Write the interface once as Eskiu functions. It draws UIKit views on iOS,
@@ -126,16 +126,13 @@
             controls, with the platform's accessibility.
           </p>
         </div>
-        <pre><code>import &lt;string&gt;;
-import &lt;ui&gt;;
+        <pre><code>import &lt;ui&gt;;
 
 void Counter() {
     Column(Style{padding: 24, gap: 12}) {
         *Signal&lt;int&gt; count = use_signal&lt;int&gt;(0);
-        String label;
-        defer String_free(&amp;label);
-        String_format(&amp;label, "Pressed %d times", count.get());
-        TextWith(Style{font_size: 28, font_weight: 700}, label.data);
+        TextWith(Style{font_size: 28, font_weight: 700},
+            textf("Pressed %d times", count.get()));
         Button("Press me") {
             count.set(count.get() + 1);
         }
@@ -163,7 +160,36 @@ void Counter() {
         <img src="../assets/ui-lab.png" alt="An Eskiu task app on iOS and Android: a progress card, filters and a list of tasks with colored tags" width="1200" height="1200" loading="lazy" />
       </section>
 
-      <section class="ui-row" id="fast">
+      <section class="ui-row" id="access">
+        <div>
+          <h2>Accessible, with forms that work</h2>
+          <p>
+            Every element says what it is to VoiceOver, TalkBack and the other screen readers:
+            <code>Style</code> gives it a role (a checkbox, a tab, a heading, a progress bar), its
+            state (checked, selected, expanded) and words for its value and hint, and
+            <code>disabled</code> turns off a control and everything inside it. The kit's
+            components set them for you, and text follows the size the user chose in the
+            system's settings.
+          </p>
+          <p>
+            A field can be a password, ask for an email or a number, label its return key, take
+            several lines and let the platform fill in a saved login or a one-time code;
+            <code>ui_on_submit</code> gets the text when the user presses return. The kit speaks
+            English and Spanish, or your own words.
+          </p>
+        </div>
+        <pre><code>Pressable(Style{label: "Agree", role: RoleCheckbox,
+                checked: agree.get() ? CheckOn : CheckOff},
+    void() { agree.set(!agree.get()); }) { ... }
+
+ui_on_submit(void(string text) { sign_in(text); });
+TextInput(Input{value: password.get(), label: "Password",
+                secure: true, return_key: ReturnGo,
+                autofill: AutofillPassword},
+    void(string text) { password.set(text); });</code></pre>
+      </section>
+
+      <section class="ui-row flip" id="fast">
         <div>
           <h2>Updates that touch only what changed</h2>
           <p>
@@ -190,7 +216,7 @@ void Counter() {
         </div>
       </section>
 
-      <section class="ui-row flip" id="dev">
+      <section class="ui-row" id="dev">
         <div>
           <h2>See each change in a third of a second</h2>
           <p>
@@ -220,7 +246,7 @@ ui: built in 0.3 s
 <span class="c"># measured with the kit gallery on an Apple-silicon Mac</span></code></pre>
       </section>
 
-      <section class="ui-row" id="agents">
+      <section class="ui-row flip" id="agents">
         <div>
           <h2>Built for agents and tests</h2>
           <p>
@@ -494,8 +520,12 @@ ui serve          <span class="c"># or ui serve ios, android, macos</span></code
       </section>
 
       <p class="note ui-note">
-        ui is in preview. Views are written with trailing blocks: <code>Column(Style{padding: 16}) { ... }</code>
-        passes the block as the call's last argument. It needs Eskiu 0.14.1 or newer, and 0.15 for source lines in the tree and in runtime errors.
+        Views are written with trailing blocks: <code>Column(Style{padding: 16}) { ... }</code>
+        passes the block as the call's last argument. ui 0.7 needs Eskiu 0.16.2 or newer. The core,
+        the kit and the iOS, Android and web hosts are on their way to 1.0; the macOS, Linux and
+        Windows hosts and the device packages are in Preview, which means they can still change
+        in a minor release and are not yet checked on their platform the way the rest is
+        (<a href="https://github.com/eskiu-packages/ui/blob/main/docs/stability.md">stability</a>).
       </p>
     </div>
   </main>

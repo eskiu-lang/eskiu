@@ -94,7 +94,7 @@
   </header>
   <main id="main-content">
     <section class="bar ui-hero">
-      <div class="eyebrow">eskiu-packages/ui / v0.5.0 / preview</div>
+      <div class="eyebrow">eskiu-packages/ui / v0.7.0</div>
       <h1>Apps nativas, escritas en Eskiu</h1>
       <p class="lede">
         Escribe la interfaz una vez, como funciones de Eskiu. El mismo código dibuja vistas de
@@ -125,16 +125,13 @@
             cada plataforma, con su accesibilidad.
           </p>
         </div>
-        <pre><code>import &lt;string&gt;;
-import &lt;ui&gt;;
+        <pre><code>import &lt;ui&gt;;
 
 void Counter() {
     Column(Style{padding: 24, gap: 12}) {
         *Signal&lt;int&gt; count = use_signal&lt;int&gt;(0);
-        String label;
-        defer String_free(&amp;label);
-        String_format(&amp;label, "Pressed %d times", count.get());
-        TextWith(Style{font_size: 28, font_weight: 700}, label.data);
+        TextWith(Style{font_size: 28, font_weight: 700},
+            textf("Pressed %d times", count.get()));
         Button("Press me") {
             count.set(count.get() + 1);
         }
@@ -163,7 +160,36 @@ void Counter() {
         <img src="../../assets/ui-lab.png" alt="Una app de tareas en Eskiu en iOS y Android: una tarjeta de progreso, filtros y una lista de tareas con etiquetas de colores" width="1200" height="1200" loading="lazy" />
       </section>
 
-      <section class="ui-row" id="fast">
+      <section class="ui-row" id="access">
+        <div>
+          <h2>Accesible, con formularios que funcionan</h2>
+          <p>
+            Cada elemento le dice a VoiceOver, TalkBack y los demás lectores de pantalla qué es:
+            <code>Style</code> le da un rol (casilla, pestaña, encabezado, barra de progreso), su
+            estado (marcado, seleccionado, expandido) y palabras para su valor y su ayuda, y
+            <code>disabled</code> apaga un control y todo lo que tiene dentro. Los componentes del
+            kit los ponen por ti, y el texto sigue el tamaño que la persona eligió en los ajustes
+            del sistema.
+          </p>
+          <p>
+            Un campo puede ser una contraseña, pedir un correo o un número, nombrar su tecla de
+            retorno, aceptar varias líneas y dejar que la plataforma llene un inicio de sesión
+            guardado o un código de un solo uso; <code>ui_on_submit</code> recibe el texto cuando
+            se presiona retorno. El kit habla español e inglés, o las palabras que tú le des.
+          </p>
+        </div>
+        <pre><code>Pressable(Style{label: "Acepto", role: RoleCheckbox,
+                checked: acepto.get() ? CheckOn : CheckOff},
+    void() { acepto.set(!acepto.get()); }) { ... }
+
+ui_on_submit(void(string text) { entrar(text); });
+TextInput(Input{value: clave.get(), label: "Contraseña",
+                secure: true, return_key: ReturnGo,
+                autofill: AutofillPassword},
+    void(string text) { clave.set(text); });</code></pre>
+      </section>
+
+      <section class="ui-row flip" id="fast">
         <div>
           <h2>Actualizaciones que tocan solo lo que cambió</h2>
           <p>
@@ -190,7 +216,7 @@ void Counter() {
         </div>
       </section>
 
-      <section class="ui-row flip" id="dev">
+      <section class="ui-row" id="dev">
         <div>
           <h2>Cada cambio en pantalla en un tercio de segundo</h2>
           <p>
@@ -221,7 +247,7 @@ ui: built in 0.3 s
 <span class="c"># medido con la galería del kit en una Mac con Apple silicon</span></code></pre>
       </section>
 
-      <section class="ui-row" id="agents">
+      <section class="ui-row flip" id="agents">
         <div>
           <h2>Hecho para agentes y pruebas</h2>
           <p>
@@ -499,8 +525,12 @@ ui serve          <span class="c"># o ui serve ios, android, macos</span></code>
       </section>
 
       <p class="note ui-note">
-        ui está en preview. Las vistas se escriben con trailing blocks: <code>Column(Style{padding: 16}) { ... }</code>
-        pasa el bloque como último argumento de la llamada. Requiere Eskiu 0.14.1 o más nuevo, y 0.15 para ver las líneas del código en el árbol y en los errores en ejecución.
+        Las vistas se escriben con trailing blocks: <code>Column(Style{padding: 16}) { ... }</code>
+        pasa el bloque como último argumento de la llamada. ui 0.7 requiere Eskiu 0.16.2 o más
+        nuevo. El núcleo, el kit y los hosts de iOS, Android y la web van hacia la 1.0; los hosts de
+        macOS, Linux y Windows y los paquetes de dispositivo están en Preview: todavía pueden
+        cambiar en una versión menor y aún no se prueban en su plataforma como el resto
+        (<a href="https://github.com/eskiu-packages/ui/blob/main/docs/stability.md">estabilidad</a>).
       </p>
     </div>
   </main>
