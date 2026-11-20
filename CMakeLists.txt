@@ -87,6 +87,7 @@ set(SOURCES
     sema/async_lower_stmt.cpp
     sema/async_lower_frame.cpp
     codegen/codegen_module.cpp
+    codegen/codegen_byptr.cpp
     codegen/codegen_type.cpp
     codegen/codegen_scope.cpp
     codegen/codegen_decl.cpp

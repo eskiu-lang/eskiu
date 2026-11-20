@@ -1,5 +1,7 @@
 // codegen_base_insts.esk: function and method instances (part of codegen_base.esk, imported in order)
 
+string cg_pass_ty(Codegen* g, string t);   // fwd: a parameter's type in a function type
+
 // A generic function by name: its definition, not a body-less prototype (`T f<T>(T x);`)
 // that may precede it.
 *DeclNode cg_find_gfn(Codegen* g, string name) {
@@ -99,7 +101,7 @@ string cg_ensure_fn_inst(Codegen* g, string spelling) {
         if (first == 0) {
             fixed = cg_cat(fixed, ", ");
         }
-        fixed = cg_cat(fixed, plt);
+        fixed = cg_cat(fixed, cg_pass_ty(g, plt));
         first = 0;
         pi = pi + 1;
     }

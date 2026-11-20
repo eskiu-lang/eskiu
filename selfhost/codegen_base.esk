@@ -36,6 +36,7 @@ struct CgFn {
     List<string> ptys;
     List<string> petys;
     string cret;   // a C result narrower than int64: "z" (zero-extend) or "s"
+    int cconv;     // 1: a C function (an extern the program does not define)
 }
 
 // An interface: method order (names) + each method's Eskiu return type, parallel by index.

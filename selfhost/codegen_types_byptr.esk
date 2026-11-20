@@ -1,0 +1,121 @@
+// codegen_types_byptr.esk: record arguments passed by pointer, struct literals started from their default value (part of codegen_types.esk, imported in order)
+
+int cg_ll_size_of(Codegen* g, string t);                              // fwd
+string cg_lltype(Codegen* g, string t);                               // fwd
+void cg_emit(Codegen* g, string s);                                   // fwd
+void cg_struct_init(Codegen* g, string slot, string sname0, *ExprNode e0);   // fwd
+void cg_ensure_extern(Codegen* g, string name, string decl);          // fwd
+int cg_is_bf_struct(Codegen* g, string sname);                        // fwd
+*ExprNode cg_default_expr(Codegen* g, string t0);                     // fwd
+string cg_const_struct(Codegen* g, string sname0, *ExprNode e0);      // fwd
+string cg_tyval(string declty, string v);                             // fwd
+int cg_ll_big(Codegen* g, string llty);                               // fwd
+void cg_zero_fill(Codegen* g, string slot, string llty);              // fwd
+
+// Does a parameter of LLVM type `t` of an Eskiu function go by pointer? A struct, union
+// or array over 16 bytes does (C++ passAggregatesByPointer): the caller passes a pointer
+// to a copy in its frame, which the callee owns as the parameter's storage, so a change
+// in the callee never reaches the caller. C functions keep the C convention.
+int cg_byptr(Codegen* g, string t) {
+    int c = (int)t[0];
+    if (c == 60 && (int)t[1] != 123) {                // '<' not '<{': a vector
+        return 0;
+    }
+    if (c != 37 && c != 91 && c != 123 && c != 60) {  // '%', '[', '{', '<{'
+        return 0;
+    }
+    if (cg_ll_size_of(g, t) > 16) {
+        return 1;
+    }
+    return 0;
+}
+
+// The type of a parameter of LLVM type `t` in a definition.
+string cg_param_ty(Codegen* g, string t) {
+    if (cg_byptr(g, t) == 1) {
+        return "ptr noalias";
+    }
+    return t;
+}
+
+// The type of a parameter of LLVM type `t` in a function type.
+string cg_pass_ty(Codegen* g, string t) {
+    if (cg_byptr(g, t) == 1) {
+        return "ptr";
+    }
+    return t;
+}
+
+// The text of an argument `op` of parameter type `t`: by pointer, a copy in this frame.
+string cg_arg_text(Codegen* g, string t, string op) {
+    if (cg_byptr(g, t) == 0) {
+        return cg_cat(t, cg_cat(" ", op));
+    }
+    string slot = cg_entry_alloca(g, t);
+    cg_emit(g, cg_cat("  store ", cg_cat(t, cg_cat(" ", cg_cat(op, cg_cat(", ptr ", cg_cat(slot, "\n")))))));
+    return cg_cat("ptr ", slot);
+}
+
+// A struct literal argument of a by-pointer parameter of type `t` is built in a temporary
+// of its own and passed as it is: the argument text, or "" when `ax` is not one.
+string cg_lit_arg(Codegen* g, *ExprNode ax, string t) {
+    if (ax == null || ax.kind != EK_STRUCTINIT || t[0] == 0 || cg_byptr(g, t) == 0) {
+        return "";
+    }
+    if (cg_streq(cg_lltype(g, ax.sval), t) == 0) {
+        return "";
+    }
+    string slot = cg_entry_alloca(g, t);
+    cg_struct_init(g, slot, ax.sval, ax);
+    return cg_cat("ptr ", slot);
+}
+
+// The default value of struct `sname` (its field defaults, constants) as a private global
+// a literal is copied from, or "" when it has no default (C++ structDefaultImage).
+string cg_default_image(Codegen* g, string sname) {
+    string gname = cg_cat("@", cg_cat(sname, ".defaults"));
+    if (cg_seen_inst(g, cg_cat("dimg:", sname)) == 1) {
+        if (cg_seen_inst(g, cg_cat("dimg0:", sname)) == 1) {
+            return "";
+        }
+        return gname;
+    }
+    cg_push_inst(g, cg_cat("dimg:", sname));
+    string body = "";
+    if (cg_default_expr(g, sname) != null) {
+        *ExprNode lit = ast_new_expr();
+        lit.kind = EK_STRUCTINIT;
+        lit.sval = sname;
+        body = cg_const_struct(g, sname, lit);
+    }
+    if (body[0] == 0) {
+        cg_push_inst(g, cg_cat("dimg0:", sname));
+        return "";
+    }
+    String_append(&g.globals, cg_cat(gname, cg_cat(" = private unnamed_addr constant ", cg_cat(cg_tyval(cg_cat("%", sname), body), "\n"))));
+    return gname;
+}
+
+// Start the struct literal of `sname` at `slot`: over 16 bytes, a copy of its default value
+// (or a memset when it has none), else a zero store. 1 when the defaults are in place, so
+// the literal stores only the fields it gives.
+int cg_lit_start(Codegen* g, string slot, string sname) {
+    string sty = cg_cat("%", sname);
+    if (g.freestanding == 0 && cg_is_union(g, sname) == 0 && cg_is_bf_struct(g, sname) == 0
+        && cg_ll_size_of(g, sty) > 16) {
+        string img = cg_default_image(g, sname);
+        if (img[0] == 0) {
+            cg_zero_fill(g, slot, sty);
+            return 0;
+        }
+        cg_ensure_extern(g, "llvm.memcpy.p0.p0.i64", "declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)\n");
+        cg_emit(g, cg_cat("  call void @llvm.memcpy.p0.p0.i64(ptr ", cg_cat(slot, cg_cat(", ptr ", cg_cat(img, cg_cat(", i64 ", cg_cat(cg_itoa(cg_ll_size_of(g, sty)), ", i1 false)\n")))))));
+        return 1;
+    }
+    if (cg_ll_big(g, sty) == 1) {
+        cg_zero_fill(g, slot, sty);
+    } else {
+        cg_emit(g, cg_cat("  store ", cg_cat(sty, cg_cat(" zeroinitializer, ptr ", cg_cat(slot, "\n")))));
+    }
+    return 0;
+}

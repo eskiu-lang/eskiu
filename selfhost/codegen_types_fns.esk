@@ -125,7 +125,7 @@ void cg_emit_thunk(Codegen* g, string fnname) {
             ta.op = cg_cat("%a", cg_itoa(ti));
             ta.ety = "";
             cg_emit(g, ", ");
-            cg_emit(g, ta.ty);
+            cg_emit(g, cg_param_ty(g, ta.ty));
             cg_emit(g, " ");
             cg_emit(g, ta.op);
             List_push<CgVal>(&targs, ta);
@@ -135,6 +135,17 @@ void cg_emit_thunk(Codegen* g, string fnname) {
         String_init(&g.entry_buf, 128);
         String saved = g.out;
         String_init(&g.out, 256);
+        ti = 0;
+        while (ti < np) {                               // a record by pointer: its value
+            CgVal ba = List_get<CgVal>(&targs, ti);
+            if (cg_byptr(g, ba.ty) == 1) {
+                string bv = cg_tmp(g);
+                cg_emit(g, cg_cat("  ", cg_cat(bv, cg_cat(" = load ", cg_cat(ba.ty, cg_cat(", ptr ", cg_cat(ba.op, "\n")))))));
+                ba.op = bv;
+                List_set<CgVal>(&targs, ti, ba);
+            }
+            ti = ti + 1;
+        }
         CgVal r = cg_cabi_call(g, &cab, &f, &targs);
         if (cg_streq(f.retty, "void") == 1) {
             cg_emit(g, "  ret void\n");
@@ -160,20 +171,28 @@ void cg_emit_thunk(Codegen* g, string fnname) {
     cg_emit(g, fnname);
     cg_emit(g, "(ptr %e");
     string args = "";
+    string loads = "";
     int i = 0;
     while (i < np) {
         string pt = List_get<string>(&f.ptys, i);
         cg_emit(g, ", ");
-        cg_emit(g, pt);
+        cg_emit(g, cg_param_ty(g, pt));
         cg_emit(g, " %a");
         cg_emit(g, cg_itoa(i));
         if (i > 0) {
             args = cg_cat(args, ", ");
         }
-        args = cg_cat(args, cg_cat(pt, cg_cat(" %a", cg_itoa(i))));
+        if (f.cconv == 1 && cg_byptr(g, pt) == 1) {      // a C function takes the value
+            string an = cg_cat("%a", cg_itoa(i));
+            loads = cg_cat(loads, cg_cat("  ", cg_cat(an, cg_cat(".v = load ", cg_cat(pt, cg_cat(", ptr ", cg_cat(an, "\n")))))));
+            args = cg_cat(args, cg_cat(pt, cg_cat(" ", cg_cat(an, ".v"))));
+        } else {
+            args = cg_cat(args, cg_cat(cg_pass_ty(g, pt), cg_cat(" %a", cg_itoa(i))));   // the thunk's copy, handed on
+        }
         i = i + 1;
     }
     cg_emit(g, ") {\n");
+    cg_emit(g, loads);
     if (cg_streq(f.retty, "void") == 1) {
         cg_emit(g, "  call void @");
         cg_emit(g, fnname);

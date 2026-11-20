@@ -66,6 +66,7 @@ llvm::Function* CodeGen::declareCAbiExtern(const std::string& name, const CAbiSi
                                                 name, module.get());
     addCAbiAttrs(sig, [&](unsigned i, llvm::Attribute a) { fn->addParamAttr(i, a); });
     externAbi[name] = sig;
+    cConvFns.insert(fn);
     return fn;
 }
 
@@ -209,6 +210,7 @@ llvm::Function* CodeGen::cabiCallbackThunk(llvm::Function* target) {
     llvm::Function* thunk = llvm::Function::Create(sig.lowered, llvm::Function::InternalLinkage,
                                                    tname, module.get());
     addCAbiAttrs(sig, [&](unsigned i, llvm::Attribute a) { thunk->addParamAttr(i, a); });
+    cConvFns.insert(thunk);
     if (sig.ret.kind == CAbiArg::Direct && !lret->isVoidTy() && funcEskiuReturnType.count(name)) {
         llvm::Attribute::AttrKind ext = cabiExtAttr(funcEskiuReturnType[name], lret);
         if (ext != llvm::Attribute::None) thunk->addRetAttr(ext);

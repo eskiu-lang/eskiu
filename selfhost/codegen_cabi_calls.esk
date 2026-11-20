@@ -527,7 +527,7 @@ void cg_emit_cabi_thunk_as(Codegen* g, string name, string callee, string sym, i
         if (i > 0) {
             String_append(&args, ", ");
         }
-        String_append(&args, cg_cat(lty, cg_cat(" ", op)));
+        String_append(&args, cg_arg_text(g, lty, op));
         i = i + 1;
     }
     string argstr = (string)String_cstr(&args);

@@ -536,7 +536,13 @@ private:
     static char cIntKind(const std::string& spelling);
     llvm::Type* cIntType(char kind);
     llvm::Value* widenCResult(const std::string& name, llvm::Value* v);
-    void passLargeAggregatesByPointer(llvm::Module& m);
+    // Eskiu-to-Eskiu calls pass an aggregate over 16 bytes as a pointer to a copy the
+    // caller owns (codegen_byptr.cpp). A struct literal, variant or sret temporary is such
+    // a copy already (marked, by metadata the pass removes); C-ABI functions (lowered
+    // externs, thunks) keep their signature.
+    void passAggregatesByPointer(llvm::Module& m);
+    void markFreshTemp(llvm::Value* alloca);
+    std::set<llvm::Function*> cConvFns;
     void alignPackedAccesses(llvm::Module& m);
     static void inferNoUnwind(llvm::Module& m);
     void addTypeBasedAliasInfo(llvm::Module& m);
@@ -776,6 +782,13 @@ private:
     void emitZeroBytes(llvm::Value* dest, llvm::Value* size, llvm::Align align);
     // An aggregate this large is zeroed by emitZeroFill rather than element by element.
     static constexpr uint64_t kBulkZeroBytes = 4096;
+    bool bulkZero(llvm::Type* ty) const;
+    struct StructDefaultImage {
+        llvm::GlobalVariable* gv = nullptr;
+        std::vector<bool> folded;
+    };
+    std::map<std::string, StructDefaultImage> structDefaultImages;
+    const StructDefaultImage& structDefaultImage(const std::string& sname);
     // A constant array whose zero tail has this many elements is folded as a struct
     // `{ given..., [tail x T] zeroinitializer }` (constInitializer).
     static constexpr uint64_t kSplitZeroTail = 1024;

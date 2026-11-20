@@ -243,6 +243,7 @@ void CodeGen::visit(TemplateCallExpr* node) {
     auto sretIt = funcSretTypes.find(mangledName);
     if (sretIt != funcSretTypes.end()) {
         llvm::Value* sretAlloca = entryAlloca(sretIt->second, nullptr, "sret.tmp");
+        markFreshTemp(sretAlloca);
         args.insert(args.begin(), sretAlloca);
         createMaybeInvoke(func->getFunctionType(), func, args);
         exprValueStack.push(builder->CreateLoad(sretIt->second, sretAlloca));

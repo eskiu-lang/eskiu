@@ -271,6 +271,17 @@ CgVal cg_expr_call(Codegen* g, *ExprNode e, CgVal v) {
     int n = List_len<*ExprNode>(&e.kids);
     while (i < n) {
         *ExprNode ax = List_get<*ExprNode>(&e.kids, i);
+        if (f.cconv == 0) {
+            string lit = cg_lit_arg(g, ax, cg_pty(&f, i + pbase));
+            if (lit[0] != 0) {
+                if (args[0] != 0) {
+                    args = cg_cat(args, ", ");
+                }
+                args = cg_cat(args, lit);
+                i = i + 1;
+                continue;
+            }
+        }
         CgVal a = cg_call_arg(g, &f, i + pbase, ax);
         string pety = cg_pety(&f, i + pbase);
         // Param expects an interface but we have a struct pointer → box it as a fat pointer.
@@ -300,7 +311,11 @@ CgVal cg_expr_call(Codegen* g, *ExprNode e, CgVal v) {
             if (args[0] != 0) {
                 args = cg_cat(args, ", ");
             }
-            args = cg_cat(args, cg_cat(aty, cg_cat(" ", aop)));
+            if (f.cconv == 0 && pty[0] != 0) {
+                args = cg_cat(args, cg_arg_text(g, aty, aop));
+            } else {
+                args = cg_cat(args, cg_cat(aty, cg_cat(" ", aop)));
+            }
             i = i + 1;
         }
     }

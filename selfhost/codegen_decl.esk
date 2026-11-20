@@ -52,7 +52,7 @@ void cg_emit_fn(Codegen* g, *DeclNode d, string llname, string self_struct) {
             cg_emit(g, "...");
         }
         else {
-            cg_emit(g, cg_lltype(g, pm.ty));
+            cg_emit(g, cg_param_ty(g, cg_lltype(g, pm.ty)));
             cg_emit(g, " %p");
             cg_emit(g, cg_itoa(pi + base));
         }
@@ -87,6 +87,11 @@ void cg_emit_fn(Codegen* g, *DeclNode d, string llname, string self_struct) {
             continue;
         }
         string pty = cg_lltype(g, pm.ty);
+        if (cg_byptr(g, pty) == 1) {                     // the caller's copy is the slot
+            cg_add_local(g, pm.name, cg_cat("%p", cg_itoa(pi + base)), pty, cg_apply_sub(g, pm.ty));
+            pi = pi + 1;
+            continue;
+        }
         string slot = cg_entry_alloca(g, pty);
         cg_emit(g, "  store ");
         cg_emit(g, pty);
@@ -159,7 +164,7 @@ void cg_emit_lambda(Codegen* g, CgLambda lam) {
     int np = List_len<string>(&pp);
     while (k < np) {
         cg_emit(g, ", ");
-        cg_emit(g, cg_lltype(g, cg_drop_last_word(List_get<string>(&pp, k))));
+        cg_emit(g, cg_param_ty(g, cg_lltype(g, cg_drop_last_word(List_get<string>(&pp, k)))));
         cg_emit(g, " %p");
         cg_emit(g, cg_itoa(k + 1));
         k = k + 1;
@@ -223,6 +228,11 @@ void cg_emit_lambda(Codegen* g, CgLambda lam) {
         string pname = cg_last_word(piece);
         string pety = cg_drop_last_word(piece);
         string pty = cg_lltype(g, pety);
+        if (cg_byptr(g, pty) == 1) {                     // the caller's copy is the slot
+            cg_add_local(g, pname, cg_cat("%p", cg_itoa(k + 1)), pty, pety);
+            k = k + 1;
+            continue;
+        }
         string slot = cg_entry_alloca(g, pty);
         cg_emit(g, "  store ");
         cg_emit(g, pty);

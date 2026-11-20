@@ -573,6 +573,7 @@ string cg_coerce(Codegen* g, CgVal val, string target) {
 }
 
 // The rest of codegen_types.esk, in these parts (imported in order):
+import "codegen_types_byptr.esk";
 import "codegen_types_fns.esk";
 import "codegen_types_cleanup.esk";
 import "codegen_types_arrays.esk";

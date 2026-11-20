@@ -86,7 +86,8 @@ std::string CodeGen::ensureEnumInst(const std::string& genericName,
 llvm::Value* CodeGen::buildEnumValue(llvm::StructType* et, int tag,
         const std::vector<std::string>& fieldEsk, const std::vector<ExprPtr>& args) {
     llvm::Value* tmp = entryAlloca(et, nullptr, "variant.tmp");
-    if (module->getDataLayout().getTypeAllocSize(et).getFixedValue() > kBulkZeroBytes)
+    markFreshTemp(tmp);
+    if (bulkZero(et))
         emitZeroFill(tmp, et);
     else
         builder->CreateStore(llvm::Constant::getNullValue(et), tmp);
@@ -124,6 +125,14 @@ std::string CodeGen::resolveStructInitName(const std::string& name) {
     std::string mangled = mangleTemplate(resolved);
     ensureTemplateInstantiated(mangled, tn, args);
     return mangled;
+}
+
+// A record is zeroed with one memset when it is larger than 16 bytes (stored whole, a
+// zero aggregate becomes one store per scalar), except freestanding, where only a large
+// one is zeroed by emitZeroFill's loop.
+bool CodeGen::bulkZero(llvm::Type* ty) const {
+    uint64_t size = module->getDataLayout().getTypeAllocSize(ty).getFixedValue();
+    return size > kBulkZeroBytes || (!freestanding && size > 16);
 }
 
 void CodeGen::emitZeroFill(llvm::Value* dest, llvm::Type* ty) {
@@ -261,11 +270,24 @@ void CodeGen::emitStructInitInto(llvm::Value* dest, StructInitExpr* init0) {
     const auto& fields = fit->second;
     llvm::StructType* st = structTypes[sname];
     // Fields the literal omits are zero (C aggregate-initializer semantics), not
-    // whatever the stack slot held; write the zero first, then the given fields.
-    if (module->getDataLayout().getTypeAllocSize(st).getFixedValue() > kBulkZeroBytes)
+    // whatever the stack slot held; write the zero first, then the given fields. A
+    // record over 16 bytes instead starts as a copy of its default value when that has a
+    // nonzero constant field (structDefaultImage), and a default in it is not stored again.
+    const llvm::DataLayout& DL = module->getDataLayout();
+    uint64_t stSize = DL.getTypeAllocSize(st).getFixedValue();
+    const StructDefaultImage* image = nullptr;
+    if (!freestanding && stSize > 16 && !structLayout.count(sname) && !unionFields.count(sname))
+        image = &structDefaultImage(sname);
+    if (image && image->gv)
+        builder->CreateMemCpy(dest, DL.getABITypeAlign(st), image->gv, DL.getABITypeAlign(st), stSize);
+    else if (image || bulkZero(st))
         emitZeroFill(dest, st);
     else
         builder->CreateStore(llvm::Constant::getNullValue(st), dest);
+    std::set<std::string> given;
+    for (size_t i = 0; i < init0->fieldInits.size(); ++i)
+        given.insert(!init0->fieldInits[i].first.empty() ? init0->fieldInits[i].first
+                     : i < fields.size() ? fields[i].name : "");
 
     bool named = !init->fieldInits.empty() && !init->fieldInits[0].first.empty();
 
@@ -274,6 +296,7 @@ void CodeGen::emitStructInitInto(llvm::Value* dest, StructInitExpr* init0) {
     };
 
     auto storeField = [&](size_t idx, ExprPtr expr) {
+        if (image && idx < image->folded.size() && image->folded[idx] && !given.count(fields[idx].name)) return;
         // An array field's `{...}` fills the field in place, like an array variable's.
         if (auto* arr = nodeCast<ArrayLitExpr>(expr.get())) {
             llvm::Value* at = dest;
@@ -314,6 +337,38 @@ void CodeGen::emitStructInitInto(llvm::Value* dest, StructInitExpr* init0) {
     }
 }
 
+// The default value of struct `sname` (its field defaults) as a constant to copy a
+// literal from: each default that folds to a constant is in it (`folded`); `gv` is null
+// when they are all zero.
+const CodeGen::StructDefaultImage& CodeGen::structDefaultImage(const std::string& sname) {
+    auto it = structDefaultImages.find(sname);
+    if (it != structDefaultImages.end()) return it->second;
+    StructDefaultImage img;
+    const auto& fields = structFields[sname];
+    llvm::StructType* st = structTypes[sname];
+    std::vector<llvm::Constant*> vals;
+    for (size_t i = 0; i < fields.size() && i < st->getNumElements(); ++i) {
+        llvm::Type* et = st->getElementType((unsigned)i);
+        llvm::Constant* c = nullptr;
+        if (ExprPtr d = fields[i].defaultValue ? fields[i].defaultValue : defaultExprFor(fields[i].type)) {
+            c = constInitializer(d, et);
+            if (c && c->getType() != et) c = nullptr;
+        }
+        img.folded.push_back(c != nullptr);
+        vals.push_back(c ? c : llvm::Constant::getNullValue(et));
+    }
+    while (vals.size() < st->getNumElements())
+        vals.push_back(llvm::Constant::getNullValue(st->getElementType((unsigned)vals.size())));
+    llvm::Constant* c = llvm::ConstantStruct::get(st, vals);
+    if (!c->isNullValue()) {
+        img.gv = new llvm::GlobalVariable(*module, st, /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+                                          c, sname + ".defaults");
+        img.gv->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+        img.gv->setAlignment(module->getDataLayout().getABITypeAlign(st));
+    }
+    return structDefaultImages[sname] = img;
+}
+
 void CodeGen::visit(ArrayLitExpr* node) {
     (void)node;
     throw std::runtime_error("an array literal '{...}' is only valid as a variable initializer");
@@ -327,6 +382,7 @@ void CodeGen::visit(StructInitExpr* node) {
     llvm::StructType* st = structTypes[sname];
     // Temporary alloca — filled then loaded so caller can store it anywhere
     llvm::Value* tmp = entryAlloca(st, nullptr, sname + ".init");
+    markFreshTemp(tmp);
     emitStructInitInto(tmp, node);
     exprValueStack.push(builder->CreateLoad(st, tmp));
 }

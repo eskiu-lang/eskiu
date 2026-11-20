@@ -185,6 +185,7 @@ void CodeGen::visit(CallExpr* node) {
             llvm::Value* sretBuf = nullptr;
             if (iSret) {
                 sretBuf = entryAlloca(retType, nullptr, "iface.sret");
+                markFreshTemp(sretBuf);
                 iargs.insert(iargs.begin(), sretBuf); // sret pointer goes first
                 paramLLVM.insert(paramLLVM.begin(), llvm::PointerType::get(*context, 0));
                 retType = llvm::Type::getVoidTy(*context);
@@ -234,6 +235,7 @@ void CodeGen::visit(CallExpr* node) {
             auto msret = funcSretTypes.find(mangled);
             if (msret != funcSretTypes.end()) {
                 llvm::Value* sretAlloca = entryAlloca(msret->second, nullptr, "sret.tmp");
+                markFreshTemp(sretAlloca);
                 margs.insert(margs.begin(), sretAlloca);
                 createMaybeInvoke(mfty, mfunc, margs);
                 exprValueStack.push(builder->CreateLoad(msret->second, sretAlloca));
@@ -460,6 +462,7 @@ void CodeGen::visit(CallExpr* node) {
     auto sretIt = funcSretTypes.find(func->getName().str());
     if (sretIt != funcSretTypes.end()) {
         llvm::Value* sretAlloca = entryAlloca(sretIt->second, nullptr, "sret.tmp");
+        markFreshTemp(sretAlloca);
         args.insert(args.begin(), sretAlloca);
         createMaybeInvoke(func->getFunctionType(), func, args);
         exprValueStack.push(builder->CreateLoad(sretIt->second, sretAlloca));

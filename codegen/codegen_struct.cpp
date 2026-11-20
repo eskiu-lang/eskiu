@@ -464,6 +464,7 @@ void CodeGen::visit(ExternDecl* node) {
 
     // Create external function declaration
     llvm::Function* fn = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, node->name, module.get());
+    cConvFns.insert(fn);
     for (size_t i = 0; i < pext.size(); ++i)
         if (pext[i] != llvm::Attribute::None) fn->addParamAttr((unsigned)i, pext[i]);
     if (rext != llvm::Attribute::None) fn->addRetAttr(rext);

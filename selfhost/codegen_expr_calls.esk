@@ -258,6 +258,14 @@ CgVal cg_indirect_call(Codegen* g, string cval, string fnty, *ExprNode e) {
     int nn = List_len<*ExprNode>(&e.kids);
     while (i < nn) {
         *ExprNode iax = List_get<*ExprNode>(&e.kids, i);
+        if (i < List_len<string>(&fpt)) {
+            string lit = cg_lit_arg(g, iax, cg_lltype(g, List_get<string>(&fpt, i)));
+            if (lit[0] != 0) {
+                cargs = cg_cat(cargs, cg_cat(", ", lit));
+                i = i + 1;
+                continue;
+            }
+        }
         CgVal a = cg_expr(g, iax);
         string aop = a.op;
         string aty = a.ty;
@@ -270,7 +278,7 @@ CgVal cg_indirect_call(Codegen* g, string cval, string fnty, *ExprNode e) {
                 aop = cg_iface_conv(g, pety, a, iax);
             }
         }
-        cargs = cg_cat(cargs, cg_cat(", ", cg_cat(aty, cg_cat(" ", aop))));
+        cargs = cg_cat(cargs, cg_cat(", ", cg_arg_text(g, aty, aop)));
         i = i + 1;
     }
     int isvoidc = cg_streq(rt, "void");
@@ -528,6 +536,14 @@ CgVal cg_dispatch_iface(Codegen* g, string ifaceName, string fatop, string metho
     int nn = List_len<*ExprNode>(&e.kids);
     while (i < nn) {
         *ExprNode dax = List_get<*ExprNode>(&e.kids, i);
+        if (i < List_len<string>(&ptys)) {
+            string lit = cg_lit_arg(g, dax, cg_lltype(g, List_get<string>(&ptys, i)));
+            if (lit[0] != 0) {
+                args = cg_cat(args, cg_cat(", ", lit));
+                i = i + 1;
+                continue;
+            }
+        }
         CgVal a = cg_expr(g, dax);
         string aop = a.op;
         string aty = a.ty;
@@ -543,7 +559,7 @@ CgVal cg_dispatch_iface(Codegen* g, string ifaceName, string fatop, string metho
                 aty = pty;
             }
         }
-        args = cg_cat(args, cg_cat(", ", cg_cat(aty, cg_cat(" ", aop))));
+        args = cg_cat(args, cg_cat(", ", cg_arg_text(g, aty, aop)));
         i = i + 1;
     }
     int isvoid = cg_streq(rt, "void");

@@ -115,17 +115,25 @@ void cg_struct_init(Codegen* g, string slot, string sname0, *ExprNode e0) {
     string sname = cg_dealias(g, sname0);                // `Alias{...}` of a struct alias fills the struct
     CgStruct s = cg_find_struct(g, sname);
     // Fields the literal omits are zero (C aggregate-initializer semantics), not whatever
-    // the stack slot held: store the zero value first, then the given fields.
-    string sty = cg_cat("%", s.name);
-    if (cg_ll_big(g, sty) == 1) {
-        cg_zero_fill(g, slot, sty);
-    }
-    else {
-        cg_emit(g, "  store ");
-        cg_emit(g, sty);
-        cg_emit(g, " zeroinitializer, ptr ");
-        cg_emit(g, slot);
-        cg_emit(g, "\n");
+    // the stack slot held: store the zero value (or copy the default value) first, then the
+    // given fields.
+    int dflt = cg_lit_start(g, slot, s.name);
+    let given: StrTab;
+    if (dflt == 1) {
+        int gi = 0;
+        while (gi < List_len<*ExprNode>(&e0.kids)) {
+            string gn = "";
+            if (gi < List_len<string>(&e0.names)) {
+                gn = List_get<string>(&e0.names, gi);
+            }
+            if ((gn == null || gn[0] == 0) && gi < List_len<string>(&s.fnames)) {
+                gn = List_get<string>(&s.fnames, gi);
+            }
+            if (gn != null && gn[0] != 0) {
+                StrTab_set(&given, gn, 1);
+            }
+            gi = gi + 1;
+        }
     }
     int n = List_len<*ExprNode>(&e.kids);
     int i = 0;
@@ -144,6 +152,10 @@ void cg_struct_init(Codegen* g, string slot, string sname0, *ExprNode e0) {
             actual = List_get<string>(&s.fnames, idx);
         }
         *ExprNode fex = List_get<*ExprNode>(&e.kids, i);
+        if (dflt == 1 && StrTab_has(&given, actual) == 0) {   // a default: in the copy already
+            i = i + 1;
+            continue;
+        }
         CgBF bfslot = cg_bf(g, sname, actual);
         if (fex.kind == EK_ARRAYLIT) {                  // an array field's `{...}` fills it in place
             string ap = slot;
