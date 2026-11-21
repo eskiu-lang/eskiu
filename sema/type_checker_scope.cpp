@@ -230,7 +230,8 @@ void TypeChecker::popScope() {
     // Skip the global scope (size 1) — unused globals are often intentional.
     if (warnAll && scopes.size() > 1) {
         for (const auto& [name, sym] : scopes.back()) {
-            if (sym.used || name == "self" || name == "_") continue;
+            // `...` (a variadic function's rest) is read through va_list, never by name.
+            if (sym.used || name == "self" || name == "_" || name == "...") continue;
             warning(sym.line, sym.col,
                     std::string(sym.isParam ? "unused parameter '" : "unused variable '")
                     + name + "'");

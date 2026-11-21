@@ -504,7 +504,8 @@ void sema_warn_unused(Sema* s, int d) {
         // A name bound twice in one scope is one map entry: its last binding.
         if (sema_in_list(&seen, y.name) == 0) {
             List_push<string>(&seen, y.name);
-            if (y.used == 0 && sema_streq(y.name, "self") == 0 && sema_streq(y.name, "_") == 0) {
+            // `...` (a variadic function's rest) is read through va_list, never by name.
+            if (y.used == 0 && sema_streq(y.name, "self") == 0 && sema_streq(y.name, "_") == 0 && sema_streq(y.name, "...") == 0) {
                 List_push<int>(&idx, i);
             }
         }
