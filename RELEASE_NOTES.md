@@ -1,7 +1,8 @@
 # Eskiu 0.16.2
 
 Eskiu 0.16.2 passes large structs between functions by pointer, which makes programs that pass
-them by value smaller and faster, most of all on WebAssembly.
+them by value smaller and faster, most of all on WebAssembly. Its warnings now reach every file
+of a program, not only the one given to the compiler.
 
 ## Changed
 
@@ -16,13 +17,19 @@ them by value smaller and faster, most of all on WebAssembly.
   never changes the caller's value. `extern` C functions, `export` entries and C callbacks
   keep the C ABI.
 - **Rebuild everything.** Objects built by 0.16.1 do not link with objects built by 0.16.2.
+- **Warnings in the program's own files.** A file the program imports from its own directory
+  (the nearest one above the root file with an `eskiu.toml`, else the root file's) is linted
+  like the root file: `-Wformat`, `deprecated` uses and the `-Wall` checks. Until now only the
+  root file was, so a package's modules and a ui app's sources never showed a warning. The
+  standard library and dependencies are libraries and stay quiet.
 
 ## Fixed
 
 - **Self-hosted compiler.** "cannot assign to read-only location" names the location, as
   eskiuc does.
+- **`-Wall`** no longer calls a variadic function's `...` an unused parameter.
 
-Code that compiles with 0.16.1 compiles with 0.16.2. The full list is in the
+Code that compiles with 0.16.1 compiles with 0.16.2; it may show warnings it did not before. The full list is in the
 [CHANGELOG](https://github.com/eskiu-lang/eskiu/blob/main/CHANGELOG.md).
 
 ## Install

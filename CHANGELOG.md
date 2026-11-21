@@ -21,10 +21,19 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   functions, `export` entries and C callbacks keep the C ABI. Both compilers. Objects built
   by 0.16.1 do not link with ones built by 0.16.2: rebuild everything.
 
+- Warnings are reported in every file of the program's own, not only in the root file: a
+  file imported from under the program's directory (the nearest one above the root file
+  with an `eskiu.toml`, else the root file's) is linted like the root file. The standard
+  library and dependencies are still libraries and are not linted. A package's modules
+  imported from its `main.esk`, and a ui app's sources (which the ui tool's generated entry
+  imports), now get `-Wformat`, `-Wdeprecated` and the `-Wall` checks. Both compilers.
+
 ### Fixed
 
 - The self-hosted compiler names the location in "cannot assign to read-only location 'b'",
   as eskiuc does.
+- `-Wall` no longer reports a variadic function's `...` as an unused parameter. Both
+  compilers.
 
 ---
 

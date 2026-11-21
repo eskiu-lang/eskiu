@@ -911,8 +911,8 @@ consumed; only a bare call statement discards it.
 ### 6.1.2 deprecated
 
 `deprecated("message")` before a function declaration marks the function as on its way
-out. It keeps working, and each use outside an imported module prints a warning with the
-message:
+out. It keeps working, and each use in the program's own files (not in a library: the
+standard library or a dependency) prints a warning with the message:
 
 ```eskiu
 int Rect_area(const *Rect self) { return self.w * self.h; }
@@ -3565,7 +3565,7 @@ Sections are separated by `:`. Trailing sections may be omitted if empty.
 | `eskiuc file.esk --ubsan -o prog` | Insert trapping bounds checks (traps on out-of-bounds; no runtime) |
 | `eskiuc file.esk --safe -o prog` | Run-time safety checks that trap instead of continuing: every array and slice index is bounds-checked, a signed `+`, `-` or `*` on `int`/`int64` that overflows traps (instead of wrapping), and dereferencing a null pointer (`*p`, `p.f`, `p[i]`) traps; off by default |
 | `eskiuc file.esk --safe=bounds,null -o prog` | Only the named checks, a comma-separated subset of `bounds` (array and slice indexes, slice ranges), `overflow` (signed `+ - *` on `int`/`int64`) and `null` (dereferencing a null pointer). An unknown name is an error that lists the valid ones. A bare `--safe` is all three |
-| `eskiuc file.esk -Wall -o prog` | Enable lint warnings in the program's own files (not in imported modules): unused vars/params/functions, assignment-in-condition, a local that may be used uninitialized |
+| `eskiuc file.esk -Wall -o prog` | Enable lint warnings in the program's own files: unused vars/params/functions, assignment-in-condition, a local that may be used uninitialized |
 | `eskiuc file.esk -Wextra -o prog` | Extra warnings on top of `-Wall`: signed/unsigned comparison mismatches |
 | `eskiuc file.esk -Wno-format -o prog` | Turn off one of the default-on warnings (see Diagnostics): `-Wno-string-compare`, `-Wno-format`, `-Wno-address-of-packed-member`, `-Wno-dangling-pointer`, `-Wno-frame-larger-than`, `-Wno-unused-result`, `-Wno-await-holding-lock`, `-Wno-deprecated` |
 | `eskiuc file.esk -Werror -o prog` | Report every warning (default-on, `-Wall`, `-Wextra`, deprecated) as an error: the build fails |
@@ -3675,7 +3675,7 @@ error: file.esk:8:22: undefined variable 'foo'
 error: file.esk:14:5: initializing 'p': cannot convert 'float' to 'int*'
 ```
 
-The format is `error: file:line:col: message`. Line and column numbers are 1-based. Lexer, preprocessor, parser and type errors all use it, and an error inside an imported file names that file. `-Wall` warnings are printed as `file:line:col: warning: message`.
+The format is `error: file:line:col: message`. Line and column numbers are 1-based. Lexer, preprocessor, parser and type errors all use it, and an error inside an imported file names that file. `-Wall` warnings are printed as `file:line:col: warning: message`. Warnings are reported in the program's own files: the root file and every file it imports from under the program's directory (the nearest one above the root file that holds an `eskiu.toml`, else the root file's). The standard library and dependencies are libraries, and their code is not linted, as a C compiler treats system headers.
 
 A few warnings are on by default, because the code they flag is almost always a mistake. Each ends with its flag and is turned off with the matching `-Wno-` option; none of them rejects a program, and code from an imported module is not checked:
 
