@@ -1275,8 +1275,8 @@ alloc&lt;uint8&gt;(64);     // error: the allocation is leaked (alloc is must_us
 consumed; only a bare call statement discards it.</p>
 <h3 id="612-deprecated">6.1.2 deprecated</h3>
 <p><code>deprecated("message")</code> before a function declaration marks the function as on its way
-out. It keeps working, and each use outside an imported module prints a warning with the
-message:</p>
+out. It keeps working, and each use in the program's own files (not in a library: the
+standard library or a dependency) prints a warning with the message:</p>
 <pre><code class="language-eskiu">int Rect_area(const *Rect self) { return self.w * self.h; }
 deprecated(&quot;use Rect_area&quot;) int rect_area(const *Rect r) { return Rect_area(r); }
 
@@ -3795,7 +3795,7 @@ asm(&quot;addq $1, $0&quot; : &quot;+r&quot;(acc) : &quot;r&quot;(b));          
 </tr>
 <tr>
 <td><code>eskiuc file.esk -Wall -o prog</code></td>
-<td>Enable lint warnings in the program's own files (not in imported modules): unused vars/params/functions, assignment-in-condition, a local that may be used uninitialized</td>
+<td>Enable lint warnings in the program's own files: unused vars/params/functions, assignment-in-condition, a local that may be used uninitialized</td>
 </tr>
 <tr>
 <td><code>eskiuc file.esk -Wextra -o prog</code></td>
@@ -4007,7 +4007,7 @@ eskiuc kernel.esk --target aarch64-unknown-none --freestanding -o kernel.o
 <pre><code>error: file.esk:8:22: undefined variable 'foo'
 error: file.esk:14:5: initializing 'p': cannot convert 'float' to 'int*'
 </code></pre>
-<p>The format is <code>error: file:line:col: message</code>. Line and column numbers are 1-based. Lexer, preprocessor, parser and type errors all use it, and an error inside an imported file names that file. <code>-Wall</code> warnings are printed as <code>file:line:col: warning: message</code>.</p>
+<p>The format is <code>error: file:line:col: message</code>. Line and column numbers are 1-based. Lexer, preprocessor, parser and type errors all use it, and an error inside an imported file names that file. <code>-Wall</code> warnings are printed as <code>file:line:col: warning: message</code>. Warnings are reported in the program's own files: the root file and every file it imports from under the program's directory (the nearest one above the root file that holds an <code>eskiu.toml</code>, else the root file's). The standard library and dependencies are libraries, and their code is not linted, as a C compiler treats system headers.</p>
 <p>A few warnings are on by default, because the code they flag is almost always a mistake. Each ends with its flag and is turned off with the matching <code>-Wno-</code> option; none of them rejects a program, and code from an imported module is not checked:</p>
 <div class="tablewrap"><table>
 <thead>

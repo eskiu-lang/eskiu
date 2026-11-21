@@ -242,7 +242,8 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <summary>Details</summary>
 <h3 id="changed">Changed</h3>
 <ul>
-<li>A struct, union or array parameter over 16 bytes passes between Eskiu functions as a
+<li>
+<p>A struct, union or array parameter over 16 bytes passes between Eskiu functions as a
   pointer to a copy the caller makes, on every target and every call path (direct, method,
   generic, interface, function value, closure, async). By-value semantics are unchanged. LLVM
   no longer spreads such a record into one argument per field at each call, so a call that
@@ -250,12 +251,23 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
   ui package costs about 105 bytes of WebAssembly instead of 468. A struct literal starts as
   a copy of its type's constant default value and stores only the fields it gives. Extern C
   functions, <code>export</code> entries and C callbacks keep the C ABI. Both compilers. Objects built
-  by 0.16.1 do not link with ones built by 0.16.2: rebuild everything.</li>
+  by 0.16.1 do not link with ones built by 0.16.2: rebuild everything.</p>
+</li>
+<li>
+<p>Warnings are reported in every file of the program's own, not only in the root file: a
+  file imported from under the program's directory (the nearest one above the root file
+  with an <code>eskiu.toml</code>, else the root file's) is linted like the root file. The standard
+  library and dependencies are still libraries and are not linted. A package's modules
+  imported from its <code>main.esk</code>, and a ui app's sources (which the ui tool's generated entry
+  imports), now get <code>-Wformat</code>, <code>-Wdeprecated</code> and the <code>-Wall</code> checks. Both compilers.</p>
+</li>
 </ul>
 <h3 id="fixed">Fixed</h3>
 <ul>
 <li>The self-hosted compiler names the location in "cannot assign to read-only location 'b'",
   as eskiuc does.</li>
+<li><code>-Wall</code> no longer reports a variadic function's <code>...</code> as an unused parameter. Both
+  compilers.</li>
 </ul>
 <hr>
 </details>
