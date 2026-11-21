@@ -32,6 +32,7 @@ MCP server: `https://eskiu-mcp-9450.orvex.cloud/mcp` (remote, no key). It search
 - [ui test](https://github.com/eskiu-packages/ui/blob/main/docs/testing.md): `.uitest` steps and expectations
 - [App structure](https://github.com/eskiu-packages/ui/blob/main/docs/app-structure.md): how to lay out a ui app that grows (model, services, components, screens, words, tests) and what may use what; follow it when creating an app
 - [Design guide](https://github.com/eskiu-packages/ui/blob/main/docs/design.md): color roles, type, spacing, 44-point targets, loading, empty and error states, forms, motion, accessibility and dark mode; follow it for every screen
+- [Product guide](https://github.com/eskiu-packages/ui/blob/main/docs/product.md): the job and the main action before the screens, the first minute, the app's words, permissions and notifications in context, trust and privacy, measuring, retention without tricks, the store listing and the web; follow it when building an app with someone
 - [ui-starter](https://github.com/eskiu-packages/ui-starter): a whole app laid out this way, to start from
 - [ui web apps](https://github.com/eskiu-packages/ui/blob/main/docs/webapp.md): an Eskiu program as the backend of a web front end in the desktop webview, with `@eskiu/webapp`
 
