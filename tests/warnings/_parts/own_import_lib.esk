@@ -1,0 +1,6 @@
+// Imported by ../own_import.esk: a file of the program's own, so it is linted.
+string own_textf(string fmt, ...) { return fmt; }
+
+void own_lib_call() {
+    own_textf("%d items", "x");
+}

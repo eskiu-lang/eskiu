@@ -1,0 +1,12 @@
+// A file of the program's own that the root file imports (one under the directory of the
+// nearest eskiu.toml, else the root file's) is linted like the root file; the standard
+// library and dependencies are libraries and are not.
+import <io>;
+import "_parts/own_import_lib.esk";
+// EXPECT-WARNING: own_import_lib.esk:5:14: warning: format '%d' expects an int, but argument 2 has type 'string' [-Wformat]
+// (and no "unused parameter '...'" for own_textf's variadic rest under -Wall)
+
+int main() {
+    own_lib_call();
+    return 0;
+}
