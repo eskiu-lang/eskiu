@@ -467,6 +467,8 @@ void sema_init(Sema* s, string filename) {
     s.line = 0;
     s.col = 0;
     s.filename = filename;
+    s.root_file = filename;
+    s.lint_root = null;
     List_init<SInst>(&s.insts, 8);
     List_init<string>(&s.inst_seen, 8);
     List_init<string>(&s.isub_p, 4);

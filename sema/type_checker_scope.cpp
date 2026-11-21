@@ -583,9 +583,9 @@ void TypeChecker::errorAtDecl(Decl* d, const std::string& message) {
 
 void TypeChecker::warning(int line, int col, const std::string& message) {
     if (inInstance || noWarnings) return;   // a generic body is linted once, not once per instance
-    // Code from an imported module is a library: not linted, as C compilers treat
-    // system headers.
-    if (auto* d = dynamic_cast<Decl*>(posCtx); d && d->fromImport) return;
+    // Code from an imported module is a library's and is not linted, as C compilers treat
+    // system headers; a file of the program's own (under lintRoot) is.
+    if (auto* d = dynamic_cast<Decl*>(posCtx); d && !lintsDecl(d)) return;
     if (warningsAsErrors) { error(line, col, message); return; }
     std::stringstream ss;
     ss << diagFile() << ":" << line << ":" << col << ": warning: " << userSpelling(message);
@@ -603,7 +603,7 @@ void TypeChecker::noteDeprecatedUse(const std::string& fn, int line, int col) {
 
 void TypeChecker::noteWarning(const std::string& name, int line, int col, const std::string& message) {
     if (!warnDefaults || line <= 0 || disabledWarnings.count(name)) return;
-    if (auto* d = dynamic_cast<Decl*>(posCtx); d && d->fromImport) return;
+    if (auto* d = dynamic_cast<Decl*>(posCtx); d && !lintsDecl(d)) return;
     if (inInstance) return;
     if (!deprecatedWarned().insert(diagFile() + ":" + std::to_string(line) + ":" + std::to_string(col) + ":" + name).second) return;
     warning(line, col, message + " [-W" + name + "]");

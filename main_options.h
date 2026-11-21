@@ -203,6 +203,7 @@ static void applyWarningFlags(TypeChecker& tc) {
     if (WnoAwaitLock) tc.disabledWarnings.insert("await-holding-lock");
     tc.warningsAsErrors = Werror;
     tc.noWarnings = Wnone;
+    tc.lintRoot = TypeChecker::lintRootFor(tc.sourceFile);
 }
 
 static llvm::cl::opt<bool> Wall("Wall",

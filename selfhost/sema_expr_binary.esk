@@ -423,10 +423,64 @@ int sema_is_addr_ty(Sema* s, *ExprNode e) {
     return 0;
 }
 
-// A warning on by default, unless -Wno-<name>; once per position, never in an imported
-// declaration or a generic instance (mirrors the C++ noteWarning).
+// The program's own directory, with a trailing '/' (mirrors TypeChecker::lintRootFor): the
+// nearest one above the root file that holds an eskiu.toml, else the root file's.
+string sema_lint_root_for(string root_file) {
+    if (root_file == null) {
+        return "";
+    }
+    string file = realpath(root_file, null);
+    if (file == null) {
+        return "";
+    }
+    int n = (int)strlen(file);
+    int end = n - 1;
+    while (end > 0 && file[end] != '/') {
+        end = end - 1;
+    }
+    string start = sema_sub_str(file, 0, end);
+    string dir = start;
+    while (dir != null && strlen(dir) > 0) {
+        if (realpath(sema_cat(dir, "/eskiu.toml"), null) != null) {
+            start = dir;
+            break;
+        }
+        int at = (int)strlen(dir) - 1;
+        while (at > 0 && dir[at] != '/') {
+            at = at - 1;
+        }
+        if (at <= 0) {
+            break;
+        }
+        dir = sema_sub_str(dir, 0, at);
+    }
+    return sema_cat(start, "/");
+}
+
+// Whether warnings are reported in the declaration being checked (mirrors
+// TypeChecker::lintsDecl): the root file's, and an imported one from a file under the
+// program's own directory; a library's (the standard library, a dependency) are not.
+int sema_lints_here(Sema* s) {
+    if (s.cur_import == 0) {
+        return 1;
+    }
+    if (s.lint_root == null) {
+        s.lint_root = sema_lint_root_for(s.root_file);
+    }
+    if (strlen(s.lint_root) == 0 || s.filename == null) {
+        return 0;
+    }
+    string canon = canonical_path(s.filename);
+    if (strncmp(canon, s.lint_root, strlen(s.lint_root)) == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+// A warning on by default, unless -Wno-<name>; once per position, never in a library's
+// declaration (sema_lints_here) or a generic instance (mirrors the C++ noteWarning).
 void sema_warn(Sema* s, string name, int line, int col, string msg) {
-    if (line <= 0 || s.in_inst == 1 || s.cur_import == 1) {
+    if (line <= 0 || s.in_inst == 1 || sema_lints_here(s) == 0) {
         return;
     }
     if (sema_in_list(&s.wno, name) == 1) {
@@ -450,9 +504,9 @@ void sema_warn(Sema* s, string name, int line, int col, string msg) {
 }
 
 // A -Wall/-Wextra lint warning (mirrors the C++ TypeChecker::warning): no option suffix,
-// never in an imported declaration or a generic instance.
+// never in a library's declaration or a generic instance.
 void sema_lint(Sema* s, int line, int col, string msg) {
-    if (s.in_inst == 1 || s.cur_import == 1 || s.wnone == 1) {
+    if (s.in_inst == 1 || sema_lints_here(s) == 0 || s.wnone == 1) {
         return;
     }
     if (s.werror == 1) {

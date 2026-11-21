@@ -119,6 +119,16 @@ public:
     bool warningsAsErrors = false;   // -Werror: every warning is reported as an error
     bool noWarnings = false;         // -w: no warning is printed
     std::set<std::string> disabledWarnings;
+    // The program's own directory (with a trailing '/'): the nearest one above the root file
+    // that holds an eskiu.toml, else the root file's. A declaration imported from a file under
+    // it is the program's own code and is linted; one from elsewhere (the standard library, a
+    // dependency) is a library's and is not. Empty: nothing imported is linted.
+    std::string lintRoot;
+    static std::string lintRootFor(const std::string& rootFile);
+    // Whether warnings are reported inside `d`: the root file's declarations, and imported
+    // ones from a file under lintRoot.
+    bool lintsDecl(const Decl* d);
+    std::map<std::string, bool> lintedFiles;
     void noteWarning(const std::string& name, int line, int col, const std::string& message);
     // A local over this many bytes warns (-Wframe-larger-than): thread stacks are
     // 512 KiB to 8 MiB.

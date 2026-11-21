@@ -157,6 +157,8 @@ struct Sema {
     List<List<*ExprNode>> pd_lists;
     int no_depr;            // -Wno-deprecated: no warning at a use of a `deprecated` function
     int cur_import;         // the top-level declaration being checked comes from an import
+    string root_file;       // the root input (sema_init's file): where lint_root is found from
+    string lint_root;       // the program's own directory with a trailing '/', once found (sema_lints_here)
     List<string> depr_seen; // "file:line:col" of each deprecation warning already printed
     List<string> wno;       // -Wno-<name>: the default-on warnings turned off
     int werror;             // -Werror: every warning is reported as an error
