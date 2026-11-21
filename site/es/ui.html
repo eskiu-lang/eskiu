@@ -82,7 +82,8 @@
     @media (min-width: 720px) {
       .ui-plat { grid-template-columns: repeat(6, minmax(0, 1fr)); }
       .ui-nums { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-      .ui-steps, .ui-links { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .ui-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .ui-links { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (min-width: 960px) {
       .ui-pillars { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -185,7 +186,7 @@ eskiuc ui/tools/ui/main.esk -o ~/.eskiu/bin/ui</code></pre>
 
       <section class="ui-sec" id="more">
         <h2>Sigue adelante</h2>
-        <div class="ui-links"><a href="ui-components.html"><b>Componentes y APIs</b><span>Cada elemento, hook y servicio</span></a><a href="https://github.com/eskiu-packages/ui-starter"><b>ui-starter</b><span>Una app completa para empezar: pestañas, pantallas, una lista desde la red</span></a><a href="https://github.com/eskiu-packages/ui/blob/main/docs/webapp.md"><b>Front ends web en el escritorio</b><span>Un bundle de React en el webview del sistema, con backend en Eskiu</span></a></div>
+        <div class="ui-links"><a href="ui-components.html"><b>Componentes y APIs</b><span>Cada elemento, hook y servicio</span></a><a href="https://github.com/eskiu-packages/ui-starter"><b>ui-starter</b><span>Una app completa para empezar: pestañas, pantallas, una lista desde la red</span></a><a href="https://github.com/eskiu-packages/ui/blob/main/docs/webapp.md"><b>Front ends web en el escritorio</b><span>Un bundle de React en el webview del sistema, con backend en Eskiu</span></a><a href="https://github.com/eskiu-packages/ui/blob/main/docs/design.md"><b>Guías de diseño y producto</b><span>Cómo organizar una app, cómo se ven sus pantallas y qué la hace un producto</span></a></div>
       </section>
 
       <p class="note ui-note">ui 0.7 requiere Eskiu 0.16.2 o más nuevo. El núcleo, el kit y los hosts de iOS, Android y la web van hacia la 1.0. Los hosts de macOS, Linux y Windows y los paquetes de dispositivo están en Preview: todavía pueden cambiar en una versión menor y aún no se prueban en su plataforma como el resto (<a href="https://github.com/eskiu-packages/ui/blob/main/docs/stability.md">estabilidad</a>).</p>

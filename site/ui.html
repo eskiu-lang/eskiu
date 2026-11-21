@@ -83,7 +83,8 @@
     @media (min-width: 720px) {
       .ui-plat { grid-template-columns: repeat(6, minmax(0, 1fr)); }
       .ui-nums { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-      .ui-steps, .ui-links { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .ui-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .ui-links { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (min-width: 960px) {
       .ui-pillars { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -186,7 +187,7 @@ eskiuc ui/tools/ui/main.esk -o ~/.eskiu/bin/ui</code></pre>
 
       <section class="ui-sec" id="more">
         <h2>Go further</h2>
-        <div class="ui-links"><a href="ui-components.html"><b>Components and APIs</b><span>Every element, hook and service</span></a><a href="https://github.com/eskiu-packages/ui-starter"><b>ui-starter</b><span>A whole app to start from: tabs, screens, a list from the network</span></a><a href="https://github.com/eskiu-packages/ui/blob/main/docs/webapp.md"><b>Web front ends on the desktop</b><span>A React bundle in the system's webview, with an Eskiu backend</span></a></div>
+        <div class="ui-links"><a href="ui-components.html"><b>Components and APIs</b><span>Every element, hook and service</span></a><a href="https://github.com/eskiu-packages/ui-starter"><b>ui-starter</b><span>A whole app to start from: tabs, screens, a list from the network</span></a><a href="https://github.com/eskiu-packages/ui/blob/main/docs/webapp.md"><b>Web front ends on the desktop</b><span>A React bundle in the system's webview, with an Eskiu backend</span></a><a href="https://github.com/eskiu-packages/ui/blob/main/docs/design.md"><b>Design and product guides</b><span>How to lay out an app, how its screens look, and what makes it a product</span></a></div>
       </section>
 
       <p class="note ui-note">ui 0.7 needs Eskiu 0.16.2 or newer. The core, the kit and the iOS, Android and web hosts are on their way to 1.0. The macOS, Linux and Windows hosts and the device packages are in Preview: they can still change in a minor release and are not yet tested on their platform the way the rest is (<a href="https://github.com/eskiu-packages/ui/blob/main/docs/stability.md">stability</a>).</p>

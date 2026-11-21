@@ -89,9 +89,11 @@ ui agent web "screenshot shot.png"
 ui agent web --stop</code></pre>
     <p>
       Las operaciones son <code>tree</code>, <code>layout</code>, <code>screenshot FILE</code>,
-      <code>tap ID</code>, <code>type ID TEXT</code>, <code>scroll ID DY</code>, <code>back</code>,
+      <code>tap ID</code>, <code>type ID TEXT</code>, <code>submit ID</code>, <code>scroll ID DY</code>,
+      <code>drag ID DX DY</code>, <code>long_press ID</code>, <code>hover ID in|out</code>, <code>back</code>,
       <code>clock +MS</code>, <code>clock settle</code>, <code>state</code>, <code>logs</code> y
-      <code>perf</code>. Los elementos se nombran con <code>Style.test_id</code>. El tiempo solo
+      <code>perf</code>. Los elementos se nombran con <code>Style.test_id</code>, y una palabra entre
+      comillas dobles conserva sus espacios (<code>tap "I agree"</code>). El tiempo solo
       avanza con <code>clock</code>, así que nada cambia entre dos operaciones. En una máquina
       Linux que corre como root, Chrome necesita <code>UI_CHROME_ARGS=--no-sandbox</code>.
     </p>
@@ -134,6 +136,17 @@ ui test web --json</code></pre>
       worker: <code>eskiu_run</code> compila y corre un archivo, <code>eskiu_ui_render</code>
       construye una app de ui para la web, aplica operaciones de <code>ui agent</code> y regresa
       una captura, y <code>eskiu_ui_test</code> corre un archivo <code>.uitest</code> contra ella. Las dos responden con los diagnósticos del compilador cuando la app no compila, y con el resultado de cada paso.
+    </p>
+    <p>
+      En ChatGPT, <code>eskiu_ui_render</code> además muestra la app viva en la conversación: la
+      persona puede tocarla y escribir en ella, en línea o a pantalla completa, mientras el agente
+      cambia el código.
+    </p>
+    <p>
+      Un agente que construye una app sigue tres guías: cómo organizar el proyecto
+      (<a href="https://github.com/eskiu-packages/ui/blob/main/docs/app-structure.md">estructura</a>),
+      cómo se ven las pantallas (<a href="https://github.com/eskiu-packages/ui/blob/main/docs/design.md">diseño</a>)
+      y qué hace que el producto funcione (<a href="https://github.com/eskiu-packages/ui/blob/main/docs/product.md">producto</a>).
     </p>
 
     <h2>Referencia</h2>
