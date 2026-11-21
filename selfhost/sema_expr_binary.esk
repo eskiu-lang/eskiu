@@ -470,7 +470,10 @@ int sema_lints_here(Sema* s) {
     if (strlen(s.lint_root) == 0 || s.filename == null) {
         return 0;
     }
-    string canon = canonical_path(s.filename);
+    string canon = realpath(s.filename, null);
+    if (canon == null) {
+        canon = s.filename;
+    }
     if (strncmp(canon, s.lint_root, strlen(s.lint_root)) == 0) {
         return 1;
     }

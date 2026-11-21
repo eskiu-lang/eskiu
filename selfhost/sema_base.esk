@@ -313,6 +313,8 @@ int sema_is_numeric_ty(string t) {
 }
 
 extern double strtod(string s, *string end);
+// The program's own files (sema_lints_here); parser.esk declares it too.
+extern string realpath(string path, string resolved);
 
 // Does the floating value v, truncated toward zero, fit the integer type t (mirrors
 // floatConstFitsInt)? Powers of two are exact doubles; at 64 bits `>=` is exact.
