@@ -13,14 +13,6 @@ struct WebAsset {
     std::string path() const { return root + "/" + rel; }
 };
 
-// Whether `p` is `root` or lies under it, component by component.
-bool pathUnder(const fs::path& p, const fs::path& root) {
-    auto q = p.begin();
-    for (auto r = root.begin(); r != root.end(); ++r, ++q)
-        if (q == p.end() || *q != *r) return false;
-    return true;
-}
-
 // Whether the asset is a file or directory of its package: no component of its path
 // below the package directory is a symbolic link, and it resolves inside the package.
 // A link could make a web build copy any file the user can read into its output.

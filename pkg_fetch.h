@@ -176,12 +176,50 @@ std::string sha256Hex(const std::string& data) {
     return llvm::toHex(llvm::ArrayRef<uint8_t>(d.data(), d.size()), /*LowerCase=*/true);
 }
 
+// Whether `p` is `root` or lies under it, component by component.
+bool pathUnder(const fs::path& p, const fs::path& root) {
+    auto q = p.begin();
+    for (auto r = root.begin(); r != root.end(); ++r, ++q)
+        if (q == p.end() || *q != *r) return false;
+    return true;
+}
+
+// What makes the library directory `lib` of the archive unpacked in `base` unsafe to
+// link from, or "": a component of it that is a symbolic link, or a symbolic link in it
+// that does not resolve inside `base`. The checksum covers the archive's bytes, not what
+// a link in it reaches (a library directory linked to /usr/lib would be rewritten and
+// re-signed on macOS, and linked from).
+std::string nativeLibDirProblem(const std::string& base, const std::string& lib) {
+    std::error_code ec;
+    fs::path cur(base);
+    for (const auto& part : fs::path(lib)) {
+        if (part.empty() || part == ".") continue;
+        cur /= part;
+        if (fs::is_symlink(fs::symlink_status(cur, ec))) return "its directory '" + lib + "' is a symbolic link";
+    }
+    fs::path root = fs::canonical(base, ec);
+    if (ec) return "its directory cannot be read";
+    for (const auto& ent : fs::directory_iterator(cur, ec)) {
+        std::error_code sec;
+        if (!ent.is_symlink(sec)) continue;
+        fs::path real = fs::canonical(ent.path(), sec);
+        if (sec || !pathUnder(real, root))
+            return "the symbolic link '" + lib + "/" + ent.path().filename().string() +
+                   "' leads out of the archive";
+    }
+    return "";
+}
+
 // Download, check and unpack `src` into nativeDir(src) unless it is already there.
 void fetchNative(const std::string& pkg, const std::string& lib, const NativeSource& src) {
     std::string dir = nativeDir(src);
     std::error_code ec;
-    if (fs::is_directory(dir, ec)) return;
     std::string what = "native library '" + lib + "' of package '" + pkg + "'";
+    if (fs::is_directory(dir, ec)) {
+        std::string bad = nativeLibDirProblem(dir, src.lib);
+        if (!bad.empty()) throw PkgError("the " + what + " is not used: " + bad);
+        return;
+    }
     fs::create_directories(pkgHome() + "/native", ec);
     std::string file = dir + ".download", tmp = dir + ".tmp";
     fs::remove(file, ec);
@@ -220,6 +258,11 @@ void fetchNative(const std::string& pkg, const std::string& lib, const NativeSou
     if (!fs::is_directory(tmp + "/" + src.lib, ec)) {
         fs::remove_all(tmp, ec);
         throw PkgError("the " + what + " has no directory '" + src.lib + "' (lib in its eskiu.toml)");
+    }
+    std::string bad = nativeLibDirProblem(tmp, src.lib);
+    if (!bad.empty()) {
+        fs::remove_all(tmp, ec);
+        throw PkgError("the " + what + " is not used: " + bad);
     }
 #if defined(__APPLE__)
     // Ensure any .dylib in the archive has an @rpath install name (upstream archives such as
