@@ -51,6 +51,7 @@ namespace fs = std::filesystem;
 #include "pkg_toml.h"
 #include "pkg_manifest.h"
 #include "pkg_fetch.h"
+#include "pkg_web.h"
 
 bool pkgPreferSystemLib(const std::string& lib) {
     const char* env = std::getenv("ESKIU_SYSTEM_LIBS");
@@ -506,7 +507,7 @@ bool pkgCommand(int argc, char** argv, int& rc) {
 namespace {
 std::vector<HostNative> packageNatives;   // this host's [native.NAME] archives, by pkgLoadRoots
 bool packageTargetIsHost = true;          // the build runs here: a system library can stand in
-std::vector<std::pair<std::string, std::string>> packageWebAssets;   // package, absolute path
+std::vector<WebAsset> packageWebAssets;
 }
 
 void pkgLoadRoots(const std::string& input, const std::string& triple) {
@@ -550,7 +551,7 @@ void pkgLoadRoots(const std::string& input, const std::string& triple) {
         std::string dir = kv.second.root(root);
         if (!fs::is_regular_file(dir + "/eskiu.toml", ec)) continue;
         try {
-            for (const auto& a : readManifest(dir).webAssets) packageWebAssets.push_back({kv.first, dir + "/" + a});
+            for (const auto& a : readManifest(dir).webAssets) packageWebAssets.push_back({kv.first, dir, a});
         } catch (const std::exception&) {
         }
     }
@@ -592,26 +593,19 @@ void pkgCopyWebAssets(const std::string& page) {
     fs::path to = fs::absolute(page, ec).parent_path();
     std::set<std::string> copied;
     for (const auto& a : packageWebAssets) {
-        fs::path from(a.second);
+        fs::path from(a.path());
         std::string name = from.filename().string();
         if (!fs::exists(from, ec)) {
-            std::cerr << "warning: web asset " << displayPath(a.second) << " of package '" << a.first
+            std::cerr << "warning: web asset " << displayPath(a.path()) << " of package '" << a.pkg
                       << "' ([web] assets in its eskiu.toml) does not exist" << std::endl;
             continue;
         }
         if (!copied.insert(name).second) {
-            std::cerr << "warning: web asset " << name << " of package '" << a.first
+            std::cerr << "warning: web asset " << name << " of package '" << a.pkg
                       << "' has the name of another package's; keeping the first" << std::endl;
             continue;
         }
-        if (fs::equivalent(from, to / name, ec)) continue;
-        if (fs::is_directory(from, ec))
-            fs::copy(from, to / name, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
-        else
-            fs::copy_file(from, to / name, fs::copy_options::overwrite_existing, ec);
-        if (ec)
-            std::cerr << "warning: could not copy web asset " << displayPath(a.second) << " to "
-                      << displayPath((to / name).generic_string()) << ": " << ec.message() << std::endl;
+        copyWebAsset(a, to, name);
     }
 }
 
