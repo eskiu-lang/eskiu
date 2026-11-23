@@ -15,6 +15,9 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   registered. It was a fixed table of 4096 (Windows) or 1024 (WebAssembly) entries, and a
   registration past its end wrote out of bounds.
 
+- `fetch_last_error()` keeps one message per thread. Every failed fetch wrote one global
+  buffer, so two threads failing at once could corrupt the heap.
+
 ## [0.16.2] - 2026-11-20
 
 ### Changed

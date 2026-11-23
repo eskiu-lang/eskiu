@@ -104,9 +104,9 @@ int _fetch_resolve(_FetchCall* c) {
         }
         c.addrs = null;
         _fetch_fail(FETCH_ERR_DNS, "cannot resolve host '");
-        String_append(&_fetch_err, c.url.host.cstr());
-        String_append(&_fetch_err, "': ");
-        String_append(&_fetch_err, dns_last_error());
+        String_append(_fetch_errp(), c.url.host.cstr());
+        String_append(_fetch_errp(), "': ");
+        String_append(_fetch_errp(), dns_last_error());
         return FETCH_ERR_DNS;
     }
     c.next = c.addrs;
@@ -119,19 +119,19 @@ int _fetch_connect_failed(_FetchCall* c) {
     let hp: String;
     String_init(&hp, 32);
     Url_host_port(&c.url, &hp);
-    String_append(&_fetch_err, hp.cstr());
+    String_append(_fetch_errp(), hp.cstr());
     String_free(&hp);
     if (c.conn_err != 0) {
 #ifdef _WIN32
         if (c.conn_err == 10061) {
-            String_append(&_fetch_err, ": Connection refused");
+            String_append(_fetch_errp(), ": Connection refused");
         }
         else {
-            String_appendf(&_fetch_err, ": socket error %d", c.conn_err);
+            String_appendf(_fetch_errp(), ": socket error %d", c.conn_err);
         }
 #else
-        String_append(&_fetch_err, ": ");
-        String_append(&_fetch_err, strerror(c.conn_err));
+        String_append(_fetch_errp(), ": ");
+        String_append(_fetch_errp(), strerror(c.conn_err));
 #endif
     }
     return FETCH_ERR_CONNECT;
@@ -166,29 +166,29 @@ int _fetch_connect_next(_FetchCall* c) {
 
 int _fetch_timed_out(_FetchCall* c) {
     _fetch_fail(FETCH_ERR_TIMEOUT, "");
-    String_appendf(&_fetch_err, "timed out after %lld ms (", c.timeout_ms);
+    String_appendf(_fetch_errp(), "timed out after %lld ms (", c.timeout_ms);
     if (c.phase == _FC_RESOLVE) {
-        String_append(&_fetch_err, "resolving the host");
+        String_append(_fetch_errp(), "resolving the host");
     }
     else if (c.phase == _FC_CONNECTING) {
-        String_append(&_fetch_err, "connecting");
+        String_append(_fetch_errp(), "connecting");
     }
     else if (c.phase == _FC_TLS) {
-        String_append(&_fetch_err, "TLS handshake");
+        String_append(_fetch_errp(), "TLS handshake");
     }
     else if (c.phase == _FC_SEND) {
-        String_append(&_fetch_err, "sending the request");
+        String_append(_fetch_errp(), "sending the request");
     }
     else {
-        String_append(&_fetch_err, "waiting for the response");
+        String_append(_fetch_errp(), "waiting for the response");
     }
-    String_append(&_fetch_err, ")");
+    String_append(_fetch_errp(), ")");
     return FETCH_ERR_TIMEOUT;
 }
 
 int _fetch_io_failed(string what) {
     _fetch_fail(FETCH_ERR_IO, "connection failed while ");
-    String_append(&_fetch_err, what);
+    String_append(_fetch_errp(), what);
     return FETCH_ERR_IO;
 }
 
@@ -208,15 +208,15 @@ int _fetch_redirect(_FetchCall* c) {
     }
     if (r.redirects >= c.max_redirects) {
         _fetch_fail(FETCH_ERR_REDIRECTS, "");
-        String_appendf(&_fetch_err, "too many redirects (more than %d)", c.max_redirects);
+        String_appendf(_fetch_errp(), "too many redirects (more than %d)", c.max_redirects);
         return FETCH_ERR_REDIRECTS;
     }
     let next: Url;
     if (Url_resolve(&c.url, loc.cstr(), &next) == 0) {
         Url_free(&next);
         _fetch_fail(FETCH_ERR_RESPONSE, "malformed response: invalid Location '");
-        String_append(&_fetch_err, loc.cstr());
-        String_append(&_fetch_err, "'");
+        String_append(_fetch_errp(), loc.cstr());
+        String_append(_fetch_errp(), "'");
         return FETCH_ERR_RESPONSE;
     }
     if (String_eq(&next.scheme, &c.url.scheme) == 0 || String_eq(&next.host, &c.url.host) == 0
@@ -283,8 +283,8 @@ int _fetch_step(_FetchCall* c) {
                 if (c.ssl == null) {
                     if (c.ca_file.len > 0 && c.ctx == null) {
                         _fetch_fail(FETCH_ERR_TLS, "cannot load the CA file '");
-                        String_append(&_fetch_err, c.ca_file.cstr());
-                        String_append(&_fetch_err, "'");
+                        String_append(_fetch_errp(), c.ca_file.cstr());
+                        String_append(_fetch_errp(), "'");
                         return FETCH_ERR_TLS;
                     }
                     return _fetch_fail(FETCH_ERR_TLS, "cannot set up the TLS connection");
@@ -303,13 +303,13 @@ int _fetch_step(_FetchCall* c) {
             }
             if (h < 0) {
                 _fetch_fail(FETCH_ERR_TLS, "TLS handshake with ");
-                String_append(&_fetch_err, c.url.host.cstr());
-                String_append(&_fetch_err, " failed");
+                String_append(_fetch_errp(), c.url.host.cstr());
+                String_append(_fetch_errp(), " failed");
                 let why: String;
                 String_init(&why, 64);
                 if (_ftls_verify_error(c.ssl, &why) == 1) {
-                    String_append(&_fetch_err, ": ");
-                    String_append(&_fetch_err, why.cstr());
+                    String_append(_fetch_errp(), ": ");
+                    String_append(_fetch_errp(), why.cstr());
                 }
                 String_free(&why);
                 return FETCH_ERR_TLS;
@@ -436,15 +436,15 @@ int _fetch_begin(_FetchCall* c, string url, FetchOptions* o, Response* out) {
         Url_free(&u);
         _fetch_fail(FETCH_ERR_URL, "invalid URL '");
         if (url == null) {
-            String_append(&_fetch_err, "(null)");
+            String_append(_fetch_errp(), "(null)");
         }
         else {
             for (int i = 0; url[i] != 0 && i < 200; i++) {
                 const int ch = (int)((uint8)url[i]);
-                String_push(&_fetch_err, ch < 32 || ch == 127 ? '?' : (char)ch);
+                String_push(_fetch_errp(), ch < 32 || ch == 127 ? '?' : (char)ch);
             }
         }
-        String_append(&_fetch_err, "'");
+        String_append(_fetch_errp(), "'");
         return FETCH_ERR_URL;
     }
     const int rc = _fetch_target(c, &u);

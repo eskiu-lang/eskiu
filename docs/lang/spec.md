@@ -3059,8 +3059,8 @@ a negative code: `FETCH_ERR_URL` (an invalid URL or a scheme other than `http`/`
 `FETCH_ERR_TIMEOUT`, `FETCH_ERR_TLS` (handshake or certificate check),
 `FETCH_ERR_IO`, `FETCH_ERR_RESPONSE` (malformed or cut short), `FETCH_ERR_REDIRECTS`,
 `FETCH_ERR_TOO_LARGE`, `FETCH_ERR_REQUEST` (an invalid method or header) or
-`FETCH_ERR_NO_TLS`. `fetch_last_error()` describes the last failure (one message for the
-program, not per thread). Both initialize the `Response` themselves, so it is freed with
+`FETCH_ERR_NO_TLS`. `fetch_last_error()` describes the last failure on the calling thread
+(each thread keeps its own message, valid until that thread's next failed fetch). Both initialize the `Response` themselves, so it is freed with
 `Response_free` in every case; after an error its status is 0.
 
 `Response` has `status`, `reason`, `headers` (`"Name: value\n"` lines as received),

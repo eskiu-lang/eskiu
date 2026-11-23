@@ -1,0 +1,45 @@
+// fetch_last_error is per thread: two threads failing fetches at the same time each
+// read their own message, and neither writes the other's buffer.
+import <fetch>;
+import <string>;
+import <atomic>;
+import <io>;
+
+int bad_a = 0;
+int bad_b = 0;
+
+void hammer(string url, *int bad) {
+    for (i in 0..3000) {
+        let r: Response;
+        if (fetch(url, &r) != FETCH_ERR_URL || strstr(fetch_last_error(), url) == null) {
+            atomic_fetch_add(bad, 1);
+        }
+        Response_free(&r);
+    }
+}
+
+int main() {
+    let ua: String;
+    String_init(&ua, 64);
+    String_append(&ua, "a-not-a-url-");
+    for (i in 0..130) {
+        String_push(&ua, 'a');
+    }
+    let ub: String;
+    String_init(&ub, 64);
+    String_append(&ub, "b-not-a-url-");
+    for (i in 0..9) {
+        String_push(&ub, 'b');
+    }
+    string a = ua.cstr();
+    string b = ub.cstr();
+    *void ta = thread_create(void() { hammer(a, &bad_a); });
+    *void tb = thread_create(void() { hammer(b, &bad_b); });
+    thread_join(ta);
+    thread_join(tb);
+    let r: Response;
+    fetch("main-thread-bad", &r);
+    Response_free(&r);
+    printf("%d %d %s\n", atomic_load(&bad_a), atomic_load(&bad_b), fetch_last_error());
+    return 0;
+}

@@ -52,13 +52,13 @@ void FetchParser_free(FetchParser* p) {
 
 int _fp_bad(string msg) {
     _fetch_fail(FETCH_ERR_RESPONSE, "malformed response: ");
-    String_append(&_fetch_err, msg);
+    String_append(_fetch_errp(), msg);
     return FETCH_ERR_RESPONSE;
 }
 
 int _fp_too_large(int64 max) {
     _fetch_fail(FETCH_ERR_TOO_LARGE, "");
-    String_appendf(&_fetch_err, "response body larger than %lld bytes", max);
+    String_appendf(_fetch_errp(), "response body larger than %lld bytes", max);
     return FETCH_ERR_TOO_LARGE;
 }
 
@@ -287,7 +287,7 @@ int FetchParser_finish(FetchParser* p, Response* r) {
     }
     if (p.stage == _FP_LENGTH) {
         _fetch_fail(FETCH_ERR_RESPONSE, "");
-        String_appendf(&_fetch_err, "connection closed after %lld body bytes, %lld short of the Content-Length",
+        String_appendf(_fetch_errp(), "connection closed after %lld body bytes, %lld short of the Content-Length",
                        r.body.len, p.need);
         return FETCH_ERR_RESPONSE;
     }
@@ -477,8 +477,8 @@ int _fetch_target(_FetchCall* c, Url* u) {
     c.https = String_eq_cstr(&c.url.scheme, "https");
     if (c.https == 0 && String_eq_cstr(&c.url.scheme, "http") == 0) {
         _fetch_fail(FETCH_ERR_URL, "unsupported scheme '");
-        String_append(&_fetch_err, c.url.scheme.cstr());
-        String_append(&_fetch_err, "' (only http and https)");
+        String_append(_fetch_errp(), c.url.scheme.cstr());
+        String_append(_fetch_errp(), "' (only http and https)");
         return FETCH_ERR_URL;
     }
     if (c.https == 1 && fetch_tls_available() == 0) {

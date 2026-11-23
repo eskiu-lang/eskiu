@@ -71,7 +71,8 @@
 // name lookup runs on a thread of its own, which the loop checks on a short
 // timer (a dropped fetch leaves the lookup to finish and free itself).
 //
-// fetch_last_error() keeps one message for the whole program (not per thread).
+// fetch_last_error() keeps one message per thread: the last failure of a fetch
+// that ran on the calling thread.
 
 import <c/string>;   // strerror
 import <c/socket>;   // getsockopt
@@ -89,6 +90,7 @@ import <eventloop>;
 import <net_async>;
 import <timer>;
 import <atomic>;
+import <c/pthread>;
 
 #ifndef ESKIU_FETCH_NO_TLS
 import <fetch_tls>;
@@ -142,23 +144,50 @@ const int FETCH_ERR_TOO_LARGE = -9;    // the body is longer than o.max_body
 const int FETCH_ERR_REQUEST = -10;   // an invalid method or header (CR/LF injection)
 const int FETCH_ERR_NO_TLS = -11;   // https:// without OpenSSL
 
-String _fetch_err;
+// Each thread keeps its own message (a String in a pthread key, freed when the
+// thread exits), so failures on different threads never touch the same buffer.
+_c_tls_key _fetch_err_key;
+int _fetch_err_state;   // 0 no key yet, 1 being created, 2 ready
+
+void _fetch_err_dtor(*void p) {
+    String* s = (String*)p;
+    String_free(s);
+    free(p);
+}
+
+// The calling thread's error message buffer.
+String* _fetch_errp() {
+    if (atomic_load(&_fetch_err_state) != 2) {
+        if (atomic_cas(&_fetch_err_state, 0, 1)) {
+            pthread_key_create(&_fetch_err_key, _fetch_err_dtor);
+            atomic_store(&_fetch_err_state, 2);
+        }
+        while (atomic_load(&_fetch_err_state) != 2) {}
+    }
+    String* s = (String*)pthread_getspecific(_fetch_err_key);
+    if (s == null) {
+        s = alloc<String>(1);
+        String_init(s, 64);
+        pthread_setspecific(_fetch_err_key, (*void)s);
+    }
+    return s;
+}
 
 int _fetch_fail(int code, string msg) {
-    if (_fetch_err.data == null) {
-        String_init(&_fetch_err, 64);
-    }
-    String_clear(&_fetch_err);
-    String_append(&_fetch_err, msg);
+    String* e = _fetch_errp();
+    String_clear(e);
+    String_append(e, msg);
     return code;
 }
 
-// What went wrong in the last failed fetch (any thread), or "no error".
+// What went wrong in the calling thread's last failed fetch, or "no error". The
+// string stays valid until the next failed fetch on the same thread.
 string fetch_last_error() {
-    if (_fetch_err.data == null || _fetch_err.len == 0) {
+    String* e = _fetch_errp();
+    if (e.len == 0) {
         return "no error";
     }
-    return _fetch_err.data;
+    return e.data;
 }
 
 // ── Options ──────────────────────────────────────────────────────────────────
