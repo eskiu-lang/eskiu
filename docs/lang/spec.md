@@ -2927,7 +2927,7 @@ on Windows underneath). The older `fs_write_all` keeps its 1/0 result.
 | `fs_glob(pattern, &list)` | Paths matching a pattern (sorted, no duplicates; returns the count): each `/` component is an `fs_match` pattern and `**` matches any number of directories; wildcards skip names starting with `.` unless the component starts with `.` |
 | `fs_match(pattern, name)` | Shell matching of one name: `*`, `?`, `[abc]`, `[a-z]`, `[!a-z]`, `\` escapes |
 | `fs_cwd(&s)` / `fs_chdir(path)` | The current directory |
-| `fs_temp_file(prefix, &s)` / `fs_temp_dir(prefix, &s)` | Create a unique file / directory in the temporary directory (`$TMPDIR` or `/tmp`, `GetTempPathW` on Windows; `fs_temp_base(&s)` names it); the caller removes it |
+| `fs_temp_file(prefix, &s)` / `fs_temp_dir(prefix, &s)` | Create a unique file / directory in the temporary directory (`$TMPDIR` or `/tmp`, `GetTempPathW` on Windows; `fs_temp_base(&s)` names it); the caller removes it. `prefix` is a plain name: one with a `/` or `\` (or null) fails with EINVAL |
 
 ### Processes (`<process>`)
 

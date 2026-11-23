@@ -1,0 +1,6 @@
+eskiu_ok_: file 0 (0) dir 0 (0) out 'path'
+..: file 0 (0) dir 0 (0) out 'path'
+../eskiu_up_: file -1 (22) dir -1 (22) out ''
+sub/eskiu_: file -1 (22) dir -1 (22) out ''
+a\b: file -1 (22) dir -1 (22) out ''
+(null): file -1 (22) dir -1 (22) out ''

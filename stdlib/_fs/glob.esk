@@ -404,10 +404,30 @@ void fs_temp_base(String* out) {
     }
 }
 
+// A temporary name prefix is one name component: null, or one holding a / or \,
+// would name a place outside the temporary directory. -1 (EINVAL) for those.
+int _fs_temp_prefix_check(string prefix, String* out) {
+    out.clear();
+    bool ok = prefix != null;
+    for (int i = 0; ok && prefix[i] != 0; i++) {
+        ok = prefix[i] != '/' && prefix[i] != '\\';
+    }
+    if (!ok) {
+        _fs_err = 22;
+        _fs_err_win = false;
+        return -1;
+    }
+    return 0;
+}
+
 // Create a new, empty file with a unique name starting with `prefix` in the
 // temporary directory and write its path into `out` (cleared first). The
-// caller removes it (fs_remove). 0 or -1.
+// prefix is a plain name: one with a path separator (/ or \) fails with
+// EINVAL. The caller removes it (fs_remove). 0 or -1.
 int fs_temp_file(string prefix, String* out) {
+    if (_fs_temp_prefix_check(prefix, out) != 0) {
+        return -1;
+    }
     let dir: String;
     dir.init(64);
     defer dir.free();
@@ -442,8 +462,12 @@ int fs_temp_file(string prefix, String* out) {
 
 // Create a new, empty directory with a unique name starting with `prefix` in
 // the temporary directory and write its path into `out` (cleared first). The
-// caller removes it (fs_remove_all). 0 or -1.
+// prefix is a plain name, as for fs_temp_file. The caller removes it
+// (fs_remove_all). 0 or -1.
 int fs_temp_dir(string prefix, String* out) {
+    if (_fs_temp_prefix_check(prefix, out) != 0) {
+        return -1;
+    }
 #ifdef _WIN32
     for (attempt in 0..16) {
         if (fs_temp_file(prefix, out) != 0) {

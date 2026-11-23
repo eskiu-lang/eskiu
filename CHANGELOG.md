@@ -22,6 +22,10 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   (64 KiB) however it is split into reads. The limit was checked only while the end of
   the head was still missing, so a longer head could get through.
 
+- `fs_temp_file` and `fs_temp_dir` reject a prefix with a `/` or `\` (EINVAL). The prefix
+  was joined to the temporary directory as given, so `"../x-"` created the file or
+  directory outside it.
+
 ## [0.16.2] - 2026-11-20
 
 ### Changed

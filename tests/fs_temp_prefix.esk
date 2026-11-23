@@ -1,0 +1,34 @@
+// fs_temp_file and fs_temp_dir take a plain name prefix: one with a path
+// separator would put the file or directory outside the temporary directory
+// ("../x-" climbed out of it), so it fails with EINVAL and creates nothing.
+import <fs>;
+import <string>;
+extern int printf(string fmt, ...);
+
+void try_prefix(string prefix) {
+    let s: String;
+    s.init(64);
+    const int f = fs_temp_file(prefix, &s);
+    const int fe = fs_errno();
+    if (f == 0) {
+        fs_remove(s.cstr());
+    }
+    const int d = fs_temp_dir(prefix, &s);
+    const int de = fs_errno();
+    if (d == 0) {
+        fs_remove_all(s.cstr());
+    }
+    printf("%s: file %d (%d) dir %d (%d) out '%s'\n", prefix == null ? "(null)" : prefix,
+           f, f == 0 ? 0 : fe, d, d == 0 ? 0 : de, d == 0 ? "path" : s.cstr());
+    s.free();
+}
+
+int main() {
+    try_prefix("eskiu_ok_");
+    try_prefix("..");
+    try_prefix("../eskiu_up_");
+    try_prefix("sub/eskiu_");
+    try_prefix("a\\b");
+    try_prefix(null);
+    return 0;
+}
