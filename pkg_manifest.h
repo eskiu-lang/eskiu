@@ -114,6 +114,15 @@ bool writeText(const std::string& path, const std::string& text) {
     return bool(f);
 }
 
+// Whether `s` holds a control character (a byte below 0x20, or 0x7f). eskiu.lock
+// separates fields with tabs and entries with newlines, so a dependency's git URL,
+// rev or path holding one could forge an entry: they are rejected.
+bool hasControlChar(const std::string& s) {
+    for (unsigned char c : s)
+        if (c < 0x20 || c == 0x7f) return true;
+    return false;
+}
+
 Manifest readManifest(const std::string& dir) {
     std::string file = dir + "/eskiu.toml";
     std::string shown = displayPath(file);
@@ -163,6 +172,9 @@ Manifest readManifest(const std::string& dir) {
             else if (e.first == "rev") { d.rev = e.second; hasRev = true; }
             else if (e.first == "path") { d.path = e.second; hasPath = true; }
             else throw fail(v.line, "unknown key '" + e.first + "' in dependency '" + kv.first + "'");
+            if (hasControlChar(e.second))
+                throw fail(v.line, "dependency '" + kv.first + "': " + e.first +
+                                       " may not hold a control character (tab, newline, ...)");
         }
         if (hasGit == hasPath)
             throw fail(v.line, "dependency '" + kv.first + "' needs exactly one of git or path");
@@ -312,6 +324,10 @@ std::map<std::string, LockEntry> readLock(const std::string& dir) {
 void writeLock(const std::string& dir, const std::vector<LockEntry>& entries) {
     std::string text = "# eskiu.lock: written by eskiuc (eskiuc fetch updates it); do not edit.\n";
     for (const auto& e : entries) {
+        for (const std::string* f : {&e.name, &e.kind, &e.url, &e.rev, &e.commit, &e.path})
+            if (hasControlChar(*f))
+                throw PkgError("cannot write " + displayPath(dir + "/eskiu.lock") + ": package '" +
+                               e.name + "' has a control character in its source");
         text += e.name + "\t" + e.kind + "\t";
         if (e.kind == "git") {
             text += e.url + "\t" + e.rev + "\t" + e.commit;

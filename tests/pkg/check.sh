@@ -251,6 +251,17 @@ if [[ $code -ne 0 && "$err" == "error: eskiu.toml:5: expected a string value for
 else
     bad "error/bad-toml" "$err"
 fi
+# A tab or newline in a dependency's path could forge an eskiu.lock entry.
+mkdir -p "$work/ctl"$'\n'"leaf"$'\t'"git"
+cp eskiu.lock "$work/lock.bak"
+printf '[package]\nname = "app"\n\n[deps]\nx = { path = "%s/ctl\\nleaf\\tgit" }\n' "$work" > eskiu.toml
+err="$("$ESKIUC" fetch 2>&1)"; code=$?
+if [[ $code -ne 0 && "$err" == "error: eskiu.toml:5: dependency 'x': path may not hold a control character (tab, newline, ...)" ]] &&
+        cmp -s eskiu.lock "$work/lock.bak"; then
+    ok "error/control-char"
+else
+    bad "error/control-char" "$err"
+fi
 cp "$work/toml.bak" eskiu.toml
 mkdir -p "$work/nogit/bin"
 ln -s "$ESKIUC" "$work/nogit/bin/eskiuc"

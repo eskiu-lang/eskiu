@@ -35,6 +35,11 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   memory from about 28 parameters, undefined from 32). The subsets are walked in the same
   order, at most 65536 of them. Both compilers.
 
+- `eskiu.toml` rejects a control character (tab, newline, ...) in a dependency's `git`,
+  `rev` or `path`, and `eskiu.lock` is never written with one. A tab or newline in a path
+  dependency's name went into the tab- and newline-separated lock as is and could add or
+  replace an entry for another package.
+
 ## [0.16.2] - 2026-11-20
 
 ### Changed
