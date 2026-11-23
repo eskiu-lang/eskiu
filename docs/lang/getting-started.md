@@ -1400,7 +1400,9 @@ The platforms are `macos-arm64`, `macos-x86_64`, `linux-x86_64`, `linux-arm64`,
 first build for a platform that links the library, inside the package or a package that
 depends on it (by `eskiuc build`, `run`, `test`, `eskiuc file.esk`, or a `--target` cross
 build), downloads the archive with `curl`, refuses it when its SHA-256 differs, and unpacks
-it (`tar`, or `unzip` for a `.zip` on Linux) into `~/.eskiu/native/SHA256`, once;
+it (`tar`, or `unzip` for a `.zip` on Linux) into `~/.eskiu/native/SHA256`, once. An
+archive whose `lib` directory is a symbolic link, or holds one that leads out of the
+archive, is refused too;
 `eskiuc fetch` downloads every host one ahead. The build then links against that directory
 and records it as the program's run-time path; on Windows the DLLs are copied next to the
 program. A program that does not link the library downloads nothing, and a platform the

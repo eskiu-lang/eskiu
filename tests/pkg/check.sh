@@ -457,6 +457,35 @@ if [[ -n "$plat" && "$plat" != -* ]] && command -v "$cc_prog" > /dev/null 2>&1 &
             bad "selfhost/native-bad-sha256" "$out"
         fi
     fi
+    # The checksum covers the archive, not what a symbolic link in it reaches: a library
+    # directory that is a link, or a link in it leading out of the archive, is refused.
+    natout="$(cd "$work/natsrc/natlib/lib" && ls)"
+    mkdir -p "$work/natln1/natlib" "$work/natln2/natlib/lib"
+    ln -s "$work/natsrc/natlib/lib" "$work/natln1/natlib/lib"
+    ln -s "$work/natsrc/natlib/lib/$natout" "$work/natln2/natlib/lib/$natout"
+    for v in 1 2; do
+        (cd "$work/natln$v" && tar -czf natlib.tgz natlib)
+        if command -v sha256sum > /dev/null 2>&1; then vsum="$(sha256sum "$work/natln$v/natlib.tgz" | cut -d' ' -f1)"
+        else vsum="$(shasum -a 256 "$work/natln$v/natlib.tgz" | cut -d' ' -f1)"; fi
+        vfile="$work/natln$v/natlib.tgz"
+        if command -v cygpath > /dev/null 2>&1; then vfile="/$(cygpath -m "$vfile")"; fi
+        printf '[package]\nname = "nat"\n\n[native.nat]\n%s = { url = "file://%s", sha256 = "%s", lib = "natlib/lib" }\n' \
+            "$plat" "$vfile" "$vsum" > "$work/nat/eskiu.toml"
+        if [[ $v == 1 ]]; then want="is not used: its directory 'natlib/lib' is a symbolic link"
+        else want="is not used: the symbolic link 'natlib/lib/$natout' leads out of the archive"; fi
+        for c in eskiuc esk; do
+            comp="$ESKIUC"; [[ $c == esk ]] && comp="$ESK"
+            [[ -x "$comp" ]] || continue
+            rm -rf "$ESKIU_HOME/native"
+            out="$(cd "$work/nat" && "$comp" src/main.esk -o "$work/nat_ln" 2>&1)"; code=$?
+            if [[ $code -ne 0 && "$out" == *"error: the native library 'nat' of package 'nat' $want"* &&
+                    -z "$(ls "$ESKIU_HOME/native" 2>/dev/null)" ]]; then
+                ok "native/symlink-$v ($c)"
+            else
+                bad "native/symlink-$v ($c)" "exit $code: $out"
+            fi
+        done
+    done
     printf '[package]\nname = "nat"\n\n[native.nat]\nmacos = { url = "x", sha256 = "y" }\n' > "$work/nat/eskiu.toml"
     out="$(cd "$work/nat" && "$ESKIUC" build 2>&1)"; code=$?
     if [[ $code -ne 0 && "$out" == "error: eskiu.toml:5: unknown platform 'macos' in [native.nat] (macos-arm64, macos-x86_64, linux-x86_64, linux-arm64, windows-x86_64, windows-arm64, ios-arm64, ios-arm64-simulator, ios-x86_64-simulator, android-arm64, android-x86_64)" ]]; then

@@ -47,6 +47,13 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   rejects an asset spelled with `..` or as an absolute path, as `eskiu.toml` does. Both
   compilers.
 
+- A `[native.NAME]` archive whose `lib` directory is a symbolic link, or holds one that
+  leads out of the archive, is refused, when it is unpacked and when a build uses the
+  cached copy. The SHA-256 check covers the archive's bytes, not what a link in it
+  reaches, so such an archive made the build link from (and on macOS rewrite and re-sign
+  libraries in) a directory outside it. The self-hosted driver no longer follows a link
+  when it rewrites a `.dylib`. Both compilers.
+
 ## [0.16.2] - 2026-11-20
 
 ### Changed
