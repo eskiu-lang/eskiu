@@ -230,27 +230,51 @@ ty::Type replaceSubtree(const ty::Type& t, const std::string& from, const std::s
     return r;
 }
 
+// The most candidates generalizeType tries; past it only the empty subset (the
+// type as the instances spell it) is tried. Each subset of the parameters is a
+// candidate, so a generic with dozens of them must not try all 2^n.
+constexpr size_t kMaxGeneralizeTries = (size_t)1 << 16;
+
+// Candidates put a type parameter in place of each subtree spelled as its argument
+// in the first instance: every subset of the parameters, larger subsets first and,
+// within one size, in increasing order of the subset's bit mask (bit i = tps[i]).
+// The first that every instance agrees with wins. A parameter the first instance
+// does not bind changes no candidate, so only the bound ones are enumerated (the
+// same winner). Subsets of one size are walked in colex order, which is that mask
+// order, without building the 2^n list.
 std::string generalizeType(const AsyncTransform::InstanceTypes& recs, const std::vector<std::string>& tps) {
     if (recs.empty()) return "";
     auto canon = [](const std::string& s) { return ty::Type::parse(s).str(); };
     const auto& first = recs.front();
-    size_t n = tps.size();
-    std::vector<unsigned> masks;
-    for (unsigned m = 0; m < (1u << n); ++m) masks.push_back(m);
-    std::stable_sort(masks.begin(), masks.end(), [](unsigned a, unsigned b) {
-        return __builtin_popcount(a) > __builtin_popcount(b);
-    });
-    for (unsigned m : masks) {
-        ty::Type c = ty::Type::parse(first.second);
-        for (size_t i = 0; i < n; ++i) {
-            auto it = first.first.find(tps[i]);
-            if ((m >> i & 1) && it != first.first.end()) c = replaceSubtree(c, canon(it->second), tps[i]);
+    std::vector<size_t> bound;
+    for (size_t i = 0; i < tps.size(); ++i)
+        if (first.first.count(tps[i])) bound.push_back(i);
+    const size_t r = bound.size();
+    auto attempt = [&](const std::vector<size_t>& c) -> std::string {
+        ty::Type t = ty::Type::parse(first.second);
+        for (size_t j : c) {
+            const std::string& tp = tps[bound[j]];
+            t = replaceSubtree(t, canon(first.first.at(tp)), tp);
         }
-        std::string cand = c.str();
-        bool ok = true;
+        std::string cand = t.str();
         for (const auto& inst : recs)
-            if (canon(substType(cand, inst.first)) != canon(inst.second)) { ok = false; break; }
-        if (ok) return cand;
+            if (canon(substType(cand, inst.first)) != canon(inst.second)) return "";
+        return cand;
+    };
+    size_t tries = 0;
+    for (size_t k = r + 1; k-- > 0;) {
+        std::vector<size_t> c(k);
+        for (size_t j = 0; j < k; ++j) c[j] = j;
+        while (true) {
+            if (++tries > kMaxGeneralizeTries) return attempt({});
+            std::string cand = attempt(c);
+            if (!cand.empty()) return cand;
+            size_t j = 0;
+            while (j < k && c[j] + 1 == (j + 1 < k ? c[j + 1] : r)) j++;
+            if (j == k) break;
+            c[j]++;
+            for (size_t q = 0; q < j; ++q) c[q] = q;
+        }
     }
     return "";
 }
