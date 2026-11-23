@@ -1,0 +1,33 @@
+// A generic async function with many type parameters: the lowering writes each
+// awaited type in terms of the parameters by trying subsets of them, larger first.
+// It built and sorted the list of all 2^n subsets (n = 40 here), which could not
+// fit in memory; it now walks them in order and tries at most 65536.
+import <future>;
+extern int printf(string fmt, ...);
+
+Future<T>* rdy<T>(T v) { Future<T>* f = future_new<T>(); Future_complete<T>(f, v); return f; }
+
+// The awaited int is a parameter in no instance: only the empty subset fits.
+async int wide<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31, T32, T33, T34, T35, T36, T37, T38, T39>(T0 a0, T1 a1, T2 a2, T3 a3, T4 a4, T5 a5, T6 a6, T7 a7, T8 a8, T9 a9, T10 a10, T11 a11, T12 a12, T13 a13, T14 a14, T15 a15, T16 a16, T17 a17, T18 a18, T19 a19, T20 a20, T21 a21, T22 a22, T23 a23, T24 a24, T25 a25, T26 a26, T27 a27, T28 a28, T29 a29, T30 a30, T31 a31, T32 a32, T33 a33, T34 a34, T35 a35, T36 a36, T37 a37, T38 a38, T39 a39) {
+    int k = await rdy<int>(7);
+    return k;
+}
+
+// The awaited type is T1 (int, then double), found at the 41st candidate.
+async T1 pick<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, T28, T29, T30, T31, T32, T33, T34, T35, T36, T37, T38, T39>(T0 a0, T1 a1, T2 a2, T3 a3, T4 a4, T5 a5, T6 a6, T7 a7, T8 a8, T9 a9, T10 a10, T11 a11, T12 a12, T13 a13, T14 a14, T15 a15, T16 a16, T17 a17, T18 a18, T19 a19, T20 a20, T21 a21, T22 a22, T23 a23, T24 a24, T25 a25, T26 a26, T27 a27, T28 a28, T29 a29, T30 a30, T31 a31, T32 a32, T33 a33, T34 a34, T35 a35, T36 a36, T37 a37, T38 a38, T39 a39) {
+    T1 v = await rdy<T1>(a1);
+    return v;
+}
+
+int main() {
+    Future<int>* f = wide(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
+    Future<int>* g = wide(1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5);
+    Future<int>* h = pick(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1);
+    Future<double>* d = pick(3, 2.5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3);
+    printf("%d %d %d %g\n", f.value, g.value, h.value, d.value);
+    Future_free<int>(f);
+    Future_free<int>(g);
+    Future_free<int>(h);
+    Future_free<double>(d);
+    return 0;
+}

@@ -30,6 +30,11 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   text with an error. A duplicating macro nested a few dozen times took time and memory
   exponential in its size. Both compilers.
 
+- Lowering a generic async function no longer builds and sorts the list of all 2^n
+  subsets of its n type parameters to write an awaited type in terms of them (out of
+  memory from about 28 parameters, undefined from 32). The subsets are walked in the same
+  order, at most 65536 of them. Both compilers.
+
 ## [0.16.2] - 2026-11-20
 
 ### Changed
