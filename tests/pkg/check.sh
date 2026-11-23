@@ -463,7 +463,10 @@ if [[ -n "$plat" && "$plat" != -* ]] && command -v "$cc_prog" > /dev/null 2>&1 &
     mkdir -p "$work/natln1/natlib" "$work/natln2/natlib/lib"
     ln -s "$work/natsrc/natlib/lib" "$work/natln1/natlib/lib"
     ln -s "$work/natsrc/natlib/lib/$natout" "$work/natln2/natlib/lib/$natout"
+    # MSYS's ln copies unless native symbolic links are enabled: nothing to check then
+    [[ -L "$work/natln1/natlib/lib" ]] || echo "skip native/symlink-* (no symbolic links here)"
     for v in 1 2; do
+        [[ -L "$work/natln1/natlib/lib" ]] || break
         (cd "$work/natln$v" && tar -czf natlib.tgz natlib)
         if command -v sha256sum > /dev/null 2>&1; then vsum="$(sha256sum "$work/natln$v/natlib.tgz" | cut -d' ' -f1)"
         else vsum="$(shasum -a 256 "$work/natln$v/natlib.tgz" | cut -d' ' -f1)"; fi

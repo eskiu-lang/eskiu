@@ -173,6 +173,7 @@ labeled-has-no-enclosing-loop
 local-initializer-must-be-constant
 local-takes-bytes-of-stack
 macro
+macro-expansion-exceeds-bytes-of
 macro-passed-arguments
 macro-requires-arguments
 malformed-pragma-link
