@@ -21,6 +21,8 @@ struct NtvSrc {
 List<NtvSrc> g_natives;
 List<string> g_web_assets;   // absolute paths of the [web] assets of the package and its deps
 List<string> g_web_pkgs;     // the package that lists each
+List<string> g_web_roots;    // and that package's directory
+int g_web_bad;               // the manifest being read names an asset outside its package
 int g_ntv_host = 1;          // the build is for this machine: a system library can stand in
 
 // The platform key of a target triple, or of this host for an empty one ("" when no key
@@ -199,32 +201,6 @@ string ntv_lower(string s) {
     return out;
 }
 
-// The quoted strings of text[a, end) into g_web_assets (relative to `root`); 1 when the
-// array's `]` is among them.
-int ntv_web_items(string pkg, string root, string text, int a, int end) {
-    int i = a;
-    while (i < end) {
-        int c = (int)text[i];
-        if (c == 93) {
-            return 1;
-        }
-        if (c == 35) {
-            return 0;
-        }
-        if (c == 34) {
-            string v = ntv_string(text, &i, end);
-            if (i < 0) {
-                return 1;
-            }
-            List_push<string>(&g_web_assets, str_concat(root, str_concat("/", v)));
-            List_push<string>(&g_web_pkgs, pkg);
-        } else {
-            i = i + 1;
-        }
-    }
-    return 0;
-}
-
 // Add the [native.NAME] archives for `platform` (none when it is "") and the [web] assets
 // that the eskiu.toml in `root` declares.
 void ntv_read_manifest(string pkg, string root, string platform) {
@@ -234,6 +210,8 @@ void ntv_read_manifest(string pkg, string root, string platform) {
         return;
     }
     string text = (string)raw;
+    const int first_asset = List_len<string>(&g_web_assets);
+    g_web_bad = 0;
     string lib = "";
     int web = 0;
     int in_assets = 0;
@@ -285,6 +263,13 @@ void ntv_read_manifest(string pkg, string root, string platform) {
         }
         pos = end + 1;
     }
+    if (g_web_bad == 1) {
+        while (List_len<string>(&g_web_assets) > first_asset) {
+            List_remove<string>(&g_web_assets, List_len<string>(&g_web_assets) - 1);
+            List_remove<string>(&g_web_pkgs, List_len<string>(&g_web_pkgs) - 1);
+            List_remove<string>(&g_web_roots, List_len<string>(&g_web_roots) - 1);
+        }
+    }
 }
 
 // Fill g_natives from the package pkg_load_roots found (none outside a package).
@@ -292,6 +277,7 @@ void ntv_load(string triple) {
     List_init<NtvSrc>(&g_natives, 4);
     List_init<string>(&g_web_assets, 2);
     List_init<string>(&g_web_pkgs, 2);
+    List_init<string>(&g_web_roots, 2);
     if (g_pkg_active == 0) {
         return;
     }
@@ -613,60 +599,6 @@ int ntv_lib_dirs(List<string>* linked, List<string>* dirs, List<string>* sys_dir
     return 0;
 }
 
-// Copy `from` (a file, or a directory with what it holds) to `to`.
-void ntv_copy_tree(string from, string to) {
-    if (fs_is_dir(from) == 0) {
-        fs_copy(from, to);
-        return;
-    }
-    fs_mkdir_p(to);
-    let names: List<String>;
-    List_init<String>(&names, 8);
-    fs_list_dir(from, &names);
-    for (i in 0..List_len<String>(&names)) {
-        String nm = List_get<String>(&names, i);
-        ntv_copy_tree(str_concat(from, str_concat("/", nm.cstr())), str_concat(to, str_concat("/", nm.cstr())));
-    }
-}
-
-// Copy the [web] assets next to `page`, the output of an emscripten build.
-void ntv_copy_web(string page) {
-    string to = str_dir(canonical_path(page));
-    List<string> done;
-    List_init<string>(&done, 4);
-    for (i in 0..List_len<string>(&g_web_assets)) {
-        string from = List_get<string>(&g_web_assets, i);
-        string pkg = List_get<string>(&g_web_pkgs, i);
-        int slash = strlen(from) - 1;
-        while (slash >= 0 && (int)from[slash] != 47) {
-            slash = slash - 1;
-        }
-        string name = str_after(from, slash + 1);
-        if (fs_exists(from) == 0) {
-            eprint("warning: web asset ");
-            eprint(from);
-            eprint(str_concat(" of package '", str_concat(pkg, "' ([web] assets in its eskiu.toml) does not exist\n")));
-            continue;
-        }
-        int dup = 0;
-        for (k in 0..List_len<string>(&done)) {
-            if (str_eq(List_get<string>(&done, k), name) == 1) {
-                dup = 1;
-            }
-        }
-        if (dup == 1) {
-            eprint(str_concat("warning: web asset ", str_concat(name, str_concat(" of package '",
-                   str_concat(pkg, "' has the name of another package's; keeping the first\n")))));
-            continue;
-        }
-        List_push<string>(&done, name);
-        string dest = str_concat(to, str_concat("/", name));
-        if (str_eq(canonical_path(from), canonical_path(dest)) == 0) {
-            ntv_copy_tree(from, dest);
-        }
-    }
-}
-
 // Copy the .dll files of `dirs` next to the program `exe` (a Windows target).
 void ntv_copy_dlls(List<string>* dirs, string exe) {
     string to = str_dir(canonical_path(exe));
@@ -683,3 +615,5 @@ void ntv_copy_dlls(List<string>* dirs, string exe) {
         }
     }
 }
+
+import "pkg_native_web.esk";

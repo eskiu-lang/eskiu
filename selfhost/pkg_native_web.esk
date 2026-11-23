@@ -1,0 +1,137 @@
+// pkg_native_web.esk: a package's [web] assets for the self-hosted driver (part of pkg_native.esk, imported in order)
+
+// Whether a [web] asset is spelled as a path inside its package (mirrors readManifest):
+// not empty, not absolute, no `..`.
+int ntv_web_spelling_ok(string v) {
+    if (v[0] == 0 || (int)v[0] == 47) {
+        return 0;
+    }
+    int i = 0;
+    while (v[i] != 0) {
+        if ((int)v[i] == 46 && (int)v[i + 1] == 46) {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+// The quoted strings of text[a, end) into g_web_assets (relative to `root`); 1 when the
+// array's `]` is among them.
+int ntv_web_items(string pkg, string root, string text, int a, int end) {
+    int i = a;
+    while (i < end) {
+        int c = (int)text[i];
+        if (c == 93) {
+            return 1;
+        }
+        if (c == 35) {
+            return 0;
+        }
+        if (c == 34) {
+            string v = ntv_string(text, &i, end);
+            if (i < 0) {
+                return 1;
+            }
+            if (ntv_web_spelling_ok(v) == 0) {
+                g_web_bad = 1;
+            }
+            List_push<string>(&g_web_assets, str_concat(root, str_concat("/", v)));
+            List_push<string>(&g_web_pkgs, pkg);
+            List_push<string>(&g_web_roots, root);
+        } else {
+            i = i + 1;
+        }
+    }
+    return 0;
+}
+
+// Copy `from` (a file, or a directory with what it holds) to `to` (mirrors copyWebTree).
+// A symbolic link inside a directory is not followed or copied (a warning names it).
+void ntv_copy_tree(string from, string to, string asset, string pkg) {
+    if (fs_is_dir(from) == 0) {
+        fs_copy(from, to);
+        return;
+    }
+    fs_mkdir_p(to);
+    let names: List<String>;
+    List_init<String>(&names, 8);
+    fs_list_dir(from, &names);
+    for (i in 0..List_len<String>(&names)) {
+        String nm = List_get<String>(&names, i);
+        string child = str_concat(from, str_concat("/", nm.cstr()));
+        let st: FileStat;
+        if (fs_lstat(child, &st) == 0 && st.is_symlink) {
+            eprint(str_concat("warning: web asset ", str_concat(asset, str_concat(" of package '",
+                   str_concat(pkg, str_concat("': symbolic link ", str_concat(child, " is not copied\n")))))));
+            continue;
+        }
+        ntv_copy_tree(child, str_concat(to, str_concat("/", nm.cstr())), asset, pkg);
+    }
+}
+
+// Whether the asset `from` of the package in `root` is a file or directory of the
+// package (mirrors webAssetInside): no component below `root` is a symbolic link, and
+// it resolves inside the package.
+int ntv_web_inside(string root, string from) {
+    int n = strlen(from);
+    int i = strlen(root) + 1;
+    while (i <= n) {
+        if (i == n || (int)from[i] == 47) {
+            let st: FileStat;
+            if (fs_lstat(str_prefix(from, i), &st) == 0 && st.is_symlink) {
+                return 0;
+            }
+        }
+        i = i + 1;
+    }
+    string croot = canonical_path(root);
+    string real = canonical_path(from);
+    if (str_eq(real, croot) == 1) {
+        return 1;
+    }
+    return str_starts(real, str_concat(croot, "/"));
+}
+
+// Copy the [web] assets next to `page`, the output of an emscripten build.
+void ntv_copy_web(string page) {
+    string to = str_dir(canonical_path(page));
+    List<string> done;
+    List_init<string>(&done, 4);
+    for (i in 0..List_len<string>(&g_web_assets)) {
+        string from = List_get<string>(&g_web_assets, i);
+        string pkg = List_get<string>(&g_web_pkgs, i);
+        int slash = strlen(from) - 1;
+        while (slash >= 0 && (int)from[slash] != 47) {
+            slash = slash - 1;
+        }
+        string name = str_after(from, slash + 1);
+        if (fs_exists(from) == 0) {
+            eprint("warning: web asset ");
+            eprint(from);
+            eprint(str_concat(" of package '", str_concat(pkg, "' ([web] assets in its eskiu.toml) does not exist\n")));
+            continue;
+        }
+        int dup = 0;
+        for (k in 0..List_len<string>(&done)) {
+            if (str_eq(List_get<string>(&done, k), name) == 1) {
+                dup = 1;
+            }
+        }
+        if (dup == 1) {
+            eprint(str_concat("warning: web asset ", str_concat(name, str_concat(" of package '",
+                   str_concat(pkg, "' has the name of another package's; keeping the first\n")))));
+            continue;
+        }
+        List_push<string>(&done, name);
+        if (ntv_web_inside(List_get<string>(&g_web_roots, i), from) == 0) {
+            eprint(str_concat("warning: web asset ", str_concat(from, str_concat(" of package '",
+                   str_concat(pkg, "' is a symbolic link or leads out of the package; not copied\n")))));
+            continue;
+        }
+        string dest = str_concat(to, str_concat("/", name));
+        if (str_eq(canonical_path(from), canonical_path(dest)) == 0) {
+            ntv_copy_tree(from, dest, from, pkg);
+        }
+    }
+}
