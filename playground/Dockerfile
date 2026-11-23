@@ -39,7 +39,8 @@ ENV ESKIU_ROOT=/opt/eskiu/lib/eskiu \
     CC=gcc \
     PATH=/opt/eskiu/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    SANDBOX_SWEEP=1
 
 WORKDIR /app
 COPY requirements.txt .

@@ -57,12 +57,16 @@ def _kill_group(pgid: int) -> None:
         pass
 
 
-def sweep() -> int:
+def sweep(candidates=None) -> int:
     """Kills every process of this user outside the server's session and the running jobs'
     (older than two seconds: a job another worker has just started may not be registered yet).
-    Returns how many it signalled. A no-op where /proc is missing."""
+    Returns how many it signalled. It runs only where SANDBOX_SWEEP=1 (the image sets it: the
+    container's user runs nothing else), or on the given candidate pids (tests); a no-op where
+    /proc is missing."""
+    if candidates is None and os.environ.get("SANDBOX_SWEEP") != "1":
+        return 0
     try:
-        pids = [int(p) for p in os.listdir("/proc") if p.isdigit()]
+        pids = list(candidates) if candidates is not None else [int(p) for p in os.listdir("/proc") if p.isdigit()]
     except OSError:
         return 0
     me = os.getuid()

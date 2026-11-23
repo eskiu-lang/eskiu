@@ -97,7 +97,7 @@ class SandboxTest(unittest.TestCase):
         daemon = int(open(pidfile).read())
         self.assertTrue(_alive(daemon), "too young for the sweep yet")
         time.sleep(2.2)
-        sandbox.sweep()
+        sandbox.sweep([daemon])
         self.assertTrue(_wait_gone(daemon), "a daemon in a session of its own survived the sweep")
 
     def test_network_check(self):
