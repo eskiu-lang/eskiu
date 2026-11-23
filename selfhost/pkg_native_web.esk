@@ -135,3 +135,42 @@ void ntv_copy_web(string page) {
         }
     }
 }
+
+// What makes the library directory `lib` of the archive unpacked in `base` unsafe to
+// link from, or "" (mirrors nativeLibDirProblem): a component of it that is a symbolic
+// link, or a symbolic link in it that does not resolve inside `base`.
+string ntv_lib_problem(string base, string lib) {
+    string cur = str_concat(base, str_concat("/", lib));
+    int n = strlen(cur);
+    int i = strlen(base) + 1;
+    while (i <= n) {
+        if (i == n || (int)cur[i] == 47) {
+            let st: FileStat;
+            if (fs_lstat(str_prefix(cur, i), &st) == 0 && st.is_symlink) {
+                return str_concat("its directory '", str_concat(lib, "' is a symbolic link"));
+            }
+        }
+        i = i + 1;
+    }
+    string root = realpath(base, null);
+    if (root == null) {
+        return "its directory cannot be read";
+    }
+    let names: List<String>;
+    List_init<String>(&names, 8);
+    fs_list_dir(cur, &names);
+    for (k in 0..List_len<String>(&names)) {
+        String nm = List_get<String>(&names, k);
+        string p = str_concat(cur, str_concat("/", nm.cstr()));
+        let st: FileStat;
+        if (fs_lstat(p, &st) != 0 || !st.is_symlink) {
+            continue;
+        }
+        string real = realpath(p, null);
+        if (real == null || (str_eq(real, root) == 0 && str_starts(real, str_concat(root, "/")) == 0)) {
+            return str_concat("the symbolic link '", str_concat(lib, str_concat("/", str_concat(nm.cstr(),
+                              "' leads out of the archive"))));
+        }
+    }
+    return "";
+}

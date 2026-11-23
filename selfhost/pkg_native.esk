@@ -182,7 +182,7 @@ int ntv_entry(string text, int a, int end, string platform, NtvSrc* src) {
             return 0;
         }
     }
-    if (src.url[0] == 0 || strlen(src.sha) != 64 || src.libdir[0] == 0) {
+    if (src.url[0] == 0 || strlen(src.sha) != 64 || ntv_web_spelling_ok(src.libdir) == 0) {
         return 0;
     }
     return 1;
@@ -334,10 +334,14 @@ string ntv_dir(NtvSrc* src) {
 // with the reason in g_ntv_err.
 int ntv_fetch(NtvSrc* src) {
     string dir = ntv_dir(src);
+    string what = str_concat("native library '", str_concat(src.lib, str_concat("' of package '", str_concat(src.pkg, "'"))));
     if (fs_is_dir(dir) == 1) {
+        string bad0 = ntv_lib_problem(dir, src.libdir);
+        if (bad0[0] != 0) {
+            return ntv_fail(str_concat("the ", str_concat(what, str_concat(" is not used: ", bad0))));
+        }
         return 0;
     }
-    string what = str_concat("native library '", str_concat(src.lib, str_concat("' of package '", str_concat(src.pkg, "'"))));
     fs_mkdir_p(str_concat(pkg_home(), "/native"));
     string file = str_concat(dir, ".download");
     string tmp = str_concat(dir, ".tmp");
@@ -416,6 +420,11 @@ int ntv_fetch(NtvSrc* src) {
         return ntv_fail(str_concat("the ", str_concat(what, str_concat(" has no directory '",
                         str_concat(src.libdir, "' (lib in its eskiu.toml)")))));
     }
+    string bad = ntv_lib_problem(tmp, src.libdir);
+    if (bad[0] != 0) {
+        fs_remove_all(tmp);
+        return ntv_fail(str_concat("the ", str_concat(what, str_concat(" is not used: ", bad))));
+    }
 #ifdef __APPLE__
     // Give each .dylib an @rpath install name (some upstream archives record the
     // builder's absolute path in LC_ID_DYLIB).
@@ -425,7 +434,8 @@ int ntv_fetch(NtvSrc* src) {
     for (i in 0..List_len<String>(&names)) {
         String nm = List_get<String>(&names, i);
         string p = str_concat(libdir, str_concat("/", nm.cstr()));
-        if (str_ends(nm.cstr(), ".dylib") == 1 && fs_is_file(p) == 1) {
+        let pst: FileStat;
+        if (str_ends(nm.cstr(), ".dylib") == 1 && fs_lstat(p, &pst) == 0 && pst.is_file && !pst.is_symlink) {
             List<string> it;
             List_init<string>(&it, 4);
             List_push<string>(&it, "install_name_tool");
