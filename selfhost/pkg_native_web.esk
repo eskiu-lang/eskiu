@@ -1,4 +1,4 @@
-// pkg_native_web.esk: a package's [web] assets for the self-hosted driver (part of pkg_native.esk, imported in order)
+// pkg_native_web.esk: the [web] assets and the native archive checks for the self-hosted driver (part of pkg_native.esk, imported in order)
 
 // Whether a [web] asset is spelled as a path inside its package (mirrors readManifest):
 // not empty, not absolute, no `..`.
