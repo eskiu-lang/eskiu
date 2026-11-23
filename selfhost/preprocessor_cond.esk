@@ -126,7 +126,7 @@ void pp_ev_tokens(PPEval* ev, string e) {
 
 // Replace `defined X` / `defined(X)` with 1/0, macro-expand, then evaluate. Returns 1
 // and sets *value on success; 0 with *err set on a malformed expression.
-int pp_eval_if(string expr, List<PPMacro>* tbl, *int64 value, *string err) {
+int pp_eval_if(string expr, List<PPMacro>* tbl, *int64 value, *string err, PPBudget* budget) {
     String pre;
     String_init(&pre, pp_clen(expr) + 16);
     int n = pp_clen(expr);
@@ -207,9 +207,19 @@ int pp_eval_if(string expr, List<PPMacro>* tbl, *int64 value, *string err) {
     let b0: int = 0;
     let ctx: PPCtx;
     pp_ctx_init(&ctx);
+    ctx.budget = budget;
     string expanded = pp_expand((string)String_cstr(&pre), tbl, &expanding, &b0, &ctx);
     if (ctx.err[0] != 0) {
         err[0] = ctx.err;
+        return 0;
+    }
+    if (budget != null && budget.hit == 1) {
+        if (budget.reported == 1) {
+            value[0] = 0;
+            return 1;
+        }
+        budget.reported = 1;
+        err[0] = pp_budget_message();
         return 0;
     }
     let ev: PPEval;
@@ -266,10 +276,10 @@ int pp_body_has_hash(string body) {
 }
 
 // Evaluate an #if/#elif condition; a malformed one is reported and counts as false.
-int pp_cond_value(string rest, List<PPMacro>* tbl, string file, int line, int col, *int had_err) {
+int pp_cond_value(string rest, List<PPMacro>* tbl, string file, int line, int col, *int had_err, PPBudget* budget) {
     let v: int64 = 0;
     let err: string = "";
-    if (pp_eval_if(rest, tbl, &v, &err) == 0) {
+    if (pp_eval_if(rest, tbl, &v, &err, budget) == 0) {
         pp_error(file, line, col, err, had_err);
         return 0;
     }

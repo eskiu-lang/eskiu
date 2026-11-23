@@ -62,6 +62,11 @@ string pp_run(string src, int len, string filename, *int had_err) {
 
     List<PPCond> stack;
     List_init<PPCond>(&stack, 8);
+    let budget: PPBudget;
+    budget.used = 0;
+    budget.hit = 0;
+    budget.reported = 0;
+    budget.col = 0;
 
     String out;
     String_init(&out, len + 16);
@@ -253,7 +258,7 @@ string pp_run(string src, int len, string filename, *int had_err) {
             } else if (pp_eq(kw, "if") == 1) {
                 int on = 0;
                 if (active == 1) {
-                    on = pp_cond_value(rest, tblp, filename, line_no, col, had_err);
+                    on = pp_cond_value(rest, tblp, filename, line_no, col, had_err, &budget);
                 }
                 PPCond cnd;
                 cnd.parent = active;
@@ -276,7 +281,7 @@ string pp_run(string src, int len, string filename, *int had_err) {
                     else {
                         int on = 0;
                         if (cc.parent == 1 && cc.taken == 0) {
-                            on = pp_cond_value(rest, tblp, filename, line_no, col, had_err);
+                            on = pp_cond_value(rest, tblp, filename, line_no, col, had_err, &budget);
                         }
                         cc.branch = on;
                         if (on == 1) {
@@ -371,6 +376,7 @@ string pp_run(string src, int len, string filename, *int had_err) {
             List_init<string>(&expanding, 4);
             let ctx: PPCtx;
             pp_ctx_init(&ctx);
+            ctx.budget = &budget;
             // A NUL byte in the line is kept (the C++ std::string keeps it, and its
             // lexer reports it): expand the pieces between NULs.
             int s0 = 0;
@@ -405,6 +411,7 @@ string pp_run(string src, int len, string filename, *int had_err) {
                     ls = pp_sub((string)String_cstr(&line), lead, String_len(&line) - lead);
                     ln = String_len(&line) - lead;
                     pp_ctx_init(&ctx);
+                    ctx.budget = &budget;
                     continue;
                 }
                 int k = 0;
@@ -431,6 +438,10 @@ string pp_run(string src, int len, string filename, *int had_err) {
             }
             if (ctx.err[0] != 0) {
                 pp_error(filename, line_no, ctx.err_col + lead, ctx.err, had_err);
+            }
+            if (budget.hit == 1 && budget.reported == 0) {
+                budget.reported = 1;
+                pp_error(filename, line_no, budget.col + lead, pp_budget_message(), had_err);
             }
         } else {
             // Inactive and directive lines emit blank; one that opens or closes a

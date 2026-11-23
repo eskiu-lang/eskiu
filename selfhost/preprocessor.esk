@@ -203,8 +203,9 @@ int pp_in_set(List<string>* set, string id) {
 // ── expansion ──
 
 // Replace each parameter name in a function-like macro body with its argument
-// (mirrors ppSubstParams; literal-aware, no expansion).
-string pp_subst_params(string body, List<string>* params, List<string>* args) {
+// (mirrors ppSubstParams; literal-aware, no expansion). Stops once the result is
+// longer than `cap` bytes.
+string pp_subst_params(string body, List<string>* params, List<string>* args, int64 cap) {
     String out;
     String_init(&out, pp_clen(body) + 16);
     int n = pp_clen(body);
@@ -252,6 +253,9 @@ string pp_subst_params(string body, List<string>* params, List<string>* args) {
                 String_append(&out, id);
             }
             i = j;
+            if ((int64)String_len(&out) > cap) {
+                break;
+            }
             continue;
         }
         String_push(&out, (char)c);
@@ -283,6 +287,25 @@ int pp_copy_lit(string text, int i, int n, String* out) {
     return i;
 }
 
+// The macro replacement text one file may produce in all (mirrors
+// kMaxMacroExpansion): each object-like body and each substituted function-like
+// body counts its bytes.
+const int64 PP_MAX_MACRO_EXPANSION = 16777216;
+
+// The budget of one preprocessed file (mirrors PPBudget). Once spent, no macro
+// expands any more and the first expansion over it is reported.
+struct PPBudget {
+    int64 used;
+    int hit;
+    int reported;
+    int col;
+}
+
+string pp_budget_message() {
+    return pp_cat(pp_cat("macro expansion exceeds ", pp_itoa((int)PP_MAX_MACRO_EXPANSION)),
+                  " bytes of replacement text in this file");
+}
+
 // Error state shared by one top-level pp_expand call and its nested expansions
 // (mirrors PPExpandCtx): the first malformed macro invocation and the column of the
 // top-level token whose expansion produced it.
@@ -293,6 +316,7 @@ struct PPCtx {
     int depth;
     int open_call;   // an unterminated call at the top level (its args continue on the next line)
     int trailing_fn; // a function-like macro name ends the top-level text: its `(` may start a later line
+    PPBudget* budget; // the file's macro budget, or null
 }
 
 void pp_ctx_init(PPCtx* c) {
@@ -302,6 +326,26 @@ void pp_ctx_init(PPCtx* c) {
     c.depth = 0;
     c.open_call = 0;
     c.trailing_fn = 0;
+    c.budget = null;
+}
+
+// Count `k` more bytes of replacement text (mirrors the C++ `charge`): 0, and the
+// budget is spent, when they do not fit.
+int pp_charge(PPCtx* ctx, int64 k) {
+    PPBudget* b = ctx.budget;
+    if (b == null) {
+        return 1;
+    }
+    if (b.hit == 1) {
+        return 0;
+    }
+    if (k > PP_MAX_MACRO_EXPANSION - b.used) {
+        b.hit = 1;
+        b.col = ctx.top_col;
+        return 0;
+    }
+    b.used = b.used + k;
+    return 1;
 }
 
 void pp_ctx_fail(PPCtx* c, string msg) {

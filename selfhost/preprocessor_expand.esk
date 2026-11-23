@@ -55,13 +55,22 @@ string pp_expand(string input, List<PPMacro>* tbl, List<string>* expanding, *int
                 ctx.top_col = i + col_shift + 1;
             }
             int idx = pp_find(tbl, id);
-            if (idx >= 0 && pp_in_set(expanding, id) == 0) {
+            int spent = 0;
+            if (ctx.budget != null) {
+                spent = ctx.budget.hit;
+            }
+            if (idx >= 0 && pp_in_set(expanding, id) == 0 && spent == 0) {
                 PPMacro mac = List_get<PPMacro>(tbl, idx);
                 string res = "";
                 int after = j;
                 int expanded = 0;
                 int skip_rest = 0;
                 if (mac.is_function == 0) {
+                    if (pp_charge(ctx, (int64)pp_clen(mac.body)) == 0) {
+                        String_append(&out, id);
+                        i = j;
+                        continue;
+                    }
                     List_push<string>(expanding, id);
                     ctx.depth = ctx.depth + 1;
                     let b0: int = 0;
@@ -196,7 +205,17 @@ string pp_expand(string input, List<PPMacro>* tbl, List<string>* expanding, *int
                                 List_set<string>(&args, ai, pp_expand(List_get<string>(&args, ai), tbl, expanding, &b1, ctx));
                                 ai = ai + 1;
                             }
-                            string sub = pp_subst_params(mac.body, &mac.params, &args);
+                            int64 room = 9223372036854775807;
+                            if (ctx.budget != null) {
+                                room = PP_MAX_MACRO_EXPANSION - ctx.budget.used;
+                            }
+                            string sub = pp_subst_params(mac.body, &mac.params, &args, room);
+                            if (pp_charge(ctx, (int64)pp_clen(sub)) == 0) {
+                                ctx.depth = ctx.depth - 1;
+                                String_append(&out, pp_sub(text, i, p - i));
+                                i = p;
+                                continue;
+                            }
                             List_push<string>(expanding, id);
                             let b2: int = 0;
                             res = pp_expand(sub, tbl, expanding, &b2, ctx);
