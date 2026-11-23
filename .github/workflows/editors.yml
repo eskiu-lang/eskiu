@@ -9,79 +9,96 @@ name: Editor extensions
 #   OVSX_PAT     Open VSX (used by VSCodium, Cursor and Antigravity), namespace doranteseduardo
 #   VSCE_PAT     Visual Studio Marketplace, publisher doranteseduardo
 #   JETBRAINS_TOKEN  JetBrains Marketplace (plugin xyz.reactvision.eskiu)
+# Least privilege: the build jobs read the repository only; attaching to the release is a
+# job of its own with write access that runs no third-party code; each store token reaches
+# only the one step that publishes with it. Actions are pinned by commit.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   vscode:
     runs-on: ubuntu-24.04
     env:
-      OVSX_PAT: ${{ secrets.OVSX_PAT }}
-      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      HAS_OVSX: ${{ secrets.OVSX_PAT != '' }}
+      HAS_VSCE: ${{ secrets.VSCE_PAT != '' }}
     defaults:
       run:
         working-directory: editor/vscode
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
       - name: Package
         run: npx --yes @vscode/vsce@3.6.0 package --allow-missing-repository
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: eskiu-vscode
           path: editor/vscode/*.vsix
-      - name: Attach to the release
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # release.yml makes the release: wait for it.
-          for i in $(seq 1 45); do gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 && break; sleep 20; done
-          cp *.vsix /tmp/eskiu-vscode.vsix
-          gh release upload "$GITHUB_REF_NAME" *.vsix /tmp/eskiu-vscode.vsix --clobber
       - name: Publish to Open VSX
-        if: ${{ env.OVSX_PAT != '' }}
+        if: startsWith(github.ref, 'refs/tags/') && env.HAS_OVSX == 'true'
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: npx --yes ovsx@0.10.5 publish *.vsix -p "$OVSX_PAT"
       - name: Publish to the Visual Studio Marketplace
-        if: ${{ env.VSCE_PAT != '' }}
+        if: startsWith(github.ref, 'refs/tags/') && env.HAS_VSCE == 'true'
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: npx --yes @vscode/vsce@3.6.0 publish --packagePath *.vsix -p "$VSCE_PAT"
 
   intellij:
     runs-on: ubuntu-24.04
     env:
-      JETBRAINS_TOKEN: ${{ secrets.JETBRAINS_TOKEN }}
+      HAS_JETBRAINS: ${{ secrets.JETBRAINS_TOKEN != '' }}
     defaults:
       run:
         working-directory: editor/intellij/plugin
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
           java-version: 17
       - name: Build
         run: ./gradlew buildPlugin --no-daemon
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: eskiu-intellij
           path: editor/intellij/plugin/build/distributions/*.zip
-      - name: Attach to the release
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          for i in $(seq 1 45); do gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 && break; sleep 20; done
-          cp build/distributions/*.zip /tmp/eskiu-intellij.zip
-          gh release upload "$GITHUB_REF_NAME" build/distributions/*.zip /tmp/eskiu-intellij.zip --clobber
       - name: Publish to the JetBrains Marketplace
-        if: ${{ env.JETBRAINS_TOKEN != '' }}
+        if: startsWith(github.ref, 'refs/tags/') && env.HAS_JETBRAINS == 'true'
         run: ./gradlew publishPlugin --no-daemon
         env:
           ORG_GRADLE_PROJECT_intellijPlatformPublishingToken: ${{ secrets.JETBRAINS_TOKEN }}
+
+  attach:
+    needs: [vscode, intellij]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          merge-multiple: true
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # release.yml makes the release: wait for it.
+          for i in $(seq 1 45); do gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 && break; sleep 20; done
+          vsix=$(ls *.vsix | head -1)
+          zip=$(ls *.zip | head -1)
+          cp "$vsix" eskiu-vscode.vsix
+          cp "$zip" eskiu-intellij.zip
+          gh release upload "$GITHUB_REF_NAME" "$vsix" eskiu-vscode.vsix "$zip" eskiu-intellij.zip --clobber
