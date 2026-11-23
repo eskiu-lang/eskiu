@@ -1,0 +1,6 @@
+feed exact limit: 0
+feed one over, split at the limit: 400
+feed 70000, split at 64 KiB: 400
+feed 70000, one write: 400
+http_recv 66000, split at 64 KiB: 400
+http_recv 65546: 400

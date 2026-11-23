@@ -306,7 +306,7 @@ int http_recv(int fd, HttpReq* r, int64 max_body) {
         }
         n += (int)got;
         hend = _http_idx_header_end(buf, n);
-        if (hend < 0 && n > 65536) {
+        if (hend < 0 ? n > HTTP_SERVE_MAX_HEAD : hend > HTTP_SERVE_MAX_HEAD) {
             return 400;
         }
     }

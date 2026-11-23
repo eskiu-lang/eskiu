@@ -1,0 +1,84 @@
+// A request head longer than HTTP_SERVE_MAX_HEAD is 400 however it is split into
+// reads. The limit was checked only while the terminator was missing, so a head
+// whose first 64 KiB came in one read and its end in the next was accepted.
+import <http>;
+import <string>;
+import <mem>;
+import <net>;
+extern int printf(string fmt, ...);
+extern int socketpair(int d, int t, int p, *int sv);
+extern int64 write(int fd, *void b, int64 n);
+
+// A GET whose head is exactly `total` bytes, terminator included.
+void make_head(String* raw, int total) {
+    raw.clear();
+    raw.append("GET / HTTP/1.1\r\nHost: a\r\nX-Pad: ");
+    while (raw.len < total - 4) {
+        raw.push('a');
+    }
+    raw.append("\r\n\r\n");
+}
+
+// Feed raw as two writes (the first `first` bytes, then the rest), each copied in
+// as far as the buffer has room.
+int feed2(String* raw, int first) {
+    let b: HttpConnBuf;  b.init();
+    let req: HttpRequest;  req.init();
+    int64 off = 0;
+    int64 cut = (int64)first;
+    int st = -1;
+    while (st == -1 && off < raw.len) {
+        int64 end = off < cut ? cut : raw.len;
+        if (end > raw.len) { end = raw.len; }
+        int64 k = end - off;
+        if (k > (int64)(b.cap - b.len)) { k = (int64)(b.cap - b.len); }
+        memcpy(b.data + b.len, raw.data + off, k);
+        b.len += (int)k;
+        off += k;
+        st = b.feed(&req);
+    }
+    req.free();
+    b.free();
+    return st;
+}
+
+String g_raw;
+int g_fd = 0;
+
+void writer() {
+    write(g_fd, (*void)g_raw.data, 65536);
+    write(g_fd, (*void)(g_raw.data + 65536), g_raw.len - 65536);
+    net_close(g_fd);
+}
+
+int recv_split() {
+    int[2] sv;
+    socketpair(1, 1, 0, &sv[0]);
+    g_fd = sv[1];
+    let t: *void = thread_create(writer);
+    let r: HttpReq;  HttpReq_init(&r);
+    const int st = http_recv(sv[0], &r, 1 << 20);
+    uint8[4096] rest;
+    while (net_recv(sv[0], &rest[0], 4096) > 0) {}
+    thread_join(t);
+    HttpReq_free(&r);
+    net_close(sv[0]);
+    return st;
+}
+
+int main() {
+    let raw: String;  raw.init(1 << 17);
+    make_head(&raw, HTTP_SERVE_MAX_HEAD);
+    printf("feed exact limit: %d\n", feed2(&raw, 65536));
+    make_head(&raw, HTTP_SERVE_MAX_HEAD + 1);
+    printf("feed one over, split at the limit: %d\n", feed2(&raw, HTTP_SERVE_MAX_HEAD));
+    make_head(&raw, 70000);
+    printf("feed 70000, split at 64 KiB: %d\n", feed2(&raw, 65536));
+    printf("feed 70000, one write: %d\n", feed2(&raw, 70000));
+    g_raw.init(1 << 17);
+    make_head(&g_raw, 66000);
+    printf("http_recv 66000, split at 64 KiB: %d\n", recv_split());
+    make_head(&g_raw, 65536 + 10);
+    printf("http_recv 65546: %d\n", recv_split());
+    return 0;
+}

@@ -18,6 +18,10 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 - `fetch_last_error()` keeps one message per thread. Every failed fetch wrote one global
   buffer, so two threads failing at once could corrupt the heap.
 
+- The HTTP/1.1 servers and `http_recv` answer 400 to a head over `HTTP_SERVE_MAX_HEAD`
+  (64 KiB) however it is split into reads. The limit was checked only while the end of
+  the head was still missing, so a longer head could get through.
+
 ## [0.16.2] - 2026-11-20
 
 ### Changed

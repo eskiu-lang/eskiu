@@ -132,6 +132,8 @@ int HttpConnBuf_feed(HttpConnBuf* b, HttpRequest* req) {
             if (b.len > HTTP_SERVE_MAX_HEAD) {
                 return 400;
             }
+        } else if (h > HTTP_SERVE_MAX_HEAD) {   // the limit holds however the head was split
+            return 400;
         } else {
             b.hend = h;
             _http_request_clear(req);
