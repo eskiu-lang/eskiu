@@ -4,7 +4,9 @@ Eskiu playground API.
 A single endpoint, POST /run, that compiles and runs a snippet of Eskiu with
 `eskiuc run` and returns its stdout/stderr/exit code. Everything runs inside
 the container as an unprivileged user, under a wall-clock timeout and POSIX
-resource limits (CPU, address space, file size, processes). Output is capped.
+resource limits (CPU, address space, file size, processes), with no network.
+Output is capped as it is read, and the program's whole process tree is killed
+when it ends (sandbox.py).
 
 This is deliberately small so it is easy to audit. See README.md for the
 threat model and deployment notes.
@@ -13,7 +15,6 @@ threat model and deployment notes.
 import os
 import resource
 import shutil
-import subprocess
 import tempfile
 import time
 from collections import deque
@@ -23,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from client_ip import client_ip, parse_trusted_proxies
+import sandbox
 
 # ── Configuration (override via environment) ────────────────────────────────
 ESKIUC = os.environ.get("ESKIUC", "/opt/eskiu/bin/eskiuc")
@@ -102,20 +104,20 @@ def _set_limits():
     os.setsid()  # own process group so we can kill the whole tree on timeout
 
 
-def _truncate(b: bytes) -> tuple[str, bool]:
-    if len(b) > MAX_OUTPUT_BYTES:
-        return b[:MAX_OUTPUT_BYTES].decode("utf-8", "replace") + "\n…[output truncated]", True
-    return b.decode("utf-8", "replace"), False
+def _text(b: bytes, truncated: bool) -> str:
+    return b.decode("utf-8", "replace") + ("\n…[output truncated]" if truncated else "")
 
 
 @app.get("/healthz")
 def healthz():
-    return {"ok": os.path.exists(ESKIUC)}
+    isolated = sandbox.network_isolated()
+    return {"ok": os.path.exists(ESKIUC) and isolated, "network_isolated": isolated}
 
 
 @app.post("/run", response_model=RunResponse)
 def run(req: RunRequest, request: Request):
-    peer = request.client.host if request.client else "?"
+    # behind a Unix socket (README.md) the peer is the local reverse proxy
+    peer = request.client.host if request.client and request.client.host else "127.0.0.1"
     ip = client_ip(peer, request.headers.get("x-forwarded-for"), TRUSTED_PROXIES)
     if _rate_limited(ip):
         return RunResponse(ok=False, error="Rate limit exceeded. Slow down a moment.")
@@ -125,6 +127,8 @@ def run(req: RunRequest, request: Request):
         return RunResponse(ok=False, error=f"Source too large (max {MAX_CODE_BYTES} bytes).")
     if not code_bytes.strip():
         return RunResponse(ok=False, error="Empty source.")
+    if not sandbox.network_isolated():
+        return RunResponse(ok=False, error="The playground is not network-isolated; it does not run code.")
 
     workdir = tempfile.mkdtemp(prefix="esk-")
     src = os.path.join(workdir, "main.esk")
@@ -139,36 +143,17 @@ def run(req: RunRequest, request: Request):
             "TMPDIR": workdir,
         }
         started = time.monotonic()
-        try:
-            proc = subprocess.run(
-                [ESKIUC, "run", src],
-                input=req.stdin.encode("utf-8"),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd=workdir,
-                env=env,
-                preexec_fn=_set_limits,
-                timeout=WALL_TIMEOUT,
-            )
-        except subprocess.TimeoutExpired as e:
-            out, t1 = _truncate(e.stdout or b"")
-            err, t2 = _truncate(e.stderr or b"")
-            return RunResponse(
-                ok=True, timed_out=True, stdout=out, stderr=err,
-                truncated=t1 or t2,
-                duration_ms=int((time.monotonic() - started) * 1000),
-                error=f"Timed out after {WALL_TIMEOUT:g}s.",
-            )
-
-        out, t1 = _truncate(proc.stdout)
-        err, t2 = _truncate(proc.stderr)
+        r = sandbox.run([ESKIUC, "run", src], req.stdin.encode("utf-8"), workdir, env, _set_limits,
+                        WALL_TIMEOUT, MAX_OUTPUT_BYTES)
         return RunResponse(
             ok=True,
-            exit_code=proc.returncode,
-            stdout=out,
-            stderr=err,
-            truncated=t1 or t2,
+            exit_code=r.returncode,
+            stdout=_text(r.stdout, r.stdout_truncated),
+            stderr=_text(r.stderr, r.stderr_truncated),
+            timed_out=r.timed_out,
+            truncated=r.truncated,
             duration_ms=int((time.monotonic() - started) * 1000),
+            error=f"Timed out after {WALL_TIMEOUT:g}s." if r.timed_out else None,
         )
     except Exception as e:  # noqa: BLE001 — surface as a clean API error
         return RunResponse(ok=False, error=f"Internal error: {type(e).__name__}")

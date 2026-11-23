@@ -34,11 +34,17 @@ docker build --build-arg ESKIU_VERSION=0.16.2 -t eskiu-playground .   # a specif
 
 ## Run on the VPS
 
+The container runs with **no network** (`--network none`): user programs cannot reach the
+internet, the host or anything else. The API listens on a Unix socket in a directory the
+host mounts, and the reverse proxy forwards to that socket.
+
 ```bash
+sudo install -d -o 10001 -g 10001 -m 0755 /run/eskiu-playground
 docker run -d --name eskiu-playground --restart unless-stopped \
-  -p 127.0.0.1:8080:8080 \
+  --network none \
+  -v /run/eskiu-playground:/run/eskiu-playground \
   -e ALLOWED_ORIGINS="https://eskiu-lang.org,https://www.eskiu-lang.org" \
-  -e TRUSTED_PROXIES="172.17.0.1/32" \
+  --init \
   --read-only \
   --tmpfs /tmp:size=512m,exec \
   --tmpfs /home/runner:size=64m \
@@ -50,29 +56,39 @@ docker run -d --name eskiu-playground --restart unless-stopped \
 ```
 
 Notes:
+- `--network none` is required: the API refuses to run code (`/run` answers an error,
+  `/healthz` reports `"network_isolated": false`) while the container has any network
+  interface besides loopback. `ALLOW_NETWORK=1` turns that check off, for local
+  development only.
+- `--init` reaps the processes the API kills; without it they stay as zombies.
 - `--tmpfs /tmp:...,exec` is required: `eskiuc run` links and executes a
   temporary binary under `$TMPDIR`, which the app points at `/tmp`.
-- Bind to `127.0.0.1` and let your existing reverse proxy (nginx/Caddy/Traefik)
-  terminate TLS and forward to it. Then set `PLAYGROUND_API` in
-  `site/index.html` to the public URL.
+- `/run/eskiu-playground` does not survive a reboot on most systems: create it again
+  at boot (a `tmpfiles.d` entry: `d /run/eskiu-playground 0755 10001 10001 -`).
+- Let your reverse proxy (nginx/Caddy/Traefik) terminate TLS and forward to the socket.
+  Then set `PLAYGROUND_API` in `site/home.js` to the public URL.
 
 Example nginx location:
 
 ```nginx
 location /run {
-    proxy_pass http://127.0.0.1:8080/run;
+    proxy_pass http://unix:/run/eskiu-playground/api.sock:/run;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 }
-location /healthz { proxy_pass http://127.0.0.1:8080/healthz; }
+location /healthz { proxy_pass http://unix:/run/eskiu-playground/api.sock:/healthz; }
 ```
 
 Update / rebuild:
 
 ```bash
-docker build -f playground/Dockerfile -t eskiu-playground .
+docker build -f playground/Dockerfile -t eskiu-playground playground
 docker rm -f eskiu-playground
 docker run -d ... eskiu-playground   # same flags as above
 ```
+
+Behind the socket every request comes from the local proxy, which the default
+`TRUSTED_PROXIES` (loopback) trusts, so the rate limit uses the client address nginx
+puts in `X-Forwarded-For`.
 
 `TRUSTED_PROXIES` is a comma-separated list of IP addresses or CIDRs for the
 reverse proxies that connect directly to the container. The playground ignores
@@ -97,11 +113,15 @@ User code is untrusted. Isolation is the container plus, per request:
 | Rate limit / IP    | 20 per 60 s        | `RATE_REQUESTS`, `RATE_WINDOW` |
 | Trusted proxies    | loopback only      | `TRUSTED_PROXIES` |
 
-Runs as an unprivileged user (`uid 10001`), its own session/process group
-(killed as a tree on timeout), with a fresh ephemeral work directory per
-request. The `docker run` flags above add a read-only root FS, dropped
-capabilities, and `no-new-privileges`.
+Runs as an unprivileged user (`uid 10001`) in its own session, with a fresh
+ephemeral work directory per request (`sandbox.py`):
 
-The container does **not** block outbound network from user code on its own.
-If that matters to you, run it on an isolated Docker network with no egress, or
-front it with an nsjail/gVisor layer.
+- stdout and stderr are read while the program runs and kept up to the cap; the
+  rest is dropped, so a program that prints without end does not grow the API's memory;
+- when the program ends, times out or fails, its whole process group is killed, and
+  a sweep kills any process of the user that left it (a daemon in a new session);
+- the container has no network (`--network none`), and the API checks it before
+  running anything.
+
+The `docker run` flags above add a read-only root FS, dropped capabilities,
+`no-new-privileges`, a PID limit and a memory limit.

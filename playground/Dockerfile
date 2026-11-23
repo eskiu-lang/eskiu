@@ -44,11 +44,15 @@ ENV ESKIU_ROOT=/opt/eskiu/lib/eskiu \
 WORKDIR /app
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
-COPY app.py client_ip.py ./
+COPY app.py client_ip.py sandbox.py ./
 
 # Run unprivileged. User code inherits this UID under the per-request rlimits.
 RUN useradd --create-home --uid 10001 runner
 USER runner
 
+# The API listens on a Unix socket in a directory the host mounts, so the container can
+# run with --network none: user programs then have no network at all (README.md). Set
+# PLAYGROUND_SOCKET= (empty) to listen on TCP port 8080 instead, for local development.
+ENV PLAYGROUND_SOCKET=/run/eskiu-playground/api.sock
 EXPOSE 8080
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "2"]
+CMD ["sh", "-c", "if [ -n \"$PLAYGROUND_SOCKET\" ]; then exec uvicorn app:app --uds \"$PLAYGROUND_SOCKET\" --workers 2; else exec uvicorn app:app --host 0.0.0.0 --port 8080 --workers 2; fi"]
