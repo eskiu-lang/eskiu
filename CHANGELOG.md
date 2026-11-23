@@ -54,6 +54,23 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   libraries in) a directory outside it. The self-hosted driver no longer follows a link
   when it rewrites a `.dylib`. Both compilers.
 
+- The playground runs a program's output through a cap as it is read, kills the program's
+  whole process tree when it ends or times out (and any process that left it), and runs
+  nothing unless its container has no network (`--network none`, the API on a Unix socket;
+  see `playground/README.md`). Output was buffered whole before the cap, a forked process
+  outlived its request, and programs could reach the network.
+
+- The VS Code extension honors Workspace Trust: in a workspace you have not trusted it
+  ignores the workspace's `eskiu.compilerPath`, `eskiu.compilerFlags` and
+  `eskiu.entryPoint` and does not run a `build/eskiuc` from it. The standalone language
+  server searches the workspace for a compiler only when its client says it is trusted, and
+  the IntelliJ plugin only for trusted projects. Opening a repository could run a program it
+  shipped.
+
+- CI: every workflow's token is read-only except the job that creates the release, actions
+  are pinned by commit, and each marketplace token reaches only the step that publishes
+  with it.
+
 ## [0.16.2] - 2026-11-20
 
 ### Changed
