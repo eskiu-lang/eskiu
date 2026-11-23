@@ -1,0 +1,10 @@
+// EXPECT-ERROR: 8:13: macro expansion exceeds 16777216 bytes of replacement text in this file
+// DUP nested 40 times would expand to 2^40 copies of its argument: the file's
+// macro budget stops it with an error instead of exhausting time and memory.
+#define DUP(x) x x
+#define D8(x) DUP(DUP(DUP(DUP(DUP(DUP(DUP(DUP(x))))))))
+#define D40(x) D8(D8(D8(D8(D8(x)))))
+int main() {
+    int a = D40(1 +) 0;
+    return a;
+}

@@ -66,7 +66,7 @@ HANDLED="undefined_var arg_count undefined_type await_outside_async async_no_awa
          pp_include pp_unknown_directive pp_stray_endif pp_stray_else pp_missing_endif
          pp_if_bad_expr pp_stringify pp_if_zero_div
          pp_if_shift_range pp_if_int_too_large pp_if_multichar
-         pp_macro_too_few pp_macro_too_many
+         pp_macro_too_few pp_macro_too_many pp_macro_budget
          import_lex_error import_directory import_empty
          int_literal_too_large hex_literal_too_large float_exponent_no_digits
          float_const_cast_range

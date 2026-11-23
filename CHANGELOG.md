@@ -26,6 +26,10 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   was joined to the temporary directory as given, so `"../x-"` created the file or
   directory outside it.
 
+- The preprocessor stops a file whose macros expand to more than 16 MiB of replacement
+  text with an error. A duplicating macro nested a few dozen times took time and memory
+  exponential in its size. Both compilers.
+
 ## [0.16.2] - 2026-11-20
 
 ### Changed
