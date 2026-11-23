@@ -501,6 +501,42 @@ if command -v emcc > /dev/null 2>&1; then
             bad "web/assets-copied ($c)" "$(cat "$work/web.out"; ls "$work/webapp/out")"
         fi
     done
+    # A symbolic link is not followed out of the package: an asset that is one (to a
+    # file or a directory), or one inside an asset directory, is not copied.
+    printf 'secret' > "$work/secret.txt"
+    mkdir -p "$work/secretdir" && printf 'secret' > "$work/secretdir/s.txt"
+    ln -s "$work/secret.txt" "$work/webdep/web/leak.txt"
+    ln -s "$work/secretdir" "$work/webdep/web/leakdir"
+    ln -s "$work/secret.txt" "$work/webdep/web/extra/inner.txt"
+    printf '[package]\nname = "webdep"\n\n[web]\nassets = ["web/thing.wasm", "web/extra", "web/leak.txt", "web/leakdir"]\n' > "$work/webdep/eskiu.toml"
+    for c in eskiuc esk; do
+        comp="$ESKIUC"; [[ $c == esk ]] && comp="$ESK"
+        [[ -x "$comp" ]] || continue
+        rm -rf "$work/webapp/out" && mkdir -p "$work/webapp/out"
+        if (cd "$work/webapp" && unset CC && "$comp" src/main.esk --target wasm32-unknown-emscripten -o out/app.js > "$work/web.out" 2>&1) &&
+                [[ -f "$work/webapp/out/thing.wasm" && -f "$work/webapp/out/extra/a.txt" ]] &&
+                [[ ! -e "$work/webapp/out/leak.txt" && ! -e "$work/webapp/out/leakdir" && ! -e "$work/webapp/out/extra/inner.txt" ]] &&
+                grep -q "leak.txt of package 'webdep' is a symbolic link or leads out of the package; not copied" "$work/web.out" &&
+                grep -q "symbolic link .*inner.txt is not copied" "$work/web.out"; then
+            ok "web/symlinks-skipped ($c)"
+        else
+            bad "web/symlinks-skipped ($c)" "$(cat "$work/web.out"; ls -R "$work/webapp/out")"
+        fi
+    done
+    # A manifest naming an asset outside the package contributes none of its assets.
+    printf 'out' > "$work/outside.wasm"
+    printf '[package]\nname = "webdep"\n\n[web]\nassets = ["web/thing.wasm", "../outside.wasm"]\n' > "$work/webdep/eskiu.toml"
+    for c in eskiuc esk; do
+        comp="$ESKIUC"; [[ $c == esk ]] && comp="$ESK"
+        [[ -x "$comp" ]] || continue
+        rm -rf "$work/webapp/out" && mkdir -p "$work/webapp/out"
+        if (cd "$work/webapp" && unset CC && "$comp" src/main.esk --target wasm32-unknown-emscripten -o out/app.js > "$work/web.out" 2>&1) &&
+                [[ -f "$work/webapp/out/app.js" && ! -e "$work/webapp/out/thing.wasm" && ! -e "$work/webapp/out/outside.wasm" ]]; then
+            ok "web/outside-not-copied ($c)"
+        else
+            bad "web/outside-not-copied ($c)" "$(cat "$work/web.out"; ls "$work/webapp/out")"
+        fi
+    done
 else
     echo "skip web/assets-copied: emcc not found"
 fi

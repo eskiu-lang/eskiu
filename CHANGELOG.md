@@ -40,6 +40,13 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   dependency's name went into the tab- and newline-separated lock as is and could add or
   replace an entry for another package.
 
+- A web build copies a package's `[web]` assets only from inside the package: an asset
+  that is a symbolic link, or lies under one, is skipped with a warning, and so is a
+  symbolic link inside an asset directory. A dependency could list a link to any file the
+  user can read and have it copied into the published output. The self-hosted driver also
+  rejects an asset spelled with `..` or as an absolute path, as `eskiu.toml` does. Both
+  compilers.
+
 ## [0.16.2] - 2026-11-20
 
 ### Changed
