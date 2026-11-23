@@ -41,7 +41,7 @@ formatting and a Run command.
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `eskiu.compilerPath` | `""` | Path to `eskiuc`. Empty uses `build/eskiuc` in a checkout of this repository, else `eskiuc` on `PATH`. Set it when the editor does not inherit your shell `PATH` (common for apps opened from the Dock). |
+| `eskiu.compilerPath` | `""` | Path to `eskiuc`. Empty uses `build/eskiuc` in a trusted checkout of this repository, else `~/.eskiu/bin/eskiuc`, else `eskiuc` on `PATH`. Set it when the editor does not inherit your shell `PATH` (common for apps opened from the Dock). |
 | `eskiu.checkOnType` | `true` | Type-check while typing, not only on open and save. |
 | `eskiu.checkDelay` | `400` | Milliseconds after the last edit before checking. |
 
@@ -125,8 +125,18 @@ for every feature, parsing its `file:line:col: message` output into diagnostics.
 the same features: diagnostics, hover, go to definition, completion, signature help,
 document symbols and formatting. It serves editors that speak LSP natively (Neovim, Helix,
 Zed) and JetBrains IDEs through the Eskiu IntelliJ plugin. It runs the compiler given as
-`initializationOptions.compilerPath`, else `$ESKIUC`, else the same lookup as the
-extension, then `~/.eskiu/bin/eskiuc`.
+`initializationOptions.compilerPath`, else `$ESKIUC`, else `build22`/`build` next to the
+server, else `~/.eskiu/bin/eskiuc`, else `eskiuc` on `PATH`. It looks in the build
+directories above the edited file only when the client marks the workspace as trusted
+(`initializationOptions.searchWorkspace: true`, or `ESKIU_SEARCH_WORKSPACE=1`).
+
+## Workspace Trust
+
+A repository you open must not be able to run a program of its choice. In a workspace you
+have not trusted, the extension ignores the workspace's `eskiu.compilerPath`,
+`eskiu.compilerFlags` and `eskiu.entryPoint` settings and does not use a `build/eskiuc` in
+it; it runs the installed compiler. The IntelliJ plugin does the same for projects the IDE
+has not trusted.
 
 ## Limitations
 

@@ -51,8 +51,13 @@ function send(obj) {
 
 // ── Message handler ───────────────────────────────────────────────────────────
 
-// Path to eskiuc: $ESKIUC, else build22/build walking upwards or next to this file, else PATH
+// Path to eskiuc: initializationOptions.compilerPath, else $ESKIUC, else build22/build next to
+// this file, else the installed ~/.eskiu/bin/eskiuc, else PATH. The build directories above
+// the edited file are searched only when the client says its workspace is trusted
+// (initializationOptions.searchWorkspace, or ESKIU_SEARCH_WORKSPACE=1): a repository opened in
+// the editor must not choose a program the server runs.
 let compilerOverride = '';   // initializationOptions.compilerPath
+let searchWorkspace = process.env.ESKIU_SEARCH_WORKSPACE === '1';
 // initializationOptions.compilerFlags (e.g. -Wall, -Wno-format), else $ESKIU_FLAGS split on spaces
 let compilerFlags = (process.env.ESKIU_FLAGS || '').split(/\s+/).filter(Boolean);
 
@@ -64,7 +69,7 @@ function findEskiuc(hintPath) {
 
     const buildNames = ['build22', 'build', 'build-debug', 'build-release'];
 
-    if (hintPath) {
+    if (hintPath && searchWorkspace) {
         let cur = path.dirname(path.resolve(hintPath));
         for (let i = 0; i < 6; i++) {
             for (const b of buildNames) {
@@ -452,6 +457,7 @@ function handleMessage(msg) {
     if (method === 'initialize') {
         const opts = (params && params.initializationOptions) || {};
         if (typeof opts.compilerPath === 'string') compilerOverride = opts.compilerPath.trim();
+        if (typeof opts.searchWorkspace === 'boolean') searchWorkspace = opts.searchWorkspace;
         if (Array.isArray(opts.compilerFlags)) compilerFlags = opts.compilerFlags.filter(f => typeof f === 'string');
         send({ jsonrpc: '2.0', id, result: {
             capabilities: {

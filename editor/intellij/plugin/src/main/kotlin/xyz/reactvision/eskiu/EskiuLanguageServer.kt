@@ -2,6 +2,7 @@ package xyz.reactvision.eskiu
 
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.execution.configurations.PathEnvironmentVariableUtil
+import com.intellij.ide.impl.isTrusted
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.project.Project
 import com.redhat.devtools.lsp4ij.LanguageServerFactory
@@ -27,18 +28,24 @@ class EskiuServer(project: Project) : OSProcessStreamConnectionProvider() {
         val cmd = GeneralCommandLine(findNode(), server)
         project.basePath?.let { cmd.withWorkDirectory(it) }
         findCompiler(project)?.let { cmd.withEnvironment("ESKIUC", it) }
+        // only a trusted project's own build directories may provide the compiler
+        if (project.isTrusted()) cmd.withEnvironment("ESKIU_SEARCH_WORKSPACE", "1")
         EskiuSettings.get().state.compilerFlags.trim().takeIf { it.isNotEmpty() }?.let { cmd.withEnvironment("ESKIU_FLAGS", it) }
         commandLine = cmd
     }
 
     private fun executable(path: String): Boolean = File(path).let { it.isFile && it.canExecute() }
 
-    /** The settings' path, else `build22`/`build` in the project, else `~/.eskiu/bin`, else null (server.js looks on PATH). */
+    /**
+     * The settings' path, else `build22`/`build` in the project when the project is trusted,
+     * else `~/.eskiu/bin`, else null (server.js looks on PATH). An untrusted project cannot
+     * choose the program the server runs.
+     */
     private fun findCompiler(project: Project): String? {
         val configured = EskiuSettings.get().state.compilerPath
         if (configured.isNotEmpty()) return configured
         val base = project.basePath
-        if (base != null) {
+        if (base != null && project.isTrusted()) {
             for (b in listOf("build22", "build")) {
                 val c = "$base/$b/eskiuc"
                 if (executable(c)) return c

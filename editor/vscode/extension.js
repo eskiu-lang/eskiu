@@ -32,7 +32,10 @@ function getCompilerFlags() {
 }
 
 // The compiler: the `eskiu.compilerPath` setting, else `build22/eskiuc` or `build/eskiuc`
-// in workspace folders or above hintPath, else `eskiuc` on PATH.
+// in workspace folders or above hintPath, else the installed `~/.eskiu/bin/eskiuc`, else
+// `eskiuc` on PATH. In a workspace the user has not trusted (Workspace Trust), nothing the
+// workspace holds picks the program run: VS Code ignores its compilerPath (a restricted
+// setting in package.json) and its build directories are not searched.
 function findEskiuc(hintPath) {
     const configured = (config().get('compilerPath') || '').trim();
     if (configured) return configured;
@@ -43,7 +46,7 @@ function findEskiuc(hintPath) {
     const buildNames = ['build22', 'build', 'build-debug', 'build-release'];
 
     // 1. Check workspace folders
-    const wfs = vscode.workspace.workspaceFolders || [];
+    const wfs = vscode.workspace.isTrusted ? (vscode.workspace.workspaceFolders || []) : [];
     for (const wf of wfs) {
         for (const b of buildNames) {
             const c = path.join(wf.uri.fsPath, b, 'eskiuc');
@@ -52,7 +55,7 @@ function findEskiuc(hintPath) {
     }
 
     // 2. Check hintPath walking up directory tree
-    if (hintPath) {
+    if (hintPath && vscode.workspace.isTrusted) {
         let cur = path.dirname(path.resolve(hintPath));
         for (let i = 0; i < 6; i++) {
             for (const b of buildNames) {
@@ -76,6 +79,9 @@ function findEskiuc(hintPath) {
         try { fs.accessSync(c, fs.constants.X_OK); return c; } catch {}
     }
 
+    // 4. The installer's location (an editor opened from the Dock lacks the shell PATH)
+    const installed = path.join(os.homedir(), '.eskiu', 'bin', 'eskiuc');
+    try { fs.accessSync(installed, fs.constants.X_OK); return installed; } catch {}
     return 'eskiuc';
 }
 

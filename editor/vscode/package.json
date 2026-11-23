@@ -20,6 +20,13 @@
     "onCommand:eskiu.runFile"
   ],
   "main": "./extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In a workspace you have not trusted, Eskiu does not run a compiler the workspace provides: its eskiu.compilerPath, eskiu.compilerFlags and eskiu.entryPoint settings and its build directories are ignored, and the installed eskiuc is used.",
+      "restrictedConfigurations": ["eskiu.compilerPath", "eskiu.compilerFlags", "eskiu.entryPoint"]
+    }
+  },
   "contributes": {
     "languages": [
       {
