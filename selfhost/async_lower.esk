@@ -310,6 +310,7 @@ void al_rewrite(*ExprNode e, List<string>* vars) {
 import "async_lower_types.esk";
 import "async_lower_transform.esk";
 import "async_lower_stmt.esk";
+import "async_lower_generalize.esk";
 import "async_lower_match.esk";
 import "async_lower_hoist.esk";
 import "async_lower_desugar.esk";

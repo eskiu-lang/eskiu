@@ -1,0 +1,136 @@
+// async_lower_generalize.esk: a generic async function's types in terms of its type parameters (part of async_lower.esk, imported in order)
+
+// The most candidates al_generalize tries (mirrors kMaxGeneralizeTries); past it only
+// the empty subset is tried. Each subset of the parameters is a candidate, so a
+// generic with dozens of them must not try all 2^n.
+const int AL_MAX_GENERALIZE_TRIES = 65536;
+
+// The element after position j of the k-subset `cb` of [0, n): cb[j + 1], or n.
+int al_comb_next(List<int>* cb, int j, int k, int n) {
+    if (j + 1 < k) {
+        return List_get<int>(cb, j + 1);
+    }
+    return n;
+}
+
+// The candidate for the subset cb[0..k) of the parameters: the first instance's type
+// `t0` with each chosen parameter in place of its argument `a0[i]`, when every
+// instance (args, tys) agrees with it; else "".
+string al_gen_try(string t0, List<string>* a0, List<TypeParam>* tps, List<List<string>>* args,
+                  List<string>* tys, List<int>* cb, int k) {
+    string cand = t0;
+    int j = 0;
+    while (j < k) {
+        int i = List_get<int>(cb, j);
+        cand = al_replace_type(cand, List_get<string>(a0, i), List_get<TypeParam>(tps, i).name);
+        j = j + 1;
+    }
+    int r = 0;
+    while (r < List_len<string>(tys)) {
+        List<string> ar = List_get<List<string>>(args, r);
+        if (str_eq(al_subst(cand, tps, &ar), List_get<string>(tys, r)) == 0) {
+            return "";
+        }
+        r = r + 1;
+    }
+    return cand;
+}
+
+// A type in generic function `c.curfn`, in terms of its type parameters, from its value
+// in each checked instance (`recs`, from sema_inst_rec; `part` >= 0 picks that
+// ';'-separated part of each record's type): a spelling S that al_subst turns into the
+// type of every instance. Candidates put a type parameter in place of each subtree
+// spelled as its argument (every subset of the parameters, most first, then by bit
+// mask), as the C++ generalizeType does. "" when none fits.
+string al_generalize(*AlCtx c, string recs, int part) {
+    List<TypeParam>* tps = &c.curfn.type_params;
+    int n = List_len<TypeParam>(tps);
+    List<string> lines;
+    List_init<string>(&lines, 4);
+    al_split_ch(recs, 10, &lines);
+    int nr = List_len<string>(&lines);
+    if (nr > 0 && cstr_len(List_get<string>(&lines, nr - 1)) == 0) {   // after the last '\n'
+        nr = nr - 1;
+    }
+    if (nr == 0) {
+        return "";
+    }
+    List<List<string>> args;
+    List_init<List<string>>(&args, nr);
+    List<string> tys;
+    List_init<string>(&tys, nr);
+    int r = 0;
+    while (r < nr) {
+        string ln = List_get<string>(&lines, r);
+        int f = 0;
+        while (ln[f] != 0 && (int)ln[f] != 12) {
+            f = f + 1;
+        }
+        if (ln[f] == 0) {
+            return "";
+        }
+        List<string> as;
+        List_init<string>(&as, 2);
+        al_split_ch(al_substr(ln, 0, f), 9, &as);
+        if (List_len<string>(&as) != n) {
+            return "";
+        }
+        string t = al_substr(ln, f + 1, cstr_len(ln));
+        if (part >= 0) {
+            List<string> ps;
+            List_init<string>(&ps, 2);
+            al_split_semi(t, &ps);
+            if (part >= List_len<string>(&ps)) {
+                return "";
+            }
+            t = List_get<string>(&ps, part);
+        }
+        if (t[0] == 0 || str_eq(t, "unknown") == 1 || str_eq(t, "null") == 1 || str_eq(t, "void") == 1) {
+            return "";
+        }
+        List_push<List<string>>(&args, as);
+        List_push<string>(&tys, t);
+        r = r + 1;
+    }
+    List<string> a0 = List_get<List<string>>(&args, 0);
+    // Subsets of one size in colex order (increasing bit mask), without building
+    // the 2^n list; at most AL_MAX_GENERALIZE_TRIES candidates (mirrors the C++).
+    int tries = 0;
+    int k = n;
+    while (k >= 0) {
+        List<int> cb;
+        List_init<int>(&cb, k + 1);
+        int j = 0;
+        while (j < k) {
+            List_push<int>(&cb, j);
+            j = j + 1;
+        }
+        int more = 1;
+        while (more == 1) {
+            tries = tries + 1;
+            if (tries > AL_MAX_GENERALIZE_TRIES) {
+                return al_gen_try(List_get<string>(&tys, 0), &a0, tps, &args, &tys, &cb, 0);
+            }
+            string cand = al_gen_try(List_get<string>(&tys, 0), &a0, tps, &args, &tys, &cb, k);
+            if (cand[0] != 0) {
+                return cand;
+            }
+            j = 0;
+            while (j < k && List_get<int>(&cb, j) + 1 == al_comb_next(&cb, j, k, n)) {
+                j = j + 1;
+            }
+            if (j == k) {
+                more = 0;
+            } else {
+                List_set<int>(&cb, j, List_get<int>(&cb, j) + 1);
+                int q = 0;
+                while (q < j) {
+                    List_set<int>(&cb, q, q);
+                    q = q + 1;
+                }
+            }
+        }
+        k = k - 1;
+    }
+    return "";
+}
