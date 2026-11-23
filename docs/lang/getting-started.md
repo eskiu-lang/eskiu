@@ -1437,7 +1437,9 @@ assets = ["web/gpu-naga.wasm"]
 A build for `wasm32-unknown-emscripten` in the package, or in a package that depends on
 it, copies each one (a file, or a directory with its contents) into the directory of the
 output (`build/app.html` gets `build/gpu-naga.wasm`), with either compiler. An asset that
-does not exist, or that has the file name of another package's, is a warning. A compiler
+does not exist, or that has the file name of another package's, is a warning. Symbolic
+links are not followed: an asset that is one, or lies under one, is skipped with a warning,
+and a link inside an asset directory is not copied. A compiler
 older than 0.15.1 rejects the table (`unknown table [web]`), so a package that adds it
 needs 0.15.1 or newer.
 
