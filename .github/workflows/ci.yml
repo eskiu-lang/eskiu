@@ -5,6 +5,9 @@ on:
     branches: [develop, main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-24.04
@@ -13,7 +16,7 @@ jobs:
     env:
       ESKIU_REQUIRE_TLS: 1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Playground security tests
         run: python3 -m unittest discover -s playground -p "test_*.py"
@@ -89,7 +92,7 @@ jobs:
       # The inputs a fuzz step flagged, to reproduce a finding locally.
       - name: Fuzz findings
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: fuzz-findings
           path: tests/fuzz/findings/
@@ -264,7 +267,7 @@ jobs:
   leaks:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install LLVM 22 + toolchain
         run: |
@@ -289,7 +292,7 @@ jobs:
   macos:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install LLVM 22
         run: |

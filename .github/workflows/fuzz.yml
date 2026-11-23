@@ -12,6 +12,9 @@ on:
         description: "Seconds per target and seed"
         default: "600"
 
+permissions:
+  contents: read
+
 jobs:
   stdlib:
     runs-on: ubuntu-24.04
@@ -21,7 +24,7 @@ jobs:
       matrix:
         seed: [11, 12, 13, 14]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install LLVM 22
         run: |
@@ -43,7 +46,7 @@ jobs:
 
       - name: Findings
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: findings-${{ matrix.seed }}
           path: tests/fuzz/findings/
@@ -57,7 +60,7 @@ jobs:
       matrix:
         seed: [21, 22]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install LLVM 22
         run: |
@@ -79,7 +82,7 @@ jobs:
 
       - name: Findings
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: oracle-findings-${{ matrix.seed }}
           path: tests/fuzz/findings/
