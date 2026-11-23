@@ -26,9 +26,11 @@ static void ppCopyLiteral(const std::string& s, size_t& i, std::string& out) {
 }
 
 // Replace each parameter name in a function-like macro body with its argument.
+// Stops once the result is longer than `cap` bytes (the caller then rejects it).
 static std::string ppSubstParams(const std::string& body,
                                  const std::vector<std::string>& params,
-                                 const std::vector<std::string>& args) {
+                                 const std::vector<std::string>& args,
+                                 size_t cap) {
     std::map<std::string, std::string> m;
     for (size_t i = 0; i < params.size() && i < args.size(); ++i) m[params[i]] = args[i];
     std::string out; size_t i = 0, n = body.size();
@@ -43,11 +45,33 @@ static std::string ppSubstParams(const std::string& body,
             std::string id = body.substr(i, j-i);
             auto it = m.find(id);
             out += (it != m.end()) ? it->second : id;
-            i = j; continue;
+            i = j;
+            if (out.size() > cap) break;
+            continue;
         }
         out += c; i++;
     }
     return out;
+}
+
+// The macro replacement text one file may produce in all (each object-like
+// body and each substituted function-like body counts its bytes). No real
+// program comes near it; a duplicating macro nested a few dozen times would
+// otherwise take time and memory exponential in its size.
+constexpr size_t kMaxMacroExpansion = (size_t)16 << 20;
+
+// The budget of one preprocessed file. Once spent, no macro expands any more and
+// the first expansion over it is reported (at the line and top-level column).
+struct PPBudget {
+    size_t used = 0;
+    bool hit = false;
+    bool reported = false;
+    size_t col = 0;
+};
+
+static std::string ppBudgetMessage() {
+    return "macro expansion exceeds " + std::to_string(kMaxMacroExpansion) +
+           " bytes of replacement text in this file";
 }
 
 // Error state shared by one top-level ppExpand call and its nested expansions: the
@@ -62,6 +86,7 @@ struct PPExpandCtx {
     // A function-like macro name ends the top-level text (only blanks or a comment
     // after it): its `(` may start a following line, as in C.
     bool trailingFnName = false;
+    PPBudget* budget = nullptr;
 };
 
 static bool ppIdentStart(char c) { return std::isalpha((unsigned char)c) || c == '_'; }
@@ -119,6 +144,20 @@ static std::string ppExpand(const std::string& input,
     auto fail = [&](const std::string& msg) {
         if (ctx && ctx->err.empty()) { ctx->err = msg; ctx->errCol = ctx->topCol; }
     };
+    // Count `k` more bytes of replacement text; false (and the budget is spent) when
+    // they do not fit.
+    auto charge = [&](size_t k) {
+        if (!ctx || !ctx->budget) return true;
+        PPBudget& b = *ctx->budget;
+        if (b.hit) return false;
+        if (k > kMaxMacroExpansion - b.used) {
+            b.hit = true;
+            b.col = ctx->topCol;
+            return false;
+        }
+        b.used += k;
+        return true;
+    };
     auto failOpen = [&](const std::string& msg) {
         if (ctx && ctx->depth == 0 && ctx->err.empty()) ctx->openCall = true;
         fail(msg);
@@ -142,12 +181,14 @@ static std::string ppExpand(const std::string& input,
             std::string id = text.substr(i, j-i);
             if (ctx && ctx->depth == 0 && i >= keepTop) ctx->topCol = (size_t)((long long)i + colShift + 1);
             auto it = defines.find(id);
-            if (it != defines.end() && !expanding.count(id)) {
+            bool spent = ctx && ctx->budget && ctx->budget->hit;
+            if (it != defines.end() && !expanding.count(id) && !spent) {
                 const Macro& mac = it->second;
                 std::string res;
                 size_t after = j;
                 bool expanded = false;
                 if (!mac.isFunction) {
+                    if (!charge(mac.body.size())) { out += id; i = j; continue; }
                     expanding.insert(id);
                     if (ctx) ctx->depth++;
                     res = ppExpand(mac.body, defines, expanding, nullptr, ctx);
@@ -203,7 +244,12 @@ static std::string ppExpand(const std::string& input,
                         // rule), so a nested call like F(F(3)) expands the inner one.
                         if (ctx) ctx->depth++;
                         for (auto& a : args) a = ppExpand(a, defines, expanding, nullptr, ctx);
-                        std::string sub = ppSubstParams(mac.body, mac.params, args);
+                        size_t room = ctx && ctx->budget ? kMaxMacroExpansion - ctx->budget->used : (size_t)-1;
+                        std::string sub = ppSubstParams(mac.body, mac.params, args, room);
+                        if (!charge(sub.size())) {
+                            if (ctx) ctx->depth--;
+                            out += text.substr(i, p - i); i = p; continue;
+                        }
                         expanding.insert(id);
                         res = ppExpand(sub, defines, expanding, nullptr, ctx);
                         expanding.erase(id);

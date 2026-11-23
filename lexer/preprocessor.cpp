@@ -36,6 +36,7 @@ void preprocess(const std::string& src,
     Macro fileMacro; fileMacro.body = ppFileLiteral(filename);
     defines["__FILE__"] = fileMacro;
     const std::string fileLabel = filename.empty() ? "<input>" : filename;
+    PPBudget budget;
     auto ppError = [&](int ln, int col, const std::string& msg) {
         std::cerr << "error: " << fileLabel << ":" << ln << ":" << col << ": " << msg << std::endl;
         hadErr = true;
@@ -138,7 +139,7 @@ void preprocess(const std::string& src,
                 bool on = false;
                 if (active()) {
                     long long v = 0; std::string err;
-                    if (ppEvalIf(rest, defines, v, err)) on = v != 0;
+                    if (ppEvalIf(rest, defines, v, err, &budget)) on = v != 0;
                     else ppError(lineNo, col, err);
                 }
                 stack.push_back({active(), on, on, false, lineNo, col});
@@ -150,7 +151,7 @@ void preprocess(const std::string& src,
                     bool on = false;
                     if (c.parentActive && !c.anyTaken) {
                         long long v = 0; std::string err;
-                        if (ppEvalIf(rest, defines, v, err)) on = v != 0;
+                        if (ppEvalIf(rest, defines, v, err, &budget)) on = v != 0;
                         else ppError(lineNo, col, err);
                     }
                     c.branchActive = on;
@@ -211,6 +212,7 @@ void preprocess(const std::string& src,
                 bool blk = blkStart;
                 expanding.clear();
                 ctx = PPExpandCtx();
+                ctx.budget = &budget;
                 expanded = ppExpand(line, defines, expanding, &blk, &ctx);
                 std::string cont;
                 bool join = ctx.openCall || (ctx.trailingFnName && ppNextCodeIsParen(in));
@@ -226,6 +228,10 @@ void preprocess(const std::string& src,
             }
             inString = strOpen || ppEndsInString(line, blkStart);
             if (!ctx.err.empty()) ppError(lineNo, (int)(ctx.errCol + lead.size()), ctx.err);
+            if (budget.hit && !budget.reported) {
+                budget.reported = true;
+                ppError(lineNo, (int)(budget.col + lead.size()), ppBudgetMessage());
+            }
             out << lead << expanded;
             extra -= (int)std::count(expanded.begin(), expanded.end(), '\n');
             if (importHook) {

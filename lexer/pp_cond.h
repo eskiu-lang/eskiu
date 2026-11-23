@@ -199,9 +199,10 @@ std::vector<std::string> ppExprTokens(const std::string& e) {
 } // namespace
 
 // Replace `defined X` / `defined(X)` with 1/0, macro-expand, then evaluate.
-// Returns false (and sets err) on a malformed expression.
+// Returns false (and sets err) on a malformed expression, or one whose expansion
+// spends the file's macro budget.
 static bool ppEvalIf(const std::string& expr, const std::map<std::string, Macro>& defines,
-                     long long& value, std::string& err) {
+                     long long& value, std::string& err, PPBudget* budget = nullptr) {
     std::string pre;
     size_t i = 0, n = expr.size();
     while (i < n) {
@@ -234,8 +235,15 @@ static bool ppEvalIf(const std::string& expr, const std::map<std::string, Macro>
     }
     std::set<std::string> expanding;
     PPExpandCtx ctx;
+    ctx.budget = budget;
     std::string expanded = ppExpand(pre, defines, expanding, nullptr, &ctx);
     if (!ctx.err.empty()) { err = ctx.err; return false; }
+    if (budget && budget->hit) {
+        if (budget->reported) { value = 0; return true; }
+        budget->reported = true;
+        err = ppBudgetMessage();
+        return false;
+    }
     try {
         PPExprEval ev;
         ev.toks = ppExprTokens(expanded);
