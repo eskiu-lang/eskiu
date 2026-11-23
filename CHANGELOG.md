@@ -7,6 +7,14 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
+## [Unreleased]
+
+### Security
+
+- `<eventloop>` on Windows and WebAssembly grows its poll set as descriptors are
+  registered. It was a fixed table of 4096 (Windows) or 1024 (WebAssembly) entries, and a
+  registration past its end wrote out of bounds.
+
 ## [0.16.2] - 2026-11-20
 
 ### Changed

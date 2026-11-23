@@ -1,0 +1,24 @@
+// Registering more descriptors than a fixed poll table would hold (1024 on WebAssembly,
+// 4096 on Windows) grows the poll set instead of writing past it.
+import <eventloop>;
+import <io>;
+
+int main() {
+    EventLoop* lp = el_new(16);
+    for (fd in 100..5200) {
+        EventLoop_add_read(lp, fd, void(EventLoop* e, int f) {});
+    }
+    for (fd in 100..5200) {
+        if (fd % 2 == 0) {
+            EventLoop_add_write(lp, fd, void(EventLoop* e, int f) {});
+        }
+    }
+    for (fd in 100..5200) {
+        EventLoop_del_free(lp, fd);
+    }
+    EventLoop_add_read(lp, 7000, void(EventLoop* e, int f) {});
+    EventLoop_del_free(lp, 7000);
+    EventLoop_free(lp);
+    println("ok");
+    return 0;
+}

@@ -1,0 +1,102 @@
+// _eventloop/wsapoll.esk: the Windows backend of eventloop.esk (WSAPoll), imported in order
+
+// Unlike epoll/kqueue (kernel-side interest state), WSAPoll is stateless: it takes the whole
+// pollfd array each call. So the interest set lives in a user-space table, rebuilt in place by
+// _el_ctl (growing as needed) and handed to WSAPoll by _el_wait. One event loop is assumed (a single global set).
+#pragma link("ws2_32")
+
+// WSAPOLLFD: { SOCKET fd; SHORT events; SHORT revents; }. On x64 SOCKET is 8 bytes and forces
+// 8-byte alignment, so the record is 16 bytes: fd@0, events@8, revents@10, then 4 pad.
+packed struct EvNative {
+    int64 fd;
+    int16 events;
+    int16 revents;
+    int32 _pad;
+}
+
+// POLLRDNORM = 0x0100, POLLWRNORM = 0x0010 (the readiness bits WSAPoll reports/accepts).
+const int _EL_POLLRD = 256;
+const int _EL_POLLWR = 16;
+
+// The set grows by doubling, so any number of registrations fits.
+struct _ElPollSet {
+    *EvNative pfds;
+    int n;
+    int cap;
+}
+
+_ElPollSet _el_wsa;
+
+int _el_backend_new() {   // state is the global set; the id is unused
+    _el_wsa.n = 0;
+    return 0;
+}
+
+void _el_backend_free(int backend) {
+    _el_wsa.n = 0;
+}
+
+// Make room for one more entry.
+void _el_pfds_reserve() {
+    if (_el_wsa.n < _el_wsa.cap) {
+        return;
+    }
+    const int newcap = _el_wsa.cap < 64 ? 64 : _el_wsa.cap * 2;
+    *EvNative np = alloc<EvNative>(newcap);
+    for (i in 0.._el_wsa.n) {
+        np[i] = _el_wsa.pfds[i];
+    }
+    if (_el_wsa.pfds != null) {
+        free((*void)_el_wsa.pfds);
+    }
+    _el_wsa.pfds = np;
+    _el_wsa.cap = newcap;
+}
+
+int _el_wsa_find(int fd) {
+    for (i in 0.._el_wsa.n) {
+        if (_el_wsa.pfds[i].fd == (int64)fd) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// Set fd's interest: mode 0 = none (drop), 1 = readable, 2 = writable.
+void _el_ctl(int backend, int fd, int mode, int wasActive) {
+    int idx = _el_wsa_find(fd);
+    if (mode == 0) {                                   // remove: swap with the last entry
+        if (idx >= 0) {
+            _el_wsa.pfds[idx] = _el_wsa.pfds[_el_wsa.n - 1];
+            _el_wsa.n--;
+        }
+        return;
+    }
+    const int16 ev = (int16)(mode == 2 ? _EL_POLLWR : _EL_POLLRD);
+    if (idx < 0) {                                     // first registration
+        _el_pfds_reserve();
+        idx = _el_wsa.n;
+        _el_wsa.n++;
+        _el_wsa.pfds[idx].fd = (int64)fd;
+    }
+    _el_wsa.pfds[idx].events = ev;
+    _el_wsa.pfds[idx].revents = 0;
+}
+
+int _el_wait(int backend, *EvNative evs, *int fds, int max, int64 timeout_ms) {
+    if (_el_wsa.n == 0) {                  // WSAPoll rejects a 0-length set
+        return 0;
+    }
+    int r = _c_poll((*void)_el_wsa.pfds, _el_wsa.n, (int)timeout_ms);
+    if (r <= 0) {                          // 0 = timeout, <0 = error
+        return 0;
+    }
+    int cnt = 0;
+    for (int i = 0; i < _el_wsa.n && cnt < max; i++) {
+        if (_el_wsa.pfds[i].revents != 0) {
+            fds[cnt] = (int)_el_wsa.pfds[i].fd;
+            cnt++;
+        }
+    }
+    return cnt;
+}
