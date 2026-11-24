@@ -28,11 +28,8 @@
 .article > pre { max-width: 100%; }
 .pkg-grid em { position: static; align-self: flex-start; order: -1; }
 .pkg-example summary { min-height: 44px; }
-#pg-run { scroll-margin-top: 96px; }
 main .sec-head { max-width: 760px; }
 main > .sec:first-child { padding-top: 48px; }
-main > .pg:first-child { border-top: 0; padding-top: 0; }
-main > .pg:first-child .pg-in { padding-top: 48px; }
 main > .dev-note:first-child { padding-top: 48px; }
 .note-card { max-width: 860px; margin-left: 0; padding: 32px; }
 .note-card p { max-width: 70ch; }
@@ -41,13 +38,7 @@ main > .dev-note:first-child { padding-top: 48px; }
 .tiny h2 { font-size: clamp(30px, 4vw, 40px); }
 .tiny-pics { min-width: 0; }
 .lcard h2 { font-size: 23px; line-height: 1.25; }
-.pg-grid, .pg-editor, .pg-side, .lang-grid, .lcard { min-width: 0; }
-.pg-ex button { min-height: 44px; height: auto; padding: 10px 14px; }
-.pg-editor textarea { font-size: 16px; }
-.pg-bar { flex-wrap: wrap; }
-.pg-out { max-height: 520px; }
-.pg-out .lbl { color: #b7b0c9; }
-.pg-out a { color: #c9b8ff; text-decoration: underline; }
+.lang-grid, .lcard { min-width: 0; }
 .install-box { max-width: 760px; scroll-margin-top: 192px; }
 .install-box .cmd { white-space: pre-wrap; overflow-wrap: anywhere; }
 .install-box .btn { flex-shrink: 0; }
@@ -58,7 +49,6 @@ main > .dev-note:first-child { padding-top: 48px; }
 .home-status p, .home-built p { max-width: 76ch; }
 section[id], h1[id], h2[id], h3[id], .pkg[id], .lcard[id] { scroll-margin-top: 96px; }
 :focus-visible { outline: 2px solid var(--purple); outline-offset: 4px; }
-.pg-editor textarea:focus-visible { outline-offset: -3px; }
 .skip-link { position: fixed; top: 8px; left: 16px; z-index: 100; transform: translateY(-150%); background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 8px; }
 .skip-link:focus { transform: none; color: var(--paper); }
 @media (min-width: 900px) {

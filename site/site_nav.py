@@ -28,8 +28,6 @@ NAV = [
     ("learn", "Learn", "Aprende", [
         ("quickstart.html", "Get started", "Install it and run a first program",
          "Empieza", "Instálalo y corre un primer programa"),
-        ("playground.html", "Playground", "Run code in the browser",
-         "Playground", "Corre código en el navegador"),
         ("@the-book-of-eskiu.html", "The Book of Eskiu", "The language, chapter by chapter",
          "El libro de Eskiu", "El lenguaje, capítulo por capítulo"),
         ("agents.html", "For agents", "Install, drive and test Eskiu from an agent",
@@ -57,7 +55,7 @@ NAV = [
     ]),
 ]
 NAV_CURRENT = {"quickstart.html": "learn", "agents.html": "learn", "docs/": "docs",
-               "the-book-of-eskiu.html": "learn", "playground.html": "learn", "language.html": "language", "changelog.html": "docs",
+               "the-book-of-eskiu.html": "learn", "language.html": "language", "changelog.html": "docs",
                "platforms.html": "docs", "packages.html": "ecosystem",
                "vision.html": "ecosystem", "gpu.html": "ecosystem", "showcase.html": "ecosystem",
                "case-study-reactvision.html": "ecosystem", "case-study-3ds.html": "ecosystem",
@@ -154,11 +152,11 @@ CTA_BAND = {
     <div class="bar cta-in">
       <div class="cta-txt">
         <h2>Start in a minute.</h2>
-        <p>Install the compiler with one command, or run a program in the browser first.</p>
+        <p>Install the compiler with one command and run your first program.</p>
       </div>
       <div class="cta-btns">
         <a class="cta-dark" href="quickstart.html">Get started</a>
-        <a class="cta-line" href="playground.html">Try it in the browser</a>
+        <a class="cta-line" href="the-book-of-eskiu.html">Read the book</a>
       </div>
     </div>
   </section>
@@ -167,11 +165,11 @@ CTA_BAND = {
     <div class="bar cta-in">
       <div class="cta-txt">
         <h2>Empieza en un minuto.</h2>
-        <p>Instala el compilador con un comando, o corre un programa en el navegador primero.</p>
+        <p>Instala el compilador con un comando y corre tu primer programa.</p>
       </div>
       <div class="cta-btns">
         <a class="cta-dark" href="quickstart.html">Empieza</a>
-        <a class="cta-line" href="playground.html">Pruébalo en el navegador</a>
+        <a class="cta-line" href="../the-book-of-eskiu.html">Lee el libro</a>
       </div>
     </div>
   </section>

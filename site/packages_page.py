@@ -190,11 +190,11 @@ PKG_TEXT = {
 # Header nav of the hand-written and generated top-level pages, per language:
 # (href relative to the page's directory, label, key)
 SITE_NAV = {
-    "en": [("quickstart.html", "Get started", "learn"), ("index.html#playground", "Playground", "playground"),
+    "en": [("quickstart.html", "Get started", "learn"),
            ("the-book-of-eskiu.html", "Book", "book"), ("docs/index.html", "Docs", "docs"),
            ("packages.html", "Packages", "packages"), ("platforms.html", "Platforms", "platforms"),
            ("showcase.html", "Showcase", "showcase"), (GH, "GitHub", "gh")],
-    "es": [("quickstart.html", "Empieza", "learn"), ("index.html#playground", "Playground", "playground"),
+    "es": [("quickstart.html", "Empieza", "learn"),
            ("../the-book-of-eskiu.html", "Libro", "book"), ("../docs/index.html", "Docs", "docs"),
            ("packages.html", "Paquetes", "packages"), ("platforms.html", "Plataformas", "platforms"),
            ("showcase.html", "Proyectos", "showcase"), (GH, "GitHub", "gh")],

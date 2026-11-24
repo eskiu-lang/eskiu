@@ -108,7 +108,6 @@ SIDEBAR = [
 # Header nav: (href relative to site/, label, key used to mark the current section)
 TOP_LINKS = [
     ("quickstart.html", "Get started", "learn"),
-    ("index.html#playground", "Playground", "playground"),
     ("the-book-of-eskiu.html", "Book", "book"),
     ("docs/index.html", "Docs", "docs"),
     ("packages.html", "Packages", "packages"),
