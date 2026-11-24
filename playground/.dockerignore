@@ -1,4 +1,0 @@
-# Context is playground/. Keep it small.
-**/__pycache__/
-*.pyc
-README.md

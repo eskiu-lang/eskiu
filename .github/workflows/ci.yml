@@ -18,9 +18,6 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Playground security tests
-        run: python3 -m unittest discover -s playground -p "test_*.py"
-
       - name: Install LLVM 22 + toolchain
         run: |
           sudo apt-get update
