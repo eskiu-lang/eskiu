@@ -404,7 +404,7 @@ int esk_check_args(EskOpts* o) {
         o.outfile = null;
     }
     if (cg_streq(o.mode, "--version") == 1) {
-        printf("Eskiu 0.16.2\n");
+        printf("Eskiu 0.16.3\n");
         return 0;
     }
     if (List_len<string>(&o.infiles) == 0) {

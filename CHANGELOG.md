@@ -7,7 +7,7 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
-## [Unreleased]
+## [0.16.3] - 2026-11-23
 
 ### Security
 
@@ -71,7 +71,7 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   are pinned by commit, and each marketplace token reaches only the step that publishes
   with it.
 
-## [0.16.2] - 2026-11-20
+## [0.16.2]
 
 ### Changed
 

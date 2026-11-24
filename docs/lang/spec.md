@@ -1,6 +1,6 @@
 # Eskiu Language Specification
 
-**Version:** v0.16.2
+**Version:** v0.16.3
 
 ---
 
@@ -3073,7 +3073,7 @@ up by name in any case, `Response_text` returns the body as a NUL-terminated str
 `method` (`"GET"`), `timeout_ms` (30000, for the whole call including redirects; 0 for
 none; the host name lookup is not bounded by it), `follow_redirects` (1),
 `max_redirects` (10), `max_body` (64 MiB; a longer body is `FETCH_ERR_TOO_LARGE`),
-`user_agent` (`"eskiu/0.16.2"`; empty sends none), `verify_tls` (1), `ca_file` (a PEM
+`user_agent` (`"eskiu/0.16.3"`; empty sends none), `verify_tls` (1), `ca_file` (a PEM
 bundle trusted besides the system store) and `body_sent` (null; when set, the body's bytes
 sent so far are stored there with an atomic store as they go, so another thread can show an
 upload's progress). `FetchOptions_header(&o, name, value)` returns

@@ -1,35 +1,40 @@
-# Eskiu 0.16.2
+# Eskiu 0.16.3
 
-Eskiu 0.16.2 passes large structs between functions by pointer, which makes programs that pass
-them by value smaller and faster, most of all on WebAssembly. Its warnings now reach every file
-of a program, not only the one given to the compiler.
+Eskiu 0.16.3 is a security release. It fixes the findings of an audit of 0.16.2: memory
+safety and limits in the standard library, symbolic links and lock records in the package
+manager, compile-time blowups in both compilers, and the playground, editor and CI surfaces.
+Update if you build packages you did not write, serve HTTP with the standard library, or run
+the playground.
 
-## Changed
+## Security
 
-- **Large structs pass by pointer.** A struct, union or array parameter over 16 bytes now
-  passes between Eskiu functions as a pointer to a copy the caller makes, on every target and
-  call path (direct, method, generic, interface, function value, closure, async). LLVM used to
-  spread such a struct into one argument per field at each call. A call taking a large struct
-  literal shrinks to about a fifth: an element of the ui package (`Row(Style{padding: 8}) {}`)
-  costs about 105 bytes of WebAssembly instead of 468, and a ui app's module is 16% smaller.
-  A struct literal also starts as a copy of its type's constant defaults and stores only the
-  fields it gives. By-value semantics are unchanged: a function that changes its parameter
-  never changes the caller's value. `extern` C functions, `export` entries and C callbacks
-  keep the C ABI.
-- **Rebuild everything.** Objects built by 0.16.1 do not link with objects built by 0.16.2.
-- **Warnings in the program's own files.** A file the program imports from its own directory
-  (the nearest one above the root file with an `eskiu.toml`, else the root file's) is linted
-  like the root file: `-Wformat`, `deprecated` uses and the `-Wall` checks. Until now only the
-  root file was, so a package's modules and a ui app's sources never showed a warning. The
-  standard library and dependencies are libraries and stay quiet.
+- **Standard library.**
+  - `<eventloop>` on Windows and WebAssembly grows its poll set instead of writing past a
+    fixed table (4096 or 1024 descriptors).
+  - `fetch_last_error()` keeps one message per thread; two threads failing at once could
+    corrupt the heap.
+  - The HTTP/1.1 servers and `http_recv` hold a request head to 64 KiB however it is split.
+  - `fs_temp_file` and `fs_temp_dir` reject a prefix with a path separator.
+- **Package manager.**
+  - A web build copies a package's `[web]` assets only from inside the package: symbolic
+    links out of it are skipped.
+  - A native archive whose `lib` directory is a symbolic link, or holds one leading out of
+    the archive, is refused.
+  - `eskiu.toml` rejects control characters in a dependency's `git`, `rev` or `path`, which
+    could add records to `eskiu.lock`.
+- **Compilers.**
+  - Macro expansion stops at 16 MiB of replacement text per file with an error.
+  - A generic async function with many type parameters no longer builds every subset of
+    them. Both compilers.
+- **Editors.** The VS Code extension honors Workspace Trust, and neither it, the language
+  server nor the IntelliJ plugin runs a compiler from a repository you have not trusted.
+- **Playground.** Output is capped as it is read, a program's whole process tree is killed
+  when it ends, and programs run with no network.
+- **CI.** Read-only tokens except where a release is made, actions pinned by commit, store
+  tokens only in the steps that publish.
 
-## Fixed
-
-- **Self-hosted compiler.** "cannot assign to read-only location" names the location, as
-  eskiuc does.
-- **`-Wall`** no longer calls a variadic function's `...` an unused parameter.
-
-Code that compiles with 0.16.1 compiles with 0.16.2; it may show warnings it did not before. The full list is in the
+`fs_temp_file` and `fs_temp_dir` now fail (EINVAL) for a prefix containing `/` or `\`; other
+code that compiles with 0.16.2 compiles and behaves the same. The full list is in the
 [CHANGELOG](https://github.com/eskiu-lang/eskiu/blob/main/CHANGELOG.md).
 
 ## Install

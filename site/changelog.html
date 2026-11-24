@@ -217,10 +217,10 @@ figure img { border-radius: 14px; }
 <body><a class="skip-link" href="#main-content">Skip to content</a>
   <header class="top">
     <div class="bar top-in">
-      <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.16.2</span></a>
+      <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.16.3</span></a>
       <nav class="nav" aria-label="Main"><div class="nav-g"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-language">Language<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-language"><a href="language.html#language"><b>The language</b><span>Memory, types, errors and C interop</span></a><a href="language.html#compare"><b>How it compares</b><span>The choices behind Eskiu</span></a><a href="language.html#status"><b>Stability and maturity</b><span>What to expect before 1.0</span></a></div></div><div class="nav-g"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-learn">Learn<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-learn"><a href="quickstart.html"><b>Get started</b><span>Install it and run a first program</span></a><a href="playground.html"><b>Playground</b><span>Run code in the browser</span></a><a href="the-book-of-eskiu.html"><b>The Book of Eskiu</b><span>The language, chapter by chapter</span></a><a href="agents.html"><b>For agents</b><span>Install, drive and test Eskiu from an agent</span></a></div></div><div class="nav-g cur"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-docs">Documentation<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-docs"><a href="docs/index.html"><b>Reference</b><span>The language, standard library and compiler</span></a><a href="platforms.html"><b>Platforms</b><span>Targets, toolchains and requirements</span></a><a href="docs/stability.html"><b>Stability policy</b><span>Compatibility between releases</span></a><a href="changelog.html" aria-current="page"><b>Release notes</b><span>What changed in each version</span></a></div></div><div class="nav-g"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-ecosystem">Ecosystem<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-ecosystem"><a href="ui.html"><b>Eskiu UI</b><span>Native apps for phones, desktops and the web</span></a><a href="gpu.html"><b>GPU</b><span>Compute, 3D models and machine learning on WebGPU</span></a><a href="packages.html"><b>Packages</b><span>Libraries that extend the language</span></a><a href="showcase.html"><b>Built with Eskiu</b><span>Projects and case studies</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
       <div class="top-right">
-        <a class="btn-install" href="index.html#install">Install 0.16.2</a>
+        <a class="btn-install" href="index.html#install">Install 0.16.3</a>
         <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="drawer">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg>
         </button>
@@ -237,7 +237,86 @@ figure img { border-radius: 14px; }
 <p>The format is based on <a href="https://keepachangelog.com/en/1.1.0/">Keep a Changelog</a>, and the
 project follows the compatibility rules in <a href="docs/stability.html">docs/lang/stability.md</a>.</p>
 <hr>
-<h2 id="0162-2026-11-20">[0.16.2] - 2026-11-20</h2>
+<h2 id="0163-2026-11-23">[0.16.3] - 2026-11-23</h2>
+<details class="cl-full">
+<summary>Details</summary>
+<h3 id="security">Security</h3>
+<ul>
+<li>
+<p><code>&lt;eventloop&gt;</code> on Windows and WebAssembly grows its poll set as descriptors are
+  registered. It was a fixed table of 4096 (Windows) or 1024 (WebAssembly) entries, and a
+  registration past its end wrote out of bounds.</p>
+</li>
+<li>
+<p><code>fetch_last_error()</code> keeps one message per thread. Every failed fetch wrote one global
+  buffer, so two threads failing at once could corrupt the heap.</p>
+</li>
+<li>
+<p>The HTTP/1.1 servers and <code>http_recv</code> answer 400 to a head over <code>HTTP_SERVE_MAX_HEAD</code>
+  (64 KiB) however it is split into reads. The limit was checked only while the end of
+  the head was still missing, so a longer head could get through.</p>
+</li>
+<li>
+<p><code>fs_temp_file</code> and <code>fs_temp_dir</code> reject a prefix with a <code>/</code> or <code>\</code> (EINVAL). The prefix
+  was joined to the temporary directory as given, so <code>"../x-"</code> created the file or
+  directory outside it.</p>
+</li>
+<li>
+<p>The preprocessor stops a file whose macros expand to more than 16 MiB of replacement
+  text with an error. A duplicating macro nested a few dozen times took time and memory
+  exponential in its size. Both compilers.</p>
+</li>
+<li>
+<p>Lowering a generic async function no longer builds and sorts the list of all 2^n
+  subsets of its n type parameters to write an awaited type in terms of them (out of
+  memory from about 28 parameters, undefined from 32). The subsets are walked in the same
+  order, at most 65536 of them. Both compilers.</p>
+</li>
+<li>
+<p><code>eskiu.toml</code> rejects a control character (tab, newline, ...) in a dependency's <code>git</code>,
+  <code>rev</code> or <code>path</code>, and <code>eskiu.lock</code> is never written with one. A tab or newline in a path
+  dependency's name went into the tab- and newline-separated lock as is and could add or
+  replace an entry for another package.</p>
+</li>
+<li>
+<p>A web build copies a package's <code>[web]</code> assets only from inside the package: an asset
+  that is a symbolic link, or lies under one, is skipped with a warning, and so is a
+  symbolic link inside an asset directory. A dependency could list a link to any file the
+  user can read and have it copied into the published output. The self-hosted driver also
+  rejects an asset spelled with <code>..</code> or as an absolute path, as <code>eskiu.toml</code> does. Both
+  compilers.</p>
+</li>
+<li>
+<p>A <code>[native.NAME]</code> archive whose <code>lib</code> directory is a symbolic link, or holds one that
+  leads out of the archive, is refused, when it is unpacked and when a build uses the
+  cached copy. The SHA-256 check covers the archive's bytes, not what a link in it
+  reaches, so such an archive made the build link from (and on macOS rewrite and re-sign
+  libraries in) a directory outside it. The self-hosted driver no longer follows a link
+  when it rewrites a <code>.dylib</code>. Both compilers.</p>
+</li>
+<li>
+<p>The playground runs a program's output through a cap as it is read, kills the program's
+  whole process tree when it ends or times out (and any process that left it), and runs
+  nothing unless its container has no network (<code>--network none</code>, the API on a Unix socket;
+  see <code>playground/README.md</code>). Output was buffered whole before the cap, a forked process
+  outlived its request, and programs could reach the network.</p>
+</li>
+<li>
+<p>The VS Code extension honors Workspace Trust: in a workspace you have not trusted it
+  ignores the workspace's <code>eskiu.compilerPath</code>, <code>eskiu.compilerFlags</code> and
+  <code>eskiu.entryPoint</code> and does not run a <code>build/eskiuc</code> from it. The standalone language
+  server searches the workspace for a compiler only when its client says it is trusted, and
+  the IntelliJ plugin only for trusted projects. Opening a repository could run a program it
+  shipped.</p>
+</li>
+<li>
+<p>CI: every workflow's token is read-only except the job that creates the release, actions
+  are pinned by commit, and each marketplace token reaches only the step that publishes
+  with it.</p>
+</li>
+</ul>
+</details>
+<h2 id="0162">[0.16.2]</h2>
 <details class="cl-full">
 <summary>Details</summary>
 <h3 id="changed">Changed</h3>
@@ -774,7 +853,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 </ul>
 </details>
     </main>
-    <nav class="toc" aria-label="On this page"><span class="grp">On this page</span><a href="#0162-2026-11-20">[0.16.2] - 2026-11-20</a><a href="#0161">[0.16.1]</a><a href="#0160">[0.16.0]</a><a href="#0151">[0.15.1]</a><a href="#0150">[0.15.0]</a><a href="#0141">[0.14.1]</a><a href="#0140">[0.14.0]</a><a href="#0130">[0.13.0]</a></nav>
+    <nav class="toc" aria-label="On this page"><span class="grp">On this page</span><a href="#0163-2026-11-23">[0.16.3] - 2026-11-23</a><a href="#0162">[0.16.2]</a><a href="#0161">[0.16.1]</a><a href="#0160">[0.16.0]</a><a href="#0151">[0.15.1]</a><a href="#0150">[0.15.0]</a><a href="#0141">[0.14.1]</a><a href="#0140">[0.14.0]</a><a href="#0130">[0.13.0]</a></nav>
   </div>
   <footer class="foot">
     <div class="bar foot-in">
