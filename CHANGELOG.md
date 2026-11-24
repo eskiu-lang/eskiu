@@ -7,6 +7,15 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
+## [Unreleased]
+
+### Removed
+
+- The browser playground: the site's playground page, the home page's link to it and the
+  `playground/` service. Running native code sent by anyone needed a sandboxed server of its
+  own; the quickstart installs the compiler in a minute instead, and agents run code
+  through the MCP's `eskiu_run`.
+
 ## [0.16.3] - 2026-11-23
 
 ### Security
