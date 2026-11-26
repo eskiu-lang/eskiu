@@ -220,6 +220,31 @@ for esk in "$here"/diag/*.esk; do
     fi
 done
 
+# ---- --safe reports -----------------------------------------------------------
+# tests/safe/NAME.esk is built from the repository root with --safe and must fail: exit
+# non-zero (it aborts) with stderr equal to NAME.expected, the one-line report of the
+# failed check. Built with the self-hosted eskiuc-esk too when it is there.
+echo "Safe check reports (--safe):"
+safe_esk_bin="${ESKIUC_ESK:-$(dirname "$ESKIUC")/eskiuc-esk}"
+for esk in "$here"/safe/*.esk; do
+    [[ -e "$esk" ]] || continue
+    name="$(basename "$esk" .esk)"
+    comps=("$ESKIUC")
+    [[ -z "$SANITIZE" && -x "$safe_esk_bin" ]] && comps+=("$safe_esk_bin")
+    for comp in "${comps[@]}"; do
+        label="safe/$name"
+        [[ "$comp" == "$safe_esk_bin" ]] && label="safe/$name (self-host)"
+        if ! (cd "$root" && CLANG="${CLANG:-${CC%% *}}" "$comp" --safe "tests/safe/$name.esk" -o "$work/safe_bin") >"$work/cerr" 2>&1; then
+            bad "$label" "compile/link failed: $(head -1 "$work/cerr")"; continue
+        fi
+        { (cd "$root" && "$work/safe_bin") >/dev/null 2>"$work/safe_err"; } 2>/dev/null; code=$?
+        if [[ $code -eq 0 ]]; then bad "$label" "exited 0 (a failed check must abort)"
+        elif ! diff -q "$here/safe/$name.expected" "$work/safe_err" >/dev/null; then
+            bad "$label" "report differs: $(diff "$here/safe/$name.expected" "$work/safe_err" | head -3 | tr '\n' ' ')"
+        else ok "$label"; fi
+    done
+done
+
 # ---- single-file test modes ------------------------------------------------
 # --test-lexer/--test-parser/--test-typechecker/--test-codegen must see the same
 # program a real build does (same predefined macros), and exit 0 on success. A

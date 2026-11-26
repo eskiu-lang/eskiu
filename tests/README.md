@@ -20,6 +20,7 @@ The runner classifies every file automatically. There is no list to maintain.
 | **smoke** | `NAME.esk` with no `.expected`   | compiles, links, and exits `0` (output not checked) |
 | **error** | `errors/NAME.esk`                | `--test-typechecker` exits non-zero **and** the diagnostics contain the `EXPECT-ERROR:` substring from the file's first line |
 | **lint**  | `warnings/NAME.esk`              | type-checks under `-Wall` and emits exactly the warnings named by its `// EXPECT-WARNING:` lines (none listed means none allowed) |
+| **safe**  | `safe/NAME.esk` **+** `safe/NAME.expected` | built from the repository root with `--safe` (by `eskiuc` and, when built, `eskiuc-esk`), exits non-zero, and stderr matches `NAME.expected`, the report of the failed check |
 
 A `run` or `smoke` test may have a C companion `NAME.c` next to it. The runner compiles
 it with `$CC` and links it into the test binary, which is how calls across the C ABI are
@@ -82,8 +83,8 @@ Besides `run.sh`, these run in CI:
 
 - `tests/opt_differential.sh`: every `tests/*.esk` must give the same exit code and
   stdout at `-O0` and `-O2`.
-- `tests/safe_mode.sh`: `--safe` bounds checks trap on an out-of-range index and are off
-  by default.
+- `tests/safe_mode.sh`: `--safe` checks report and abort on a violation (bounds, overflow,
+  null), each only with its category, and are off by default; a freestanding build traps.
 - `tests/nullable.sh`: the `?*T` checks and narrowing.
 - `tests/type_zoo/snapshot.sh check`: the golden-IR oracle (see `docs/dev/debugging.md`).
 - `tests/eir/check.sh [asm|c]`: every run test compiled by an EIR backend (ARM64

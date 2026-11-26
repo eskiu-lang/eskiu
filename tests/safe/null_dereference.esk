@@ -1,0 +1,14 @@
+// Under --safe, reading a field through a null pointer stops the program with its location.
+struct Node {
+    int value;
+    *Node next;
+}
+
+int second(*Node n) {
+    return n.next.value;
+}
+
+int main() {
+    Node last = Node{2, null};
+    return second(&last);
+}

@@ -1,0 +1,14 @@
+// Under --safe, an index past the end of a slice stops the program with its location,
+// the index and the length.
+int sum_first(int[] xs, int n) {
+    int total = 0;
+    for (int i = 0; i < n; i++) {
+        total += xs[i];
+    }
+    return total;
+}
+
+int main() {
+    int[4] a = {1, 2, 3, 4};
+    return sum_first(a[0..4], 5);
+}

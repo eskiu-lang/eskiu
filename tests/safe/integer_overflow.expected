@@ -1,0 +1,1 @@
+tests/safe/integer_overflow.esk:5:15: integer overflow in '*'

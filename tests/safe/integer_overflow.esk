@@ -1,0 +1,12 @@
+// Under --safe, a signed `*` that overflows stops the program instead of wrapping.
+int factorial(int n) {
+    int r = 1;
+    for (int i = 2; i <= n; i++) {
+        r = r * i;
+    }
+    return r;
+}
+
+int main() {
+    return factorial(13) == 0 ? 1 : 0;
+}
