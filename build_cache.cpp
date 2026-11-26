@@ -79,7 +79,8 @@ bool copyAtomic(const std::string& from, const std::string& dir, const std::stri
     llvm::SmallString<256> tmp;
     int fd = -1;
     if (llvm::sys::fs::createUniqueFile(dir + "/tmp-%%%%%%%%%%%%", fd, tmp)) return false;
-    llvm::sys::fs::closeFile(fd);
+    llvm::sys::fs::file_t handle = llvm::sys::fs::convertFDToNativeFile(fd);   // a HANDLE on Windows
+    llvm::sys::fs::closeFile(handle);
     if (llvm::sys::fs::copy_file(from, tmp) || llvm::sys::fs::rename(tmp, dir + "/" + name)) {
         llvm::sys::fs::remove(tmp);
         return false;
