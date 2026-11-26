@@ -172,7 +172,7 @@ void sema_stmt_vardecl(Sema* s, *StmtNode st, int k) {
         dprintf(2, "error: %s:%d:%d: variable '%s' %s\n", s.filename, s.line, s.col, st.name, vterr);
     }
     sema_define_at(s, st.name, vty, st.is_const, st.line, st.col, 0);
-    if (s.tool != 0 && st.line > 0) {
+    if (s.tool != 0 && st.line > 0 && s.depth == 0) {
         sema_tool_defloc(s, st.name, s.filename, st.line, st.col);
     }
     if (st.is_static == 1) {

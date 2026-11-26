@@ -1,0 +1,23 @@
+// A local that has the name of a function or a global stays apart from it: the
+// function's declaration and calls resolve to the function, the local's uses to it.
+// DEF 16:12 11:5
+// DEF 11:5 11:5
+// DEF 21:12 19:9
+// DEF 21:20 20:9
+// DEF 23:40 14:5
+// REFS 11:5 11:5 16:12
+// REFS 19:9 19:9 21:12
+// REFS 14:5 14:5 23:40
+int scale(int v, int k) {
+    return v * k;
+}
+int limit = 3;
+int use() {
+    return scale(1, 2);
+}
+int shadow() {
+    int scale = 4;
+    int limit = 5;
+    return scale + limit;
+}
+int main() { return use() + shadow() + limit; }

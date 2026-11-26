@@ -143,8 +143,9 @@ void TypeChecker::visit(VarDecl* node) {
             errorAt(node, "a 'static' local's initializer must be a constant");
     }
 
-    // Record definition location
-    if (node->line > 0 && !inInstance)
+    // Record a global's definition location (a local is found through its scope: as an
+    // entry here it would hide a global or function of the same name from the editor modes)
+    if (node->line > 0 && !inInstance && scopes.size() <= 1)
         definitionLocations[node->name] = {node->line, node->col, diagFile()};
     // A `fn(...)` local declared without a value can still be a lambda local: lambdas
     // assigned to it later (`f = <lambda>`) are bound to it.
