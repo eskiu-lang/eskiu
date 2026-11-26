@@ -72,10 +72,13 @@ make -C editor sync-grammar     # or: cp editor/vscode/syntaxes/eskiu.tmLanguage
 
 The plugin also runs the Eskiu language server through
 [LSP4IJ](https://plugins.jetbrains.com/plugin/23257-lsp4ij) (Red Hat's LSP client,
-installed from the Marketplace as a dependency). It bundles `editor/vscode/server.js`,
-the same server Neovim or Helix use, which calls the compiler's editor modes:
+installed from the Marketplace as a dependency). It bundles `editor/vscode/server.js`
+with the modules it requires, the same server Neovim or Helix use and the same code the
+VS Code extension runs, which calls the compiler's editor modes. A file is checked in the
+program it belongs to (see `editor/vscode/README.md`, "How a file is checked"):
 
-- errors as you type (`--test-typechecker`);
+- errors as you type (`--test-typechecker`), with a quick fix for a misspelled name;
+- find usages and rename across the files of the program (`--references-at`);
 - completion: after `x.` the fields of `x`'s struct and the `Type_method` functions dot
   syntax reaches, elsewhere the names in scope and the keywords (`--complete-at`);
 - hover with the type of a variable or field and the signature of a function or method
@@ -87,4 +90,7 @@ the same server Neovim or Helix use, which calls the compiler's editor modes:
 The server needs Node.js. It looks for `node` on the IDE's PATH, then in Homebrew, fnm,
 nvm and Volta installs, and for `eskiuc` in `build22/` or `build/` of the project, then
 `~/.eskiu/bin`, then PATH. Set either path in **Settings | Tools | Eskiu** when it is not
-found. Option A (the bundle alone) gives highlighting only.
+found. The same page holds the server's other settings, the VS Code extension's
+`eskiu.*`: compiler flags, the entry point, check while typing and the check delay; they
+apply when the server starts (restart it from LSP4IJ's Language Servers view).
+Option A (the bundle alone) gives highlighting only.

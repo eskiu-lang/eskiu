@@ -28,6 +28,20 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   compilers print the same report.
 - Under `--safe`, slicing a raw pointer or a `string` (`p[lo..hi]`) checks the pointer for
   null in the self-hosted compiler too, as `eskiuc` did.
+- Editors: the VS Code extension and the language server (Neovim, Helix, Zed, the
+  IntelliJ plugin) share one implementation (`editor/vscode/project.js` and
+  `features.js`), so they find the same program, report the same diagnostics and give the
+  same answers. The server takes the extension's settings (`compilerPath`,
+  `compilerFlags`, `entryPoint`, `checkOnType`, `checkDelay`) in `initializationOptions`
+  or `workspace/didChangeConfiguration`, waits `checkDelay` after an edit like the
+  extension, and reports why a rename is refused. The IntelliJ plugin has settings for the
+  entry point, checking while typing and the delay.
+- Editors: find references and rename cover every file of the program, from the declaring
+  file or from any file that uses the symbol; a symbol declared outside the program's
+  files (the stdlib, a package) is not renamed.
+- Editors: saving a file checks the other open files again (what it declares changes what
+  they see). Columns after non-ASCII text are right (the compiler counts bytes, editors
+  UTF-16 units).
 
 ### Fixed
 
@@ -36,6 +50,17 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   `*self = State{}` of a record holding arrays of records made LLVM build thousands of
   `insertvalue`s and its instruction selection then took a minute at -O2 for one file of a
   game (67.5 s to 2.4 s). Programs behave the same.
+- Editors check a file in its program: the root is the `entryPoint` setting, else the
+  `main` of the nearest `eskiu.toml`, else the top of the file's importers, when it
+  reaches the file through `import "..."`. A file that used a function declared in a file
+  imported earlier by the program, not by itself, was checked from a sibling that imports
+  it and showed a false "undefined function". Unsaved text is passed with `--overlay`,
+  also for a file imported indirectly, and only the file's own diagnostics are shown; a
+  syntax error in another file that stops the program is shown as a note instead of a
+  clean file.
+- `--definition-at`, `--references-at` and rename: a local with the name of a function or
+  a global no longer takes the global's place (the function's declaration found nothing
+  and its calls resolved to the local, so a rename changed the local). Both compilers.
 
 ### Removed
 
