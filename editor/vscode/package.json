@@ -54,12 +54,12 @@
         "eskiu.compilerPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Path to `eskiuc`. Empty uses `build/eskiuc` or `build22/eskiuc` in workspace folders, else `eskiuc` on `PATH`. Set it when the editor does not inherit your shell `PATH`."
+          "markdownDescription": "Path to `eskiuc`. Empty uses `build22/eskiuc` or `build/eskiuc` in a trusted workspace, else `~/.eskiu/bin/eskiuc`, else `eskiuc` on `PATH`. Set it when the editor does not inherit your shell `PATH`."
         },
         "eskiu.entryPoint": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Optional entry point file for multi-file projects (e.g. `kernel.esk` or `main.esk`). If empty, Eskiu auto-detects root files that import the active file."
+          "markdownDescription": "The root file of the program (e.g. `src/main.esk`), absolute or relative to a workspace folder or to the file; used for a file it reaches through `import \"...\"`. Empty: the `main` of the nearest `eskiu.toml`, else the top of the file's importers, else the file alone."
         },
         "eskiu.compilerFlags": {
           "type": "array",

@@ -1,13 +1,16 @@
 'use strict';
 /**
- * flatten.js: an Eskiu file that is part of a module (imported with `import "part.esk";`) is
- * checked in its module, not alone. A part sees what the module declares and imports before it,
- * which the part itself does not import, so checked alone it reports unknown types and names.
+ * flatten.js: the import graph of an Eskiu program, for the editors (project.js).
  *
- * `import "x.esk";` includes x textually where it stands (the module is one program, imported
- * once), so the module can be checked as one file: from its root, every relative import
- * replaced by the file's lines, the open document's unsaved text in place of its file. The
- * compiler runs on that file, and each line maps back to the file and line it came from.
+ * `import "x.esk";` includes x textually where it stands, once per program, so a file sees
+ * what the files before it declared even when it does not import them. A file is therefore
+ * checked in the program it belongs to. This module answers which files a program reaches
+ * (`reaches`), which file imports a given one (`rootOf` walks importers up to the top), and
+ * writes a program as one text (`flatten`): from its root, every relative import replaced by
+ * the file's lines, each line mapped back to the file and line it came from.
+ *
+ * `overrides` (a Map from absolute path to text) holds the editor's unsaved buffers: they are
+ * read in place of the files on disk.
  */
 
 const path = require('path');
@@ -20,15 +23,46 @@ function readText(file, overrides) {
     try { return fs.readFileSync(file, 'utf8'); } catch { return null; }
 }
 
+// The .esk files `file` imports with a relative `import "x.esk";`, in order.
+function importsOf(file, overrides) {
+    const text = readText(file, overrides);
+    if (!text || !text.includes('import')) return [];
+    const out = [];
+    for (const line of text.split('\n')) {
+        const m = line.match(IMPORT_RE);
+        if (!m) continue;
+        const target = path.resolve(path.dirname(file), m[1]);
+        if (target.endsWith('.esk')) out.push(target);
+    }
+    return out;
+}
+
+// Whether `file` is part of the program `root`: reachable through relative imports, those
+// inside an #if branch included (the editor does not know which branch a build takes). The
+// walk stops after `limit` files.
+function reaches(root, file, overrides, limit = 4000) {
+    const seen = new Set([root]);
+    const todo = [root];
+    while (todo.length && seen.size <= limit) {
+        const cur = todo.pop();
+        if (cur === file) return true;
+        for (const next of importsOf(cur, overrides)) {
+            if (next === file) return true;
+            if (!seen.has(next)) { seen.add(next); todo.push(next); }
+        }
+    }
+    return false;
+}
+
 // The .esk files that could import `file`: those in its directory and the directories above it,
 // up to the package's root (the directory with eskiu.toml) or four levels.
 function candidates(file) {
     const out = [];
     let dir = path.dirname(file);
+    const preferred = ['main.esk', 'core.esk', 'kernel.esk', 'app.esk', 'index.esk', 'root.esk', 'lib.esk'];
     for (let level = 0; level < 4; level++) {
         let names = [];
         try { names = fs.readdirSync(dir); } catch {}
-        const preferred = ['main.esk', 'core.esk', 'kernel.esk', 'app.esk', 'index.esk', 'root.esk', 'lib.esk'];
         names = names.filter((n) => n.endsWith('.esk') && !n.startsWith('.'))
             .sort((a, b) => (preferred.indexOf(b) >= 0) - (preferred.indexOf(a) >= 0) || a.localeCompare(b));
         for (const n of names) out.push(path.join(dir, n));
@@ -41,26 +75,20 @@ function candidates(file) {
 }
 
 // The file that imports `file` with a relative import, if any.
-function importerOf(file) {
+function importerOf(file, overrides) {
     for (const c of candidates(file)) {
-        if (c === file) continue;
-        const text = readText(c);
-        if (!text || !text.includes('import')) continue;
-        for (const line of text.split('\n')) {
-            const m = line.match(IMPORT_RE);
-            if (m && path.resolve(path.dirname(c), m[1]) === file) return c;
-        }
+        if (c !== file && importsOf(c, overrides).includes(file)) return c;
     }
     return null;
 }
 
 // The root of the module `file` belongs to: the importer of its importer, and so on (the file
 // itself when nothing imports it).
-function rootOf(file) {
+function rootOf(file, overrides) {
     const seen = new Set([file]);
     let cur = file;
     for (let i = 0; i < 16; i++) {
-        const up = importerOf(cur);
+        const up = importerOf(cur, overrides);
         if (!up || seen.has(up)) break;
         seen.add(up);
         cur = up;
@@ -68,8 +96,8 @@ function rootOf(file) {
     return cur;
 }
 
-// The module from `root` as one text, with `files[i]` and `lines[i]` (0-based) the origin of
-// each of its lines. `overrides` maps a path to the text to use instead of the file's.
+// The program from `root` as one text, with `files[i]` and `lines[i]` (0-based) the origin of
+// each of its lines.
 function flatten(root, overrides) {
     const text = [];
     const files = [];
@@ -89,7 +117,7 @@ function flatten(root, overrides) {
             else if (/^\s*#\s*endif/.test(ls[i])) cond = Math.max(0, cond - 1);
             const m = depth < 32 && ls[i].match(IMPORT_RE);
             const target = m && path.resolve(path.dirname(file), m[1]);
-            if (target && target.endsWith('.esk') && fs.existsSync(target)) {
+            if (target && target.endsWith('.esk') && (overrides && overrides.has(target) || fs.existsSync(target))) {
                 // a file already in the program is not included again (imports happen once)
                 if (!included.has(target)) add(target, depth + 1);
                 text.push('');
@@ -103,37 +131,23 @@ function flatten(root, overrides) {
         }
     }
     add(root, 0);
-    return { text: text.join('\n'), files, lines };
-}
-
-// The flattened module `file` belongs to, written next to its root so its own imports resolve,
-// or null when the file is not part of a module. `text` is the open document's text.
-function flatFor(file, text) {
-    const root = rootOf(file);
-    if (root === file) return null;
-    const overrides = new Map();
-    if (text != null) overrides.set(file, text);
-    const flat = flatten(root, overrides);
-    const out = path.join(path.dirname(root), `.eskiu_lsp_flat_${process.pid}_${Date.now()}.esk`);
-    fs.writeFileSync(out, flat.text);
     return {
-        path: out,
-        root,
-        // 0-based line in `file` to 1-based line in the flat file (0 when not found)
-        toFlat(origFile, line) {
-            for (let i = 0; i < flat.files.length; i++) {
-                if (flat.files[i] === origFile && flat.lines[i] === line) return i + 1;
-            }
+        text: text.join('\n'),
+        files,
+        lines,
+        // the files the text holds
+        members: new Set(files),
+        // 0-based line of `file` to the 1-based line of the text (0 when it is not there)
+        toFlat(file, line) {
+            for (let i = 0; i < files.length; i++) if (files[i] === file && lines[i] === line) return i + 1;
             return 0;
         },
-        // 1-based line in the flat file to { file, line (0-based) }
+        // 1-based line of the text to { file, line (0-based) }
         toOrig(flatLine) {
             const i = flatLine - 1;
-            if (i < 0 || i >= flat.files.length) return null;
-            return { file: flat.files[i], line: flat.lines[i] };
+            return i >= 0 && i < files.length ? { file: files[i], line: lines[i] } : null;
         },
-        remove() { try { fs.rmSync(out, { force: true }); } catch {} },
     };
 }
 
-module.exports = { rootOf, flatten, flatFor };
+module.exports = { IMPORT_RE, readText, importsOf, reaches, rootOf, flatten };

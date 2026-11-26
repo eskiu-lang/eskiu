@@ -47,7 +47,7 @@ let fails = 0;
 const check = (what, ok, got) => { if (!ok) { fails++; console.log(`FAIL ${what}: ${JSON.stringify(got)}`); } };
 
 (async () => {
-    await request('initialize', { initializationOptions: process.env.ESKIUC ? { compilerPath: process.env.ESKIUC } : {} });
+    await request('initialize', { initializationOptions: process.env.ESKIUC ? { compilerPath: path.resolve(process.env.ESKIUC) } : {} });
     send({ jsonrpc: '2.0', method: 'textDocument/didOpen', params: { textDocument: { uri, languageId: 'eskiu', version: 1, text: c } } });
     const d1 = await diagnostics();
     check('a part that uses another part checks clean', d1.params.diagnostics.length === 0, d1.params.diagnostics);

@@ -65,7 +65,7 @@ server.stdout.on('data', (chunk) => {
         if (msg.id === 1) {
             gotInit = true;
             const r = msg.result;
-            if (r.capabilities.textDocumentSync !== 1) failures.push('textDocumentSync is not full (1)');
+            if (r.capabilities.textDocumentSync.change !== 1) failures.push('textDocumentSync is not full (1)');
             if (r.serverInfo.version !== pkg.version)
                 failures.push(`serverInfo.version ${r.serverInfo.version} != package.json ${pkg.version}`);
             send({ jsonrpc: '2.0', method: 'textDocument/didChange', params: {
