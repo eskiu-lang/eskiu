@@ -54,14 +54,16 @@ intellijPlatform {
 }
 
 // TextMate reads a bundle from disk, so ship it as files in the plugin directory, and
-// the language server (`editor/vscode/server.js` with the `flatten.js` it requires, and the
-// package.json it reads its version from) next to it.
+// the language server next to it: `editor/vscode/server.js` with every module it requires
+// (project.js, features.js, flatten.js: all the .js files but the VS Code extension's own) and
+// the package.json it reads its version from.
 tasks.prepareSandbox {
     from(layout.projectDirectory.dir("src/main/resources/bundles")) {
         into(intellijPlatform.projectName.map { "$it/bundles" })
     }
     from(layout.projectDirectory.dir("../../vscode")) {
-        include("server.js", "flatten.js", "package.json")
+        include("*.js", "package.json")
+        exclude("extension.js")
         into(intellijPlatform.projectName.map { "$it/server" })
     }
 }

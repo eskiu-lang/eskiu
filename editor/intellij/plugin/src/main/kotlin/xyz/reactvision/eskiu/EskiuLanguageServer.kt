@@ -12,9 +12,9 @@ import java.io.File
 
 /**
  * The Eskiu language server for LSP4IJ: the plugin bundles `editor/vscode/server.js`
- * (the same server Neovim or Helix use), which runs the compiler's editor modes. It
- * gives diagnostics, completion, hover, signature help, go to definition, the
- * structure view and formatting.
+ * with the modules it requires (the same server Neovim or Helix use), which runs the
+ * compiler's editor modes. It gives diagnostics, quick fixes, completion, hover, signature
+ * help, go to definition, find usages and rename, the structure view and formatting.
  */
 class EskiuLanguageServerFactory : LanguageServerFactory {
     override fun createConnectionProvider(project: Project): StreamConnectionProvider = EskiuServer(project)
@@ -30,7 +30,13 @@ class EskiuServer(project: Project) : OSProcessStreamConnectionProvider() {
         findCompiler(project)?.let { cmd.withEnvironment("ESKIUC", it) }
         // only a trusted project's own build directories may provide the compiler
         if (project.isTrusted()) cmd.withEnvironment("ESKIU_SEARCH_WORKSPACE", "1")
-        EskiuSettings.get().state.compilerFlags.trim().takeIf { it.isNotEmpty() }?.let { cmd.withEnvironment("ESKIU_FLAGS", it) }
+        // the server's settings (the VS Code extension's eskiu.*), as server.js reads them from
+        // its environment; they are the IDE's settings, not the project's
+        val s = EskiuSettings.get().state
+        s.compilerFlags.trim().takeIf { it.isNotEmpty() }?.let { cmd.withEnvironment("ESKIU_FLAGS", it) }
+        s.entryPoint.trim().takeIf { it.isNotEmpty() }?.let { cmd.withEnvironment("ESKIU_ENTRY_POINT", it) }
+        cmd.withEnvironment("ESKIU_CHECK_ON_TYPE", if (s.checkOnType) "1" else "0")
+        cmd.withEnvironment("ESKIU_CHECK_DELAY", s.checkDelay.toString())
         commandLine = cmd
     }
 
