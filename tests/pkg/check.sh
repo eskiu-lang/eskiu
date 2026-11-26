@@ -173,6 +173,7 @@ case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*)
     crash_counts="1 build-failed, 1 timeout"; crash_summary='"timeout":1,"crashed":0,' ;;
 esac
 out="$("$ESKIUC" test -j 3 --timeout 1 2>&1)"; code=$?
+out="${out//$'\r'/}"   # Windows ends lines with CR LF
 if [[ $code -eq 1 && "$out" == *"$crash_text"* && "$out" == *"FAIL bad (exit 3)"$'\n'"    bad output"* && "$out" == *"FAIL slow (timeout after "* &&
       "$out" == *"FAIL broken (build failed)"*"broken.esk:1:"* && "$out" == *"PASS good"* &&
       "$out" == *"1 passed, 4 failed ($crash_counts) in "*", 3 jobs"* ]]; then
