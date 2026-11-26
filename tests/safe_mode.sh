@@ -94,7 +94,7 @@ printf '%s\n' 'int main() { int a = 2147483647; int b = a; b = b - 2147483646; r
 code=$(run "$WORK/t.esk" "--safe=bounds,null"); check "overflow off in --safe=bounds,null" 0 "$code"
 code=$(run "$WORK/t.esk" "--safe=null,overflow"); is_trap "$code" && code=trap; check "overflow on in --safe=null,overflow" trap "$code"
 msg=$("$BIN" --safe=bounds,bogus "$WORK/t.esk" -o "$WORK/t.o" 2>&1); rc=$?
-check "unknown --safe name is an error" "1 error: unknown --safe check 'bogus' (valid: bounds, overflow, null)" "$rc $msg"
+check "unknown --safe name is an error" "2 error: unknown --safe check 'bogus' (valid: bounds, overflow, null)" "$rc $msg"
 
 # --- the report on stderr; a freestanding build (no libc) traps without one ---
 printf '%s\n' 'int main() { int[3] a = {1, 2, 3}; int i = 5; return a[i]; }' > "$WORK/t.esk"

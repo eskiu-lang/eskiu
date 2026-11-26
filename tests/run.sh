@@ -237,7 +237,8 @@ for esk in "$here"/safe/*.esk; do
         if ! (cd "$root" && CLANG="${CLANG:-${CC%% *}}" "$comp" --safe "tests/safe/$name.esk" -o "$work/safe_bin") >"$work/cerr" 2>&1; then
             bad "$label" "compile/link failed: $(head -1 "$work/cerr")"; continue
         fi
-        { (cd "$root" && "$work/safe_bin") >/dev/null 2>"$work/safe_err"; } 2>/dev/null; code=$?
+        # exec: no shell left inside to report the abort ("Abort trap: 6") into the captured stderr
+        { (cd "$root" && exec "$work/safe_bin") >/dev/null 2>"$work/safe_err"; } 2>/dev/null; code=$?
         if [[ $code -eq 0 ]]; then bad "$label" "exited 0 (a failed check must abort)"
         elif ! diff -q "$here/safe/$name.expected" "$work/safe_err" >/dev/null; then
             bad "$label" "report differs: $(diff "$here/safe/$name.expected" "$work/safe_err" | head -3 | tr '\n' ' ')"
