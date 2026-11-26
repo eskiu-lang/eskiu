@@ -14,12 +14,12 @@ static llvm::cl::opt<bool> TimePhases("time",
     llvm::cl::cat(EskiuCat));
 
 static llvm::cl::opt<bool> UseCache("cache",
-    llvm::cl::desc("Reuse the object of an identical earlier compile (as ESKIU_CACHE=1; "
+    llvm::cl::desc("Reuse the object of an identical earlier compile (the default; "
                    "ESKIU_CACHE_DIR, ESKIU_CACHE_SIZE)"),
     llvm::cl::cat(EskiuCat));
 
 static llvm::cl::opt<bool> NoCache("no-cache",
-    llvm::cl::desc("Do not use the object cache, even with ESKIU_CACHE=1 (as ESKIU_NO_CACHE=1)"),
+    llvm::cl::desc("Do not use the object cache (as ESKIU_NO_CACHE=1 or ESKIU_CACHE=0)"),
     llvm::cl::cat(EskiuCat));
 
 // The command line the options were parsed from (argv[0] left out), for the cache key.

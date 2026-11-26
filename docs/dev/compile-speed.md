@@ -179,9 +179,9 @@ warnings; a compile with errors is not stored) is kept in `KEY.meta` and printed
 hit, so `-Wall` output does not depend on the cache. `--diagnostics=json` passes the text
 through its converter on both paths, so the JSON lines are the same.
 
-**Off by default.** The cache writes to the home directory and a wrong hit would be a
-wrong program, so it is opt-in for now: `--cache` or `ESKIU_CACHE=1` (a Makefile's
-compiles inherit the variable). `--no-cache` or `ESKIU_NO_CACHE=1` turn it off even then.
+**On by default.** The key covers everything a compile reads (above), so a hit is the
+object the compile would make. `--no-cache`, `ESKIU_NO_CACHE=1` or `ESKIU_CACHE=0` turn it
+off (a Makefile's compiles inherit the variable).
 `--time` shows `phase cache-key` (the key's time), `phase cache   hit KEY` or `miss KEY`,
 then `cache-copy` (hit) or `cache-store` (miss).
 

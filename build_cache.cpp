@@ -162,8 +162,12 @@ void noteSource(const std::string& path, const std::string& text) {
 }
 
 bool wanted(bool cacheFlag, bool noCacheFlag) {
+    // On by default: --no-cache or ESKIU_NO_CACHE=1 turns it off (--cache and ESKIU_CACHE=1
+    // are still accepted, and say the same as the default).
+    (void)cacheFlag;
     if (noCacheFlag || envSet("ESKIU_NO_CACHE")) return false;
-    return cacheFlag || envSet("ESKIU_CACHE");
+    const char* off = std::getenv("ESKIU_CACHE");
+    return !(off && std::string(off) == "0");
 }
 
 std::string directory() {

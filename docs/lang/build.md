@@ -316,8 +316,7 @@ phase total              2025.3 ms
 
 ### Object cache
 
-`--cache` (or `ESKIU_CACHE=1` in the environment, which reaches every compile of a
-Makefile) keeps the object of each compile that writes an executable or an object file,
+By default the compiler keeps the object of each compile that writes an executable or an object file,
 and a later compile of the same sources with the same compiler, target and flags reuses
 it: only loading, parsing and the link run again. A test suite built one file at a time
 gets the most from it, since most of its files do not change between runs. An edit to any
@@ -327,8 +326,8 @@ compile are printed again on a reuse.
 
 | Variable or flag | Effect |
 |---|---|
-| `--cache`, `ESKIU_CACHE=1` | Use the cache. |
-| `--no-cache`, `ESKIU_NO_CACHE=1` | Do not, even with the two above. |
+| (default), `--cache` | Use the cache. |
+| `--no-cache`, `ESKIU_NO_CACHE=1`, `ESKIU_CACHE=0` | Do not use it (the variables reach every compile of a Makefile). |
 | `ESKIU_CACHE_DIR=DIR` | Keep the objects in `DIR` (default `$ESKIU_HOME/cache/obj`, that is `~/.eskiu/cache/obj`). |
 | `ESKIU_CACHE_SIZE=MIB` | Size limit in MiB (default 1024); past it the least recently used objects are removed. |
 

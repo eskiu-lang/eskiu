@@ -24,7 +24,7 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 - `--time` prints the wall time of each compile phase, the link and the total on stderr,
   as `ESKIU_TIME_PHASES=1` did (which still works), now with the link and the total.
 
-- An object cache: with `--cache` or `ESKIU_CACHE=1`, a compile that writes an executable
+- An object cache, on by default (`--no-cache`, `ESKIU_NO_CACHE=1` or `ESKIU_CACHE=0` turn it off): a compile that writes an executable
   or object file reuses the object of an earlier compile with the same sources (every
   imported file, the standard library and packages included), compiler, target and flags,
   so only parsing and the link run again; the warnings are printed again. Objects live in
