@@ -9,6 +9,26 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ## [Unreleased]
 
+### Added
+
+- `--dev`, the profile to develop with: every `--safe` check and the `-Wall` lints, at the
+  default `-O0` (an explicit `--safe=LIST` or `-O<n>` still applies). In a package,
+  `eskiuc build --dev`, `eskiuc test --dev` and `eskiuc run --dev [-- ARGS]` use it. Both
+  compilers.
+
+### Changed
+
+- A failed `--safe` check prints one line to stderr with the file, line and column of the
+  operation and what went wrong (`main.esk:12:20: index 7 out of bounds for length 4`,
+  `integer overflow in '+'`, `null pointer dereference`, `slice [2..9] out of bounds for
+  length 5`), flushes stdout and aborts. It used to trap with no message (SIGTRAP); the
+  program now ends with SIGABRT (exit status 134 in a POSIX shell, 3 on Windows). A
+  `--freestanding` build still traps without a message. The check itself is unchanged
+  (a compare and a branch); the report is one shared function per object file. Both
+  compilers print the same report.
+- Under `--safe`, slicing a raw pointer or a `string` (`p[lo..hi]`) checks the pointer for
+  null in the self-hosted compiler too, as `eskiuc` did.
+
 ### Fixed
 
 - A record or array over 16 bytes is copied in memory (memmove, memset or memcpy from a

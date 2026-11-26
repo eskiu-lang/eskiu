@@ -303,8 +303,8 @@ manifest format.
 | `eskiuc add NAME --git URL [--rev REV]` | Add a git dependency to `eskiu.toml`, fetch it and update the lock. `REV` is a tag, branch or commit (default: the remote's default branch). |
 | `eskiuc add NAME --path DIR` | Add a local dependency, used in place. |
 | `eskiuc build [FILE.esk] [-o OUT] [FLAGS]` | Fetch what the lock names and is missing, then compile the package's main file to `build/NAME` (or `OUT`). With a `.esk` file named, compile that file instead (an example or a tool of the package, with its dependencies) to `build/FILE`. Other flags go to the compiler. |
-| `eskiuc run [ARGS]` | Build, then run the program with `ARGS`. With a `.esk` file named, `eskiuc run file.esk` compiles that file as before. |
-| `eskiuc test` | Compile and run each `tests/*.esk` of the package; a test passes when it exits with 0. |
+| `eskiuc run [--dev] [--] [ARGS]` | Build, then run the program with `ARGS`. A leading `--dev` builds it with the development profile (`--safe` and `-Wall`). With a `.esk` file named, `eskiuc run file.esk` compiles that file as before. |
+| `eskiuc test [FLAGS]` | Compile and run each `tests/*.esk` of the package; a test passes when it exits with 0. The flags go to the compiler: `eskiuc test --dev` runs the tests with the `--safe` checks on. |
 | `eskiuc fetch` | Resolve every dependency again (fetching the git mirrors) and rewrite `eskiu.lock`. |
 
 Git packages live in `~/.eskiu/pkgs/NAME/COMMIT`; set `ESKIU_HOME` to move that tree

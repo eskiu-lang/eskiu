@@ -1840,22 +1840,69 @@ void  esk_free(*void ptr)  { bump_free(ptr); }
 
 ### Safe mode
 
-Pass `--safe` to insert runtime safety checks. It bounds-checks slice and fixed-array
-indexing (an out-of-range index traps instead of reading or writing past the end), traps
-on a signed `int`/`int64` `+ - *` that overflows, and traps on a null pointer dereference.
-`--safe=LIST` turns on only some of them: `--safe=bounds`, `--safe=overflow,null`. The
-checks are **off by default**, so release builds carry no overhead; turn them on for
-development and test runs.
+Pass `--safe` to insert run-time safety checks. A failed check prints one line to stderr
+with the file, line and column of the operation, then aborts the program:
 
 ```bash
-eskiuc app.esk --safe -o app     # a[i] / s[i] out of range now aborts instead of corrupting memory
+eskiuc app.esk --safe -o app
+./app
+# app.esk:12:20: index 7 out of bounds for length 4
 ```
 
 ```eskiu
 int[5] a = {1, 2, 3, 4, 5};
 int[] s = a[1..4];               // length 3
-int x = s[9];                    // under --safe: aborts here; without it: reads garbage (as in C)
+int x = s[9];                    // under --safe: "index 9 out of bounds for length 3"; without it: reads garbage (as in C)
 ```
+
+The program's buffered standard output is flushed first, then it calls `abort()`, so it
+ends with SIGABRT (exit status 134 in a POSIX shell, 3 on Windows). A `--freestanding`
+build has no C library to print with: a failed check executes a trap instruction instead
+(SIGTRAP or SIGILL), with no message.
+
+`--safe=LIST` turns on only some of the checks: `--safe=bounds`, `--safe=overflow,null`.
+
+| Check | Catches | Message | Does not catch |
+|---|---|---|---|
+| `bounds` | An index into a fixed array `T[N]` or a slice `T[]` outside `0..len-1`; a slice `x[lo..hi]` that is not `0 <= lo <= hi <= len` | `index 7 out of bounds for length 4`, `slice [2..9] out of bounds for length 5` | Indexing a raw pointer `*T` or a `string` (no length is known; slicing one checks only `lo <= hi`), memory reached through a dangling or freed pointer |
+| `overflow` | A signed `+`, `-` or `*` (and `+=`, `-=`, `*=`) on a 32- or 64-bit integer (`int`, `int64`) that overflows | `integer overflow in '+'` | Unsigned arithmetic and `int8`/`int16` arithmetic (they wrap by definition), `++`/`--`, unary `-`, shifts, conversions |
+| `null` | Dereferencing a null pointer: `*p`, `p.f`, `p[i]` | `null pointer dereference` | A pointer that is not null but invalid (freed, dangling, out of its allocation), a null pointer handed to a C function |
+
+A zero divisor in `/` or `%` is not a `--safe` check: it stops the program in every build
+(with a trap, see the spec's arithmetic rules).
+
+**Cost.** On the path where the check passes, each check is a compare and a branch; the
+code that prints the report is one shared function per object file, called only on
+failure. The checks still cost something: they run on every access, and a bounds check
+in an inner loop can keep the optimizer from vectorizing it, so array-heavy hot loops slow
+down noticeably while code dominated by calls and I/O barely changes. They are **off by
+default**, so a build without `--safe` carries no overhead.
+
+#### The development profile: `--dev`
+
+`--dev` is the profile to develop and test with: every `--safe` check and the `-Wall`
+lints, at the default `-O0`. An explicit `--safe=LIST` picks the checks instead, and an
+explicit `-O2` keeps the checks on in an optimized build. The compiler does not emit debug
+information yet, so `--dev` adds none.
+
+```bash
+eskiuc app.esk --dev -o app      # while developing
+eskiuc app.esk -O2 -o app        # release: no checks, no lints
+```
+
+In a package, `eskiuc build --dev` and `eskiuc test --dev` build with it (other flags go
+to the compiler as well), and `eskiuc run --dev [-- ARGS]` builds the program with it and
+runs it.
+
+The sanitizers are not part of `--dev`. `--asan` (AddressSanitizer) finds what `--safe`
+cannot, such as a use after free or an overflow through a raw pointer, but it needs its
+runtime library on the target and makes a program use about twice the time and memory;
+reach for it when chasing memory corruption. `--ubsan` is LLVM's trapping bounds check,
+which mostly overlaps the `bounds` check and reports nothing.
+
+For production, build without `--dev` (usually with `-O2`). A program that would rather
+stop with a message than run on with corrupted memory can ship with `--safe` (or only
+`--safe=bounds`) and pay for the checks.
 
 ---
 

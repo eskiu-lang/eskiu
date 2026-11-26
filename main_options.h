@@ -15,7 +15,8 @@ static const char* OVERVIEW =
     "  eskiuc file.esk -c -o file.o             compile to an object file\n"
     "  eskiuc run [flags] file.esk [--] [args]  compile to a temp executable and run it\n"
     "  eskiuc fmt [--check] [--width N] file.esk ...  reindent files in place\n"
-    "  eskiuc repl [file.esk ...]               interactive session (JIT)\n";
+    "  eskiuc repl [file.esk ...]               interactive session (JIT)\n"
+    "  eskiuc file.esk --dev -o prog            development build: run-time checks (--safe) and -Wall\n";
 static llvm::cl::opt<std::string> InputFilename(llvm::cl::Positional,
                                                  llvm::cl::desc("<input .esk file>"),
     llvm::cl::cat(EskiuCat));

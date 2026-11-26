@@ -100,7 +100,8 @@ postfix     f() a[i] a.b ++ -- ?
 | `-Wall` / `-Wextra`         | Lint warnings / signed-unsigned comparison warnings |
 | `--diagnostics=json`        | Errors and warnings as JSON lines on stderr, with stable ids |
 | `--asan` / `--ubsan`        | AddressSanitizer / trapping bounds checks       |
-| `--safe[=LIST]`             | Run-time checks that trap: `bounds`, `overflow`, `null` (all without a list) |
+| `--safe[=LIST]`             | Run-time checks that report the location and abort: `bounds`, `overflow`, `null` (all without a list) |
+| `--dev`                     | Development profile: `--safe` and `-Wall` (at the default `-O0`) |
 | `--target TRIPLE`           | Cross-compile for the given target triple        |
 | `--mcpu` / `--mattr` / `--reloc` | Target CPU, feature string, relocation model |
 | `--freestanding`            | Use `esk_alloc`/`esk_free` instead of libc      |

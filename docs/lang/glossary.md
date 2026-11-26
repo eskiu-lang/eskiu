@@ -215,7 +215,7 @@ An expression whose value can be read but that does not itself designate a stora
 ## S
 
 **safe mode (`--safe`)**
-An opt-in build mode that inserts run-time checks: a bounds check on every array and slice index, an overflow check on signed `+ - *` over `int`/`int64`, and a null check before a pointer dereference; a violation traps (`@llvm.trap`) instead of continuing. `--safe=LIST` picks a subset (`bounds`, `overflow`, `null`). Off by default, so release builds pay nothing. See also: slice, sanitizer.
+An opt-in build mode that inserts run-time checks: a bounds check on every array and slice index, an overflow check on signed `+ - *` over `int`/`int64`, and a null check before a pointer dereference; a violation prints its file, line and column and a message on stderr and aborts instead of continuing (a freestanding build traps). `--safe=LIST` picks a subset (`bounds`, `overflow`, `null`), and `--dev` turns on all of them with `-Wall`. Off by default, so release builds pay nothing. See also: slice, sanitizer.
 
 **scope**
 The region of source code in which a declared name is visible. Eskiu uses lexical (block) scoping: each `BlockStmt` introduces a new scope. The symbol table supports nested scopes via a scope stack; inner scopes can shadow outer ones. Names go out of scope when their enclosing block ends. See also: symbol table, BlockStmt.

@@ -351,8 +351,9 @@ sum(a[0..6]);            // the whole array as a slice
 
 `int[]` lowers to `{ ptr, i64 }` in LLVM IR. By default an out-of-range slice or array
 index is undefined, as in C; compile with `--safe` to bounds-check every index at runtime
-(an out-of-range access aborts instead of corrupting memory), or with `--safe=bounds` for
-this check alone. `--safe` is opt-in, so release builds carry no overhead.
+(an out-of-range access reports its location, index and length on stderr and aborts instead
+of corrupting memory), or with `--safe=bounds` for this check alone. `--safe` is opt-in, so
+release builds carry no overhead.
 
 ### 3.4 Struct Types
 
@@ -643,10 +644,11 @@ Integer arithmetic has defined results at run time, the same at every optimizati
 
 - `+`, `-`, `*`, unary `-` and `++`/`--` wrap around in two's complement on overflow, for
   signed types as for unsigned ones: `int x = 2147483647; x + 1` is `-2147483648`. Under
-  `--safe` a signed `+`, `-` or `*` on `int` or `int64` that overflows traps instead
-  (Zig's ReleaseSafe; unsigned and narrow arithmetic still wraps).
+  `--safe` a signed `+`, `-` or `*` on `int` or `int64` that overflows stops the program
+  instead, with a report on stderr (Zig's ReleaseSafe; unsigned and narrow arithmetic,
+  `++`/`--` and unary `-` still wrap).
 - A zero divisor in `/` or `%` stops the program with a trap (the process ends with a
-  signal, SIGTRAP or SIGILL depending on the CPU), as `--safe` bounds checks do. A divisor
+  signal, SIGTRAP or SIGILL depending on the CPU), in every build. A divisor
   the compiler can see is constant (`x / 0`) is a compile error instead (3.9).
 - The most negative value divided by `-1` wraps to itself, and its remainder is 0:
   `-2147483648 / -1` is `-2147483648`.
@@ -3563,7 +3565,8 @@ Sections are separated by `:`. Trailing sections may be omitted if empty.
 | `eskiuc fmt --width N file.esk …` | Also break code lines longer than N bytes (see Formatting) |
 | `eskiuc file.esk --asan -o prog` | Instrument with AddressSanitizer (memory errors) and link its runtime |
 | `eskiuc file.esk --ubsan -o prog` | Insert trapping bounds checks (traps on out-of-bounds; no runtime) |
-| `eskiuc file.esk --safe -o prog` | Run-time safety checks that trap instead of continuing: every array and slice index is bounds-checked, a signed `+`, `-` or `*` on `int`/`int64` that overflows traps (instead of wrapping), and dereferencing a null pointer (`*p`, `p.f`, `p[i]`) traps; off by default |
+| `eskiuc file.esk --safe -o prog` | Run-time safety checks that stop the program instead of continuing: every array and slice index is bounds-checked, a signed `+`, `-` or `*` on `int`/`int64` that overflows fails (instead of wrapping), and dereferencing a null pointer (`*p`, `p.f`, `p[i]`) fails; off by default. A failed check prints `FILE:LINE:COL: message` on stderr (`index 7 out of bounds for length 4`, `integer overflow in '+'`, `null pointer dereference`) and aborts (SIGABRT); under `--freestanding` it traps with no message |
+| `eskiuc file.esk --dev -o prog` | The development profile: `--safe` (every check) and `-Wall`, at the default `-O0`; an explicit `--safe=LIST` or `-O<n>` still applies. `eskiuc build --dev`, `eskiuc test --dev` and `eskiuc run --dev` use it in a package |
 | `eskiuc file.esk --safe=bounds,null -o prog` | Only the named checks, a comma-separated subset of `bounds` (array and slice indexes, slice ranges), `overflow` (signed `+ - *` on `int`/`int64`) and `null` (dereferencing a null pointer). An unknown name is an error that lists the valid ones. A bare `--safe` is all three |
 | `eskiuc file.esk -Wall -o prog` | Enable lint warnings in the program's own files: unused vars/params/functions, assignment-in-condition, a local that may be used uninitialized |
 | `eskiuc file.esk -Wextra -o prog` | Extra warnings on top of `-Wall`: signed/unsigned comparison mismatches |
