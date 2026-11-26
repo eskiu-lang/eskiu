@@ -145,7 +145,14 @@ ChildOutcome runChild(const std::string& exe, const std::vector<std::string>& ar
     std::optional<llvm::StringRef> redirects[] = {llvm::StringRef(""), llvm::StringRef(log), llvm::StringRef(log)};
     std::string errMsg;
     bool failed = false;
-    llvm::sys::ProcessInfo pi = llvm::sys::ExecuteNoWait(exe, argv, std::nullopt, redirects, 0, &errMsg, &failed);
+    llvm::sys::ProcessInfo pi;
+    {
+        // CreateProcess with inherited handles is not safe from several threads at once: one
+        // launch can take another's redirect handles. Launches take turns; the waits overlap.
+        static std::mutex launching;
+        std::lock_guard<std::mutex> lock(launching);
+        pi = llvm::sys::ExecuteNoWait(exe, argv, std::nullopt, redirects, 0, &errMsg, &failed);
+    }
     if (failed) {
         std::ofstream(log, std::ios::app) << "error: could not run " << exe << ": " << errMsg << "\n";
         return r;
@@ -157,6 +164,9 @@ ChildOutcome runChild(const std::string& exe, const std::vector<std::string>& ar
     r.ms = elapsed();
     if (done.ReturnCode == -2 && timeout > 0 && r.ms >= timeout * 1000) r.timedOut = true;
     else if (done.ReturnCode == -2) r.signal = -1;
+    // An unhandled exception ends a process with its NTSTATUS (0xC0000005 an access violation,
+    // 0xC000001D an illegal instruction): a crash, as a signal is on POSIX. abort() exits with 3.
+    else if ((uint32_t)done.ReturnCode >= 0xC0000000u) r.signal = done.ReturnCode;
     else r.exitCode = done.ReturnCode;
 #endif
     return r;
@@ -174,6 +184,12 @@ std::string signalName(int sig) {
     case SIGKILL: return "SIGKILL";
     case SIGTERM: return "SIGTERM";
     default: break;
+    }
+#else
+    if ((uint32_t)sig >= 0xC0000000u) {
+        char hex[16];
+        std::snprintf(hex, sizeof hex, "0x%08X", (unsigned)sig);
+        return std::string("exception ") + hex;
     }
 #endif
     return sig > 0 ? "signal " + std::to_string(sig) : "an exception";

@@ -165,21 +165,28 @@ printf 'extern void abort();\nint main() { abort(); return 0; }\n' > tests/crash
 printf 'extern int printf(string f, ...);\nint main() { printf("bad output\\n"); return 3; }\n' > tests/bad.esk
 printf 'int main() { int i = 0; while (true) { i = i + 1; } return i; }\n' > tests/slow.esk
 printf 'int main() { return nope; }\n' > tests/broken.esk
+# abort() ends a Windows program with exit code 3, not a signal: there it is a plain failure
+crash_text="FAIL crash (crashed: SIGABRT)"; crash_json='"status":"crashed","exit_code":null,"signal":6,'
+crash_counts="1 build-failed, 1 timeout, 1 crashed"; crash_summary='"timeout":1,"crashed":1,'
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*)
+    crash_text="FAIL crash (exit 3)"; crash_json='"status":"fail","exit_code":3,"signal":null,'
+    crash_counts="1 build-failed, 1 timeout"; crash_summary='"timeout":1,"crashed":0,' ;;
+esac
 out="$("$ESKIUC" test -j 3 --timeout 1 2>&1)"; code=$?
-if [[ $code -eq 1 && "$out" == *"FAIL crash (crashed: SIGABRT)"* && "$out" == *"FAIL bad (exit 3)"$'\n'"    bad output"* && "$out" == *"FAIL slow (timeout after "* &&
+if [[ $code -eq 1 && "$out" == *"$crash_text"* && "$out" == *"FAIL bad (exit 3)"$'\n'"    bad output"* && "$out" == *"FAIL slow (timeout after "* &&
       "$out" == *"FAIL broken (build failed)"*"broken.esk:1:"* && "$out" == *"PASS good"* &&
-      "$out" == *"1 passed, 4 failed (1 build-failed, 1 timeout, 1 crashed) in "*", 3 jobs"* ]]; then
+      "$out" == *"1 passed, 4 failed ($crash_counts) in "*", 3 jobs"* ]]; then
     ok "test/statuses"
 else
     bad "test/statuses" "exit $code: $out"
 fi
 out="$("$ESKIUC" test --json --timeout=1 -O1 2>/dev/null)"; code=$?
 if [[ $code -eq 1 && "$(grep -c '^{"type":"test",' <<<"$out")" -eq 5 &&
-      "$out" == *'"name":"crash","source":"'*'tests/crash.esk","status":"crashed","exit_code":null,"signal":6,'* &&
+      "$out" == *'"name":"crash","source":"'*'tests/crash.esk",'"$crash_json"* &&
       "$out" == *'"name":"bad",'*'"status":"fail","exit_code":3,"signal":null,"build_ms":'* &&
       "$out" == *'"name":"broken",'*'"status":"build-failed","exit_code":1,'*'"run_ms":null,'* &&
       "$out" == *'"name":"slow",'*'"status":"timeout",'* &&
-      "$(tail -1 <<<"$out")" == '{"type":"summary","total":5,"passed":1,"failed":4,"build_failed":1,"timeout":1,"crashed":1,"duration_ms":'* ]]; then
+      "$(tail -1 <<<"$out")" == '{"type":"summary","total":5,"passed":1,"failed":4,"build_failed":1,'"$crash_summary"'"duration_ms":'* ]]; then
     ok "test/json"
 else
     bad "test/json" "exit $code: $out"
