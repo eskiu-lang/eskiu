@@ -50,6 +50,7 @@
 // returns false (exit code 2). `-h` is `--help`.
 static bool parseOptions(int argc, char** argv) {
     std::vector<char*> args(argv, argv + argc);
+    g_cacheArgv.assign(argv + 1, argv + argc);
     static char help[] = "--help";
     for (int i = 1; i < argc; ++i) {
         if (std::string(args[i]) == "--") break;

@@ -51,6 +51,7 @@ set(SOURCES
     repl.cpp
     pkg.cpp
     cli.cpp
+    build_cache.cpp
     lexer/lexer.cpp
     lexer/preprocessor.cpp
     lexer/token_names.cpp

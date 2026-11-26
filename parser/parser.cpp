@@ -8,6 +8,7 @@
 #include <filesystem>
 #include "parser_internal.h"
 #include "../lexer/preprocessor.h"
+#include "../build_cache.h"
 
 Parser::Parser(const std::vector<Token>& tok)
     : tokens(tok), current(0) {}
@@ -31,6 +32,7 @@ bool Parser::readSource(const std::string& path, std::string& out) {
     std::ostringstream ss;
     ss << file.rdbuf();
     out = ss.str();
+    objcache::noteSource(path, out);
     return true;
 }
 

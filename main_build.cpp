@@ -43,6 +43,7 @@
 #include "codegen/codegen.h"
 #include "main_support.h"
 #include "pkg.h"
+#include "build_cache.h"
 
 void seedPredefinedMacros(std::map<std::string, Macro>& macros, const std::string& triple,
                           bool freestanding) {
@@ -168,7 +169,9 @@ std::shared_ptr<Program> loadProgram(const std::vector<std::string>& inputs, con
         if (!importedFiles.insert(canon).second) continue;
         cache.seen.insert(canon);
         // The first input may be given as text (editor tooling: an unsaved buffer).
-        std::string source = primarySource && fname == inputs.front() ? *primarySource : readFile(fname);
+        bool given = primarySource && fname == inputs.front();
+        std::string source = given ? *primarySource : readFile(fname);   // readFile notes it for the cache
+        if (given) objcache::noteSource(fname, source);
         PPImportHook hook = cache.hookFor(dirOf(fname));
         Lexer lexer(source, &macros, fname, &hook);
         std::vector<Token> tokens;

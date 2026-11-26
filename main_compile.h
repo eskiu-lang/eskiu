@@ -6,12 +6,12 @@
 #include "sema/type_checker.h"
 #include "codegen/codegen.h"
 #include "main_support.h"
+#include "build_cache.h"
 
 // Link the program into an executable (and run it for `eskiuc run`): the object written
 // to a temporary file, the libraries given and implied, the platform's link flags.
 static int linkProgram(const std::function<bool(const std::string&)>& emitObject,
-                       const std::unique_ptr<eir::Module>& eirModule, CodeGen& codegen,
-                       const std::vector<std::string>& pragmaLibs,
+                       const objcache::Meta& facts, const std::vector<std::string>& pragmaLibs,
                        const std::map<std::string, Macro>& macros, const std::string& outFile,
                        const std::string& runExePath) {
     llvm::SmallString<128> tmpObj;
@@ -32,16 +32,7 @@ static int linkProgram(const std::function<bool(const std::string&)>& emitObject
     // The libraries the program implies go after every object (a --link-arg
     // object may need them too), skipping any -l already given.
     if (!NoDefaultLibs) {
-        bool usesEH = false, usesThreads = false;
-        if (eirModule) {
-            usesThreads = eir::moduleUsesThreads(eirModule.get());
-        } else {
-            llvm::Module* mod = codegen.getModule();
-            usesEH = mod->getFunction("__cxa_throw") || mod->getFunction("__cxa_rethrow") ||
-                     mod->getFunction("__gxx_personality_v0") ||
-                     mod->getFunction("__gxx_personality_seh0");
-            usesThreads = mod->getFunction("pthread_create") != nullptr;
-        }
+        bool usesEH = facts.usesEH, usesThreads = facts.usesThreads;
         std::vector<std::string> implied = pragmaLibs;
         bool libcxx = usesEH && macros.count("_WIN32") &&
                       mingwLibcxxDriver(findCDriver(false, nullptr, std::string(TargetTriple)));
@@ -61,15 +52,7 @@ static int linkProgram(const std::function<bool(const std::string&)>& emitObject
     // On macOS the object records a minimum OS version (the native triple carries the
     // host's); link for the same one, or ld warns that the object is newer than the
     // version the C driver picked from its SDK.
-    if (!eirModule) {
-        llvm::Triple t(codegen.getModule()->getTargetTriple());
-        llvm::VersionTuple v;
-        if (t.isMacOSX() && t.getMacOSXVersion(v) && v.getMajor() > 0)
-            extra.push_back("-mmacosx-version-min=" + v.getAsString());
-    } else {
-        std::string v = eir::eirLinkMacOSVersion(std::string(TargetTriple), OptLevel);
-        if (!v.empty()) extra.push_back("-mmacosx-version-min=" + v);
-    }
+    if (!facts.macosMin.empty()) extra.push_back("-mmacosx-version-min=" + facts.macosMin);
     // --subsystem=windows on a Windows target: the GUI subsystem, entered at main.
     if (Subsystem == "windows" && macros.count("_WIN32")) {
         std::string tt = std::string(TargetTriple);
@@ -129,21 +112,145 @@ static int linkProgram(const std::function<bool(const std::string&)>& emitObject
     return 0;
 }
 
+// What the link needs to know of the program besides its object: whether it throws or
+// catches (the C++ runtime), whether it starts threads, and the macOS version its object
+// targets. Kept with a cached object (build_cache.h).
+static objcache::Meta linkFacts(const std::unique_ptr<eir::Module>& eirModule, CodeGen& codegen) {
+    objcache::Meta f;
+    if (eirModule) {
+        f.usesThreads = eir::moduleUsesThreads(eirModule.get());
+        f.macosMin = eir::eirLinkMacOSVersion(std::string(TargetTriple), OptLevel);
+        return f;
+    }
+    llvm::Module* mod = codegen.getModule();
+    f.usesEH = mod->getFunction("__cxa_throw") || mod->getFunction("__cxa_rethrow") ||
+               mod->getFunction("__gxx_personality_v0") || mod->getFunction("__gxx_personality_seh0");
+    f.usesThreads = mod->getFunction("pthread_create") != nullptr;
+    llvm::Triple t(mod->getTargetTriple());
+    llvm::VersionTuple v;
+    if (t.isMacOSX() && t.getMacOSXVersion(v) && v.getMajor() > 0) f.macosMin = v.getAsString();
+    return f;
+}
+
+// Whether the output is a static library (.a, .lib): the object in an archive, for a
+// host build system (an iOS xcframework, an Android or emscripten build) to link.
+static bool outputIsStaticLibrary() {
+    std::string o = std::string(OutputFilename);
+    return !g_runMode && !CompileOnly && (endsWith(o, ".a") || endsWith(o, ".lib"));
+}
+
+// Make the output from the object `emitObject` writes: link the executable (and run it
+// for `eskiuc run`), archive a static library, or write the object file.
+static int finishBuild(const std::function<bool(const std::string&)>& emitObject,
+                       const objcache::Meta& facts, const std::vector<std::string>& pragmaLibs,
+                       const std::map<std::string, Macro>& macros) {
+    // `eskiuc run`: link into a temporary executable, then run it.
+    std::string runExePath;
+    if (g_runMode) {
+        llvm::SmallString<128> tmpExe;
+#ifdef _WIN32
+        // The Windows linker driver appends ".exe" to a name without one.
+        const char* runSuffix = "exe";
+#else
+        const char* runSuffix = "";
+#endif
+        if (llvm::sys::fs::createTemporaryFile("eskiu-run", runSuffix, tmpExe)) {
+            std::cerr << "error: could not create a temporary executable" << std::endl;
+            return 1;
+        }
+        runExePath = std::string(tmpExe.str());
+    }
+
+    std::string outFile = !runExePath.empty() ? runExePath
+        : OutputFilename.empty() ? std::string(InputFilename) + ".o"
+        : std::string(OutputFilename);
+
+    // Link into an executable when the output is not an object file.
+    // Object-only when: -c is given, the output ends in .o or .obj, no -o was given,
+    // or --freestanding (bare-metal needs a custom linker script: link yourself).
+    bool linkExe = g_runMode || (!CompileOnly && !EmitObj && !Freestanding &&
+                   !OutputFilename.empty() && !endsWith(outFile, ".o") &&
+                   !endsWith(outFile, ".obj") && !endsWith(outFile, ".a") &&
+                   !endsWith(outFile, ".lib"));
+
+    if (outputIsStaticLibrary()) {
+        llvm::SmallString<128> tmpObj;
+        if (llvm::sys::fs::createTemporaryFile("eskiu", "o", tmpObj)) {
+            std::cerr << "error: could not create a temporary object file" << std::endl;
+            return 1;
+        }
+        std::string tmpObjPath(tmpObj.str());
+        bool ok = emitObject(tmpObjPath) &&
+                  writeStaticLibrary(tmpObjPath, outFile, std::string(TargetTriple));
+        llvm::sys::fs::remove(tmpObjPath);
+        return ok ? 0 : 1;
+    }
+
+    if (linkExe) return linkProgram(emitObject, facts, pragmaLibs, macros, outFile, runExePath);
+
+    if (!emitObject(outFile)) {
+        return 1;
+    }
+    return 0;
+}
+
+// A build whose object is in the cache: print the warnings its compile printed and make
+// the output from the cached object. False on a miss (`rc` untouched).
+static bool buildFromCache(const std::string& key, const std::vector<std::string>& pragmaLibs,
+                           const std::map<std::string, Macro>& macros, int& rc) {
+    llvm::SmallString<128> tmp;
+    if (llvm::sys::fs::createTemporaryFile("eskiu-cached", "o", tmp)) return false;
+    std::string cached(tmp.str());
+    objcache::Meta meta;
+    if (!objcache::lookup(key, cached, meta)) {
+        llvm::sys::fs::remove(cached);
+        phaseNote("cache", ("miss " + key.substr(0, 16)).c_str());
+        return false;
+    }
+    phaseNote("cache", ("hit " + key.substr(0, 16)).c_str());
+    std::cerr << meta.diagnostics << std::flush;
+    auto emitObject = [&](const std::string& path) {
+        bool ok = !llvm::sys::fs::copy_file(cached, path);
+        if (!ok) std::cerr << "error: could not write " << path << std::endl;
+        phaseMark("cache-copy");
+        return ok;
+    };
+    rc = finishBuild(emitObject, meta, pragmaLibs, macros);
+    llvm::sys::fs::remove(cached);
+    return true;
+}
+
 // Full compilation pipeline — parse every input file and merge their
 // top-level declarations into a single program (`eskiuc a.esk b.esk ...`).
 static int compileProgram(unsigned safeChecks, bool useEir) {
 try {
     std::map<std::string, Macro> macros;
     bool lexFailed = false;
+    // The object cache: the loader records the files it reads, for the key.
+    bool useCache = !useEir && EmitHeader.empty() && !outputIsStaticLibrary() &&
+                    objcache::wanted(UseCache, NoCache);
+    objcache::setRecording(useCache);
     phaseMark("start");
     auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding,
                                &macros, &lexFailed);
     phaseMark("load+parse");
+    objcache::setRecording(false);
     if (!program) {
         if (!lexFailed && !g_jsonDiagnostics) std::cerr << "error: parse failed" << std::endl;
         return 1;
     }
     const std::vector<std::string>& pragmaLibs = program->linkLibs;
+
+    std::string cacheKey;
+    if (useCache) {
+        cacheKey = objectCacheKey();
+        phaseMark("cache-key");
+        int rc = 1;
+        if (!cacheKey.empty() && buildFromCache(cacheKey, pragmaLibs, macros, rc)) return rc;
+    }
+    // A compile that may be stored keeps what it prints (its warnings) with the object.
+    std::unique_ptr<objcache::CerrCapture> capture;
+    if (!cacheKey.empty()) capture = std::make_unique<objcache::CerrCapture>();
 
     TypeChecker typeChecker; typeChecker.targetTriple = std::string(TargetTriple);
     typeChecker.sourceFile = std::string(InputFilename);
@@ -206,63 +313,20 @@ try {
         if (OptLevel) codegen.optimizeModule();
         phaseMark("optimize");
     }
+    objcache::Meta facts = linkFacts(eirModule, codegen);
     auto emitObject = [&](const std::string& path) {
         bool ok = eirModule ? eir::emitEirObject(eirModule.get(), path, std::string(TargetTriple), OptLevel)
                             : codegen.emitObjectFile(path);
         phaseMark("emit-object");
+        if (ok && capture) {
+            facts.diagnostics = capture->text();
+            capture.reset();
+            objcache::store(cacheKey, path, facts);
+            phaseMark("cache-store");
+        }
         return ok;
     };
-
-    // `eskiuc run`: link into a temporary executable, then run it.
-    std::string runExePath;
-    if (g_runMode) {
-        llvm::SmallString<128> tmpExe;
-#ifdef _WIN32
-        // The Windows linker driver appends ".exe" to a name without one.
-        const char* runSuffix = "exe";
-#else
-        const char* runSuffix = "";
-#endif
-        if (llvm::sys::fs::createTemporaryFile("eskiu-run", runSuffix, tmpExe)) {
-            std::cerr << "error: could not create a temporary executable" << std::endl;
-            return 1;
-        }
-        runExePath = std::string(tmpExe.str());
-    }
-
-    std::string outFile = !runExePath.empty() ? runExePath
-        : OutputFilename.empty() ? std::string(InputFilename) + ".o"
-        : std::string(OutputFilename);
-
-    // Link into an executable when the output is not an object file.
-    // Object-only when: -c is given, the output ends in .o or .obj, no -o was given,
-    // or --freestanding (bare-metal needs a custom linker script: link yourself).
-    bool linkExe = g_runMode || (!CompileOnly && !EmitObj && !Freestanding &&
-                   !OutputFilename.empty() && !endsWith(outFile, ".o") &&
-                   !endsWith(outFile, ".obj") && !endsWith(outFile, ".a") &&
-                   !endsWith(outFile, ".lib"));
-
-    // A static library (.a, .lib): the object in an archive, for a host build system
-    // (an iOS xcframework, an Android or emscripten build) to link.
-    if (!g_runMode && !CompileOnly && (endsWith(outFile, ".a") || endsWith(outFile, ".lib"))) {
-        llvm::SmallString<128> tmpObj;
-        if (llvm::sys::fs::createTemporaryFile("eskiu", "o", tmpObj)) {
-            std::cerr << "error: could not create a temporary object file" << std::endl;
-            return 1;
-        }
-        std::string tmpObjPath(tmpObj.str());
-        bool ok = emitObject(tmpObjPath) &&
-                  writeStaticLibrary(tmpObjPath, outFile, std::string(TargetTriple));
-        llvm::sys::fs::remove(tmpObjPath);
-        return ok ? 0 : 1;
-    }
-
-    if (linkExe) return linkProgram(emitObject, eirModule, codegen, pragmaLibs, macros, outFile, runExePath);
-
-    if (!emitObject(outFile)) {
-        return 1;
-    }
-    return 0;
+    return finishBuild(emitObject, facts, pragmaLibs, macros);
 } catch (const std::exception& e) {
     std::cerr << "error: " << e.what() << std::endl;
     return 1;

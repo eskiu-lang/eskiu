@@ -307,6 +307,46 @@ if [[ $code -eq 0 && "$out" == *"Exit codes"* ]]; then ok "cli/global-help"; els
 out="$("$ESKIUC" run "$here/run_cmd/args.esk" --help 2>/dev/null)"; code=$?
 if [[ "$out" == "[--help]" ]]; then ok "cli/run-help-is-program-arg"; else bad "cli/run-help-is-program-arg" "exit $code: $out"; fi
 
+# ---- --time and the object cache ---------------------------------------------------
+# --time reports each phase, the link and the total. With --cache (or ESKIU_CACHE=1) a
+# second identical compile copies the object (phase cache hit) and prints the same
+# warnings; an edited import, another -O, another compiler or ESKIU_NO_CACHE misses.
+echo "build cache:"
+cache_env=(env ESKIU_CACHE_DIR="$work/objcache" ESKIU_CACHE_COMPILER_ID=test-1)
+mkdir -p "$work/cache/src"
+printf 'int lib_value() { return 40; }\n' > "$work/cache/src/lib.esk"
+printf 'extern int printf(string f, ...);\nimport "src/lib.esk";\nint main() { int unused = 3; printf("v=%%d\\n", lib_value() + 2); return 0; }\n' > "$work/cache/main.esk"
+cache_build() { # ENV-ASSIGNMENTS FLAGS...: stderr of a cached build of main.esk; the program in cache.bin
+    local extra="$1"; shift
+    # shellcheck disable=SC2086
+    (cd "$work/cache" && "${cache_env[@]}" $extra "$ESKIUC" --cache --time -Wall "$@" main.esk -o "$work/cache.bin" 2>&1)
+}
+c1="$(cache_build "" -O2)"; r1="$("$work/cache.bin")"
+c2="$(cache_build "" -O2)"; r2="$("$work/cache.bin")"
+if [[ "$c1" == *"phase cache            miss "* && "$c1" == *"phase link "* && "$c1" == *"phase total "* &&
+      "$c2" == *"phase cache            hit "* && "$c2" != *"phase typecheck"* && "$r1" == "v=42" && "$r2" == "v=42" &&
+      "$(grep warning: <<<"$c1")" == "main.esk:3:18: warning: unused variable 'unused'" &&
+      "$(grep warning: <<<"$c2")" == "$(grep warning: <<<"$c1")" ]]; then ok "cache/hit"
+else bad "cache/hit" "first: $c1 second: $c2 ($r1 $r2)"; fi
+printf 'int lib_value() { return 41; }\n' > "$work/cache/src/lib.esk"
+c3="$(cache_build "" -O2)"; r3="$("$work/cache.bin")"
+if [[ "$c3" == *"cache            miss"* && "$r3" == "v=43" ]]; then ok "cache/import-edited"; else bad "cache/import-edited" "$r3: $c3"; fi
+c4="$(cache_build "" -O1)"
+if [[ "$c4" == *"cache            miss"* ]]; then ok "cache/opt-level"; else bad "cache/opt-level" "$c4"; fi
+c5="$(cache_build ESKIU_CACHE_COMPILER_ID=test-2 -O2)"; c6="$(cache_build "" -O2)"
+if [[ "$c5" == *"cache            miss"* && "$c6" == *"cache            hit"* ]]; then ok "cache/compiler-identity"
+else bad "cache/compiler-identity" "$c5 / $c6"; fi
+c7="$(cache_build ESKIU_NO_CACHE=1 -O2)"
+if [[ "$c7" != *"phase cache"* && "$c7" == *"phase typecheck"* ]]; then ok "cache/no-cache"; else bad "cache/no-cache" "$c7"; fi
+c8="$(cd "$work/cache" && "${cache_env[@]}" "$ESKIUC" --time -O2 main.esk -o "$work/cache.bin" 2>&1)"
+if [[ "$c8" != *"phase cache"* ]]; then ok "cache/off-by-default"; else bad "cache/off-by-default" "$c8"; fi
+j1="$(cd "$work/cache" && "${cache_env[@]}" "$ESKIUC" --cache -Wall --diagnostics=json -O3 main.esk -o "$work/cache.bin" 2>&1)"
+j2="$(cd "$work/cache" && "${cache_env[@]}" "$ESKIUC" --cache -Wall --diagnostics=json -O3 main.esk -o "$work/cache.bin" 2>&1)"
+if [[ "$j1" == '{"severity":"warning"'* && "$j2" == "$j1" ]]; then ok "cache/json-diagnostics"; else bad "cache/json-diagnostics" "$j1 / $j2"; fi
+c9="$(cache_build "ESKIU_CACHE_SIZE=0 ESKIU_CACHE_DIR=$work/objcache0" -O2)"
+if [[ "$c9" == *"cache            miss"* && -z "$(ls "$work/objcache0" | grep '\.o$')" ]]; then ok "cache/evict"
+else bad "cache/evict" "$(ls "$work/objcache0")"; fi
+
 # ---- several input files ------------------------------------------------------
 # `eskiuc first.esk second.esk`: a type and a generic that an import of the first input
 # declares are known while the second input's imports parse (`Ok<Thing, string>(t)`
