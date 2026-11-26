@@ -159,7 +159,48 @@ if [[ $code -eq 1 && "$out" == *"FAIL bad (exit 3)"* && "$out" == *"PASS good"* 
 else
     bad "test" "exit $code: $out"
 fi
-rm tests/bad.esk
+# Every status, N at a time: a crash (signal), a timeout (killed), a build failure; a
+# failing test's output is shown under it; filters (substring, glob, file); --json lines.
+printf 'extern void abort();\nint main() { abort(); return 0; }\n' > tests/crash.esk
+printf 'extern int printf(string f, ...);\nint main() { printf("bad output\\n"); return 3; }\n' > tests/bad.esk
+printf 'int main() { int i = 0; while (true) { i = i + 1; } return i; }\n' > tests/slow.esk
+printf 'int main() { return nope; }\n' > tests/broken.esk
+out="$("$ESKIUC" test -j 3 --timeout 1 2>&1)"; code=$?
+if [[ $code -eq 1 && "$out" == *"FAIL crash (crashed: SIGABRT)"* && "$out" == *"FAIL bad (exit 3)"$'\n'"    bad output"* && "$out" == *"FAIL slow (timeout after "* &&
+      "$out" == *"FAIL broken (build failed)"*"broken.esk:1:"* && "$out" == *"PASS good"* &&
+      "$out" == *"1 passed, 4 failed (1 build-failed, 1 timeout, 1 crashed) in "*", 3 jobs"* ]]; then
+    ok "test/statuses"
+else
+    bad "test/statuses" "exit $code: $out"
+fi
+out="$("$ESKIUC" test --json --timeout=1 -O1 2>/dev/null)"; code=$?
+if [[ $code -eq 1 && "$(grep -c '^{"type":"test",' <<<"$out")" -eq 5 &&
+      "$out" == *'"name":"crash","source":"'*'tests/crash.esk","status":"crashed","exit_code":null,"signal":6,'* &&
+      "$out" == *'"name":"bad",'*'"status":"fail","exit_code":3,"signal":null,"build_ms":'* &&
+      "$out" == *'"name":"broken",'*'"status":"build-failed","exit_code":1,'*'"run_ms":null,'* &&
+      "$out" == *'"name":"slow",'*'"status":"timeout",'* &&
+      "$(tail -1 <<<"$out")" == '{"type":"summary","total":5,"passed":1,"failed":4,"build_failed":1,"timeout":1,"crashed":1,"duration_ms":'* ]]; then
+    ok "test/json"
+else
+    bad "test/json" "exit $code: $out"
+fi
+out="$("$ESKIUC" test goo 'b[a]d' tests/crash.esk -O2 2>&1)"; code=$?
+if [[ $code -eq 1 && "$out" == *"PASS good"* && "$out" == *"FAIL bad (exit 3)"* && "$out" == *"FAIL crash"* &&
+      "$out" != *slow* && "$out" != *broken* ]]; then
+    ok "test/filter"
+else
+    bad "test/filter" "exit $code: $out"
+fi
+out="$("$ESKIUC" test good 2>&1)"; code=$?
+if [[ $code -eq 0 && "$out" == *"1 passed, 0 failed"* ]]; then ok "test/all-pass"; else bad "test/all-pass" "exit $code: $out"; fi
+err="$("$ESKIUC" test zzz 2>&1)"; code=$?
+if [[ $code -eq 1 && "$err" == "error: no test in tests matches 'zzz'" ]]; then ok "test/no-match"; else bad "test/no-match" "exit $code: $err"; fi
+for args in "-j 0" "--timeout x" "--frob" "-j"; do
+    err="$("$ESKIUC" test $args 2>&1)"; code=$?
+    if [[ $code -eq 2 && "$err" == "error: test: "*"(see 'eskiuc test --help')" ]]; then ok "test/usage$args"
+    else bad "test/usage$args" "exit $code: $err"; fi
+done
+rm tests/bad.esk tests/crash.esk tests/slow.esk tests/broken.esk
 
 # ---- unknown package --------------------------------------------------------
 printf 'import <io>;\nimport <nope/x>;\nint main() { return 0; }\n' > "$work/app/src/unknown.esk"

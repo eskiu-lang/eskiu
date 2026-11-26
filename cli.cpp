@@ -32,9 +32,16 @@ std::string cliUsage(const std::string& cmd) {
          "code is the program's (128+N when signal N killed it). With no .esk file inside a\n"
          "package, build the package and run it. Flags after FILE.esk belong to the program.\n"},
         {"test",
-         "usage: eskiuc test [compiler flags]\n\n"
-         "Compile and run each tests/*.esk of the package; a test passes when it exits with 0.\n"
-         "Compiler flags (-O2, --safe, ...) apply to every test.\n"},
+         "usage: eskiuc test [FILTER...] [-j N] [--timeout SECONDS] [--json] [compiler flags]\n\n"
+         "Compile each tests/*.esk of the package to build/tests/NAME and run it; a test passes\n"
+         "when it exits with 0. Its build and run output go to build/tests/NAME.log and are\n"
+         "shown when it fails. Compiler flags (-O2, --safe, ...) apply to every test.\n"
+         "  FILTER             run the tests whose name contains FILTER, matches it as a\n"
+         "                     glob (*, ?, [...]), or is its file (tests/NAME.esk)\n"
+         "  -j N, --jobs N     run N tests at a time (default: half the cores)\n"
+         "  --timeout SECONDS  kill a test that runs longer (default 60; 0: no limit)\n"
+         "  --json             one JSON object per test, then a summary (docs/lang/build.md)\n"
+         "Exit code: 0 all passed, 1 a test failed (or no test matched), 2 wrong command line.\n"},
         {"fetch",
          "usage: eskiuc fetch\n\n"
          "Resolve every dependency again (fetching the git mirrors), rewrite eskiu.lock and\n"

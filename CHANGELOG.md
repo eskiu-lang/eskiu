@@ -24,6 +24,13 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 - `--time` prints the wall time of each compile phase, the link and the total on stderr,
   as `ESKIU_TIME_PHASES=1` did (which still works), now with the link and the total.
 
+- `eskiuc test` runs several tests at a time (`-j N`, default half the cores), selects
+  tests by name (`eskiuc test inv 'combat_*'`), kills a test that runs past `--timeout`
+  (default 60 s), and prints one JSON object per test with `--json`. A test ends as
+  `pass`, `fail`, `build-failed`, `timeout` or `crashed` (by a signal); its output goes to
+  `build/tests/NAME.log` and is shown when it fails. Exit code 0 when all pass, 1 when one
+  does not, 2 for a wrong command line.
+
 ### Changed
 
 - A failed `--safe` check prints one line to stderr with the file, line and column of the

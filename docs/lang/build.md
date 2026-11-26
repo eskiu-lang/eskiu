@@ -346,7 +346,7 @@ manifest format.
 | `eskiuc add NAME --path DIR` | Add a local dependency, used in place. |
 | `eskiuc build [FILE.esk] [-o OUT] [FLAGS]` | Fetch what the lock names and is missing, then compile the package's main file to `build/NAME` (or `OUT`). With a `.esk` file named, compile that file instead (an example or a tool of the package, with its dependencies) to `build/FILE`. Other flags go to the compiler. |
 | `eskiuc run [--dev] [--] [ARGS]` | Build, then run the program with `ARGS`. A leading `--dev` builds it with the development profile (`--safe` and `-Wall`). With a `.esk` file named, `eskiuc run file.esk` compiles that file as before. |
-| `eskiuc test [FLAGS]` | Compile and run each `tests/*.esk` of the package; a test passes when it exits with 0. The flags go to the compiler: `eskiuc test --dev` runs the tests with the `--safe` checks on. |
+| `eskiuc test [FILTER...] [-j N] [--timeout S] [--json] [FLAGS]` | Compile and run the package's `tests/*.esk`, several at a time; a test passes when it exits with 0. The flags go to the compiler: `eskiuc test --dev` runs the tests with the `--safe` checks on. See [Running a package's tests](#running-a-packages-tests). |
 | `eskiuc fetch` | Resolve every dependency again (fetching the git mirrors) and rewrite `eskiu.lock`. |
 
 Git packages live in `~/.eskiu/pkgs/NAME/COMMIT`; set `ESKIU_HOME` to move that tree
@@ -372,6 +372,60 @@ links the system's library in place of the archive, and a build whose download f
 falls back to the system's library when there is one, with a warning (see
 [getting started](getting-started.md#native-libraries)). A web build copies the files a
 package lists in `[web] assets` next to its output ([web assets](getting-started.md#web-assets)).
+
+### Running a package's tests
+
+`eskiuc test` compiles each `tests/NAME.esk` to `build/tests/NAME` and runs it with no
+arguments and stdin from the null device. Its compile and run output go to
+`build/tests/NAME.log`; the end of the log is shown under a test that did not pass.
+
+| Argument | Meaning |
+|---|---|
+| `FILTER` | Run only the tests whose name contains `FILTER`, matches it as a glob (`*`, `?`, `[...]`, quoted for the shell), or whose file it names (`tests/NAME.esk`). Several filters select the tests any one selects. |
+| `-j N`, `--jobs N` | Run `N` tests at a time (default: half the logical cores, at least 1). Each job compiles its test, then runs it. |
+| `--timeout SECONDS` | Kill a test that runs longer than this (default 60, `0` for no limit). The compile has no limit. |
+| `--json` | Print one JSON object per test on stdout as it finishes, then a summary object, instead of the text lines. |
+| other flags | Compiler flags (`-O2`, `--safe`, `-Wall`, ...), passed to every test's compile. An unknown one is a usage error. |
+
+Each test ends with one status: `pass` (exit code 0), `fail` (another exit code),
+`build-failed` (the compiler failed), `timeout` (killed after `--timeout`) or `crashed`
+(killed by a signal: a segmentation fault, an abort). The exit code is 0 when every
+selected test passed, 1 when one did not or when no test matched a filter, and 2 for a
+wrong command line. The text output:
+
+```
+PASS inventory
+FAIL cooldowns (exit 3)
+    expected 4, got 3
+FAIL bad_ptr (crashed: SIGSEGV)
+FAIL loop (timeout after 60.0 s)
+FAIL typo (build failed)
+    error: tests/typo.esk:4:9: undefined variable 'x'
+1 passed, 4 failed (1 build-failed, 1 timeout, 1 crashed) in 61.3 s, 5 jobs
+failed: cooldowns bad_ptr loop typo
+```
+
+With `--json`, the lines come in the order the tests finish:
+
+```
+{"type":"test","name":"cooldowns","source":"/home/me/game/tests/cooldowns.esk","status":"fail","exit_code":3,"signal":null,"build_ms":1912.4,"run_ms":8.1,"log":"/home/me/game/build/tests/cooldowns.log"}
+{"type":"summary","total":5,"passed":1,"failed":4,"build_failed":1,"timeout":1,"crashed":1,"duration_ms":61302.7,"jobs":5}
+```
+
+| Field | Value |
+|---|---|
+| `type` | `"test"`, or `"summary"` for the last line |
+| `name` | the test's name, its file name without `.esk` |
+| `source` | the path of its `.esk` file |
+| `status` | `"pass"`, `"fail"`, `"build-failed"`, `"timeout"` or `"crashed"` |
+| `exit_code` | the test's exit code (for `build-failed`, the compiler's); `null` for `timeout` and `crashed` |
+| `signal` | the number of the signal that killed a `crashed` test, else `null` |
+| `build_ms` | the compile's wall time in milliseconds |
+| `run_ms` | the run's wall time in milliseconds; `null` when the build failed |
+| `log` | the file holding the build and run output |
+| `total`, `passed`, `failed` | (summary) tests run, passed, and not passed |
+| `build_failed`, `timeout`, `crashed` | (summary) how many of the failed ended so |
+| `duration_ms`, `jobs` | (summary) the whole run's wall time, and the tests run at a time |
 
 ### Publishing a package
 

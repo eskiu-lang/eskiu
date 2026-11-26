@@ -1459,6 +1459,7 @@ eskiuc build [-o out] [flags]   # compile src/main.esk to build/NAME
 eskiuc build tool.esk [flags]   # compile tool.esk (an example, a tool) to build/tool
 eskiuc run [args]               # build, then run with args
 eskiuc test                     # compile and run every tests/*.esk, pass = exit code 0
+eskiuc test inv -j 4 -O2        # the tests named *inv*, 4 at a time, optimized
 eskiuc fetch                    # re-resolve the dependencies, rewrite eskiu.lock
 ```
 
