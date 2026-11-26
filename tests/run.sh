@@ -729,11 +729,17 @@ fi
 
 # The editor's standalone LSP server (editor/vscode/server.js), when node exists.
 if command -v node >/dev/null 2>&1; then
-    lsp_out="$(node "$here/editor/lsp_server_test.js" 2>&1)"
+    lsp_out="$(ESKIUC="$ESKIUC" node "$here/editor/lsp_server_test.js" 2>&1)"
     if [[ "$lsp_out" == "ok" ]]; then ok "editor/lsp-server"; else bad "editor/lsp-server" "$lsp_out"; fi
     # a part of a module (import "part.esk") is checked in its module
-    lsp_out="$(node "$here/editor/lsp_parts_test.js" 2>&1)"
+    lsp_out="$(ESKIUC="$ESKIUC" node "$here/editor/lsp_parts_test.js" 2>&1)"
     if [[ "$lsp_out" == "ok" ]]; then ok "editor/lsp-parts"; else bad "editor/lsp-parts" "$lsp_out"; fi
+    # a file in its program (eskiu.toml main), unsaved imports, references and rename across files
+    lsp_out="$(ESKIUC="$ESKIUC" node "$here/editor/lsp_program_test.js" 2>&1)"
+    if [[ "$lsp_out" == "ok" ]]; then ok "editor/lsp-program"; else bad "editor/lsp-program" "$lsp_out"; fi
+    # the modules both editors share (editor/vscode/project.js, features.js)
+    lsp_out="$(ESKIUC="$ESKIUC" node "$here/editor/project_test.js" 2>&1)"
+    if [[ "$lsp_out" == "ok" ]]; then ok "editor/project"; else bad "editor/project" "$lsp_out"; fi
 fi
 
 # ---- go-to-definition and hover ---------------------------------------------
