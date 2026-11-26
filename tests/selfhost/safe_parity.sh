@@ -77,6 +77,8 @@ parity "array OOB traps (--safe)"     "$WORK/array_oob.esk"    --safe
 parity "in-bounds ok (--safe)"        "$WORK/inbounds.esk"     --safe
 parity "slice of slice lo > hi traps"  "$WORK/slice_order.esk"  --safe
 parity "no check without --safe"      "$WORK/default_noop.esk" ""
+parity "--dev checks bounds"          "$WORK/slice_oob.esk"    --dev
+parity "--dev --safe=overflow: no bounds check" "$WORK/default_noop.esk" "--dev --safe=overflow"
 
 cat > "$WORK/overflow.esk" <<'EOF'
 int main() { int a = 2147483647; int b = a; b = b - 2147483646; return a + b == -2147483647 - 1 ? 0 : 1; }

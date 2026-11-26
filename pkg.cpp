@@ -492,9 +492,16 @@ bool pkgCommand(int argc, char** argv, int& rc) {
             std::string out;
             rc = buildPackage(argv[0], args, out);
         } else {
+            // A leading --dev builds with the development profile; the rest (after an
+            // optional `--`) are the program's arguments.
+            std::vector<std::string> flags;
+            if (!args.empty() && args[0] == "--dev") {
+                flags.push_back(args[0]);
+                args.erase(args.begin());
+            }
             if (!args.empty() && args[0] == "--") args.erase(args.begin());
             std::string out;
-            rc = buildPackage(argv[0], {}, out);
+            rc = buildPackage(argv[0], flags, out);
             if (rc == 0) rc = runExecutable(out, args);
         }
     } catch (const std::exception& e) {

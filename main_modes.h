@@ -59,7 +59,7 @@ static int testTypeChecker(const std::string& filename) {
         // Type check
         TypeChecker typeChecker; typeChecker.targetTriple = std::string(TargetTriple);
         typeChecker.sourceFile = filename;
-        typeChecker.warnAll = Wall;
+        typeChecker.warnAll = Wall || Dev;
         typeChecker.warnDeprecated = !WnoDeprecated;
         typeChecker.warnExtra = Wextra;
         applyWarningFlags(typeChecker);

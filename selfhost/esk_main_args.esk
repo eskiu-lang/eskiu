@@ -20,6 +20,8 @@ struct EskOpts {
     string tool_at;   // its LINE:COL
     List<string> wno;   // -Wno-<name> of the other default-on warnings
     int safe;   // --safe[=LIST]: run-time checks, bits of safe_checks
+    int safe_set;   // --safe was given (it wins over --dev's checks)
+    int dev;   // --dev: the development profile, every --safe check and -Wall
     int compile_only;   // -c: emit an object file, do not link
     int freestanding;   // --freestanding: no libc; object only (link it yourself)
     int fp_contract;   // -ffp-contract=fast: fused multiply-add allowed (C++ FpContract)
@@ -131,6 +133,8 @@ void esk_opts_init(EskOpts* o) {
     o.tool_at = "";
     List_init<string>(&o.wno, 4);
     o.safe = 0;
+    o.safe_set = 0;
+    o.dev = 0;
     o.compile_only = 0;
     o.freestanding = 0;
     o.fp_contract = 0;
@@ -342,9 +346,13 @@ int esk_parse_args(EskOpts* o, int argc, string* argv) {
         }
         else if (cg_streq(opt, "--safe") == 1 || cg_streq(opt, "-safe") == 1) {
             o.safe = safe_checks(val);
+            o.safe_set = 1;
             if (o.safe < 0) {
                 return 1;
             }
+        }
+        else if (cg_streq(a, "--dev") == 1 || cg_streq(a, "-dev") == 1) {
+            o.dev = 1;
         }
         else if (cg_streq(a, "-Wno-deprecated") == 1 || cg_streq(a, "--Wno-deprecated") == 1) {
             o.no_depr = 1;
@@ -395,6 +403,12 @@ int esk_parse_args(EskOpts* o, int argc, string* argv) {
         }
         ai = ai + 1;
     }
+    if (o.dev == 1) {   // --dev (C++ Dev): every check unless --safe=LIST, and -Wall
+        if (o.safe_set == 0) {
+            o.safe = 7;
+        }
+        o.wall = 1;
+    }
     return ESK_GO_ON;
 }
 
@@ -408,7 +422,7 @@ int esk_check_args(EskOpts* o) {
         return 0;
     }
     if (List_len<string>(&o.infiles) == 0) {
-        eprint("usage: esk_main [-o <out>] [-c] [-O<n>] [--target T] [--asan|--ubsan] [--safe[=LIST]] [--freestanding] [-l<lib>] [-L<dir>] [--link-arg A] [--no-default-libs] [--test-*] <file.esk> [more.esk ...]\n");
+        eprint("usage: esk_main [-o <out>] [-c] [-O<n>] [--target T] [--asan|--ubsan] [--safe[=LIST]] [--dev] [--freestanding] [-l<lib>] [-L<dir>] [--link-arg A] [--no-default-libs] [--test-*] <file.esk> [more.esk ...]\n");
         return 1;
     }
     o.infile = List_get<string>(&o.infiles, 0);

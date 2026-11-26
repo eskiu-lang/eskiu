@@ -143,14 +143,25 @@ static llvm::cl::opt<std::string> Diagnostics("diagnostics",
     llvm::cl::value_desc("text|json"), llvm::cl::init("text"), llvm::cl::cat(EskiuCat));
 
 static llvm::cl::opt<std::string> Safe("safe",
-    llvm::cl::desc("Insert run-time checks that trap on violation: all, or --safe=LIST of bounds,overflow,null"),
+    llvm::cl::desc("Insert run-time checks that report the source location and abort on a violation: "
+                   "all, or --safe=LIST of bounds,overflow,null"),
     llvm::cl::value_desc("list"), llvm::cl::ValueOptional, llvm::cl::cat(EskiuCat));
 
-// The CodeGen::Safe* bits named by --safe[=LIST]: none without the flag, all three
-// for a bare --safe, else the comma-separated subset. An unknown name is an error.
+// --dev: the profile to develop with, every --safe check and the -Wall lints (at the
+// default -O0). An explicit --safe=LIST or -O<n> still applies.
+static llvm::cl::opt<bool> Dev("dev",
+    llvm::cl::desc("Development profile: --safe (every check) and -Wall; --safe=LIST and -O<n> still apply"),
+    llvm::cl::cat(EskiuCat));
+
+// The CodeGen::Safe* bits named by --safe[=LIST]: none without the flag (all three
+// under --dev), all three for a bare --safe, else the comma-separated subset. An
+// unknown name is an error.
 static bool safeChecksFromFlag(unsigned& mask) {
     mask = 0;
-    if (Safe.getNumOccurrences() == 0) return true;
+    if (Safe.getNumOccurrences() == 0) {
+        if (Dev) mask = CodeGen::SafeAll;
+        return true;
+    }
     std::string list = Safe;
     if (list.empty()) { mask = CodeGen::SafeAll; return true; }
     size_t start = 0;

@@ -122,6 +122,9 @@ else
 fi
 out="$("$ESKIUC" run a b 2>&1)"
 if [[ "$out" == "42 7 10 3 2" ]]; then ok "run/args"; else bad "run/args" "got '$out'"; fi
+# A leading --dev is the build's (the development profile), not the program's.
+out="$("$ESKIUC" run --dev -- a 2>/dev/null)"
+if [[ "$out" == "42 7 10 3 1" ]]; then ok "run/dev"; else bad "run/dev" "got '$out'"; fi
 # A file inside the package compiled directly uses the lock too.
 if "$ESKIUC" src/main.esk -o "$work/direct" > /dev/null 2>&1 && [[ "$("$work/direct")" == "42 7 10 3 0" ]]; then
     ok "compile/file-in-package"

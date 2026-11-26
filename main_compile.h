@@ -145,7 +145,7 @@ try {
 
     TypeChecker typeChecker; typeChecker.targetTriple = std::string(TargetTriple);
     typeChecker.sourceFile = std::string(InputFilename);
-    typeChecker.warnAll = Wall;
+    typeChecker.warnAll = Wall || Dev;
     typeChecker.warnDeprecated = !WnoDeprecated;
     typeChecker.warnExtra = Wextra;
     applyWarningFlags(typeChecker);
