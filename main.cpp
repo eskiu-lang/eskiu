@@ -138,6 +138,14 @@ static int compilerMain(int argc, char** argv) {
         llvm::cl::HideUnrelatedOptions(EskiuCat);
         llvm::cl::ParseCommandLineOptions(argc, argv, OVERVIEW);
     }
+    for (const std::string& o : Overlays) {
+        size_t eq = o.find('=');
+        if (eq == std::string::npos || eq == 0 || eq + 1 == o.size()) {
+            std::cerr << "error: invalid --overlay value '" << o << "' (use PATH=FILE)" << std::endl;
+            return 1;
+        }
+        Parser::overlays[Parser::canonicalPath(o.substr(0, eq))] = o.substr(eq + 1);
+    }
     if (Diagnostics == "json") installJsonDiagnostics();
     else if (Diagnostics != "text") {
         std::cerr << "error: invalid --diagnostics value '" << std::string(Diagnostics) << "' (use text or json)" << std::endl;

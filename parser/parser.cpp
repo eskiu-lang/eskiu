@@ -18,6 +18,22 @@ std::string Parser::canonicalPath(const std::string& path) {
     return ec ? path : c.string();
 }
 
+std::map<std::string, std::string> Parser::overlays;
+
+bool Parser::readSource(const std::string& path, std::string& out) {
+    std::string from = path;
+    if (!overlays.empty()) {
+        auto it = overlays.find(canonicalPath(path));
+        if (it != overlays.end()) from = it->second;
+    }
+    std::ifstream file(from);
+    if (!file.is_open()) return false;
+    std::ostringstream ss;
+    ss << file.rdbuf();
+    out = ss.str();
+    return true;
+}
+
 PackageRoots packageRoots;
 
 // An absolute path: from the root (`/x`, `\\x`) or a Windows drive (`C:/x`, `C:\\x`). A relative
@@ -80,15 +96,13 @@ PPImportHook ImportCache::hookFor(const std::string& basedir) {
         if (seen.count(canon)) return;
         std::error_code ec;
         if (!std::filesystem::is_regular_file(full, ec)) return;
-        std::ifstream file(full);
-        if (!file.is_open()) return;
+        std::string text;
+        if (!Parser::readSource(full, text)) return;
         seen.insert(canon);
-        std::ostringstream ss;
-        ss << file.rdbuf();
         size_t slash = full.find_last_of("/\\");
         PPImportHook sub = hookFor(slash != std::string::npos ? full.substr(0, slash) : ".");
         Entry e;
-        preprocess(ss.str(), *macros, e.text, full, e.ppErr, &sub);
+        preprocess(text, *macros, e.text, full, e.ppErr, &sub);
         files[canon] = std::move(e);
     };
 }
@@ -564,14 +578,8 @@ std::vector<DeclPtr> Parser::parseProgram() {
                                               : std::map<std::string, ImportCache::Entry>::iterator();
                     bool haveCached = importCache && cached != importCache->files.end();
                     std::string src;
-                    if (!haveCached) {
-                        std::ifstream file(fullPath);
-                        if (!file.is_open())
-                            fail("Cannot open import: '" + fullPath + "'", pathTok);
-                        std::ostringstream ss;
-                        ss << file.rdbuf();
-                        src = ss.str();
-                    }
+                    if (!haveCached && !readSource(fullPath, src))
+                        fail("Cannot open import: '" + fullPath + "'", pathTok);
                     size_t slash = fullPath.find_last_of("/\\");
                     std::string subdir = (slash != std::string::npos) ? fullPath.substr(0, slash) : ".";
                     PPImportHook hook;

@@ -92,14 +92,12 @@ std::string readFile(const std::string& filename) {
         std::cerr << "error: '" << filename << "' is a directory, not a source file" << std::endl;
         exit(1);
     }
-    std::ifstream file(filename);
-    if (!file.is_open()) {
+    std::string text;
+    if (!Parser::readSource(filename, text)) {
         std::cerr << "error: could not open file '" << filename << "'" << std::endl;
         exit(1);
     }
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    return buffer.str();
+    return text;
 }
 
 // Directory portion of a path (up to its last '/' or, for Windows paths, '\\'), or "." if

@@ -243,6 +243,13 @@ static llvm::cl::opt<std::string> ReferencesAt("references-at",
     llvm::cl::value_desc("LINE:COL"),
     llvm::cl::cat(EskiuCat));
 
+// Editors check an unsaved buffer as part of its program: `--overlay=PATH=FILE` reads FILE
+// wherever PATH is read (the root file or an import), and diagnostics still name PATH.
+static llvm::cl::list<std::string> Overlays("overlay",
+    llvm::cl::desc("Read FILE in place of the source file PATH, keeping PATH in diagnostics (editors: an unsaved buffer)"),
+    llvm::cl::value_desc("PATH=FILE"),
+    llvm::cl::cat(EskiuCat));
+
 static llvm::cl::opt<std::string> CompleteAt("complete-at",
     llvm::cl::desc("Print the completions at LINE:COL, one per line: kind, name, detail (tab-separated)"),
     llvm::cl::value_desc("LINE:COL"),

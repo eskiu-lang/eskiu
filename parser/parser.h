@@ -1,6 +1,7 @@
 #pragma once
 
 #include <initializer_list>
+#include <map>
 #include <memory>
 #include <stdexcept>
 #include <set>
@@ -71,6 +72,13 @@ public:
     // The key importedFiles uses: an absolute path with `.`/`..`/symlinks resolved
     // (the path itself when it cannot be resolved).
     static std::string canonicalPath(const std::string& path);
+    // Source overlays (`--overlay=PATH=FILE`, for editors checking an unsaved buffer in its
+    // program): reading PATH reads FILE instead, while every diagnostic still names PATH.
+    // Keys are canonical paths.
+    static std::map<std::string, std::string> overlays;
+    // The text of the source file at `path` (or of its overlay) into `out`; false when it
+    // cannot be read.
+    static bool readSource(const std::string& path, std::string& out);
     // Shared preprocessor macro table — lets #defines propagate into imports
     std::map<std::string, Macro>* macros = nullptr;
     // Shared import prescan (see ImportCache); null → an import is preprocessed when
