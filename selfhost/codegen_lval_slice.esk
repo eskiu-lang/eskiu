@@ -1,10 +1,9 @@
 // codegen_lval_slice.esk: slices, call arguments and unary chains (part of codegen_lval.esk, imported in order)
 
-// --safe check for a slice construction `base[lo..hi]`: trap unless 0 <= lo <= hi <= len.
-// `lo`/`hi` are i64 operands; an empty len_op ("") skips the upper bound (unknown length,
-// e.g. a raw-pointer base). `lo == len` is a valid empty end-slice (upper bound is hi>len).
-void cg_slice_bounds_check(Codegen* g, string lo_op, string hi_op, string len_op) {
-    g.uses_trap = 1;
+// --safe check for a slice construction `base[lo..hi]` at `at`: fail unless 0 <= lo <= hi
+// <= len. `lo`/`hi` are i64 operands; an empty len_op ("") skips the upper bound (unknown
+// length, e.g. a raw-pointer base). `lo == len` is a valid empty end-slice (hi > len fails).
+void cg_slice_bounds_check(Codegen* g, string lo_op, string hi_op, string len_op, *ExprNode at) {
     string c1 = cg_tmp(g);
     cg_emit(g, "  ");
     cg_emit(g, c1);
@@ -45,22 +44,10 @@ void cg_slice_bounds_check(Codegen* g, string lo_op, string hi_op, string len_op
         cg_emit(g, c3);
         cg_emit(g, "\n");
         bad = bad2;
+        cg_safe_fail(g, bad, at, "slice [%lld..%lld] out of bounds for length %lld", lo_op, hi_op, len_op);
+        return;
     }
-    string fail = cg_lbl(g);
-    string ok = cg_lbl(g);
-    cg_emit(g, "  br i1 ");
-    cg_emit(g, bad);
-    cg_emit(g, ", label %");
-    cg_emit(g, fail);
-    cg_emit(g, ", label %");
-    cg_emit(g, ok);
-    cg_emit(g, "\n");
-    g.terminated = 1;
-    cg_label(g, fail);
-    cg_emit(g, "  call void @llvm.trap()\n");
-    cg_emit(g, "  unreachable\n");
-    g.terminated = 1;
-    cg_label(g, ok);
+    cg_safe_fail(g, bad, at, "slice [%lld..%lld] out of bounds", lo_op, hi_op, "0");
 }
 
 // Extract the length (field 1) of an already-evaluated slice fat pointer `fat_op`.
@@ -87,7 +74,7 @@ string cg_array_len_const(Codegen* g, string bet) {
 // Address of element `idx_op` (already evaluated, type `ity`) of an indexable base
 // (slice / fixed array / string / pointer). Used by slice construction so the low
 // bound is evaluated exactly once (matching the C++ back-end).
-string cg_slice_elem_addr(Codegen* g, *ExprNode base, string idx_op, string hi_op, string ity) {
+string cg_slice_elem_addr(Codegen* g, *ExprNode base, string idx_op, string hi_op, string ity, *ExprNode at) {
     string bet = cg_etype(g, base);
     string t = cg_tmp(g);
     if (cg_is_slice(bet) == 1) {
@@ -100,7 +87,7 @@ string cg_slice_elem_addr(Codegen* g, *ExprNode base, string idx_op, string hi_o
         cg_emit(g, ", 0\n");
         // 0 <= lo <= hi <= len (lo == len is a valid empty end-slice), not the element check.
         if ((g.safe & 1) != 0) {
-            cg_slice_bounds_check(g, idx_op, hi_op, cg_slice_len(g, fat.op));
+            cg_slice_bounds_check(g, idx_op, hi_op, cg_slice_len(g, fat.op), at);
         }
         cg_emit(g, "  ");
         cg_emit(g, t);
@@ -118,7 +105,7 @@ string cg_slice_elem_addr(Codegen* g, *ExprNode base, string idx_op, string hi_o
     if (cg_is_array(bet) == 1) {
         string slot = cg_lval(g, base).op;
         if ((g.safe & 1) != 0) {
-            cg_slice_bounds_check(g, idx_op, hi_op, cg_array_len_const(g, bet));
+            cg_slice_bounds_check(g, idx_op, hi_op, cg_array_len_const(g, bet), at);
         }
         cg_emit(g, "  ");
         cg_emit(g, t);
@@ -137,9 +124,9 @@ string cg_slice_elem_addr(Codegen* g, *ExprNode base, string idx_op, string hi_o
     if (cg_streq(bet, "string") == 0) {
         elem = cg_lltype(g, cg_deref_ty(bet));
     }
-    string pval = cg_expr(g, base).op;
+    string pval = cg_safe_nonnull(g, cg_expr(g, base).op, at);
     if ((g.safe & 1) != 0) {   // raw pointer/string: len unknown, only lo<=hi
-        cg_slice_bounds_check(g, idx_op, hi_op, "");
+        cg_slice_bounds_check(g, idx_op, hi_op, "", at);
     }
     cg_emit(g, "  ");
     cg_emit(g, t);

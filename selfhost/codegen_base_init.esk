@@ -121,6 +121,9 @@ void cg_init(Codegen* g) {
     g.uses_heap_env = 0;
     g.safe = 0;
     g.uses_trap = 0;
+    g.uses_safe_fail = 0;
+    List_init<CgSub>(&g.safe_strs, 4);
+    g.cur_file = "";
     g.cur_unwind = "";
     g.cur_lbl = "entry";
     g.prog_eh = 0;

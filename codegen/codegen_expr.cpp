@@ -74,16 +74,22 @@ void CodeGen::emitCompoundAssign(BinaryExpr* node, BinaryExpr* rhsOp) {
         bool baseIsPtr = !bt.empty() && (bt.front() == '*' || bt.back() == '*');
         builder->CreateStore(baseIsPtr ? evaluateExpr(mem->base) : evaluateAddress(mem->base), slot);
         defineVarType(tmp, baseIsPtr ? bt : "*" + bt);
-        target = std::make_shared<MemberExpr>(
-            std::make_shared<UnaryExpr>("*", std::make_shared<IdentExpr>(tmp)), mem->member);
+        auto deref = std::make_shared<UnaryExpr>("*", std::make_shared<IdentExpr>(tmp));
+        deref->line = node->left->line;   // a --safe check reports the lvalue
+        deref->col = node->left->col;
+        target = std::make_shared<MemberExpr>(deref, mem->member);
     } else {
         std::string lt = getExprEskiuType(node->left);
         builder->CreateStore(evaluateLValue(node->left), slot);
         defineVarType(tmp, "*" + lt);
         target = std::make_shared<UnaryExpr>("*", std::make_shared<IdentExpr>(tmp));
     }
+    target->line = node->left->line;
+    target->col = node->left->col;
     ExprPtr deref = target;
     auto bin = std::make_shared<BinaryExpr>(deref, rhsOp->op, rhsOp->right);
+    bin->line = rhsOp->line;   // ... and the operator
+    bin->col = rhsOp->col;
     bin->opFunc = rhsOp->opFunc;
     BinaryExpr assign(deref, "=", bin);
     assign.accept(this);
@@ -244,40 +250,6 @@ void CodeGen::emitAssignment(BinaryExpr* node) {
     auto* si = builder->CreateStore(rhs, lhs);
     si->setVolatile(storeVol);
     exprValueStack.push(rhs);
-}
-
-// Under --safe, trap when the pointer about to be dereferenced is null.
-llvm::Value* CodeGen::safeNonNull(llvm::Value* p) {
-    if (!(safeChecks & SafeNull) || !p->getType()->isPointerTy() || llvm::isa<llvm::AllocaInst>(p) || llvm::isa<llvm::GlobalValue>(p)) return p;
-    emitSafeTrap(builder->CreateIsNull(p), "null");
-    return p;
-}
-
-// Trap when `cond` holds (a --safe check).
-void CodeGen::emitSafeTrap(llvm::Value* cond, const char* name) {
-    llvm::Function* fn = builder->GetInsertBlock()->getParent();
-    auto* trapBB = llvm::BasicBlock::Create(*context, std::string(name) + ".fail", fn);
-    auto* contBB = llvm::BasicBlock::Create(*context, std::string(name) + ".ok", fn);
-    builder->CreateCondBr(cond, trapBB, contBB);
-    builder->SetInsertPoint(trapBB);
-    builder->CreateCall(llvm::Intrinsic::getOrInsertDeclaration(module.get(), llvm::Intrinsic::trap));
-    builder->CreateUnreachable();
-    builder->SetInsertPoint(contBB);
-}
-
-// A signed `+ - *`: wrapping by default; under --safe an overflow traps (as Zig's
-// ReleaseSafe and -fsanitize=signed-integer-overflow -fsanitize-trap). `id` is the
-// matching llvm.s*.with.overflow intrinsic.
-llvm::Value* CodeGen::safeArith(llvm::Intrinsic::ID id, llvm::Value* l, llvm::Value* r, bool uns) {
-    if (!(safeChecks & SafeOverflow) || uns || !l->getType()->isIntegerTy() || l->getType()->getIntegerBitWidth() < 32) {
-        if (id == llvm::Intrinsic::sadd_with_overflow) return builder->CreateAdd(l, r);
-        if (id == llvm::Intrinsic::ssub_with_overflow) return builder->CreateSub(l, r);
-        return builder->CreateMul(l, r);
-    }
-    llvm::Function* f = llvm::Intrinsic::getOrInsertDeclaration(module.get(), id, {l->getType()});
-    llvm::Value* pr = builder->CreateCall(f, {l, r});
-    emitSafeTrap(builder->CreateExtractValue(pr, {1}), "overflow");
-    return builder->CreateExtractValue(pr, {0});
 }
 
 // Integer `/` and `%` with defined results: a zero divisor traps, and a signed
@@ -462,7 +434,7 @@ llvm::Value* CodeGen::emitBuiltinBinary(BinaryExpr* node, llvm::Value* left) {
             widenForArith();
             result = left->getType()->isFloatingPointTy()
                 ? builder->CreateFAdd(left, right)
-                : safeArith(llvm::Intrinsic::sadd_with_overflow, left, right, opUnsigned);
+                : safeArith(llvm::Intrinsic::sadd_with_overflow, left, right, opUnsigned, node);
         }
     } else if (node->op == "-") {
         if (left->getType()->isPointerTy() && right->getType()->isPointerTy()) {
@@ -477,13 +449,13 @@ llvm::Value* CodeGen::emitBuiltinBinary(BinaryExpr* node, llvm::Value* left) {
             promoteToFloat(); widenForArith();
             result = left->getType()->isFloatingPointTy()
                 ? builder->CreateFSub(left, right)
-                : safeArith(llvm::Intrinsic::ssub_with_overflow, left, right, opUnsigned);
+                : safeArith(llvm::Intrinsic::ssub_with_overflow, left, right, opUnsigned, node);
         }
     } else if (node->op == "*") {
         promoteToFloat(); widenForArith();
         result = left->getType()->isFloatingPointTy()
             ? builder->CreateFMul(left, right)
-            : safeArith(llvm::Intrinsic::smul_with_overflow, left, right, opUnsigned);
+            : safeArith(llvm::Intrinsic::smul_with_overflow, left, right, opUnsigned, node);
     } else if (node->op == "/") {
         promoteToFloat(); widenForArith();
         result = left->getType()->isFloatingPointTy()

@@ -164,6 +164,11 @@ llvm::Function* CodeGen::instantiateGenericMethod(const std::string& instName, c
     typeParamOverride = subs;
     auto inst = std::make_shared<FunctionDecl>(mangled, substType(mf->returnType, subs), params, mf->body);
     inst->sourceFile = mf->sourceFile;
+    if (inst->sourceFile.empty()) {   // a method has no file of its own: its struct's
+        auto ia = templateInstanceArgs.find(instName);
+        auto td = ia == templateInstanceArgs.end() ? templateDecls.end() : templateDecls.find(ia->second.first);
+        if (td != templateDecls.end()) inst->sourceFile = td->second->sourceFile;
+    }
     inst->accept(this);
     typeParamOverride = savedOverride;
     currentFunction  = savedFunc;

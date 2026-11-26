@@ -441,7 +441,7 @@ CgVal cg_indirect_call(Codegen* g, string cval, string fnty, *ExprNode e);  // c
 CgVal cg_call_mangled(Codegen* g, string mangled, *ExprNode e);      // call a monomorphized fn
 string cg_box_iface(Codegen* g, string ifaceName, string structName, string dataop);  // struct → interface fat ptr
 CgVal cg_dispatch_iface(Codegen* g, string ifaceName, string fatop, string method, *ExprNode e);  // vtable dispatch
-string cg_member_baseptr(Codegen* g, *ExprNode ea, *string out_sname);  // struct ptr + name
+string cg_member_baseptr(Codegen* g, *ExprNode ea, *string out_sname, *ExprNode at);  // struct ptr + name
 CgBF cg_bf(Codegen* g, string sname, string fname);
 string cg_bf_read_ety(Codegen* g, CgBF slot);   // fwd
 string cg_bf_wordptr(Codegen* g, string baseptr, string sname, CgBF slot);   // fwd

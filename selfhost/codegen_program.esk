@@ -586,9 +586,12 @@ void cg_program(Codegen* g, *Program prog) {
         }
     }
 
-    if (g.uses_trap == 1 && cg_seen_inst(g, "fn:trap") == 0) {         // --safe bounds-check trap
+    if (g.uses_trap == 1 && cg_seen_inst(g, "fn:trap") == 0) {         // a trap (division by zero, a freestanding --safe check)
         String_append(&g.globals, "declare void @llvm.trap()\n");
         cg_push_inst(g, "fn:trap");
+    }
+    if (g.uses_safe_fail == 1) {                                        // a --safe check's report
+        cg_emit_safe_fail_fn(g);
     }
 
     if (g.uses_eh == 1) {   // Itanium EH runtime (declared once, only when used)

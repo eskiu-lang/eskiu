@@ -124,7 +124,7 @@ CgVal cg_expr_incdec(Codegen* g, *ExprNode e, CgVal v) {
         CgBF bslot = cg_bf(g, bsn, e.a.sval);
         if (bslot.bw > 0) {
             string bsn2 = "";
-            string bbase = cg_member_baseptr(g, e.a.a, &bsn2);
+            string bbase = cg_member_baseptr(g, e.a.a, &bsn2, e.a);
             string wa = cg_bf_wordptr(g, bbase, bsn2, bslot);
             g.bf_vol = cg_vol(g, e.a);
             CgVal bold = cg_bf_load(g, wa, bslot);
@@ -230,7 +230,7 @@ CgVal cg_expr_incdec(Codegen* g, *ExprNode e, CgVal v) {
 CgVal cg_expr_slice(Codegen* g, *ExprNode e, CgVal v) {
     string lo = cg_coerce(g, cg_expr(g, e.b), "i64");
     string hi = cg_coerce(g, cg_expr(g, List_get<*ExprNode>(&e.kids, 0)), "i64");
-    string data = cg_slice_elem_addr(g, e.a, lo, hi, "i64");
+    string data = cg_slice_elem_addr(g, e.a, lo, hi, "i64", e);
     string len = cg_tmp(g);
     cg_emit(g, "  ");
     cg_emit(g, len);
@@ -307,7 +307,7 @@ CgVal cg_expr_unary(Codegen* g, *ExprNode e, CgVal v) {
         string ety = cg_deref_ty(cg_etype(g, e.a));
         string llty = cg_lltype(g, ety);
         string t = cg_tmp(g);
-        string pnn = cg_safe_nonnull(g, p.op);
+        string pnn = cg_safe_nonnull(g, p.op, e);
         cg_emit(g, "  ");
         cg_emit(g, t);
         cg_emit(g, " = load ");
@@ -356,6 +356,8 @@ CgVal cg_expr_binary(Codegen* g, *ExprNode e, CgVal v) {
             cder.kind = EK_UNARY;
             cder.sval = "*";
             cder.a = cgb_ident(ctmp);
+            cder.line = e.a.line;                       // a --safe check reports the lvalue
+            cder.col = e.a.col;
             *ExprNode ctarget = cder;
             if (is_bf == 1) {
                 // A bitfield has no address of its own: evaluate the struct's address
@@ -377,6 +379,8 @@ CgVal cg_expr_binary(Codegen* g, *ExprNode e, CgVal v) {
                 cg_emit(g, "\n");
                 cg_add_local(g, ctmp, cslot, "ptr", bety);
                 ctarget = cgb_member(cder, e.a.sval);
+                ctarget.line = e.a.line;
+                ctarget.col = e.a.col;
             } else {
                 CgVal clv = cg_lval(g, e.a);
                 string clety = clv.ety;
@@ -390,7 +394,10 @@ CgVal cg_expr_binary(Codegen* g, *ExprNode e, CgVal v) {
                 cg_emit(g, "\n");
                 cg_add_local(g, ctmp, cslot, "ptr", cg_cat("*", clety));
             }
-            CgVal crv = cg_expr(g, cgb_bin("=", ctarget, cgb_bin(e.b.sval, ctarget, e.b.b)));
+            *ExprNode cop = cgb_bin(e.b.sval, ctarget, e.b.b);
+            cop.line = e.b.line;                        // ... and the operator
+            cop.col = e.b.col;
+            CgVal crv = cg_expr(g, cgb_bin("=", ctarget, cop));
             cg_locals_trunc(g, clmark);
             return crv;
         }
@@ -404,7 +411,7 @@ CgVal cg_expr_binary(Codegen* g, *ExprNode e, CgVal v) {
             CgBF slot = cg_bf(g, sn, e.a.sval);
             if (slot.bw > 0) {
                 string sn2 = "";
-                string baseptr = cg_member_baseptr(g, e.a.a, &sn2);   // target first
+                string baseptr = cg_member_baseptr(g, e.a.a, &sn2, e.a);   // target first
                 CgVal rv = cg_expr(g, e.b);
                 string rop = cg_coerce(g, rv, slot.sty);
                 g.bf_vol = cg_vol(g, e.a);

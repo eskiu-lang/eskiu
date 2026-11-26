@@ -99,6 +99,7 @@ CgVal cg_expr_lambda(Codegen* g, *ExprNode e, CgVal v) {
     lam.capt = capt;
     lam.statics = statics;
     lam.sub = cg_copy_sub(&g.cursub);   // freeze the generic substitution for deferred emission
+    lam.file = g.cur_file;
     // Return type: the fn-type from the assignment context wins over the written one
     // (e.g. a lambda written `int(int x)` assigned to `fn(int)->float` returns float).
     if (g.lam_expret[0] != 0) {

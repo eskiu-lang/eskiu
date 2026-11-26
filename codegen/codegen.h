@@ -69,14 +69,18 @@ public:
     bool sharedLibrary = false;
     // Safe mode (--safe[=LIST]): the run-time checks to insert, a set of the Safe*
     // bits (array/slice bounds, signed + - * overflow, null dereference). Off by
-    // default, so release builds carry no overhead. A violation calls @llvm.trap.
+    // default, so release builds carry no overhead. A violation prints its location and
+    // message to stderr and aborts (__eskiu_safe_fail); a freestanding build traps.
     enum : unsigned { SafeBounds = 1, SafeOverflow = 2, SafeNull = 4, SafeAll = 7 };
     unsigned safeChecks = 0;
-    // Emit a trap (via @llvm.trap) when `idx` (sext to i64) is < 0 or >= `len`.
-    void emitBoundsCheck(llvm::Value* idx, llvm::Value* len);
+    // Fail the check at `at` when `idx` (sext to i64) is < 0 or >= `len`.
+    void emitBoundsCheck(llvm::Value* idx, llvm::Value* len, const ASTNode* at);
     // --safe check for a slice construction `base[lo..hi]`: 0 <= lo <= hi <= len. A null
     // len (a raw-pointer base, whose length is unknown here) checks only 0 <= lo <= hi.
-    void emitSliceBoundsCheck(llvm::Value* lo, llvm::Value* hi, llvm::Value* len);
+    void emitSliceBoundsCheck(llvm::Value* lo, llvm::Value* hi, llvm::Value* len, const ASTNode* at);
+    llvm::Function* safeFailFn();
+    llvm::Constant* safeString(const std::string& text);
+    std::map<std::string, llvm::GlobalVariable*> safeStrings;
     // Sanitizer instrumentation, applied to the module before object emission.
     bool asan = false;   // AddressSanitizer (memory errors); needs the asan runtime
     bool ubsan = false;  // bounds checking; traps on out-of-bounds (no runtime)
@@ -448,7 +452,7 @@ private:
     void emitScopedBody(const StmtPtr& body);
     // Address of element `idx` of an indexable base (fixed array / slice / pointer /
     // string). Shared by index-read, index-write (lvalue), and slice construction.
-    llvm::Value* indexElemAddr(const ExprPtr& base, llvm::Value* idx, bool doCheck = true);
+    llvm::Value* indexElemAddr(const ExprPtr& base, llvm::Value* idx, const ASTNode* at, bool doCheck = true);
     llvm::Value* indexAsI64(const ExprPtr& e);
 
     // Exception handling: set when inside a try body
@@ -661,9 +665,10 @@ private:
     // (of Eskiu type `t`), structs field by field and arrays element by element.
     void dbgFormat(const std::string& t, llvm::Value* addr, std::string& fmt, std::vector<llvm::Value*>& args, int depth);
     llvm::Value* emitDbg(CallExpr* node);
-    llvm::Value* safeArith(llvm::Intrinsic::ID id, llvm::Value* l, llvm::Value* r, bool uns);
-    void emitSafeTrap(llvm::Value* cond, const char* name);
-    llvm::Value* safeNonNull(llvm::Value* p);
+    llvm::Value* safeArith(llvm::Intrinsic::ID id, llvm::Value* l, llvm::Value* r, bool uns, const ASTNode* at);
+    void emitSafeTrap(llvm::Value* cond, const ASTNode* at, const char* name, const std::string& msg,
+                      llvm::Value* a = nullptr, llvm::Value* b = nullptr, llvm::Value* c = nullptr);
+    llvm::Value* safeNonNull(llvm::Value* p, const ASTNode* at);
     llvm::Value* maskShiftCount(llvm::Value* count);
     llvm::Value* emitFloatToInt(llvm::Value* val, llvm::Type* target, bool uns);
     void visit(UnaryExpr* node) override;

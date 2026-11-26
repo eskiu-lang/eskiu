@@ -477,7 +477,7 @@ CgVal cg_binary_builtin(Codegen* g, *ExprNode e, CgVal left) {
         }
         if ((g.safe & 2) != 0 && op_uns == 0 && cg_int_w(icty) >= 32
             && (cg_streq(op, "add") == 1 || cg_streq(op, "sub") == 1 || cg_streq(op, "mul") == 1)) {
-            v.op = cg_safe_arith(g, op, icty, ilop, irop);
+            v.op = cg_safe_arith(g, op, icty, ilop, irop, e);
             v.ty = icty;
             v.ety = cg_binary_ety(g, e.sval, l.ety, r.ety);
             if (v.ety[0] == 0) {

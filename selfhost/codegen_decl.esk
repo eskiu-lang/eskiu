@@ -7,6 +7,10 @@ void cg_emit_fn(Codegen* g, *DeclNode d, string llname, string self_struct) {
     if (d.body == null) {
         return;
     }
+    string old_file = g.cur_file;
+    if (d.file != null && d.file[0] != 0) {   // a method or an instance keeps the file set for it
+        g.cur_file = d.file;
+    }
     string rt = cg_lltype(g, d.ret_type);
     g.cur_ret = rt;
     g.cur_rety = cg_apply_sub(g, d.ret_type);
@@ -120,6 +124,7 @@ void cg_emit_fn(Codegen* g, *DeclNode d, string llname, string self_struct) {
     cg_emit(g, (string)String_cstr(&g.entry_buf));
     cg_emit(g, bodytext);
     cg_emit(g, "}\n\n");
+    g.cur_file = old_file;
 }
 
 void cg_decl(Codegen* g, *DeclNode d) {
@@ -131,6 +136,8 @@ void cg_decl(Codegen* g, *DeclNode d) {
         return;
     }
     if (d.kind == DK_STRUCT) {                          // emit the struct's methods
+        string old_file = g.cur_file;
+        g.cur_file = d.file;
         int i = 0;
         int n = List_len<*DeclNode>(&d.methods);
         while (i < n) {
@@ -138,6 +145,7 @@ void cg_decl(Codegen* g, *DeclNode d) {
             cg_emit_fn(g, m, cg_cat(cg_cat(d.name, "_"), m.name), d.name);
             i = i + 1;
         }
+        g.cur_file = old_file;
         return;
     }
 }
@@ -145,6 +153,8 @@ void cg_decl(Codegen* g, *DeclNode d) {
 // Emit a queued lambda as a top-level function `@__lambdaN(ptr %p0_env, params...)`:
 // unpack captures from the env, bind params, emit the body. Mirrors cg_emit_fn.
 void cg_emit_lambda(Codegen* g, CgLambda lam) {
+    string old_file = g.cur_file;
+    g.cur_file = lam.file;
     cg_locals_reset(g);
     g.terminated = 0;
     List<CgSub> oldsub = g.cursub;                         // restore the substitution live where this lambda was written
@@ -259,6 +269,7 @@ void cg_emit_lambda(Codegen* g, CgLambda lam) {
     cg_emit(g, bodytext);
     cg_emit(g, "}\n\n");
     g.cursub = oldsub;
+    g.cur_file = old_file;
 }
 
 void cg_drain_lambdas(Codegen* g) {

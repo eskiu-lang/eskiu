@@ -1,0 +1,162 @@
+// codegen_ops_safe.esk: the --safe run-time checks and the shared failure helper (part of codegen_ops.esk, imported in order)
+
+// The global of a --safe message format or file name, one per distinct text (the C++
+// CodeGen::safeString).
+string cg_safe_str(Codegen* g, string s) {
+    int i = 0;
+    int n = List_len<CgSub>(&g.safe_strs);
+    while (i < n) {
+        CgSub e = List_get<CgSub>(&g.safe_strs, i);
+        if (cg_streq(e.param, s) == 1) {
+            return e.arg;
+        }
+        i = i + 1;
+    }
+    let ne: CgSub;
+    ne.param = s;
+    ne.arg = cg_string_global(g, s);
+    List_push<CgSub>(&g.safe_strs, ne);
+    return ne.arg;
+}
+
+// When the i1 `cond` holds (a failed --safe check at `at`), report it and abort, as the
+// C++ emitSafeTrap: `msg` is the printf format of the message after the location, reading
+// the i64 operands `a`, `b`, `c` ("0" when unused). A freestanding build traps instead.
+void cg_safe_fail(Codegen* g, string cond, *ExprNode at, string msg, string a, string b, string c) {
+    string fail = cg_lbl(g);
+    string fine = cg_lbl(g);
+    cg_emit(g, "  br i1 ");
+    cg_emit(g, cond);
+    cg_emit(g, ", label %");
+    cg_emit(g, fail);
+    cg_emit(g, ", label %");
+    cg_emit(g, fine);
+    cg_emit(g, "\n");
+    g.terminated = 1;
+    cg_label(g, fail);
+    if (g.freestanding == 1) {
+        g.uses_trap = 1;
+        cg_emit(g, "  call void @llvm.trap()\n  unreachable\n");
+    }
+    else {
+        g.uses_safe_fail = 1;
+        int line = 0;
+        int col = 0;
+        if (at != null) {
+            line = at.line;
+            col = at.col;
+        }
+        string file = g.cur_file;
+        if (file == null || file[0] == 0) {
+            file = "<input>";
+        }
+        string fmt = cg_safe_str(g, cg_cat(cg_cat("%s:%d:%d: ", msg), "\n"));
+        cg_emit(g, "  call void @__eskiu_safe_fail(ptr ");
+        cg_emit(g, fmt);
+        cg_emit(g, ", ptr ");
+        cg_emit(g, cg_safe_str(g, file));
+        cg_emit(g, ", i32 ");
+        cg_emit(g, cg_itoa(line));
+        cg_emit(g, ", i32 ");
+        cg_emit(g, cg_itoa(col));
+        cg_emit(g, ", i64 ");
+        cg_emit(g, a);
+        cg_emit(g, ", i64 ");
+        cg_emit(g, b);
+        cg_emit(g, ", i64 ");
+        cg_emit(g, c);
+        cg_emit(g, ")\n  unreachable\n");
+    }
+    g.terminated = 1;
+    cg_label(g, fine);
+}
+
+// `@__eskiu_safe_fail(fmt, file, line, col, a, b, c)`, once per module that has a check
+// (the C++ CodeGen::safeFailFn): flush stdout, print the message to stderr, abort.
+void cg_emit_safe_fail_fn(Codegen* g) {
+    cg_ensure_extern(g, "fflush", "declare i32 @fflush(ptr)\n");
+    cg_ensure_extern(g, "fprintf", "declare i32 @fprintf(ptr, ptr, ...)\n");
+    cg_ensure_extern(g, "abort", "declare void @abort()\n");
+    cg_emit(g, "define internal void @__eskiu_safe_fail(ptr %fmt, ptr %file, i32 %line, i32 %col, i64 %a, i64 %b, i64 %c) cold noreturn noinline nounwind {\n");
+    cg_emit(g, "entry:\n  %fl = call i32 @fflush(ptr null)\n");
+    if (g.wintgt == 1) {
+        cg_ensure_extern(g, "__acrt_iob_func", "declare ptr @__acrt_iob_func(i32)\n");
+        cg_emit(g, "  %err = call ptr @__acrt_iob_func(i32 2)\n");
+    } else {
+        string nm = g.darwin == 1 ? "__stderrp" : "stderr";
+        if (cg_count_global(g, nm) == 0) {
+            cg_add_global(g, nm, cg_cat("@", nm), "ptr", "*void");
+            String_append(&g.globals, "@");
+            String_append(&g.globals, nm);
+            String_append(&g.globals, " = external global ptr\n");
+        }
+        cg_emit(g, cg_cat(cg_cat("  %err = load ptr, ptr @", nm), "\n"));
+    }
+    cg_emit(g, "  %pr = call i32 (ptr, ptr, ...) @fprintf(ptr %err, ptr %fmt, ptr %file, i32 %line, i32 %col, i64 %a, i64 %b, i64 %c)\n");
+    cg_emit(g, "  call void @abort()\n  unreachable\n}\n\n");
+}
+
+// Under --safe, fail when the pointer about to be dereferenced (by `at`) is null (as the
+// C++ safeNonNull; a local's or global's own address is never null).
+string cg_safe_nonnull(Codegen* g, string p, *ExprNode at) {
+    if ((g.safe & 4) == 0 || p[0] != 37) {
+        return p;
+    }
+    string z = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, z);
+    cg_emit(g, " = icmp eq ptr ");
+    cg_emit(g, p);
+    cg_emit(g, ", null\n");
+    cg_safe_fail(g, z, at, "null pointer dereference", "0", "0", "0");
+    return p;
+}
+
+// A signed `add`/`sub`/`mul` under --safe: the llvm.s*.with.overflow form, failing on
+// overflow (as the C++ safeArith); `at` is the operator's expression.
+string cg_safe_arith(Codegen* g, string op, string ity, string a, string b, *ExprNode at) {
+    string nm = cg_cat(cg_cat("llvm.s", op), cg_cat(".with.overflow.", ity));
+    string rt = cg_cat(cg_cat("{ ", ity), ", i1 }");
+    cg_ensure_extern(g, nm, cg_cat(cg_cat(cg_cat("declare ", rt), cg_cat(" @", nm)), cg_cat(cg_cat("(", ity), cg_cat(cg_cat(", ", ity), ")\n"))));
+    string pr = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, pr);
+    cg_emit(g, " = call ");
+    cg_emit(g, rt);
+    cg_emit(g, " @");
+    cg_emit(g, nm);
+    cg_emit(g, "(");
+    cg_emit(g, ity);
+    cg_emit(g, " ");
+    cg_emit(g, a);
+    cg_emit(g, ", ");
+    cg_emit(g, ity);
+    cg_emit(g, " ");
+    cg_emit(g, b);
+    cg_emit(g, ")\n");
+    string ov = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, ov);
+    cg_emit(g, " = extractvalue ");
+    cg_emit(g, rt);
+    cg_emit(g, " ");
+    cg_emit(g, pr);
+    cg_emit(g, ", 1\n");
+    string sym = "*";
+    if (cg_streq(op, "add") == 1) {
+        sym = "+";
+    }
+    if (cg_streq(op, "sub") == 1) {
+        sym = "-";
+    }
+    cg_safe_fail(g, ov, at, cg_cat(cg_cat("integer overflow in '", sym), "'"), "0", "0", "0");
+    string r = cg_tmp(g);
+    cg_emit(g, "  ");
+    cg_emit(g, r);
+    cg_emit(g, " = extractvalue ");
+    cg_emit(g, rt);
+    cg_emit(g, " ");
+    cg_emit(g, pr);
+    cg_emit(g, ", 0\n");
+    return r;
+}

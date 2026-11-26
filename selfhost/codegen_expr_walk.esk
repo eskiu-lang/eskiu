@@ -52,7 +52,7 @@ CgVal cg_expr_i(Codegen* g, *ExprNode e) {
         CgBF slot = cg_bf(g, sn, e.sval);
         if (slot.bw > 0) {
             string sn2 = "";
-            string baseptr = cg_member_baseptr(g, e.a, &sn2);
+            string baseptr = cg_member_baseptr(g, e.a, &sn2, e);
             g.bf_vol = cg_vol(g, e);
             CgVal bv = cg_bf_read(g, baseptr, sn2, slot);
             g.bf_vol = "";

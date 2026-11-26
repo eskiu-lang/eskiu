@@ -43,83 +43,6 @@ string cg_fcmp_pred(string s) {
     return "";
 }
 
-// Trap when the i1 `cond` holds (a --safe check, as the C++ emitSafeTrap).
-void cg_safe_trap(Codegen* g, string cond) {
-    g.uses_trap = 1;
-    string fail = cg_lbl(g);
-    string fine = cg_lbl(g);
-    cg_emit(g, "  br i1 ");
-    cg_emit(g, cond);
-    cg_emit(g, ", label %");
-    cg_emit(g, fail);
-    cg_emit(g, ", label %");
-    cg_emit(g, fine);
-    cg_emit(g, "\n");
-    g.terminated = 1;
-    cg_label(g, fail);
-    cg_emit(g, "  call void @llvm.trap()\n  unreachable\n");
-    g.terminated = 1;
-    cg_label(g, fine);
-}
-
-// Under --safe, trap when the pointer about to be dereferenced is null (as the C++
-// safeNonNull; a local's or global's own address is never null).
-string cg_safe_nonnull(Codegen* g, string p) {
-    if ((g.safe & 4) == 0 || p[0] != 37) {
-        return p;
-    }
-    string z = cg_tmp(g);
-    cg_emit(g, "  ");
-    cg_emit(g, z);
-    cg_emit(g, " = icmp eq ptr ");
-    cg_emit(g, p);
-    cg_emit(g, ", null\n");
-    cg_safe_trap(g, z);
-    return p;
-}
-
-// A signed `add`/`sub`/`mul` under --safe: the llvm.s*.with.overflow form, trapping on
-// overflow (as the C++ safeArith).
-string cg_safe_arith(Codegen* g, string op, string ity, string a, string b) {
-    string nm = cg_cat(cg_cat("llvm.s", op), cg_cat(".with.overflow.", ity));
-    string rt = cg_cat(cg_cat("{ ", ity), ", i1 }");
-    cg_ensure_extern(g, nm, cg_cat(cg_cat(cg_cat("declare ", rt), cg_cat(" @", nm)), cg_cat(cg_cat("(", ity), cg_cat(cg_cat(", ", ity), ")\n"))));
-    string pr = cg_tmp(g);
-    cg_emit(g, "  ");
-    cg_emit(g, pr);
-    cg_emit(g, " = call ");
-    cg_emit(g, rt);
-    cg_emit(g, " @");
-    cg_emit(g, nm);
-    cg_emit(g, "(");
-    cg_emit(g, ity);
-    cg_emit(g, " ");
-    cg_emit(g, a);
-    cg_emit(g, ", ");
-    cg_emit(g, ity);
-    cg_emit(g, " ");
-    cg_emit(g, b);
-    cg_emit(g, ")\n");
-    string ov = cg_tmp(g);
-    cg_emit(g, "  ");
-    cg_emit(g, ov);
-    cg_emit(g, " = extractvalue ");
-    cg_emit(g, rt);
-    cg_emit(g, " ");
-    cg_emit(g, pr);
-    cg_emit(g, ", 1\n");
-    cg_safe_trap(g, ov);
-    string r = cg_tmp(g);
-    cg_emit(g, "  ");
-    cg_emit(g, r);
-    cg_emit(g, " = extractvalue ");
-    cg_emit(g, rt);
-    cg_emit(g, " ");
-    cg_emit(g, pr);
-    cg_emit(g, ", 0\n");
-    return r;
-}
-
 // An integer literal operand ("12", "-1") as a value; `ok` is 0 for anything else.
 int64 cg_const_int(string op, *int ok) {
     *ok = 0;
@@ -457,4 +380,5 @@ string cg_op_lookup(Codegen* g, string op, List<string>* tys) {
 
 // The rest of codegen_ops.esk, in these parts (imported in order):
 import "codegen_ops_resolve.esk";
+import "codegen_ops_safe.esk";
 import "codegen_ops_etype.esk";

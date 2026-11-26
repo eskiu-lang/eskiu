@@ -164,6 +164,7 @@ struct CgLambda {
     List<string> capt;
     List<CgSub> sub;
     List<CgLocal> statics;
+    string file;             // the source file of the function that wrote it (cur_file)
 }
 
 // A pending monomorphization: the generic decl + concrete type args + mangled name.
@@ -235,6 +236,9 @@ struct Codegen {
     int no_split;            // folding a byte image: arrays keep their `[N x T]` constant form
     string split_union_top;  // the LLVM type of the global being folded (C++ splitUnionTop)
     int uses_trap;           // a bounds check was emitted → declare @llvm.trap once
+    int uses_safe_fail;      // a --safe check calls @__eskiu_safe_fail → emit it once
+    List<CgSub> safe_strs;   // the --safe messages and file names: text → its global
+    string cur_file;         // the source file of the function being emitted (C++ diagFile)
     string cur_unwind;       // active landingpad label inside a try body ("" = plain calls)
     string cur_lbl;          // label of the basic block being emitted (for phi incoming edges)
     // Defers on the exceptional path (mirrors CodeGen::emitDeferPad). In a program that

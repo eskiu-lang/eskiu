@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# safe_mode.sh: verify `--safe` inserts runtime bounds checks that trap on an
-# out-of-range slice / array index, that in-bounds access is unaffected, and that
+# safe_mode.sh: verify `--safe` inserts runtime bounds checks that fail (report and
+# abort) on an out-of-range slice / array index, that in-bounds access is unaffected, and that
 # the checks are OFF by default (opt-in, zero release cost).
 set -u
 cd "$(dirname "$0")/.." || exit 2
@@ -74,8 +74,8 @@ printf '%s\n' 'int main() { uint32 u = 4294967295; u = u + (uint32)1; int8 c = 1
 code=$(run "$WORK/t.esk" --safe); check "unsigned, narrow and non-null pass (--safe)" 0 "$code"
 
 # --- --safe=LIST: each check traps only when its category is on ---
-# A trap is SIGTRAP (133) or SIGILL (132), never a segfault (139).
-is_trap() { [ "$1" = 133 ] || [ "$1" = 132 ]; }
+# A failed check prints its report and aborts (SIGABRT, 134), never a segfault (139).
+is_trap() { [ "$1" = 134 ]; }
 cat_case() { # name source category-that-traps
     printf '%s\n' "$2" > "$WORK/t.esk"
     for c in bounds overflow null; do
@@ -95,6 +95,15 @@ code=$(run "$WORK/t.esk" "--safe=bounds,null"); check "overflow off in --safe=bo
 code=$(run "$WORK/t.esk" "--safe=null,overflow"); is_trap "$code" && code=trap; check "overflow on in --safe=null,overflow" trap "$code"
 msg=$("$BIN" --safe=bounds,bogus "$WORK/t.esk" -o "$WORK/t.o" 2>&1); rc=$?
 check "unknown --safe name is an error" "1 error: unknown --safe check 'bogus' (valid: bounds, overflow, null)" "$rc $msg"
+
+# --- the report on stderr; a freestanding build (no libc) traps without one ---
+printf '%s\n' 'int main() { int[3] a = {1, 2, 3}; int i = 5; return a[i]; }' > "$WORK/t.esk"
+"$BIN" --safe "$WORK/t.esk" -o "$WORK/t.o" >/dev/null 2>&1 && $CC "$WORK/t.o" -o "$WORK/t" >/dev/null 2>&1
+err=$("$WORK/t" 2>&1 >/dev/null); rc=$?
+check "report on stderr" "134 $WORK/t.esk:1:55: index 5 out of bounds for length 3" "$rc $err"
+ir=$("$BIN" --safe --freestanding "$WORK/t.esk" --test-codegen 2>&1)
+case "$ir" in *__eskiu_safe_fail*) got=report ;; *llvm.trap*) got=trap ;; *) got=none ;; esac
+check "freestanding --safe traps" trap "$got"
 
 echo "----"
 [ "$fail" = 0 ] && echo "safe mode: OK" || echo "safe mode: FAILURES"

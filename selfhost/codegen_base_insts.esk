@@ -244,7 +244,10 @@ void cg_drain_worklist(Codegen* g) {
             g.cursub = oldsub;
         } else if (inst.is_struct == 2) {
             List<CgSub> oldsub = cg_push_sub(g, inst.owner, &inst.args);
+            string old_file = g.cur_file;
+            g.cur_file = inst.owner.file;              // a method has no file of its own: its struct's
             cg_emit_fn(g, inst.decl, inst.mangled, inst.self_sp);
+            g.cur_file = old_file;
             g.cursub = oldsub;
         }
         g.wl_i = g.wl_i + 1;

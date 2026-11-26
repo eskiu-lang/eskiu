@@ -52,7 +52,7 @@ void CodeGen::visit(MemberExpr* node) {
     // A struct-valued rvalue base (a call result, `a + b`, a struct literal, a field of
     // one) has no address: evaluateAddress materializes it into a temporary to GEP.
     auto baseAddr = [&]() -> llvm::Value* {
-        if (baseIsPtr) return safeNonNull(evaluateExpr(node->base));
+        if (baseIsPtr) return safeNonNull(evaluateExpr(node->base), node);
         return evaluateAddress(node->base);
     };
 
@@ -166,7 +166,7 @@ llvm::Value* CodeGen::bitfieldWordPtr(MemberExpr* m, const BitfieldSlot*& slotOu
     // stack slot instead of the pointee.
     std::string rawBaseTy = getExprEskiuType(m->base);
     bool baseIsPtr = (!rawBaseTy.empty() && (rawBaseTy.front() == '*' || rawBaseTy.back() == '*'));
-    llvm::Value* basePtr = baseIsPtr ? safeNonNull(evaluateExpr(m->base)) : evaluateLValue(m->base);
+    llvm::Value* basePtr = baseIsPtr ? safeNonNull(evaluateExpr(m->base), m) : evaluateLValue(m->base);
     return layoutFieldAddr(baseType, basePtr, slot);
 }
 
@@ -396,7 +396,7 @@ llvm::Value* CodeGen::evaluateLValue(const ExprPtr& expr) {
     if (auto unary = nodeCast<UnaryExpr>(expr.get())) {
         if (unary->op == "*") {
             // evaluateExpr gives us the pointer value; that IS the lvalue address
-            return safeNonNull(evaluateExpr(unary->operand));
+            return safeNonNull(evaluateExpr(unary->operand), unary);
         }
     }
 
@@ -407,7 +407,7 @@ llvm::Value* CodeGen::evaluateLValue(const ExprPtr& expr) {
         // whereas a value-struct base uses its *address* (evaluateLValue).
         bool baseIsPtr = (!baseType.empty() && (baseType.front() == '*' || baseType.back() == '*'));
         auto baseAddr = [&]() -> llvm::Value* {
-            return baseIsPtr ? safeNonNull(evaluateExpr(member->base)) : evaluateLValue(member->base);
+            return baseIsPtr ? safeNonNull(evaluateExpr(member->base), member) : evaluateLValue(member->base);
         };
         baseType = stripToStructKey(baseType);
         auto fit = structFields.find(baseType);
@@ -440,7 +440,7 @@ llvm::Value* CodeGen::evaluateLValue(const ExprPtr& expr) {
     if (auto index = nodeCast<IndexExpr>(expr.get()); index && index->opFunc.empty()) {
         // `a[i] = x` — element address for array / slice / pointer / string bases.
         llvm::Value* idx = indexAsI64(index->index);
-        return indexElemAddr(index->base, idx);
+        return indexElemAddr(index->base, idx, index);
     }
 
     if (lvalueAllowTemp) {

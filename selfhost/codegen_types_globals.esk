@@ -188,6 +188,7 @@ string cg_global_init(Codegen* g, *ExprNode e, string llty) {
         lam.capt = capt;
         List_init<CgLocal>(&lam.statics, 1);
         lam.sub = cg_copy_sub(&g.cursub);   // freeze the generic substitution for deferred emission
+        lam.file = g.cur_file;
         if (g.lam_expret[0] != 0) {
             lam.rety = g.lam_expret;
         } else {

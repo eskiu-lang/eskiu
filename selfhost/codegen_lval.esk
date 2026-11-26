@@ -33,7 +33,7 @@ CgVal cg_lval_k(Codegen* g, *ExprNode e) {
     }
     if (e.kind == EK_UNARY && cg_streq(e.sval, "*") == 1) {
         CgVal p = cg_expr(g, e.a);                      // value of the pointer = the address
-        v.op = cg_safe_nonnull(g, p.op);
+        v.op = cg_safe_nonnull(g, p.op, e);
         v.ety = cg_deref_ty(cg_etype(g, e.a));
         return v;
     }
@@ -66,7 +66,7 @@ CgVal cg_lval_k(Codegen* g, *ExprNode e) {
             cg_emit(g, fat.op);
             cg_emit(g, ", 0\n");
             if ((g.safe & 1) != 0) {
-                cg_bounds_check(g, iop, ity, cg_slice_len(g, fat.op));
+                cg_bounds_check(g, iop, ity, cg_slice_len(g, fat.op), e);
             }
             string elem = cg_array_elem(bet);
             cg_emit(g, "  ");
@@ -89,7 +89,7 @@ CgVal cg_lval_k(Codegen* g, *ExprNode e) {
             if ((g.safe & 1) != 0) {
                 string alen = cg_array_len_const(g, bet);
                 if (cg_streq(alen, "") == 0) {
-                    cg_bounds_check(g, iop, ity, alen);
+                    cg_bounds_check(g, iop, ity, alen, e);
                 }
             }
             cg_emit(g, "  ");
@@ -107,7 +107,7 @@ CgVal cg_lval_k(Codegen* g, *ExprNode e) {
             v.ety = cg_array_elem(bet);
             return v;
         }
-        string pval = cg_safe_nonnull(g, cg_expr(g, e.a).op);   // pointer: GEP T, ptr, idx
+        string pval = cg_safe_nonnull(g, cg_expr(g, e.a).op, e);   // pointer: GEP T, ptr, idx
         string elem = cg_deref_ty(bet);
         cg_emit(g, "  ");
         cg_emit(g, t);
@@ -129,7 +129,7 @@ CgVal cg_lval_k(Codegen* g, *ExprNode e) {
         string sptr = "";
         string sname = bet;
         if (cg_is_ptr_ty(bet) == 1) {
-            sptr = cg_safe_nonnull(g, cg_expr(g, e.a).op);
+            sptr = cg_safe_nonnull(g, cg_expr(g, e.a).op, e);
             sname = cg_strip_ptr(bet);
         }
         else {
@@ -230,11 +230,10 @@ CgVal cg_addr(Codegen* g, *ExprNode e) {
     return lv;
 }
 
-// --safe bounds check: trap when `idx_op` (type `ity`) is < 0 or >= `len_op` (an i64
-// value or integer literal). Mirrors the C++ `emitBoundsCheck`: sext to i64, OR the two
-// comparisons, cond-branch to a trap block (`@llvm.trap` + unreachable) or continue.
-void cg_bounds_check(Codegen* g, string idx_op, string ity, string len_op) {
-    g.uses_trap = 1;
+// --safe bounds check at `at`: fail when `idx_op` (type `ity`) is < 0 or >= `len_op` (an
+// i64 value or integer literal). Mirrors the C++ `emitBoundsCheck`: sext to i64, OR the two
+// comparisons, cond-branch to the failure block (cg_safe_fail) or continue.
+void cg_bounds_check(Codegen* g, string idx_op, string ity, string len_op, *ExprNode at) {
     string idx64 = idx_op;
     if (cg_streq(ity, "i64") == 0) {                       // widen the index to i64 first
         idx64 = cg_tmp(g);
@@ -268,21 +267,7 @@ void cg_bounds_check(Codegen* g, string idx_op, string ity, string len_op) {
     cg_emit(g, ", ");
     cg_emit(g, hi);
     cg_emit(g, "\n");
-    string fail = cg_lbl(g);
-    string ok = cg_lbl(g);
-    cg_emit(g, "  br i1 ");
-    cg_emit(g, oob);
-    cg_emit(g, ", label %");
-    cg_emit(g, fail);
-    cg_emit(g, ", label %");
-    cg_emit(g, ok);
-    cg_emit(g, "\n");
-    g.terminated = 1;
-    cg_label(g, fail);
-    cg_emit(g, "  call void @llvm.trap()\n");
-    cg_emit(g, "  unreachable\n");
-    g.terminated = 1;
-    cg_label(g, ok);
+    cg_safe_fail(g, oob, at, "index %lld out of bounds for length %lld", idx64, len_op, "0");
 }
 
 // The rest of codegen_lval.esk, in these parts (imported in order):

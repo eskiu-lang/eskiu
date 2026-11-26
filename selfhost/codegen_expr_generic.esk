@@ -265,11 +265,11 @@ string cg_infer_generic(Codegen* g, *DeclNode gd, *ExprNode e) {
 
 // The address (a ptr) of the struct that a member expression `ea` denotes, plus its struct
 // type name (via out_sname). Mirrors the base resolution in cg_lval's EK_MEMBER.
-string cg_member_baseptr(Codegen* g, *ExprNode ea, *string out_sname) {
+string cg_member_baseptr(Codegen* g, *ExprNode ea, *string out_sname, *ExprNode at) {
     string bet = cg_etype(g, ea);
     if (cg_is_ptr_ty(bet) == 1) {
         out_sname[0] = cg_strip_ptr(bet);
-        return cg_safe_nonnull(g, cg_expr(g, ea).op);
+        return cg_safe_nonnull(g, cg_expr(g, ea).op, at);
     }
     CgVal lv = cg_lval(g, ea);
     if (lv.op[0] != 0) {

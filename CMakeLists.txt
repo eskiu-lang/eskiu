@@ -97,6 +97,7 @@ set(SOURCES
     codegen/codegen_stmt.cpp
     codegen/codegen_expr.cpp
     codegen/codegen_unary.cpp
+    codegen/codegen_safe.cpp
     codegen/codegen_member.cpp
     codegen/codegen_call.cpp
     codegen/codegen_call_expr.cpp
