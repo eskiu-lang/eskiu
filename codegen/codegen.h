@@ -541,6 +541,7 @@ private:
     // a copy already (marked, by metadata the pass removes); C-ABI functions (lowered
     // externs, thunks) keep their signature.
     void passAggregatesByPointer(llvm::Module& m);
+    void copyAggregatesInMemory(llvm::Module& m);
     void markFreshTemp(llvm::Value* alloca);
     std::set<llvm::Function*> cConvFns;
     void alignPackedAccesses(llvm::Module& m);

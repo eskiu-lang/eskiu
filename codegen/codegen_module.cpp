@@ -398,6 +398,7 @@ llvm::Module* CodeGen::generateCode(std::shared_ptr<Program> program) {
     inferNoUnwind(*module);
     if (strictAliasing) addTypeBasedAliasInfo(*module);
     passAggregatesByPointer(*module);
+    copyAggregatesInMemory(*module);
 
     phaseMark("ir-postpasses");
 
