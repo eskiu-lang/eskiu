@@ -114,12 +114,14 @@ static int linkProgram(const std::function<bool(const std::string&)>& emitObject
     }
     bool ok = linkExecutable(tmpObjPath, outFile, libs, paths, extra, /*sanitized=*/Asan,
                              std::string(TargetTriple));
+    phaseMark("link");
     if (ok && winTarget) copyNativeDlls(nativeDirs, outFile);
     if (ok && macros.count("__EMSCRIPTEN__") && !g_runMode) pkgCopyWebAssets(outFile);
     llvm::sys::fs::remove(tmpObjPath);
     if (!ok) { if (g_runMode) llvm::sys::fs::remove(runExePath); return 1; }
 
     if (g_runMode) {
+        phaseTotal();
         int rc = runExecutable(runExePath, g_runArgs);
         llvm::sys::fs::remove(runExePath);
         return rc;

@@ -21,6 +21,9 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   --help` opened a file named `--help`, `new --help` created a package by that name, and
   `build --help` and `test --help` needed an `eskiu.toml`.
 
+- `--time` prints the wall time of each compile phase, the link and the total on stderr,
+  as `ESKIU_TIME_PHASES=1` did (which still works), now with the link and the total.
+
 ### Changed
 
 - A failed `--safe` check prints one line to stderr with the file, line and column of the

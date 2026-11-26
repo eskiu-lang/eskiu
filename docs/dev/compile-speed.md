@@ -13,8 +13,9 @@ eskiuc src/main.esk -c -o /tmp/kg.o
 
 ## Measuring
 
-`ESKIU_TIME_PHASES=1` makes the compile pipeline print the wall time of each phase on
-stderr (`phase_timer.h`; `phaseMark` calls in `main.cpp` and `CodeGen::generateCode`):
+`eskiuc --time` (or `ESKIU_TIME_PHASES=1` in the environment) makes the compile pipeline
+print the wall time of each phase on stderr, then the link and the total (`phase_timer.h`;
+`phaseMark` calls in `main_compile.h` and `CodeGen::generateCode`):
 
 ```
 phase start                 0.0 ms  (total      0.0 ms)
@@ -26,6 +27,10 @@ phase verify                4.1 ms  (total     85.2 ms)
 phase optimize              0.0 ms  (total     85.2 ms)
 phase emit-object         193.0 ms  (total    278.2 ms)
 ```
+
+A build that links adds `phase link` (the C driver and the linker) and every compile ends
+with `phase total`; `eskiuc run` prints the total before the program starts, so it does not
+count the program's own run time.
 
 `load+parse` is preprocessing, lexing and parsing the program and every file it imports;
 `async-lower` and `re-check` appear only for a program with an `async` function (below);

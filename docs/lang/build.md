@@ -297,6 +297,23 @@ usage of a command (`new`, `add`, `build`, `run`, `test`, `fetch`, `fmt`, `repl`
 `doctor`) and does nothing else. For `run`, only a `--help` before the script is the
 command's: one after it is the program's argument.
 
+### Timing a build
+
+`--time` prints the wall time of each phase of a compile on stderr: loading and parsing,
+type checking, IR generation, optimization, writing the object, linking, and the total.
+`ESKIU_TIME_PHASES=1` in the environment does the same for every compile (a Makefile's,
+say). See [compile speed](../dev/compile-speed.md) for what each phase is.
+
+```
+$ eskiuc --time -O2 app.esk -o app
+phase start                 0.0 ms  (total      0.0 ms)
+phase load+parse           21.4 ms  (total     21.4 ms)
+...
+phase emit-object        1830.2 ms  (total   1985.0 ms)
+phase link                 40.1 ms  (total   2025.1 ms)
+phase total              2025.3 ms
+```
+
 ### Exit codes
 
 Every command exits with:

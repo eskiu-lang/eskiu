@@ -41,6 +41,7 @@
 #include "pkg.h"
 #include "cli.h"
 #include "main_options.h"
+#include "main_build_options.h"
 #include "main_modes.h"
 #include "main_tools.h"
 #include "main_compile.h"
@@ -173,10 +174,11 @@ static int compilerMain(int argc, char** argv) {
         size_t eq = o.find('=');
         if (eq == std::string::npos || eq == 0 || eq + 1 == o.size()) {
             std::cerr << "error: invalid --overlay value '" << o << "' (use PATH=FILE)" << std::endl;
-            return 1;
+            return 2;
         }
         Parser::overlays[Parser::canonicalPath(o.substr(0, eq))] = o.substr(eq + 1);
     }
+    if (TimePhases) enablePhaseTiming();
     if (Diagnostics == "json") installJsonDiagnostics();
     else if (Diagnostics != "text") {
         std::cerr << "error: invalid --diagnostics value '" << std::string(Diagnostics) << "' (use text or json)" << std::endl;
@@ -284,7 +286,9 @@ static int compilerMain(int argc, char** argv) {
     bool useEir = EmitObj || Backend == BackendKind::EIR;
     if (useEir && !checkEirOptions(safeChecks)) return 1;
 
-    return compileProgram(safeChecks, useEir);
+    int rc = compileProgram(safeChecks, useEir);
+    phaseTotal();
+    return rc;
 }
 
 // The parser, the type checker, the async transform and codegen recurse once per nesting
