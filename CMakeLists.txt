@@ -50,6 +50,7 @@ set(SOURCES
     doctor.cpp
     repl.cpp
     pkg.cpp
+    cli.cpp
     lexer/lexer.cpp
     lexer/preprocessor.cpp
     lexer/token_names.cpp

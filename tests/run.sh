@@ -273,6 +273,40 @@ if [[ $code -eq 3 && "$out" == $'[a]\n[b c]' ]]; then ok "run/args"; else bad "r
 "$ESKIUC" run "$args_esk" crash >/dev/null 2>&1; code=$?
 if [[ $code -eq 139 ]]; then ok "run/signal"; else bad "run/signal" "exit $code (expected 139)"; fi
 
+# ---- command line: --help and usage errors ------------------------------------
+# Every subcommand answers --help / -h with its usage and exit 0, doing nothing else (no
+# file opened or created, no package needed); an unknown option is
+# `error: CMD: unknown option 'X' (see 'eskiuc CMD --help')` and exit 2, as is a wrong
+# compiler command line (docs/lang/build.md, "Exit codes").
+echo "command line:"
+mkdir -p "$work/cli" && pushd "$work/cli" > /dev/null
+for cmd in new add build run test fetch fmt repl doctor; do
+    for h in --help -h; do
+        out="$("$ESKIUC" "$cmd" "$h" 2>&1)"; code=$?
+        if [[ $code -eq 0 && "$out" == "usage: eskiuc $cmd"* && -z "$(ls -A)" ]]; then ok "cli/help-$cmd$h"
+        else bad "cli/help-$cmd$h" "exit $code, files: $(ls -A | tr '\n' ' '), output: $(head -2 <<<"$out")"; fi
+    done
+    [[ $cmd == run || $cmd == build || $cmd == test ]] && continue
+    err="$("$ESKIUC" "$cmd" --no-such-opt 2>&1)"; code=$?
+    if [[ $code -eq 2 && "$err" == "error: $cmd: unknown option '--no-such-opt' (see 'eskiuc $cmd --help')" && -z "$(ls -A)" ]]; then
+        ok "cli/unknown-$cmd"
+    else bad "cli/unknown-$cmd" "exit $code: $err"; fi
+done
+popd > /dev/null
+err="$("$ESKIUC" --no-such-opt "$here/run_cmd/args.esk" -o "$work/cli.bin" 2>&1)"; code=$?
+if [[ $code -eq 2 && "$err" == "error: unknown option '--no-such-opt' (see 'eskiuc --help')"* ]]; then ok "cli/unknown-compile"
+else bad "cli/unknown-compile" "exit $code: $err"; fi
+for bad_line in "-O9" "--safe=nope" "-ffp-contract=x" "--diagnostics=x"; do
+    "$ESKIUC" "$bad_line" "$here/run_cmd/args.esk" -o "$work/cli.bin" > /dev/null 2>&1; code=$?
+    if [[ $code -eq 2 ]]; then ok "cli/bad-value$bad_line"; else bad "cli/bad-value$bad_line" "exit $code"; fi
+done
+"$ESKIUC" > /dev/null 2>&1; code=$?
+if [[ $code -eq 2 ]]; then ok "cli/no-input"; else bad "cli/no-input" "exit $code"; fi
+out="$("$ESKIUC" -h 2>&1)"; code=$?
+if [[ $code -eq 0 && "$out" == *"Exit codes"* ]]; then ok "cli/global-help"; else bad "cli/global-help" "exit $code"; fi
+out="$("$ESKIUC" run "$here/run_cmd/args.esk" --help 2>/dev/null)"; code=$?
+if [[ "$out" == "[--help]" ]]; then ok "cli/run-help-is-program-arg"; else bad "cli/run-help-is-program-arg" "exit $code: $out"; fi
+
 # ---- several input files ------------------------------------------------------
 # `eskiuc first.esk second.esk`: a type and a generic that an import of the first input
 # declares are known while the second input's imports parse (`Ok<Thing, string>(t)`

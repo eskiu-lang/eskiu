@@ -27,6 +27,7 @@
 // links the library from the system.
 
 #include "pkg.h"
+#include "cli.h"
 #include "main_support.h"
 #include "parser/parser.h"
 
@@ -115,6 +116,21 @@ std::string pkgFindSystemLib(const std::string& lib, std::string* file) {
 }
 
 namespace {
+
+// A wrong command line (exit code 2, cli.h): `error: CMD: MSG (see 'eskiuc CMD --help')`.
+struct PkgUsage : PkgError {
+    using PkgError::PkgError;
+};
+
+// A flag of the compiler passed through a package command; `i` steps over its value.
+void checkCompilerFlag(const std::vector<std::string>& args, size_t& i) {
+    bool takesValue = false;
+    if (!isCompilerOption(args[i], &takesValue)) throw PkgUsage("unknown option '" + args[i] + "'");
+    if (takesValue) {
+        if (i + 1 >= args.size()) throw PkgUsage("option '" + args[i] + "' needs a value");
+        ++i;
+    }
+}
 
 struct HostNative {
     std::string pkg, lib;
@@ -260,7 +276,9 @@ std::string selfExe(const char* argv0) {
 // ── Commands ─────────────────────────────────────────────────────────────────
 
 int cmdNew(const std::vector<std::string>& args) {
-    if (args.size() != 1) throw PkgError("usage: eskiuc new NAME");
+    for (const auto& a : args)
+        if (a.size() > 1 && a[0] == '-') throw PkgUsage("unknown option '" + a + "'");
+    if (args.size() != 1) throw PkgUsage(args.empty() ? "missing the package NAME" : "takes one NAME");
     const std::string& name = args[0];
     if (!validName(name)) throw PkgError("invalid package name '" + name + "' (letters, digits and '_')");
     std::error_code ec;
@@ -293,17 +311,19 @@ int cmdAdd(const std::vector<std::string>& args) {
     for (size_t i = 0; i < args.size(); ++i) {
         const std::string& a = args[i];
         auto next = [&]() -> std::string {
-            if (i + 1 >= args.size()) throw PkgError(a + " needs a value");
+            if (i + 1 >= args.size()) throw PkgUsage(a + " needs a value");
             return args[++i];
         };
         if (a == "--git") git = next();
         else if (a == "--rev") rev = next();
         else if (a == "--path") path = next();
-        else if (!a.empty() && a[0] != '-' && name.empty()) name = a;
-        else throw PkgError("usage: eskiuc add NAME --git URL [--rev REV] | --path DIR");
+        else if (!a.empty() && a[0] == '-') throw PkgUsage("unknown option '" + a + "'");
+        else if (name.empty()) name = a;
+        else throw PkgUsage("unexpected argument '" + a + "'");
     }
-    if (name.empty() || git.empty() == path.empty() || (!rev.empty() && git.empty()))
-        throw PkgError("usage: eskiuc add NAME --git URL [--rev REV] | --path DIR");
+    if (name.empty()) throw PkgUsage("missing the package NAME");
+    if (git.empty() == path.empty()) throw PkgUsage("needs one of --git URL and --path DIR");
+    if (!rev.empty() && git.empty()) throw PkgUsage("--rev goes with --git");
     if (!validName(name)) throw PkgError("invalid package name '" + name + "' (letters, digits and '_')");
     Manifest m = manifestFromCwd();
     if (name == m.name) throw PkgError("a package cannot depend on itself ('" + name + "')");
@@ -372,7 +392,9 @@ int cmdAdd(const std::vector<std::string>& args) {
 }
 
 int cmdFetch(const std::vector<std::string>& args) {
-    if (!args.empty()) throw PkgError("usage: eskiuc fetch");
+    if (!args.empty())
+        throw PkgUsage(args[0][0] == '-' ? "unknown option '" + args[0] + "'"
+                                         : "unexpected argument '" + args[0] + "'");
     Manifest m = manifestFromCwd();
     for (const auto& e : resolveAndLock(m, true)) {
         if (e.kind == "root") continue;
@@ -402,15 +424,19 @@ int buildPackage(const char* argv0, const std::vector<std::string>& args, std::s
     std::string program;
     for (size_t i = 0; i < args.size(); ++i) {
         if (args[i] == "-o") {
-            if (i + 1 >= args.size()) throw PkgError("-o needs a value");
+            if (i + 1 >= args.size()) throw PkgUsage("-o needs a value");
             out = args[++i];
-        } else if (endsWithEsk(args[i]) && (i == 0 || args[i - 1] != "--link-arg")) {
+        } else if (!args[i].empty() && args[i][0] == '-') {
+            size_t first = i;
+            checkCompilerFlag(args, i);
+            for (size_t k = first; k <= i; ++k) flags.push_back(args[k]);
+        } else if (endsWithEsk(args[i])) {
             if (!program.empty())
                 throw PkgError("eskiuc build takes one program file; to compile several files "
                                "into one program, run eskiuc " + program + " " + args[i] + " -o OUT");
             program = args[i];
         } else {
-            flags.push_back(args[i]);
+            throw PkgUsage("unexpected argument '" + args[i] + "' (the program is a .esk file)");
         }
     }
     Manifest m = manifestFromCwd();
@@ -429,6 +455,10 @@ int buildPackage(const char* argv0, const std::vector<std::string>& args, std::s
 }
 
 int cmdTest(const char* argv0, const std::vector<std::string>& flags) {
+    for (size_t i = 0; i < flags.size(); ++i) {
+        if (flags[i].empty() || flags[i][0] != '-') throw PkgUsage("unexpected argument '" + flags[i] + "'");
+        checkCompilerFlag(flags, i);
+    }
     Manifest m = manifestFromCwd();
     resolveAndLock(m, false);
     std::vector<std::string> tests;
@@ -504,6 +534,8 @@ bool pkgCommand(int argc, char** argv, int& rc) {
             rc = buildPackage(argv[0], flags, out);
             if (rc == 0) rc = runExecutable(out, args);
         }
+    } catch (const PkgUsage& e) {
+        rc = cliUsageError(cmd, e.what());
     } catch (const std::exception& e) {
         std::cerr << "error: " << e.what() << std::endl;
         rc = 1;

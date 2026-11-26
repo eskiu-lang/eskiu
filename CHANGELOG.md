@@ -16,6 +16,11 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   `eskiuc build --dev`, `eskiuc test --dev` and `eskiuc run --dev [-- ARGS]` use it. Both
   compilers.
 
+- `eskiuc COMMAND --help` (or `-h`) prints the usage of every command (`new`, `add`,
+  `build`, `run`, `test`, `fetch`, `fmt`, `repl`, `doctor`) and does nothing else. `fmt
+  --help` opened a file named `--help`, `new --help` created a package by that name, and
+  `build --help` and `test --help` needed an `eskiu.toml`.
+
 ### Changed
 
 - A failed `--safe` check prints one line to stderr with the file, line and column of the
@@ -42,6 +47,13 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 - Editors: saving a file checks the other open files again (what it declares changes what
   they see). Columns after non-ASCII text are right (the compiler counts bytes, editors
   UTF-16 units).
+- A wrong command line exits with code 2 in every command, with one message format:
+  `error: unknown option '--x' (see 'eskiuc --help')`, or `error: CMD: ...` for a command.
+  An unknown compiler option, a bad option value (`-O9`, `--safe=nope`) and a missing
+  input exited with 1. A failed compile, link or test is still 1 (docs/lang/build.md,
+  "Exit codes"). The self-hosted driver does the same.
+
+---
 
 ### Fixed
 
@@ -68,6 +80,7 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   `playground/` service. Running native code sent by anyone needed a sandboxed server of its
   own; the quickstart installs the compiler in a minute instead, and agents run code
   through the MCP's `eskiu_run`.
+
 
 ## [0.16.3] - 2026-11-23
 

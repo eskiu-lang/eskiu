@@ -16,7 +16,11 @@ static const char* OVERVIEW =
     "  eskiuc run [flags] file.esk [--] [args]  compile to a temp executable and run it\n"
     "  eskiuc fmt [--check] [--width N] file.esk ...  reindent files in place\n"
     "  eskiuc repl [file.esk ...]               interactive session (JIT)\n"
-    "  eskiuc file.esk --dev -o prog            development build: run-time checks (--safe) and -Wall\n";
+    "  eskiuc file.esk --dev -o prog            development build: run-time checks (--safe) and -Wall\n"
+    "  eskiuc new|add|build|run|test|fetch ...  package commands\n"
+    "  eskiuc doctor                            tools found or missing per kind of build\n\n"
+    "  eskiuc COMMAND --help prints a command's usage. Exit codes: 0 success, 1 failure\n"
+    "  (compile error, failed test), 2 wrong command line (unknown option, bad value).\n";
 static llvm::cl::opt<std::string> InputFilename(llvm::cl::Positional,
                                                  llvm::cl::desc("<input .esk file>"),
     llvm::cl::cat(EskiuCat));

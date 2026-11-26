@@ -39,10 +39,29 @@
 #include "diag_json.h"
 #include "repl.h"
 #include "pkg.h"
+#include "cli.h"
 #include "main_options.h"
 #include "main_modes.h"
 #include "main_tools.h"
 #include "main_compile.h"
+
+// Parse the compiler's options; an error is printed as `error: ...` lines (cli.cpp) and
+// returns false (exit code 2). `-h` is `--help`.
+static bool parseOptions(int argc, char** argv) {
+    std::vector<char*> args(argv, argv + argc);
+    static char help[] = "--help";
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(args[i]) == "--") break;
+        if (std::string(args[i]) == "-h") args[i] = help;
+    }
+    llvm::cl::HideUnrelatedOptions(EskiuCat);
+    std::string errText;
+    llvm::raw_string_ostream errs(errText);
+    if (llvm::cl::ParseCommandLineOptions(argc, args.data(), OVERVIEW, &errs)) return true;
+    errs.flush();
+    printOptionErrors(errText);
+    return false;
+}
 
 static int compilerMain(int argc, char** argv) {
     llvm::InitLLVM X(argc, argv);
@@ -53,11 +72,18 @@ static int compilerMain(int argc, char** argv) {
            << LLVM_VERSION_MINOR << "." << LLVM_VERSION_PATCH << ")\n";
     });
 
+    // `eskiuc CMD --help`: the subcommand's usage, before it does anything (cli.cpp).
+    if (int rc = 0; cliSubcommandHelp(argc, argv, rc)) return rc;
+
     // Package commands (new, add, build, fetch, test, and run inside a package): pkg.cpp.
     if (int rc = 0; pkgCommand(argc, argv, rc)) return rc;
 
     // `eskiuc doctor`: what this machine has for each kind of build (doctor.cpp).
-    if (argc == 2 && std::string(argv[1]) == "doctor") {
+    if (argc >= 2 && std::string(argv[1]) == "doctor") {
+        if (argc > 2) {
+            std::string a = argv[2];
+            return cliUsageError("doctor", (a[0] == '-' ? "unknown option '" : "unexpected argument '") + a + "'");
+        }
         std::string v = std::string(VERSION) + " (LLVM " + std::to_string(LLVM_VERSION_MAJOR) + "." +
                         std::to_string(LLVM_VERSION_MINOR) + "." + std::to_string(LLVM_VERSION_PATCH) + ")";
         return doctorCommand(v);
@@ -73,18 +99,21 @@ static int compilerMain(int argc, char** argv) {
             std::string a = argv[i];
             std::string val;
             bool isWidth = false;
-            if (a == "--width" && i + 1 < argc) { val = argv[++i]; isWidth = true; }
+            if (a == "--width") {
+                if (i + 1 >= argc) return cliUsageError("fmt", "--width needs a value");
+                val = argv[++i];
+                isWidth = true;
+            }
             else if (a.rfind("--width=", 0) == 0) { val = a.substr(8); isWidth = true; }
             if (isWidth) {
                 width = val.empty() || val.size() > 5 ? -1 : 0;
                 for (char c : val)
                     if (width >= 0) width = std::isdigit((unsigned char)c) ? width * 10 + (c - '0') : -1;
-                if (width < 20) {
-                    std::cerr << "error: fmt: --width needs a number of at least 20, not '" << val << "'\n";
-                    return 1;
-                }
+                if (width < 20)
+                    return cliUsageError("fmt", "--width needs a number of at least 20, not '" + val + "'");
             }
             else if (a == "--check") check = true;
+            else if (a.size() > 1 && a[0] == '-') return cliUsageError("fmt", "unknown option '" + a + "'");
             else files.push_back(a);
         }
         return runFmt(files, check, width);
@@ -94,7 +123,11 @@ static int compilerMain(int argc, char** argv) {
     // loaded first, as with `:load`.
     if (argc >= 2 && std::string(argv[1]) == "repl") {
         std::vector<std::string> files;
-        for (int i = 2; i < argc; ++i) files.push_back(argv[i]);
+        for (int i = 2; i < argc; ++i) {
+            std::string a = argv[i];
+            if (a.size() > 1 && a[0] == '-') return cliUsageError("repl", "unknown option '" + a + "'");
+            files.push_back(a);
+        }
         return runRepl(files);
     }
 
@@ -132,11 +165,9 @@ static int compilerMain(int argc, char** argv) {
             }
         }
         int newArgc = (int)clArgv.size();
-        llvm::cl::HideUnrelatedOptions(EskiuCat);
-        llvm::cl::ParseCommandLineOptions(newArgc, clArgv.data(), OVERVIEW);
+        if (!parseOptions(newArgc, clArgv.data())) return kExitUsage;
     } else {
-        llvm::cl::HideUnrelatedOptions(EskiuCat);
-        llvm::cl::ParseCommandLineOptions(argc, argv, OVERVIEW);
+        if (!parseOptions(argc, argv)) return kExitUsage;
     }
     for (const std::string& o : Overlays) {
         size_t eq = o.find('=');
@@ -149,7 +180,7 @@ static int compilerMain(int argc, char** argv) {
     if (Diagnostics == "json") installJsonDiagnostics();
     else if (Diagnostics != "text") {
         std::cerr << "error: invalid --diagnostics value '" << std::string(Diagnostics) << "' (use text or json)" << std::endl;
-        return 1;
+        return kExitUsage;
     }
     // One spelling per target from here on: `x86_64-w64-mingw32` is `x86_64-w64-windows-gnu`,
     // which every check below (the C ABI, the predefined macros, the linker) recognizes.
@@ -160,24 +191,24 @@ static int compilerMain(int argc, char** argv) {
 
     // Check input file provided
     if (InputFilename.empty()) {
-        std::cerr << "error: no input file specified" << std::endl;
-        return 1;
+        std::cerr << "error: no input file specified (see 'eskiuc --help')" << std::endl;
+        return kExitUsage;
     }
     if (FpContract != "off" && FpContract != "fast") {
         std::cerr << "error: invalid -ffp-contract value '" << std::string(FpContract)
                   << "' (use off or fast)" << std::endl;
-        return 1;
+        return kExitUsage;
     }
     if (OptLevel > 3) {
         std::cerr << "error: invalid optimization level '-O" << OptLevel
                   << "' (use -O0, -O1, -O2 or -O3)" << std::endl;
-        return 1;
+        return kExitUsage;
     }
     unsigned safeChecks = 0;
-    if (!safeChecksFromFlag(safeChecks)) return 1;
+    if (!safeChecksFromFlag(safeChecks)) return kExitUsage;
     if (!Subsystem.empty() && Subsystem != "console" && Subsystem != "windows") {
         std::cerr << "error: invalid --subsystem '" << Subsystem << "' (use console or windows)" << std::endl;
-        return 1;
+        return kExitUsage;
     }
     // Refuse an output path that names one of the inputs: `-o prog.esk` would
     // silently replace the source with an object file or executable.

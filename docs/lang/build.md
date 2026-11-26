@@ -290,6 +290,31 @@ Homebrew `llvm@22`, Alpine `llvm22-dev`, MSYS2 `mingw-w64-x86_64-llvm`) and poin
 
 ---
 
+## Command Line
+
+`eskiuc --help` lists the compiler's options; `eskiuc COMMAND --help` (or `-h`) prints the
+usage of a command (`new`, `add`, `build`, `run`, `test`, `fetch`, `fmt`, `repl`,
+`doctor`) and does nothing else. For `run`, only a `--help` before the script is the
+command's: one after it is the program's argument.
+
+### Exit codes
+
+Every command exits with:
+
+| Code | Meaning |
+|---|---|
+| 0 | Success. |
+| 1 | The work failed: a compile error, a failed link, a test that failed, a file that does not exist, `fmt --check` with files to format. |
+| 2 | The command line is wrong: an unknown option, an option without its value or with a bad one (`-O9`, `--safe=nope`), no input file, a wrong argument to a command. Nothing was done. |
+
+`eskiuc run` and `eskiuc run` inside a package exit with the program's own code instead
+(128+N when signal N killed it). A usage error is one line on stderr:
+
+```
+error: unknown option '--frob' (see 'eskiuc --help')
+error: fmt: unknown option '--frob' (see 'eskiuc fmt --help')
+```
+
 ## Package Commands
 
 `eskiuc` also manages packages: a directory with an `eskiu.toml` manifest, its

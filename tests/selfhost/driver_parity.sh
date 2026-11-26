@@ -104,6 +104,25 @@ flagcheck unknown  reject --no-such-flag "$ARGS_ESK" -o "$WORK/f.u"
 flagcheck linklib  ok     -lm "$ARGS_ESK" -o "$WORK/f.lm"
 flagcheck badopt   reject -O9 "$ARGS_ESK" -o "$WORK/f.o9"
 flagcheck dirinput reject "$WORK" -o "$WORK/f.dir"
+# Exit codes (docs/lang/build.md): a wrong command line is 2 in both drivers, and
+# `fmt --help` prints the same usage with exit 0; `fmt` with a wrong option says the same.
+usagecheck() { # name want-rc args...
+    local name="$1" want="$2"; shift 2
+    total=$((total + 1))
+    local c s co so
+    co="$(ESKIU_ROOT="$ROOT" "$BIN" "$@" 2>&1)"; c=$?
+    so="$(ESKIU_ROOT="$ROOT" "$ESKMAIN" "$@" 2>&1)"; s=$?
+    if [ "$c" = "$want" ] && [ "$s" = "$want" ] && { [ "$want" = 2 ] && [ "${name#fmt}" = "$name" ] || [ "$co" = "$so" ]; }; then
+        echo "ok    usage/$name"
+    else echo "FAIL  usage/$name  (cpp rc $c, self rc $s, want $want; cpp: $co | self: $so)"; fail=1; fi
+}
+usagecheck unknown   2 --no-such-flag "$ARGS_ESK" -o "$WORK/f.u"
+usagecheck badopt    2 -O9 "$ARGS_ESK" -o "$WORK/f.o9"
+usagecheck noinput   2
+usagecheck fmt-help  0 fmt --help
+usagecheck fmt-h     0 fmt -h
+usagecheck fmt-opt   2 fmt --no-such-flag
+usagecheck fmt-width 2 fmt --width
 cp "$ARGS_ESK" "$WORK/ow.esk"
 flagcheck overwrite reject "$WORK/ow.esk" -o "$WORK/ow.esk"
 total=$((total + 1))
