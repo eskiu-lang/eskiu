@@ -314,6 +314,28 @@ phase link                 40.1 ms  (total   2025.1 ms)
 phase total              2025.3 ms
 ```
 
+### Object cache
+
+`--cache` (or `ESKIU_CACHE=1` in the environment, which reaches every compile of a
+Makefile) keeps the object of each compile that writes an executable or an object file,
+and a later compile of the same sources with the same compiler, target and flags reuses
+it: only loading, parsing and the link run again. A test suite built one file at a time
+gets the most from it, since most of its files do not change between runs. An edit to any
+file the program imports (the standard library and packages included), another flag,
+another target or another build of the compiler makes a new object. The warnings of the
+compile are printed again on a reuse.
+
+| Variable or flag | Effect |
+|---|---|
+| `--cache`, `ESKIU_CACHE=1` | Use the cache. |
+| `--no-cache`, `ESKIU_NO_CACHE=1` | Do not, even with the two above. |
+| `ESKIU_CACHE_DIR=DIR` | Keep the objects in `DIR` (default `$ESKIU_HOME/cache/obj`, that is `~/.eskiu/cache/obj`). |
+| `ESKIU_CACHE_SIZE=MIB` | Size limit in MiB (default 1024); past it the least recently used objects are removed. |
+
+`--time` shows whether the compile was a `cache hit` or a `cache miss`. Deleting the
+directory empties the cache. See [compile speed](../dev/compile-speed.md#the-object-cache)
+for the key and measurements.
+
 ### Exit codes
 
 Every command exits with:

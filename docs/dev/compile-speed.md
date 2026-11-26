@@ -126,6 +126,97 @@ before and after.
 All five are in the C++ compiler only: the self-hosted parser does not use exceptions to
 backtrack, and none of them changes what a program means.
 
+## The object cache
+
+A program's tests are often built one file at a time (`make check`, `eskiuc test`), each
+from the same libraries and mostly the same sources, and at `-O2` the LLVM back end is
+nearly all of each compile. With `--cache` (or `ESKIU_CACHE=1`), a compile that writes an
+executable or an object file keeps the object it emitted, and the next compile with the
+same inputs copies it instead of type checking, generating, optimizing and emitting. The
+link still runs. `build_cache.{h,cpp}` is the cache, `objectCacheKey` in
+`main_build_options.h` the key, `compileProgram` and `buildFromCache` in `main_compile.h`
+its use. The self-hosted compiler has none.
+
+**Key.** After loading and parsing (imports resolved, so the key sees which files the
+program is made of), a BLAKE3 hash over:
+
+- the compiler: its version, LLVM's version, and a hash of its own executable's contents
+  (computed once per executable path, size and modification time, and kept in
+  `compiler-ids/` in the cache directory), so a rebuilt compiler misses.
+  `ESKIU_CACHE_COMPILER_ID` replaces it (the tests use it);
+- the target: `--target`, the host's default triple and its OS version (macOS objects
+  carry it);
+- the command line as given, without `-o FILE`, `--time`, `--cache` and `--no-cache`: every
+  other option that can change the object (`-O`, `--safe`, `-W` flags, `--target`,
+  `--mcpu`, ...) is in it, spelled as given, so a reordering misses but never hits
+  wrongly. Whether the output is a shared library (decided by the `-o` name) and whether
+  this is `eskiuc run` are added;
+- the working directory and the root of the files that get warnings (the package root);
+- every source file the loader read, in the order it read them: the path as the compiler
+  spelled it (which `__FILE__` and diagnostics show) and a hash of the contents. That is
+  the inputs, their imports, the standard library modules and package files. An
+  `eskiu.lock` or `ESKIU_ROOT` that resolves an import to another file changes the paths.
+
+Nothing else is read while compiling: the preprocessor has no `#include` of other files,
+no `__DATE__`/`__TIME__` and no environment access, and `#pragma link` libraries come from
+the parse, which runs on a hit too.
+
+**Entries and writes.** `KEY.o` and `KEY.meta` (what the link needs: whether the program
+uses the C++ exception runtime or threads, the macOS version of the object, and the
+warnings) in `$ESKIU_CACHE_DIR`, else `$ESKIU_HOME/cache/obj`, else `~/.eskiu/cache/obj`.
+Each file is written to a unique temporary file and renamed into place, the object first,
+so concurrent builds (`make -j`, `eskiuc test -j`) never see half an entry; two builds of
+the same key write the same bytes. A reader that cannot copy the object (evicted meanwhile)
+compiles as on a miss. Any failure to read or write the cache only makes the compile not
+use it.
+
+**Eviction.** After each store, when the directory holds more than `ESKIU_CACHE_SIZE` MiB
+(default 1024), the entries least recently used (a hit touches `KEY.meta`) are removed
+until it holds 90% of that. Temporary files older than an hour (from a killed build) go too.
+
+**Diagnostics.** The compile's standard error from type checking to the object (its
+warnings; a compile with errors is not stored) is kept in `KEY.meta` and printed again on a
+hit, so `-Wall` output does not depend on the cache. `--diagnostics=json` passes the text
+through its converter on both paths, so the JSON lines are the same.
+
+**Off by default.** The cache writes to the home directory and a wrong hit would be a
+wrong program, so it is opt-in for now: `--cache` or `ESKIU_CACHE=1` (a Makefile's
+compiles inherit the variable). `--no-cache` or `ESKIU_NO_CACHE=1` turn it off even then.
+`--time` shows `phase cache-key` (the key's time), `phase cache   hit KEY` or `miss KEY`,
+then `cache-copy` (hit) or `cache-store` (miss).
+
+### Measured on a game's tests
+
+The 45 compiles of a game's `make check` (about 20,000 lines of its own plus the `ui`,
+`scene` and `gpu` packages; 44 tests at `-O2`, one at `-O0`), run 4 at a time with
+`xargs -P 4` from a copy of the project, outputs and cache in a scratch directory. Apple
+M4 Pro (14 cores, 24 GB), macOS, an `eskiuc` Release build against Homebrew LLVM 23.1,
+2026-11-25; only the compiles are timed, not the test runs.
+
+| Run | Wall time |
+|---|---|
+| no cache | 520.6 s |
+| `--cache`, empty cache (every compile a miss and a store) | 758.8 s |
+| `--cache`, nothing changed (45 hits) | 1.2 s |
+| `--cache`, one test file edited (1 miss, 44 hits) | 6.7 s |
+
+The empty-cache run is slower than the no-cache run because the machine was busier then
+(other builds ran alongside): on one compile the cache adds the key (0.3 ms; 90 ms on
+the first compile after the compiler is rebuilt, which hashes its executable) and the
+store (15 ms). A hit is load and parse (40 ms), the key, copying the object (6 ms) and the
+link (50 ms): about 0.1 s against 4 to 95 s for the compile it replaces. The 45 objects
+take 25 MB. An edit to a file every test imports (`src/match.esk`, 24 of them) misses
+for each of them.
+
+The compiles are dominated by the back end at `-O2`: `tests/battle_integration.esk` spends
+91 s in `emit-object` (56 s with the released 0.16.3 on LLVM 22), against 3 s in the
+optimizer and 0.2 s in everything before. That is a lead for the back end, separate from
+the cache.
+
+To measure again: `--time` on one compile shows `cache-key`, `cache hit`/`miss`,
+`cache-copy` or `cache-store`; for a suite, time the commands with an empty
+`ESKIU_CACHE_DIR`, then again, then after touching one file.
+
 ## What is left
 
 - **The back end is two thirds of the time.** GlobalISel at `-O0` on AArch64 takes 190 ms
