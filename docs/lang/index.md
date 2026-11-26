@@ -15,6 +15,7 @@ compiling in every 0.16.x, and later changes are announced by warnings first
 |---|---|---|
 | [getting-started.md](getting-started.md) | Hands-on tutorial: build, hello world, all features | You're new to Eskiu |
 | [spec.md](spec.md) | Complete language reference | You need exact syntax or semantics |
+| [patterns.md](patterns.md) | Captures, pointer lifetimes, ownership, copies, initialization and the C boundary: the working form and the common mistake | You write or review real code |
 | [grammar.md](grammar.md) | Formal EBNF grammar | You need the precise concrete syntax |
 | [build.md](build.md) | Build the compiler from source on macOS, Linux and Windows | You need to set up a dev environment |
 | [stability.md](stability.md) | What can change between releases, and how renames are deprecated | You maintain code across Eskiu versions |

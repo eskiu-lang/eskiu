@@ -1,0 +1,87 @@
+// The examples of docs/lang/patterns.md: captures, closure lifetime, copies, cleanup on
+// early returns, zeroed memory and a C call. Each prints what the guide says it does.
+import <io>;
+import <mem>;
+import <result>;
+import <libc>;
+
+// --- captures ---------------------------------------------------------------
+
+void captures() {
+    int base = 10;
+    let add: fn(int)->int = int(int x) { return x + base; };
+    base = 20;                       // the closure keeps its own copy: still 10
+    int total = 0;
+    *int t = &total;                 // share state through a pointer
+    let bump: fn(int)->void = void(int x) { *t = *t + x; };
+    bump(2);
+    bump(3);
+    printf("captures: %d %d\n", add(1), total);
+}
+
+// --- a closure that outlives the call ------------------------------------------
+fn()->int saved;
+void keep(escaping fn()->int f) { saved = f; }
+
+void escaping_closure() {
+    int n = 41;
+    keep(int() { return n + 1; });   // its environment is on the heap
+    printf("escaping: %d\n", saved());
+    free_closure(saved);
+}
+
+// --- copies -------------------------------------------------------------------
+struct Big { int[64] v; int len; }
+
+void change_copy(Big b) { b.v[0] = 99; }          // changes only its copy
+void change_through(*Big b) { b.v[0] = 99; }      // changes the caller's
+int first(const Big* b) { return b.v[0]; }      // reads without copying
+
+void copies() {
+    Big a;
+    a.v[0] = 1;
+    change_copy(a);
+    int after_copy = a.v[0];
+    change_through(&a);
+    Big c = a;                       // assignment copies the whole record
+    c.v[0] = 5;
+    int[3] x = {1, 2, 3};
+    int[3] y = x;                    // and a fixed-size array
+    y[0] = 7;
+    printf("copies: %d %d %d %d %d\n", after_copy, first(&a), c.v[0], x[0], y[0]);
+}
+
+// --- cleanup on early returns -----------------------------------------------------
+Result<int, string> parse_two(string a, string b) {
+    *int buf = alloc<int>(2);
+    defer free(buf);                 // on every return below
+    if (strlen(a) == 0) return Err<int, string>("empty first");
+    buf[0] = atoi(a);
+    if (strlen(b) == 0) return Err<int, string>("empty second");
+    buf[1] = atoi(b);
+    return Ok<int, string>(buf[0] + buf[1]);
+}
+
+void cleanup() {
+    Result<int, string> ok = parse_two("2", "3");
+    Result<int, string> bad = parse_two("2", "");
+    printf("cleanup: %d %s\n", ok.value, bad.error);
+}
+
+// --- zeroed memory --------------------------------------------------------------
+struct Node { int value; *Node next; }
+
+void zeroed() {
+    *Node n = alloc<Node>(1);        // alloc<T> returns zeroed memory
+    printf("zeroed: %d %d\n", n.value, n.next == null ? 1 : 0);
+    free(n);
+}
+
+int main() {
+    captures();
+    escaping_closure();
+    copies();
+    cleanup();
+    zeroed();
+    return 0;
+}

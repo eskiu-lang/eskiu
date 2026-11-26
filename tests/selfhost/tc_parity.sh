@@ -106,7 +106,7 @@ HANDLED="undefined_var arg_count undefined_type await_outside_async async_no_awa
          switch_dup_sizeof_generic switch_dup_sizeof_adt switch_dup_sizeof_bitfield switch_dup_sizeof_iface
          did_you_mean_var did_you_mean_fn did_you_mean_type did_you_mean_member did_you_mean_method deprecated_not_function
          asm_output_not_lvalueasm_output_constraint asm_output_const asm_output_struct asm_output_bool asm_output_bitfield asm_output_captured asm_input_output_constraint enum_value_ternary_not_const iface_compare_ptr nullable_ptr_to_ptr_deref nullable_ptr_to_ptr_drop alias_in_composite_mismatch variant_expected_payload
-         src_line_outside_default src_file_default_type"
+         src_line_outside_default src_file_default_type guide_capture_assign guide_escaping_param guide_dangling_local guide_uninitialized"
 HANDLED="$(echo $HANDLED)"   # collapse the multi-line list to single spaces for matching
 
 DRIVER=selfhost/esk_main.esk

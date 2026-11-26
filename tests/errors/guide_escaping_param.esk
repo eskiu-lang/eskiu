@@ -1,0 +1,9 @@
+// EXPECT-ERROR: 5:6: closure parameter 'f' escapes (used beyond a direct call); mark it `escaping`
+// docs/lang/patterns.md: a closure kept past the call needs its parameter marked `escaping`.
+fn()->int saved;
+
+void keep(fn()->int f) { saved = f; }
+
+int main() {
+    return 0;
+}

@@ -1,0 +1,10 @@
+// EXPECT-ERROR: 6:11: cannot assign to captured variable 'n': a closure captures it by value (use a pointer, a global, or a static)
+// docs/lang/patterns.md: a closure owns a copy of what it captures; a write would be lost.
+int main() {
+    int n = 1;
+    let f: fn()->int = int() {
+        n = 2;
+        return n;
+    };
+    return f();
+}

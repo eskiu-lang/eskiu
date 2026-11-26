@@ -1,0 +1,7 @@
+// EXPECT-ERROR: 6:12: use of uninitialized variable 'total'
+// docs/lang/patterns.md: a scalar local read before any assignment is an error.
+
+int main() {
+    int total;
+    return total;
+}

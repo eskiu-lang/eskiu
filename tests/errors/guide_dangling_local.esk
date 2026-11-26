@@ -1,0 +1,8 @@
+// EXPECT-ERROR: 4:26: returning the address of local 'x' (dangling pointer)
+// docs/lang/patterns.md: a local dies when its function returns.
+
+int* make() { int x = 5; return &x; }
+
+int main() {
+    return *make();
+}

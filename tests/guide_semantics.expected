@@ -1,0 +1,5 @@
+captures: 11 5
+escaping: 42
+copies: 1 99 5 1 7
+cleanup: 5 empty second
+zeroed: 0 1
