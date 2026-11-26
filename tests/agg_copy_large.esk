@@ -1,0 +1,39 @@
+// Records over 16 bytes are copied in memory (memmove/memset/memcpy), never as one
+// first-class value: a struct literal assigned to a place, a copy, an element copy and a
+// self-assignment keep their values, and a large record compiles quickly at -O2.
+import <io>;
+
+struct Cell {
+    int hp = 10;
+    float x = 1.5;
+    bool alive = true;
+}
+
+struct Board {
+    int seed;
+    Cell[64] cells;
+    int[32] scores;
+    Cell spare;
+}
+
+void reset(*Board b) {
+    *b = Board{};
+    b.seed = 7;
+}
+
+int main() {
+    Board* b = alloc<Board>(1);
+    b.cells[3].hp = 99;
+    reset(b);
+    printf("%d %d %.1f %d %d\n", b.seed, b.cells[3].hp, b.cells[63].x, b.cells[0].alive ? 1 : 0, b.spare.hp);
+    Board c = *b;
+    c.cells[5].hp = 5;
+    b.cells[6] = c.cells[5];
+    printf("%d %d %d\n", c.seed, b.cells[5].hp, b.cells[6].hp);
+    *b = *b;
+    b.scores[2] = 3;
+    Board z = Board{seed: 1};
+    printf("%d %d %d %d\n", b.cells[6].hp, b.scores[2], z.seed, z.cells[1].hp);
+    free(b);
+    return 0;
+}
