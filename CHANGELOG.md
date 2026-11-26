@@ -9,6 +9,14 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ## [Unreleased]
 
+### Fixed
+
+- A record or array over 16 bytes is copied in memory (memmove, memset or memcpy from a
+  constant), never loaded and stored as one value. An assignment such as
+  `*self = State{}` of a record holding arrays of records made LLVM build thousands of
+  `insertvalue`s and its instruction selection then took a minute at -O2 for one file of a
+  game (67.5 s to 2.4 s). Programs behave the same.
+
 ### Removed
 
 - The browser playground: the site's playground page, the home page's link to it and the
