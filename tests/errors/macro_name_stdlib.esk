@@ -1,0 +1,10 @@
+// EXPECT-ERROR: Expected declaration, got INT_LIT
+// EXPECT-NOTE: macro_name_stdlib.esk:6:11: 'CLOCK_MONO' is a macro (from <time>, defined at
+// A name a stdlib module #defines: the note names the module.
+import <time>;
+
+const int CLOCK_MONO = 3;
+
+int main() {
+    return CLOCK_MONO;
+}
