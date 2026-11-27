@@ -202,3 +202,18 @@ arguments:
 options:
   -h, --help  show this help and exit
 usage text: [usage: cat [-h] files...]
+$ tool -w 10 --quiet -o x
+  rc=0
+  width=10 quiet=1 o=x
+$ tool --width=12
+  rc=0
+  width=12
+$ tool --help
+usage: bare [-h] [-w N] [--quiet] [-o FILE]
+
+options:
+  -h, --help     show this help and exit
+  -w, --width N  line width (default: 80)
+      --quiet    say nothing
+  -o FILE        output (default: -)
+  rc=1

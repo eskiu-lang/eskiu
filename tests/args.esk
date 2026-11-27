@@ -164,5 +164,18 @@ int main(int argc, string* argv) {
     printf("usage text: [%s]\n", help.cstr());
     help.free();
     ArgParser_free(&s);
+
+    // Names registered without dashes: one letter is the short name, longer the long one.
+    let b: ArgParser;
+    ArgParser_init(&b, "bare", null);
+    ArgParser_option_int(&b, "w", "width", "N", 80, "line width");
+    ArgParser_flag(&b, "quiet", null, "say nothing");
+    ArgParser_option(&b, null, "o", "FILE", "-", "output");
+    run_with(&b, "-w 10 --quiet -o x", false);
+    printf("  width=%d quiet=%d o=%s\n", ArgParser_get_int(&b, "width"), ArgParser_get_flag(&b, "quiet"), ArgParser_get(&b, "o"));
+    run_with(&b, "--width=12", false);
+    printf("  width=%d\n", ArgParser_get_int(&b, "w"));
+    run_with(&b, "--help", false);
+    ArgParser_free(&b);
     return 0;
 }
