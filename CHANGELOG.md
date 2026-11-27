@@ -89,6 +89,13 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ### Fixed
 
+- A keyword used as a name (`in`, `fn`, `match`, a type name) is reported as `expected a
+  name, found keyword 'in'` in every position: a for-in loop variable (`for (in in xs)`)
+  and a lambda's parameter now say so too in both compilers, and the self-hosted compiler
+  no longer says `Expected parameter name`, `Expected struct name` or `Expected enum
+  member name` there; it also puts `In struct 'S': ` before an error in a struct member,
+  as the C++ compiler does.
+
 - `<args>`: an option registered without dashes (`ArgParser_option_int(&p, "w", "width",
   ...)`) was never matched, silently. A name without dashes now means the same as with
   them: a one-letter one is the short option (`-w`), a longer one the long option
