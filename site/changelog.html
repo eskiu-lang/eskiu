@@ -262,10 +262,13 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <p>An object cache, on by default (<code>--no-cache</code>, <code>ESKIU_NO_CACHE=1</code> or <code>ESKIU_CACHE=0</code> turn it off): a compile that writes an executable
   or object file reuses the object of an earlier compile with the same sources (every
   imported file, the standard library and packages included), compiler, target and flags,
-  so only parsing and the link run again; the warnings are printed again. Objects live in
-  <code>~/.eskiu/cache/obj</code> (<code>ESKIU_CACHE_DIR</code>), at most 1 GiB (<code>ESKIU_CACHE_SIZE</code>), least
-  recently used out first; <code>--no-cache</code> / <code>ESKIU_NO_CACHE=1</code> turn it off. Off by default
-  for now. <code>--time</code> shows hits and misses (docs/dev/compile-speed.md).</p>
+  so only parsing and the link run again; the warnings are printed again. A program in a
+  package (a directory with an <code>eskiu.toml</code>) keeps its objects in the package's
+  <code>.eskiu-cache</code> directory, which ignores itself in git; any other file uses the platform's
+  cache directory (<code>~/Library/Caches/eskiu</code> on macOS, <code>~/.cache/eskiu</code> on Linux,
+  <code>%LOCALAPPDATA%\eskiu\cache</code> on Windows); <code>ESKIU_CACHE_DIR</code> overrides both. At most 1 GiB
+  per directory (<code>ESKIU_CACHE_SIZE</code>), least recently used out first. <code>--time</code> shows hits and
+  misses (docs/dev/compile-speed.md).</p>
 </li>
 <li>
 <p><code>eskiuc test</code> runs several tests at a time (<code>-j N</code>, default half the cores), selects

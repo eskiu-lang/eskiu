@@ -509,7 +509,7 @@ compile are printed again on a reuse.</p>
 </tr>
 <tr>
 <td><code>ESKIU_CACHE_DIR=DIR</code></td>
-<td>Keep the objects in <code>DIR</code> (default <code>$ESKIU_HOME/cache/obj</code>, that is <code>~/.eskiu/cache/obj</code>).</td>
+<td>Keep the objects in <code>DIR</code> instead of the default places below.</td>
 </tr>
 <tr>
 <td><code>ESKIU_CACHE_SIZE=MIB</code></td>
@@ -517,7 +517,17 @@ compile are printed again on a reuse.</p>
 </tr>
 </tbody>
 </table></div>
-<p><code>--time</code> shows whether the compile was a <code>cache hit</code> or a <code>cache miss</code>. Deleting the
+<p>Where the objects go, without <code>ESKIU_CACHE_DIR</code>:</p>
+<ul>
+<li>A program in a package (the nearest directory up from its root file with an <code>eskiu.toml</code>)
+  keeps them in the package's <code>.eskiu-cache</code> directory. The directory holds a <code>.gitignore</code>
+  that ignores it, so git never shows it, and removing the package removes its cache.</li>
+<li>Any other file keeps them in the user's cache directory: <code>~/Library/Caches/eskiu/obj</code> on
+  macOS, <code>$XDG_CACHE_HOME/eskiu/obj</code> (else <code>~/.cache/eskiu/obj</code>) on Linux,
+  <code>%LOCALAPPDATA%\eskiu\cache\obj</code> on Windows.</li>
+</ul>
+<p>Each cache directory also has a <code>CACHEDIR.TAG</code>, which backup tools that honor it skip.
+<code>--time</code> shows whether the compile was a <code>cache hit</code> or a <code>cache miss</code>. Deleting the
 directory empties the cache. See <a href="https://github.com/eskiu-lang/eskiu/blob/main/docs/dev/compile-speed.md#the-object-cache">compile speed</a>
 for the key and measurements.</p>
 <h3 id="exit-codes">Exit codes</h3>
