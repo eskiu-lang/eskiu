@@ -230,6 +230,7 @@ try {
     bool useCache = !useEir && EmitHeader.empty() && !outputIsStaticLibrary() &&
                     objcache::wanted(UseCache, NoCache);
     objcache::setRecording(useCache);
+    if (useCache) objcache::setProject(std::string(InputFilename));
     phaseMark("start");
     auto program = loadProgram(allInputs(), std::string(TargetTriple), Freestanding,
                                &macros, &lexFailed);

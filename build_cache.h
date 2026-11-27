@@ -26,7 +26,16 @@ std::string hostOSVersion();
 // --no-cache or ESKIU_NO_CACHE=1 (which win).
 bool wanted(bool cacheFlag, bool noCacheFlag);
 
-// $ESKIU_CACHE_DIR, else $ESKIU_HOME/cache/obj, else ~/.eskiu/cache/obj.
+// The package rootFile belongs to (the nearest directory up from it with an eskiu.toml),
+// whose objects then go to its .eskiu-cache directory.
+void setProject(const std::string& rootFile);
+
+// The user's cache directory for eskiu: ~/Library/Caches/eskiu on macOS,
+// $XDG_CACHE_HOME/eskiu (else ~/.cache/eskiu) on Linux, %LOCALAPPDATA%/eskiu/cache on Windows.
+std::string userDirectory();
+
+// Where the objects go: $ESKIU_CACHE_DIR, else the package's .eskiu-cache (setProject),
+// else userDirectory()/obj.
 std::string directory();
 
 // Builds a key: length-prefixed fields, then the recorded sources.

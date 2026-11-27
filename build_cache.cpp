@@ -37,6 +37,8 @@ struct Source {
 };
 
 bool recording = false;
+// The cache directory of the package being built (setProject), "" outside one.
+std::string projectCache;
 std::vector<Source>& sources() {
     static std::vector<Source> s;
     return s;
@@ -170,19 +172,43 @@ bool wanted(bool cacheFlag, bool noCacheFlag) {
     return !(off && std::string(off) == "0");
 }
 
+void setProject(const std::string& rootFile) {
+    projectCache.clear();
+    if (rootFile.empty()) return;
+    std::error_code ec;
+    fs::path file = fs::weakly_canonical(fs::absolute(rootFile, ec), ec);
+    if (ec) return;
+    for (fs::path dir = file.parent_path(); !dir.empty(); dir = dir.parent_path()) {
+        if (fs::exists(dir / "eskiu.toml", ec)) {
+            projectCache = (dir / ".eskiu-cache").generic_string();
+            return;
+        }
+        if (dir == dir.parent_path()) return;
+    }
+}
+
+std::string userDirectory() {
+    auto env = [](const char* name) -> std::string {
+        const char* v = std::getenv(name);
+        return v && *v ? v : "";
+    };
+#if defined(_WIN32)
+    std::string local = env("LOCALAPPDATA");
+    if (local.empty()) local = (env("USERPROFILE").empty() ? std::string(".") : env("USERPROFILE")) + "/AppData/Local";
+    return local + "/eskiu/cache";
+#elif defined(__APPLE__)
+    return (env("HOME").empty() ? std::string(".") : env("HOME")) + "/Library/Caches/eskiu";
+#else
+    std::string xdg = env("XDG_CACHE_HOME");
+    if (!xdg.empty() && xdg[0] == '/') return xdg + "/eskiu";
+    return (env("HOME").empty() ? std::string(".") : env("HOME")) + "/.cache/eskiu";
+#endif
+}
+
 std::string directory() {
     if (const char* d = std::getenv("ESKIU_CACHE_DIR"); d && *d) return d;
-    std::string home;
-    if (const char* h = std::getenv("ESKIU_HOME"); h && *h) {
-        home = h;
-    } else {
-        const char* u = std::getenv("HOME");
-#ifdef _WIN32
-        if (!u || !*u) u = std::getenv("USERPROFILE");
-#endif
-        home = std::string(u ? u : ".") + "/.eskiu";
-    }
-    return home + "/cache/obj";
+    if (!projectCache.empty()) return projectCache;
+    return userDirectory() + "/obj";
 }
 
 Key::Key() { add("eskiu-objcache-1"); }
@@ -260,6 +286,11 @@ void store(const std::string& key, const std::string& objFile, const Meta& meta)
     std::error_code ec;
     fs::create_directories(dir, ec);
     if (ec) return;
+    // marks it as a cache: git ignores it, backup tools may skip it
+    if (!fs::exists(dir + "/.gitignore", ec)) writeAtomic(dir, ".gitignore", "# made by eskiuc: the object cache\n*\n");
+    if (!fs::exists(dir + "/CACHEDIR.TAG", ec))
+        writeAtomic(dir, "CACHEDIR.TAG", "Signature: 8a477f597d28d172789f06886806bc55\n"
+                                         "# This file is a cache directory tag created by eskiuc.\n");
     std::string m = "eskiu-objcache 1\nuses-eh " + std::to_string(meta.usesEH ? 1 : 0) +
                     "\nuses-threads " + std::to_string(meta.usesThreads ? 1 : 0) +
                     "\nmacos-min " + meta.macosMin + "\ndiagnostics " +
