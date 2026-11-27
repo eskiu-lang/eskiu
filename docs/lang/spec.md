@@ -3492,7 +3492,9 @@ int main(int argc, *string argv) {
 
 `ArgParser_flag(p, short, long, help)`, `ArgParser_option(p, short, long, metavar, default, help)`
 and `ArgParser_option_int(...)` (an `int` default; a value that is not an integer is a parse
-error) declare options; either name may be `null`. `ArgParser_argument(p, name, help, mode)`
+error) declare options; either name may be `null`. Names are written with their dashes
+(`"-v"`, `"--verbose"`); one given without them means the same, a one-letter name the short
+option (`"v"` is `-v`) and a longer one the long option (`"width"` is `--width`). `ArgParser_argument(p, name, help, mode)`
 declares a positional argument: `ARGS_OPTIONAL`, `ARGS_REQUIRED`, and `ARGS_MANY` for the
 last one (zero or more, one or more with `ARGS_REQUIRED`). A parser that declares no
 arguments accepts any positionals; one that declares some rejects extras.
