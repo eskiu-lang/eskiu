@@ -358,6 +358,18 @@ if [[ "$j1" == '{"severity":"warning"'* && "$j2" == "$j1" ]]; then ok "cache/jso
 c9="$(cache_build "ESKIU_CACHE_SIZE=0 ESKIU_CACHE_DIR=$work/objcache0" -O2)"
 if [[ "$c9" == *"cache            miss"* && -z "$(ls "$work/objcache0" | grep '\.o$')" ]]; then ok "cache/evict"
 else bad "cache/evict" "$(ls "$work/objcache0")"; fi
+# Without ESKIU_CACHE_DIR: a package's compiles keep their objects in its .eskiu-cache (which
+# ignores itself in git), a file outside a package in the user's cache directory.
+mkdir -p "$work/cachepkg/src" "$work/cachehome"
+printf '[package]\nname = "cachepkg"\nversion = "0.1.0"\nmain = "src/main.esk"\n' > "$work/cachepkg/eskiu.toml"
+printf 'int main() { return 0; }\n' > "$work/cachepkg/src/main.esk"
+cp "$work/cachepkg/src/main.esk" "$work/cachehome/loose.esk"
+home_env=(env -u ESKIU_CACHE_DIR -u XDG_CACHE_HOME HOME="$work/cachehome" LOCALAPPDATA="$work/cachehome/AppData/Local" ESKIU_CACHE_COMPILER_ID=test-1)
+(cd "$work/cachepkg/src" && "${home_env[@]}" "$ESKIUC" main.esk -o "$work/cachepkg.bin" >/dev/null 2>&1)
+(cd "$work/cachehome" && "${home_env[@]}" "$ESKIUC" loose.esk -o "$work/cacheloose.bin" >/dev/null 2>&1)
+if [[ -n "$(ls "$work/cachepkg/.eskiu-cache" 2>/dev/null | grep '\.o$')" && "$(tail -1 "$work/cachepkg/.eskiu-cache/.gitignore" 2>/dev/null)" == "*" &&
+      -n "$(find "$work/cachehome" -path '*eskiu*' -name '*.o' | grep -v eskiu-cache)" ]]; then ok "cache/package-and-user-dirs"
+else bad "cache/package-and-user-dirs" "$(find "$work/cachepkg" "$work/cachehome" -name '*.o')"; fi
 
 # ---- several input files ------------------------------------------------------
 # `eskiuc first.esk second.esk`: a type and a generic that an import of the first input
