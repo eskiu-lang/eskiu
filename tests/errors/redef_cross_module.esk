@@ -3,8 +3,11 @@
 // EXPECT-NOTE: redef_module/lib.esk:7:5: 'Overlay' is first defined here
 // EXPECT-NO: has no member
 // EXPECT-NO: arguments, got
+// EXPECT-NO: too many initializers
+// EXPECT-NO: has no field
+// EXPECT-NO: cannot convert
 // A struct and a function the imported module defines too: one error each, a note at the
-// module's declaration, and no cascade inside the module.
+// module's declaration, and no cascade inside the module (members, calls, literals).
 import "redef_module/lib.esk";
 
 struct Event {

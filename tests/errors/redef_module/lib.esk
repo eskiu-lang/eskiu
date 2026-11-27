@@ -14,3 +14,11 @@ int event_kind(Event* e) {
     }
     return Overlay(e.kind, 1, 2);
 }
+
+Event event_new(string text) {
+    return Event{text, 1};
+}
+
+Event event_named(string text) {
+    return Event{text: text, kind: 2};
+}
