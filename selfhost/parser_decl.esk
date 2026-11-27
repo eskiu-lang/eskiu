@@ -416,11 +416,15 @@ void parse_unnamed_bitfield(Parser* p, *DeclNode d, string ty) {
     int tmark = push_tparams(&d.type_params);   // in scope for inline methods
     p_expect(p, LBRACE, "Expected '{'");
     List_init<Param>(&d.params, 4);
+    // An error in a member is reported "In struct 'S': ..." (the C++ wraps it so).
+    string sctx = str_concat("In struct '", str_concat(d.name, "': "));
     while (p_at(p) != RBRACE && p_at(p) != EOF_TOKEN) {
+        p.err_ctx = null;
         if (p_at(p) == PRAGMA) {
             p_take_pragma(p);
             continue;
         }
+        p.err_ctx = sctx;
         string mty = parse_type(p);
         if (p_at(p) == COLON) {
             parse_unnamed_bitfield(p, d, mty);
@@ -474,6 +478,7 @@ void parse_unnamed_bitfield(Parser* p, *DeclNode d, string ty) {
             List_push<*ExprNode>(&d.field_dflts, fdv);
         }
     }
+    p.err_ctx = null;
     pop_tparams(tmark);
     p_expect(p, RBRACE, "Expected '}'");
     return d;

@@ -228,6 +228,9 @@ private:
     [[noreturn]] void fail(const std::string& message);
     [[noreturn]] void fail(const std::string& message, const Token& at);
     int errLine = 0, errCol = 0;
+    // The token of the last "expected a name, found keyword" failure (npos: none), so a
+    // failed speculative parse can still report it (a lambda's `int in` parameter).
+    size_t keywordNameAt = std::string::npos;
     // Panic-mode recovery: skip to the next token that plausibly starts a top-level
     // declaration (at column 1), so one error does not cascade.
     void skipToNextDecl(size_t declStart);

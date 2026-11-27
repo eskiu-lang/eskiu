@@ -406,6 +406,10 @@ string fresh_name(string base, List<string>* used) {
     Token ft = p_adv(p);                   // 'for'
     p_expect(p, LPAREN, "Expected '('");
 
+    // `for (in in xs)`: a keyword where the loop variable goes is named as such.
+    if (p_at(p) != IDENT && p_peek2(p).type == IN) {
+        p_expect_ident(p, "Expected a loop variable name");
+    }
     // for-in: `IDENT in iterable` (or a range `A..B`)
     if (p_at(p) == IDENT && p_peek2(p).type == IN) {
         Token vt = p_peek(p);
@@ -482,6 +486,7 @@ string fresh_name(string base, List<string>* used) {
 void check_name_not_keyword(Parser* p) {
     int t = p_at(p);
     if (t >= LET && t <= UINT64) {
+        p.kw_name_at = p.pos + 1;
         p_fail(p, str_concat(str_concat("expected a name, found keyword '", tok_text(p.src, p_peek(p))), "'"));
     }
 }

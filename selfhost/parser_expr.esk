@@ -427,6 +427,7 @@ int lambda_ahead(Parser* p) {
 *ExprNode try_parse_lambda(Parser* p) {
     int save = p.pos;
     Token lt0 = p_peek(p);
+    p.kw_name_at = 0;
     p.spec = p.spec + 1;
     string ret = parse_type(p);
     p_expect(p, LPAREN, "Expected '('");
@@ -446,6 +447,11 @@ int lambda_ahead(Parser* p) {
     }
     p.failed = 0;
     p_rewind(p, save);                          // not a lambda — back out
+    // `int(int in) { ... }` is a lambda with a keyword for a parameter name: say so.
+    if (p.kw_name_at > 0 && lambda_ahead(p) == 1) {
+        p.pos = p.kw_name_at - 1;
+        check_name_not_keyword(p);
+    }
     return null;
 }
 

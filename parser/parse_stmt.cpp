@@ -306,6 +306,9 @@ StmtPtr Parser::parseForStatement() {
     Token forTok = consume(TokenType::FOR, "Expected 'for'");
     consume(TokenType::LPAREN, "Expected '('");
 
+    // `for (in in xs)`: a keyword where the loop variable goes is named as such.
+    if (!check(TokenType::IDENT) && peek_ahead(1).type == TokenType::IN)
+        consume(TokenType::IDENT, "Expected a loop variable name");
     // for (x in iterable) — element-wise iteration
     if (check(TokenType::IDENT) && peek_ahead(1).type == TokenType::IN) {
         Token nameTok = advance();                // x

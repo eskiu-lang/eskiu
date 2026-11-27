@@ -23,6 +23,8 @@ struct Parser {
     string basedir;        // directory of this file (relative imports resolve here)
     string file;           // this file's path, for diagnostics ("" → "<input>")
     int spec;              // > 0 while parsing speculatively (errors backtrack, not abort)
+    int kw_name_at;        // 1 + the token of the last "found keyword" failure (0: none)
+    string err_ctx;        // put before a syntax error's message ("In struct 'S': "), or null
     int failed;            // a speculative parse hit a syntax error (see p_fail)
     int nest;              // current expression/statement nesting (see p_nest_enter)
     int tdepth;            // current type nesting (see p_type_level)

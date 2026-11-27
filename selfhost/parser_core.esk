@@ -3,6 +3,8 @@
 void p_init(Parser* p, *uint8 src, int len) {
     p.src = src;
     p.pos = 0;
+    p.kw_name_at = 0;
+    p.err_ctx = null;
     p.pending_gt = 0;
     p.no_struct_lit = 0;
     p.basedir = ".";
@@ -136,6 +138,9 @@ void p_report(Parser* p, Token t, string msg) {
     }
     sprintf((string)&nb[0], ":%d:%d: ", t.line, t.col);
     lx_puts_err((string)&nb[0]);
+    if (p.err_ctx != null) {
+        lx_puts_err(p.err_ctx);
+    }
     lx_puts_err(msg);
     lx_puts_err("\n");
     string pf = "";
@@ -211,13 +216,15 @@ Token p_expect_tok(Parser* p, int t, string msg) {
     return k;
 }
 
-// Consume a name (IDENT), or fail. Returns the token.
+// Consume a name (IDENT), or fail; a keyword in its place is named (the C++ consume).
+// Returns the token.
 Token p_expect_ident(Parser* p, string msg) {
     Token t = p_peek(p);
     if (t.type == IDENT) {
         p_adv(p);
         return t;
     }
+    check_name_not_keyword(p);
     p_fail(p, msg);
     return t;
 }

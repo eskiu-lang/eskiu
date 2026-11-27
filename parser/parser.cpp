@@ -195,6 +195,7 @@ Token Parser::consume(TokenType type, const std::string& message) {
         TokenType t = peek().type;
         if (t >= TokenType::LET && t <= TokenType::UINT64) {
             const std::string& kw = peek().value;
+            keywordNameAt = current;
             fail("expected a name, found keyword '" +
                  (kw.empty() ? tokenTypeToString(t) : kw) + "'");
         }

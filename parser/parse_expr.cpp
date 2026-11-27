@@ -240,6 +240,7 @@ ExprPtr Parser::tryParseLambda() {
     std::string retType;
     std::vector<bool> esc;
     std::vector<std::pair<std::string, std::string>> params;
+    keywordNameAt = std::string::npos;
     bool header = speculate([&]() -> bool {
         retType = parseType();
         consume(TokenType::LPAREN, "");
@@ -248,7 +249,14 @@ ExprPtr Parser::tryParseLambda() {
         if (!check(TokenType::LBRACE)) throw ParseError("not a lambda");
         return true;
     });
-    if (!header) return nullptr;
+    if (!header) {
+        // `int(int in) { ... }` is a lambda with a keyword for a parameter name: say so.
+        if (keywordNameAt != std::string::npos && lambdaAhead()) {
+            current = keywordNameAt;
+            consume(TokenType::IDENT, "");
+        }
+        return nullptr;
+    }
     LocalScope scope(*this);
     declareParams(params);
     StmtPtr body = parseBlockStatement();
