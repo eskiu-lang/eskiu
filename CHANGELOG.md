@@ -49,6 +49,12 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   for the other declaration, a method on its result) are no longer reported, and a second
   function body with another signature is one error, not two. Both compilers.
 
+- A syntax error at text a macro produced is followed by a note that names the macro,
+  its module and definition, and what it expanded to: `const int CLOCK_MONO = 3;` after
+  `import <time>;` gave only `Expected declaration, got INT_LIT`; now `note: ...
+  'CLOCK_MONO' is a macro (from <time>, defined at .../time.esk:53) and expands to '6'
+  here; rename yours or #undef it`. Both compilers.
+
 - A failed `--safe` check prints one line to stderr with the file, line and column of the
   operation and what went wrong (`main.esk:12:20: index 7 out of bounds for length 4`,
   `integer overflow in '+'`, `null pointer dereference`, `slice [2..9] out of bounds for

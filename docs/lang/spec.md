@@ -3748,6 +3748,16 @@ escapes as in code. `&&`, `||` and `?:` do not evaluate the operand they skip, s
 `#if 1 || 1 / 0` is fine. A division by zero that is evaluated, a shift count
 outside 0..63, and an integer literal that does not fit in 64 bits are errors.
 
+A macro is defined from its `#define` on, in the importing file too, so a name an
+imported module defines as a macro (`CLOCK_MONO` after `import <time>;`) is replaced
+in the program's later code. When a syntax error falls on text a macro produced, a
+note names the macro, where it was defined and what it expanded to:
+
+```
+error: app.esk:3:11: Expected declaration, got INT_LIT
+note: app.esk:3:11: 'CLOCK_MONO' is a macro (from <time>, defined at .../stdlib/time.esk:53) and expands to '6' here; rename yours or #undef it
+```
+
 Any other directive is an error, as is `#include` (use `import`), an `#else`,
 `#elif` or `#endif` without its `#if`, a second `#else`, and a conditional left
 open at the end of the file. Inside a skipped branch, unknown directives are
