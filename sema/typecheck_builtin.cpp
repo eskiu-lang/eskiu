@@ -351,16 +351,19 @@ void TypeChecker::visit(StructInitExpr* node) {
                 useDefs[node->fieldPositions[i]] = {(int)fname.size(), fl->second};
         }
     std::set<std::string> seenFields;
+    // A struct two modules define (reported once, at the clash): this literal may have been
+    // written for the other declaration, so its shape and field types are not checked.
+    bool clashed = clashedNames.count(node->structName) > 0;
     // A literal is either positional or named: mixed, a value would land in the field
     // its position names and could initialize a field a name also sets (`P{1, a: 2}`).
     for (const auto& fi : node->fieldInits)
-        if (fi.first.empty() == named) {
+        if (!clashed && fi.first.empty() == named) {
             errorAt(node, "cannot mix positional and named field initializers in a '" +
                           node->structName + "' literal");
             break;
         }
     // A union's members overlap: its literal initializes exactly one of them (C).
-    if (it->second.isUnion && node->fieldInits.size() > 1)
+    if (!clashed && it->second.isUnion && node->fieldInits.size() > 1)
         errorAt(node, "a union literal initializes one member ('" + node->structName +
                       "' literal has " + std::to_string(node->fieldInits.size()) + ")");
 
@@ -375,6 +378,7 @@ void TypeChecker::visit(StructInitExpr* node) {
         }
         const auto& [fname, expr] = node->fieldInits[i];
         expr->accept(this);
+        if (clashed) continue;
         ASTNode* at = (expr->line > 0) ? static_cast<ASTNode*>(expr.get()) : node;
 
         std::string fieldType, shownName;

@@ -45,12 +45,15 @@ void sema_check_struct_init(Sema* s, *ExprNode e) {
         }
         mi = mi + 1;
     }
-    if (mixed == 1) {
+    // A struct two modules define (reported once, at the clash): this literal may have been
+    // written for the other declaration, so its shape and field types are not checked.
+    int clashed = StrTab_has(&s.clashed, e.sval);
+    if (mixed == 1 && clashed == 0) {
         s.had_error = 1;
         dprintf(2, "error: %s:%d:%d: cannot mix positional and named field initializers in a '%s' literal\n", s.filename, s.line, s.col, e.sval);
     }
     // A union's members overlap: its literal initializes exactly one of them (C).
-    if (d.kind == DK_UNION && n > 1) {
+    if (d.kind == DK_UNION && n > 1 && clashed == 0) {
         s.had_error = 1;
         dprintf(2, "error: %s:%d:%d: a union literal initializes one member ('%s' literal has %d)\n", s.filename, s.line, s.col, e.sval, n);
     }
@@ -65,6 +68,10 @@ void sema_check_struct_init(Sema* s, *ExprNode e) {
         if (v != null && v.line > 0) {
             s.line = v.line;
             s.col = v.col;
+        }
+        if (clashed == 1) {
+            i = i + 1;
+            continue;
         }
         string nm = "";
         if (i < List_len<string>(&e.names)) {
