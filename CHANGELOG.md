@@ -48,9 +48,10 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   followed by a note at the earlier declaration, `note: FILE:LINE:COL: 'Event' is first
   defined here`, which names the module when that file is a stdlib module's (`(in <json>)`)
   or a dependency's (`(in package 'ui')`); in `--diagnostics=json` it is a note of the
-  error. The errors that only follow from the clash (a member or argument count written
-  for the other declaration, a method on its result) are no longer reported, and a second
-  function body with another signature is one error, not two. Both compilers.
+  error. The errors that only follow from the clash (a member, an argument count or a
+  struct literal written for the other declaration, a method on its result) are no longer
+  reported, and a second function body with another signature is one error, not two. Both
+  compilers.
 
 - A syntax error at text a macro produced is followed by a note that names the macro,
   its module and definition, and what it expanded to: `const int CLOCK_MONO = 3;` after
