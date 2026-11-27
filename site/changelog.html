@@ -286,9 +286,10 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
   followed by a note at the earlier declaration, <code>note: FILE:LINE:COL: 'Event' is first
   defined here</code>, which names the module when that file is a stdlib module's (<code>(in &lt;json&gt;)</code>)
   or a dependency's (<code>(in package 'ui')</code>); in <code>--diagnostics=json</code> it is a note of the
-  error. The errors that only follow from the clash (a member or argument count written
-  for the other declaration, a method on its result) are no longer reported, and a second
-  function body with another signature is one error, not two. Both compilers.</p>
+  error. The errors that only follow from the clash (a member, an argument count or a
+  struct literal written for the other declaration, a method on its result) are no longer
+  reported, and a second function body with another signature is one error, not two. Both
+  compilers.</p>
 </li>
 <li>
 <p>A syntax error at text a macro produced is followed by a note that names the macro,
