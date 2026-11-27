@@ -55,12 +55,8 @@ int g_cur_pack;                // active `#pragma pack(N)` alignment (0 = natura
 List<int> g_pack_stack;        // saved pack values for `pack(push, N)` / `pack(pop)`
 List<string> g_link_libs;      // `#pragma link("name")` libraries, first-seen order, no dups
 List<string> g_tparams;        // type params of the generic fn/struct being parsed (`(*T)x`)
-string g_stdlib_root;          // root holding stdlib/ (the driver sets it; null → cwd)
-// Package imports (mirrors packageRoots in parser.cpp): the packages of eskiu.lock, name
-// -> root directory, set by pkg_load_roots. g_pkg_active when the program belongs to a
-// package (an eskiu.toml in its directory or above).
-List<string> g_pkg_names;
-List<string> g_pkg_roots;
+// g_stdlib_root, g_pkg_names and g_pkg_roots are in module_label.esk (part of ast.esk).
+// g_pkg_active when the program belongs to a package (an eskiu.toml in its directory or above).
 int g_pkg_active;
 string g_import_err;           // resolve_import's "unknown package" error (null if none)
 

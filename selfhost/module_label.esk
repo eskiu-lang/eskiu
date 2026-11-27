@@ -1,0 +1,87 @@
+// module_label.esk: the module a source file belongs to, for notes that name it (the
+// stdlib module or the package). Part of ast.esk, imported in order, so the parser and
+// sema (which also compiles on its own) share it. Mirrors moduleLabelOf.
+
+string g_stdlib_root;          // root holding stdlib/ (the driver sets it; null → cwd)
+// Package imports (mirrors packageRoots in parser.cpp): the packages of eskiu.lock, name
+// -> root directory, set by pkg_load_roots.
+List<string> g_pkg_names;
+List<string> g_pkg_roots;
+
+int ml_len(string s) {
+    int i = 0;
+    while (s[i] != 0) {
+        i = i + 1;
+    }
+    return i;
+}
+
+// s[a..b) followed by `tail`, as a new string.
+string ml_join(string head, string s, int a, int b, string tail) {
+    int lh = ml_len(head);
+    int lt = ml_len(tail);
+    int n = b - a;
+    if (n < 0) {
+        n = 0;
+    }
+    *uint8 buf = alloc<uint8>(lh + n + lt + 1);
+    int k = 0;
+    while (k < lh) {
+        buf[k] = (uint8)head[k];
+        k = k + 1;
+    }
+    int i = 0;
+    while (i < n) {
+        buf[lh + i] = (uint8)s[a + i];
+        i = i + 1;
+    }
+    int j = 0;
+    while (j < lt) {
+        buf[lh + n + j] = (uint8)tail[j];
+        j = j + 1;
+    }
+    buf[lh + n + lt] = 0;
+    return (string)buf;
+}
+
+// Whether `file` is inside directory `dir`.
+int file_under(string file, string dir) {
+    int n = ml_len(dir);
+    if (n == 0 || ml_len(file) <= n + 1 || (int)file[n] != 47) {
+        return 0;
+    }
+    int i = 0;
+    while (i < n) {
+        if (file[i] != dir[i]) {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+// "<time>" for a file of stdlib module time, "package 'ui'" for a file of dependency ui,
+// else "" (mirrors moduleLabelOf).
+string module_label_of(string file) {
+    int i = 0;
+    while (i < List_len<string>(&g_pkg_roots)) {
+        if (file_under(file, List_get<string>(&g_pkg_roots, i)) == 1) {
+            string name = List_get<string>(&g_pkg_names, i);
+            return ml_join("package '", name, 0, ml_len(name), "'");
+        }
+        i = i + 1;
+    }
+    string lib = "stdlib";
+    if (g_stdlib_root != null) {
+        if (g_stdlib_root[0] != 0) {
+            lib = ml_join("", g_stdlib_root, 0, ml_len(g_stdlib_root), "/stdlib");
+        }
+    }
+    int n = ml_len(lib);
+    int fl = ml_len(file);
+    if (file_under(file, lib) == 1 && fl > n + 5 && file[fl - 4] == '.' && file[fl - 3] == 'e' &&
+        file[fl - 2] == 's' && file[fl - 1] == 'k') {
+        return ml_join("<", file, n + 1, fl - 4, ">");
+    }
+    return "";
+}

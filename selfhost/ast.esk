@@ -581,6 +581,7 @@ string ast_ty_mangle(string tin) {
 
 // The rest of ast.esk, in these parts (imported in order):
 import "ast_names.esk";
+import "module_label.esk";
 import "ast_print.esk";
 import "ast_print_decl.esk";
 import "ast_fold.esk";
