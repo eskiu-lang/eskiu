@@ -1,5 +1,6 @@
-// EXPECT-ERROR: macro_fn_clash.esk:7:5:
-// EXPECT-NOTE: macro_fn_clash.esk:7:5: 'SQ' is a macro (defined at tests/errors/macro_fn_clash.esk:5) and expands to '((int v) * (int v))' here
+// EXPECT-ERROR: macro_fn_clash.esk:8:5:
+// EXPECT-NOTE: macro_fn_clash.esk:8:5: 'SQ' is a macro (defined at
+// EXPECT-NOTE: macro_fn_clash.esk:6) and expands to '((int v) * (int v))' here
 // A function named like a function-like macro: the call is expanded, the note says so.
 
 #define SQ(x) ((x) * (x))

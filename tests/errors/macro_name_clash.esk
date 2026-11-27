@@ -1,5 +1,6 @@
 // EXPECT-ERROR: Expected declaration, got INT_LIT
-// EXPECT-NOTE: macro_name_clash.esk:8:11: 'LIMIT' is a macro (defined at tests/errors/macro_name_clash.esk:6) and expands to '10' here; rename yours or #undef it
+// EXPECT-NOTE: macro_name_clash.esk:9:11: 'LIMIT' is a macro (defined at
+// EXPECT-NOTE: macro_name_clash.esk:7) and expands to '10' here; rename yours or #undef it
 // A parse error at a token a macro produced names the macro.
 import <io>;
 
