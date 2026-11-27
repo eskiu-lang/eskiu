@@ -6,7 +6,7 @@
 #     -Wall -Wextra and -Werror -Wall) and tests/diag/ (its DIAG-FLAGS), through
 #     --test-typechecker. The files in TEXT_DIFFERS below are those whose diagnostics
 #     already differ in the text form (a type spelled `int*` for `*int`, a shorter
-#     message, an instantiation note): the JSON is the text form converted, so they are
+#     message, an instantiation note, a stdlib path spelled from another root): the JSON is the text form converted, so they are
 #     listed, and a listed file that comes to agree fails until it is removed.
 #   * Same set: eskiuc's JSON has one error or warning object per error or warning line
 #     of its text form.
@@ -30,7 +30,7 @@ async_no_await bitfield_unnamed_negative cast_int_to_struct_generic const_addr_a
 const_array_slice  const_method_call  const_ptr_deref_method
 const_ptr_drop   const_ptr_method_call
  const_ptr_ternary   
-const_struct_addr dup_struct_fn dup_struct export_async generic_dot_call_const
+const_struct_addr dup_struct_fn export_async generic_dot_call_const
 generic_iface_missing generic_inst_method_arg generic_inst_nested generic_inst_operator
 generic_ptr_arg_mismatch generic_struct_method_inst generic_uninit_read generic_void_param
 global_forward_ref global_init_const_drop iface_arity_mismatch iface_call_arg_count
@@ -39,8 +39,8 @@ iface_ptr_to_ptr iface_return_mismatch iface_ternary_nonconforming import_missin
 interface_by_value keyword_field  lambda_question_non_result
 lambda_sig_mismatch lambda_void_returns_value list_join_non_string match_dup_default
 match_on_enum_pointer match_on_struct method_arg_type method_free_fn_arg_type
-method_on_generic_prim operator_ptr_arg_mismatch parse_array_field proto_conflict
-ptr_conv_struct_sum ptr_conv_sum_int ptr_conv_sum_struct question_bad_return question_type_args
+method_on_generic_prim operator_ptr_arg_mismatch parse_array_field
+ptr_conv_struct_sum ptr_conv_sum_int ptr_conv_sum_struct question_bad_return question_type_args redef_stdlib
 return_in_void struct_lit_generic_ptr_field ternary_incompatible ternary_unrelated_ptrs
 unknown_intrinsic void_ptr_deref_value "
 TEXT_DIFFERS="$(echo $TEXT_DIFFERS)"

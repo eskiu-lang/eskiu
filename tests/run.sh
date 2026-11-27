@@ -21,7 +21,9 @@
 #   3. error  tests/errors/NAME.esk
 #             Run --test-typechecker; require a NON-zero exit AND that the
 #             diagnostics contain the substring after "EXPECT-ERROR:" on the
-#             file's first line. Proves the compiler REJECTS bad code.
+#             file's first line. Proves the compiler REJECTS bad code. Each
+#             "EXPECT-NOTE:" line must appear in the output too, and no
+#             "EXPECT-NO:" text may (an error that would only cascade).
 #
 # Usage:  tests/run.sh            (from repo root or anywhere)
 #         ESKIUC=/path/eskiuc tests/run.sh
@@ -136,7 +138,14 @@ if [[ -d "$here/errors" ]]; then
         elif [[ -n "$want" ]] && ! grep -qF "$want" "$work/out"; then
             bad "$name" "rejected, but message missing expected text: \"$want\""
         else
-            ok "$name"
+            extra=""
+            while IFS= read -r n; do
+                grep -qF -- "$n" "$work/out" || extra="missing note: \"$n\""
+            done < <(grep 'EXPECT-NOTE:' "$esk" | sed 's/.*EXPECT-NOTE:[[:space:]]*//')
+            while IFS= read -r n; do
+                ! grep -qF -- "$n" "$work/out" || extra="unexpected: \"$n\""
+            done < <(grep 'EXPECT-NO:' "$esk" | sed 's/.*EXPECT-NO:[[:space:]]*//')
+            if [[ -n "$extra" ]]; then bad "$name" "rejected, but $extra"; else ok "$name"; fi
         fi
     done
 fi

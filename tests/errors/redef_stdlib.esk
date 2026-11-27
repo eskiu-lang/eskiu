@@ -1,0 +1,13 @@
+// EXPECT-ERROR: redefinition of struct 'JsonValue' with different fields
+// EXPECT-NOTE: 'JsonValue' is first defined here (in <json>)
+// EXPECT-NO: undefined method
+// A struct named like a stdlib one: the note names the module.
+import <json>;
+
+struct JsonValue {
+    int x;
+}
+
+int main() {
+    return 0;
+}

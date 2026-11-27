@@ -1,0 +1,16 @@
+// A module the redef_* tests import: its names clash with the importer's.
+struct Event {
+    string text;
+    int kind;
+}
+
+int Overlay(int a, int b, int c) {
+    return a + b + c;
+}
+
+int event_kind(Event* e) {
+    if (e.text == null) {
+        return 0;
+    }
+    return Overlay(e.kind, 1, 2);
+}

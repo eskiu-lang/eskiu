@@ -1,0 +1,33 @@
+// EXPECT-ERROR: redefinition of function 'twice'
+// EXPECT-NOTE: redef_kinds.esk:11:5: 'twice' is first defined here
+// EXPECT-NOTE: redef_kinds.esk:14:5: 'counter' is first defined here
+// EXPECT-NOTE: redef_kinds.esk:15:6: 'Color' is first defined here
+// EXPECT-NOTE: redef_kinds.esk:16:6: 'Id' is first defined here
+// EXPECT-NOTE: redef_kinds.esk:17:11: 'Shape' is first defined here
+// EXPECT-NOTE: redef_kinds.esk:18:7: 'Cell' is first defined here
+// EXPECT-NOTE: redef_kinds.esk:19:8: 'Pair' is first defined here
+// Every redefinition names the earlier declaration.
+
+int twice(int x) {
+    return x * 2;
+}
+int counter = 0;
+enum Color { RED, GREEN }
+type Id = int;
+interface Shape { int area(); }
+union Cell { int i; float f; }
+struct Pair { int a; }
+
+int twice(int x) {
+    return x + x;
+}
+int counter = 1;
+enum Color { BLUE }
+type Id = int64;
+interface Shape { int sides(); }
+union Cell { int i; }
+int Pair = 3;
+
+int main() {
+    return twice(counter);
+}

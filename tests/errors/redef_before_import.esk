@@ -1,0 +1,23 @@
+// EXPECT-ERROR: redefinition of struct 'Event' with different fields
+// EXPECT-NOTE: redef_before_import.esk:9:8: 'Event' is first defined here
+// EXPECT-NOTE: redef_before_import.esk:13:5: 'Overlay' is first defined here
+// EXPECT-NO: has no member
+// EXPECT-NO: arguments, got
+// The program's names come first: the clash is reported in the module, with a note at
+// the program's declaration.
+
+struct Event {
+    int x;
+}
+
+int Overlay(int a) {
+    return a;
+}
+
+import "redef_module/lib.esk";
+
+int main() {
+    Event e;
+    e.x = 1;
+    return Overlay(e.x);
+}

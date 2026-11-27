@@ -214,7 +214,10 @@ redefinition-of-enum-member
 redefinition-of-function
 redefinition-of-global-variable
 redefinition-of-in-same-scope
+redefinition-of-interface
 redefinition-of-struct-with-different
+redefinition-of-type-alias
+redefinition-of-union
 remainder-by-zero
 remainder-overflows
 requires-integer-or-pointer

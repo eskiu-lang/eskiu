@@ -662,4 +662,17 @@ else
     bad "lock/manifest-edited" "$(cat "$work/moved2/app/eskiu.lock" 2>&1)"
 fi
 
+# ---- a name the program and a dependency both define: the note names the package ----
+printf 'import <util/math>;\nint util_twice(int a, int b) { return a + b; }\nint main() { return 0; }\n' > "$work/moved2/app/src/clash.esk"
+for c in eskiuc esk; do
+    comp="$ESKIUC"; [[ $c == esk ]] && comp="$ESK"
+    [[ -x "$comp" ]] || continue
+    out="$(cd "$work/moved2/app" && "$comp" src/clash.esk --test-typechecker 2>&1)"
+    if grep -q "^note: .*util3/math.esk:1:5: 'util_twice' is first defined here (in package 'util')$" <<<"$out"; then
+        ok "clash/package-note ($c)"
+    else
+        bad "clash/package-note ($c)" "$out"
+    fi
+done
+
 exit $fail

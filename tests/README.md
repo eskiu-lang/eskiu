@@ -210,6 +210,8 @@ Start every test with a `//` comment that says what it checks: `run.sh` fails wi
   confirm it is right before committing.
 - **Positive, non-deterministic / smoke only:** add `NAME.esk` with no `.expected`.
 - **Negative:** add `errors/NAME.esk` whose first line is
-  `// EXPECT-ERROR: <substring of the diagnostic>`.
+  `// EXPECT-ERROR: <substring of the diagnostic>`. Optional `// EXPECT-NOTE: <substring>`
+  lines must appear in the output too, and no `// EXPECT-NO: <substring>` text may (an
+  error that would only cascade from the first).
 - **Lint:** add `warnings/NAME.esk` with one `// EXPECT-WARNING: <substring>` line per
   expected `-Wall` warning (no such line means the file must produce no warning).
