@@ -5,6 +5,15 @@ void sema_expr_plain_call(Sema* s, *ExprNode e, int k) {
     // fn-pointer var, not an ADT variant, not a generic — those resolve elsewhere).
     if (e.a != null && e.a.kind == EK_IDENT && sema_local_bound(s, e.a.sval) == 0) {
         int fi = sema_find_fn(s, e.a.sval);
+        // A name two modules define (reported once, at the clash): a call with another
+        // arity was written against the other definition and is not checked against this.
+        if (fi >= 0 && StrTab_has(&s.clashed, e.a.sval) == 1) {
+            FnSig csig = List_get<FnSig>(&s.fns, fi);
+            int cn = List_len<*ExprNode>(&e.kids);
+            if ((csig.variadic == 1 && cn < csig.fixed) || (csig.variadic == 0 && cn != csig.fixed)) {
+                fi = 0 - 1;
+            }
+        }
         if (fi >= 0) {
             FnSig sig = List_get<FnSig>(&s.fns, fi);
             int argc = List_len<*ExprNode>(&e.kids);
@@ -46,7 +55,7 @@ void sema_expr_plain_call(Sema* s, *ExprNode e, int k) {
                         }
                     }
                     string perr = sema_assign_err(s, List_get<Param>(&cfd.params, ai).ty, List_get<*ExprNode>(&e.kids, ai));
-                    if (perr[0] != 0) {
+                    if (perr[0] != 0 && StrTab_has(&s.clashed, e.a.sval) == 0) {
                         s.had_error = 1;
                         dprintf(2, "error: %s:%d:%d: argument %d type mismatch: expected %s, got %s (%s)\n", s.filename, s.line, s.col, ai + 1,
                                List_get<Param>(&cfd.params, ai).ty, sema_infer_type(s, List_get<*ExprNode>(&e.kids, ai)), perr);

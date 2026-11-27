@@ -299,8 +299,10 @@ void TypeChecker::visit(CallExpr* node) {
             if (errors[k].find(memberErr) != std::string::npos || errors[k].find(fieldErr) != std::string::npos)
                 errors.erase(errors.begin() + (long)k);
             else ++k;
-        errorAt(node,"undefined method '" + member->member + "' on type '" + baseType + "'" +
-                     didYouMean(member->member, 'm', getExpressionType(member->base.get())));
+        // An unknown receiver after a top-level clash comes from the clash (already reported).
+        if (baseType != "unknown" || clashedNames.empty())
+            errorAt(node,"undefined method '" + member->member + "' on type '" + baseType + "'" +
+                         didYouMean(member->member, 'm', getExpressionType(member->base.get())));
         expressionTypes[node] = "unknown";
         return;
     }
@@ -442,6 +444,13 @@ void TypeChecker::visit(CallExpr* node) {
     bool isVariadic = !expectedParamTypes.empty() && expectedParamTypes.back() == "...";
     size_t fixedCount = isVariadic ? expectedParamTypes.size() - 1 : expectedParamTypes.size();
 
+    // A name two modules define (reported once, at the clash): this call may have been
+    // written against the other definition, so its arguments are not checked against this one.
+    if (clashedNames.count(funcName) && (isVariadic ? node->args.size() < fixedCount : node->args.size() != fixedCount)) {
+        for (auto& a : node->args) a->accept(this);
+        expressionTypes[node] = sig.first;
+        return;
+    }
     // Check argument count
     if (isVariadic) {
         if (node->args.size() < fixedCount) {
@@ -517,7 +526,7 @@ void TypeChecker::visit(CallExpr* node) {
                 }
             }
             std::string e = assignabilityError(expectedParamTypes[i], argType, node->args[i].get());
-            if (!e.empty())
+            if (!e.empty() && !clashedNames.count(funcName))
                 errorAt(node,"argument " + std::to_string(i + 1) + " type mismatch: expected " +
                             expectedParamTypes[i] + ", got " + argType + " (" + e + ")");
         } else if (isVariadic) {

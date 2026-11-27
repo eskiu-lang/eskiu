@@ -390,8 +390,8 @@ void sema_expr_member(Sema* s, *ExprNode e, int k) {
         // An array/slice base (`Box<int>[]`) is not its element struct (`s.len`).
         if (bt[0] != 0 && (int)bt[btn - 1] != 93) {   // base type known → validate the member
             string sn = sema_struct_of_type(bt);
-            if (sema_is_struct(s, sn) == 1 && (sema_has_member(s, sema_cat(sema_cat(sn, "."), m.sval)) == 0
-                                               || sema_field_type(s, sn, m.sval) == null)) {
+            if (sema_is_struct(s, sn) == 1 && StrTab_has(&s.clashed, sn) == 0
+                && (sema_has_member(s, sema_cat(sema_cat(sn, "."), m.sval)) == 0 || sema_field_type(s, sn, m.sval) == null)) {
                 s.had_error = 1;               // (a method is only called, never a value)
                 dprintf(2, "error: %s:%d:%d: struct '%s' has no member '%s'%s\n", s.filename, s.line, s.col, sn, m.sval, sema_did_you_mean(s, m.sval, 2, bt));
             }

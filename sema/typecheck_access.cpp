@@ -186,9 +186,10 @@ void TypeChecker::visit(MemberExpr* node) {
             }
         }
 
-        // Member not found in struct
-        errorAt(node,"struct '" + structName + "' has no member '" + node->member + "'" +
-                     didYouMean(node->member, 'm', baseType));
+        // Member not found in struct (unless two modules define the struct: reported once, at the clash)
+        if (!clashedNames.count(structName))
+            errorAt(node,"struct '" + structName + "' has no member '" + node->member + "'" +
+                         didYouMean(node->member, 'm', baseType));
         expressionTypes[node] = "unknown";
     } else if (baseType == "unknown") {
         // Base type is unknown, can't validate member access

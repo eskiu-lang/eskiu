@@ -685,6 +685,13 @@ private:
     }
     // Report at top-level declaration `d`, naming the file it was declared in.
     void errorAtDecl(Decl* d, const std::string& message);
+    // After a top-level clash on `name`: a note at its earlier declaration `prev`, and the
+    // name joins clashedNames, so member and argument errors that only follow from the
+    // clash (code checked against the other declaration) are not reported.
+    void noteFirstDefined(Decl* prev, const std::string& name, const std::string& shown = "");
+    std::set<std::string> clashedNames;
+    // " (in <time>)" for a stdlib file, " (in package 'ui')" for a dependency's, else "".
+    static std::string moduleOfFile(const std::string& file);
 
     // Cache for expression types
     std::map<Expr*, std::string> expressionTypes;

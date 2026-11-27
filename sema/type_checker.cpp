@@ -142,19 +142,13 @@ bool TypeChecker::check(Program* program) {
             if (funcDecl->isAsync)
                 sigRet = "*Future<" + (funcDecl->returnType == "void" ? std::string("uint8")
                                                                       : funcDecl->returnType) + ">";
-            // A second *definition* (body) of the same name is a redefinition; a
-            // body-less forward declaration alongside one definition is fine.
             if (!funcDecl->operatorSym.empty()) {
                 std::string disp = "operator " + (funcDecl->operatorSym == "u-" ? std::string("-") : funcDecl->operatorSym) + "(";
                 for (size_t i = 0; i < funcDecl->params.size(); ++i)
                     disp += (i ? ", " : "") + funcDecl->params[i].first;
                 fnDisplayNames[funcDecl->name] = disp + ")";
             }
-            if (funcDecl->body) {
-                if (definedFnBodies.count(funcDecl->name))
-                    errorAt(funcDecl, "redefinition of function '" + fnDisplay(funcDecl->name) + "'");
-                definedFnBodies.insert(funcDecl->name);
-            }
+            if (funcDecl->body) definedFnBodies.insert(funcDecl->name);   // two: checkTopLevelNames
             defineFunction(funcDecl->name, sigRet, paramTypes);
             functionParamEscaping[funcDecl->name] = funcDecl->paramEscaping;
             if (funcDecl->mustUse) mustUseFuncs.insert(funcDecl->name);
@@ -285,7 +279,7 @@ bool TypeChecker::check(Program* program) {
 void TypeChecker::checkTopLevelNames(Program* program) {
     struct Entry { std::string kind; Decl* decl; };
     std::map<std::string, Entry> seen;
-    std::map<std::string, std::string> externSigs;   // extern name -> its signature
+    std::map<std::string, std::pair<std::string, Decl*>> externSigs;   // extern name -> its signature, first decl
     auto sameFields = [](const StructDecl* x, const StructDecl* y) {
         auto a = layoutFields(x->fields, x->pads), b = layoutFields(y->fields, y->pads);
         if (a.size() != b.size()) return false;
@@ -303,34 +297,43 @@ void TypeChecker::checkTopLevelNames(Program* program) {
         auto it = seen.find(name);
         if (it == seen.end()) { seen[name] = {kind, d}; return; }
         Entry& prev = it->second;
+        // Every clash names the earlier declaration (it may be in another module).
+        auto clash = [&](const std::string& message, const std::string& shown) {
+            errorAtDecl(d, message);
+            noteFirstDefined(prev.decl, name, shown);
+        };
         if (kind == "function" && prev.kind == "function") {
             auto* a = static_cast<FunctionDecl*>(prev.decl);
             auto* b = static_cast<FunctionDecl*>(d);
+            std::string shown = fnDisplay(name);
             if (!a->typeParams.empty() || !b->typeParams.empty()) {
                 // A generic function has one definition, and its name is not shared with a
                 // non-generic one (a call would silently pick the generic).
                 if (a->body && b->body) {
-                    errorAtDecl(d, "redefinition of function '" + fnDisplay(name) + "'");
+                    clash("redefinition of function '" + shown + "'", shown);
                     return;
                 }
                 if (a->typeParams.empty() != b->typeParams.empty()) {
-                    errorAtDecl(d, "conflicting declaration of function '" + fnDisplay(name) +
-                                   "' (a generic and a non-generic function cannot share a name)");
+                    clash("conflicting declaration of function '" + shown +
+                          "' (a generic and a non-generic function cannot share a name)", shown);
                     return;
                 }
             } else if (sigOf(a) != sigOf(b)) {
-                errorAtDecl(d, "conflicting declaration of function '" + fnDisplay(name) + "' (" +
-                           sigOf(b) + " vs the earlier " + sigOf(a) + ")");
+                clash("conflicting declaration of function '" + shown + "' (" +
+                      sigOf(b) + " vs the earlier " + sigOf(a) + ")", shown);
+                return;
+            } else if (a->body && b->body) {
+                clash("redefinition of function '" + shown + "'", shown);
                 return;
             }
             if (!prev.decl || (!a->body && b->body)) prev.decl = d;
-            return;                                          // two bodies: reported as a redefinition
+            return;
         }
         if (kind == "variable" && prev.kind == "variable") {
             auto* a = static_cast<VarDecl*>(prev.decl);
             auto* b = static_cast<VarDecl*>(d);
             if ((a->isExtern || b->isExtern) && normalizeType(a->type) == normalizeType(b->type)) return;
-            errorAtDecl(d, "redefinition of global variable '" + name + "'");
+            clash("redefinition of global variable '" + name + "'", "");
             return;
         }
         if (kind == "struct" && prev.kind == "struct") {
@@ -338,11 +341,11 @@ void TypeChecker::checkTopLevelNames(Program* program) {
             auto* b = static_cast<StructDecl*>(d);
             if (sameFields(a, b) && a->methods.size() == b->methods.size() &&
                 a->typeParams == b->typeParams) return;      // the same declaration, merged twice
-            errorAtDecl(d, "redefinition of struct '" + name + "' with different fields");
+            clash("redefinition of struct '" + name + "' with different fields", "");
             return;
         }
         if (kind == prev.kind) {
-            errorAtDecl(d, "redefinition of " + kind + " '" + name + "'");
+            clash("redefinition of " + kind + " '" + name + "'", "");
             return;
         }
         // Types and enum members live apart (a struct `G` beside a member `G` is fine);
@@ -352,7 +355,7 @@ void TypeChecker::checkTopLevelNames(Program* program) {
         };
         if ((isType(kind) && prev.kind == "enum member") || (isType(prev.kind) && kind == "enum member")) return;
         auto article = [](const std::string& k) { return std::string(k[0] == 'e' || k[0] == 'i' || k[0] == 'u' ? "an " : "a ") + k; };
-        errorAtDecl(d, "'" + name + "' is declared as both " + article(prev.kind) + " and " + article(kind));
+        clash("'" + name + "' is declared as both " + article(prev.kind) + " and " + article(kind), "");
     };
     for (const auto& decl : program->declarations) {
         Decl* d = decl.get();
@@ -385,10 +388,12 @@ void TypeChecker::checkTopLevelNames(Program* program) {
             for (size_t i = 0; i < x->params.size(); ++i)
                 sig += (i ? ", " : "") + (x->params[i].first == "..." ? std::string("...") : normalizeType(x->params[i].first));
             sig += ")";
-            auto [it, fresh] = externSigs.insert({x->name, sig});
-            if (!fresh && it->second != sig)
+            auto [it, fresh] = externSigs.insert({x->name, {sig, x}});
+            if (!fresh && it->second.first != sig) {
                 errorAtDecl(x, "conflicting declaration of extern '" + x->name + "' (" + sig +
-                               " vs the earlier " + it->second + ")");
+                               " vs the earlier " + it->second.first + ")");
+                noteFirstDefined(it->second.second, x->name);
+            }
         }
         else if (auto* i = nodeCast<InterfaceDecl>(d)) declare(i->name, "interface", i);
         else if (auto* a = nodeCast<TypeAliasDecl>(d)) {
@@ -404,8 +409,10 @@ void TypeChecker::checkTopLevelNames(Program* program) {
         if (auto* x = nodeCast<ExternDecl>(decl.get())) {
             auto it = seen.find(x->name);
             if (it != seen.end() && it->second.kind == "function" && it->second.decl &&
-                !static_cast<FunctionDecl*>(it->second.decl)->typeParams.empty())
+                !static_cast<FunctionDecl*>(it->second.decl)->typeParams.empty()) {
                 errorAtDecl(x, "conflicting declaration of extern '" + x->name +
                                "' (a generic function has the same name)");
+                noteFirstDefined(it->second.decl, x->name);
+            }
         }
 }

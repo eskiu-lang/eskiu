@@ -7,10 +7,13 @@ void sema_check_top_names(Sema* s, *Program prog) {
     let exts: StrTab;    // name -> index of its first extern declaration
     memset((*void)&tix, 0, sizeof(NameIdx));
     memset((*void)&exts, 0, sizeof(StrTab));
+    string primary = s.filename;
+    int primary_import = s.cur_import;
     int i = 0;
     int n = List_len<*DeclNode>(&prog.decls);
     while (i < n) {
         *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        sema_enter_decl(s, d, primary);
         s.line = d.line;
         s.col = d.col;
         if (d.kind == DK_FUNCTION) {
@@ -61,6 +64,7 @@ void sema_check_top_names(Sema* s, *Program prog) {
                 if (sema_streq(a, b) == 0) {
                     s.had_error = 1;
                     dprintf(2, "error: %s:%d:%d: conflicting declaration of extern '%s' (%s vs the earlier %s)\n", s.filename, s.line, s.col, d.name, b, a);
+                    sema_note_first(s, pd, d.name, d.name);
                 }
             }
         }
@@ -77,6 +81,7 @@ void sema_check_top_names(Sema* s, *Program prog) {
     i = 0;
     while (i < n) {
         *DeclNode d = List_get<*DeclNode>(&prog.decls, i);
+        sema_enter_decl(s, d, primary);
         if (d.kind == DK_EXTERN) {
             int k = sema_name_index(&tix, d.name);
             if (k >= 0) {
@@ -85,11 +90,14 @@ void sema_check_top_names(Sema* s, *Program prog) {
                     s.had_error = 1;
                     dprintf(2, "error: %s:%d:%d: conflicting declaration of extern '%s' (a generic function has the same name)\n",
                            s.filename, d.line, d.col, d.name);
+                    sema_note_first(s, ne.d, d.name, d.name);
                 }
             }
         }
         i = i + 1;
     }
+    s.filename = primary;
+    s.cur_import = primary_import;
 }
 
 // Source spelling of a function for diagnostics: an operator shows as `operator +(V, V)`

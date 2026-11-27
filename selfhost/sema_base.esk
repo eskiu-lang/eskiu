@@ -149,6 +149,7 @@ struct Sema {
     // Globals declared after the top-level declaration being checked: C declares a global
     // at its definition, so an earlier initializer or function body cannot name it.
     StrTab late_globals;   // a set: name -> 1
+    StrTab clashed;        // top-level names declared twice (a set): see sema_note_first
     StrTab script_lines;   // while a script's implicit main is checked: its file's globals ->
     StrTab script_cols;    // their declaration's line and column (mirrors the C++ scriptGlobalPos)
     int in_script;

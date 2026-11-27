@@ -244,8 +244,6 @@ int sema_check(Sema* s, *Program prog) {
     if (top_err == 1) {   // a duplicate name: the rest is still checked (as the C++)
         s.had_error = 1;
     }
-    let defined_fns: StrTab;    // top-level functions WITH a body, to catch a redefinition (a set)
-    memset((*void)&defined_fns, 0, sizeof(StrTab));
     string primary = s.filename;
     int i = 0;
     int n = List_len<*DeclNode>(&prog.decls);
@@ -262,14 +260,6 @@ int sema_check(Sema* s, *Program prog) {
         sema_enter_decl(s, d, primary);
         s.line = d.line;
         s.col = d.col;
-        if (d.kind == DK_FUNCTION && d.body != null) {
-            if (StrTab_has(&defined_fns, d.name) == 1) {
-                s.had_error = 1;
-                dprintf(2, "error: %s:%d:%d: redefinition of function '%s'\n", s.filename, s.line, s.col, sema_fn_display(d));
-            } else {
-                StrTab_set(&defined_fns, d.name, 1);
-            }
-        }
         if (d.kind == DK_INTRINSIC) {
             if (ast_atomic_op(d.name)[0] == 0) {
                 s.had_error = 1;

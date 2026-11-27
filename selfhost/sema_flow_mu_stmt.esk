@@ -427,6 +427,63 @@ int sema_name_index(NameIdx* tix, string name) {
     return NameIdx_first(tix, name);
 }
 
+// Whether `file` is inside directory `dir`.
+int sema_file_under(string file, string dir) {
+    int n = cstr_len(dir);
+    if (n == 0 || cstr_len(file) <= n + 1 || (int)file[n] != 47) {
+        return 0;
+    }
+    int i = 0;
+    while (i < n) {
+        if (file[i] != dir[i]) {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+// " (in <time>)" for a stdlib file, " (in package 'ui')" for a dependency's, else ""
+// (mirrors TypeChecker::moduleOfFile).
+string sema_module_of(string file) {
+    int i = 0;
+    while (i < List_len<string>(&g_pkg_roots)) {
+        if (sema_file_under(file, List_get<string>(&g_pkg_roots, i)) == 1) {
+            return sema_cat(sema_cat(" (in package '", List_get<string>(&g_pkg_names, i)), "')");
+        }
+        i = i + 1;
+    }
+    string lib = "stdlib";
+    if (g_stdlib_root != null) {
+        if (g_stdlib_root[0] != 0) {
+            lib = sema_cat(g_stdlib_root, "/stdlib");
+        }
+    }
+    int n = cstr_len(lib);
+    int fl = cstr_len(file);
+    if (sema_file_under(file, lib) == 1 && fl > n + 5 && sema_streq(p_sub(file, fl - 4, fl), ".esk") == 1) {
+        return sema_cat(sema_cat(" (in <", p_sub(file, n + 1, fl - 4)), ">)");
+    }
+    return "";
+}
+
+// After a top-level clash on `name`: a note at its earlier declaration `prev`, and the name
+// joins s.clashed, so member and argument errors that only follow from the clash are not
+// reported (mirrors TypeChecker::noteFirstDefined).
+void sema_note_first(Sema* s, *DeclNode prev, string name, string shown) {
+    StrTab_set(&s.clashed, name, 1);
+    if (prev == null) {
+        return;
+    }
+    string file = s.root_file;
+    if (prev.file != null) {
+        if (prev.file[0] != 0) {
+            file = prev.file;
+        }
+    }
+    dprintf(2, "note: %s:%d:%d: '%s' is first defined here%s\n", file, prev.line, prev.col, shown, sema_module_of(file));
+}
+
 // Declare top-level `name` of `kind`; report a duplicate or a conflict (mirrors the C++
 // checkTopLevelNames: prototypes, `extern` variables and identical structs are allowed).
 void sema_declare_top(Sema* s, List<NameEnt>* tab, NameIdx* tix, string name, string kind, *DeclNode d) {
@@ -444,22 +501,39 @@ void sema_declare_top(Sema* s, List<NameEnt>* tab, NameIdx* tix, string name, st
     if (sema_streq(kind, "function") == 1 && sema_streq(prev.kind, "function") == 1) {
         int pg = List_len<TypeParam>(&prev.d.type_params);
         int dg = List_len<TypeParam>(&d.type_params);
+        string shown = sema_fn_display(d);
         if (pg > 0 || dg > 0) {
-            // Two bodies are reported as a redefinition; a generic and a non-generic
-            // function may not share a name (a call would silently pick one).
-            if ((pg == 0) != (dg == 0) && (prev.d.body == null || d.body == null)) {
+            // A generic has one definition, and a generic and a non-generic function may
+            // not share a name (a call would silently pick one).
+            if (prev.d.body != null && d.body != null) {
+                s.had_error = 1;
+                dprintf(2, "error: %s:%d:%d: redefinition of function '%s'\n", s.filename, s.line, s.col, shown);
+                sema_note_first(s, prev.d, name, shown);
+            } else if ((pg == 0) != (dg == 0)) {
                 s.had_error = 1;
                 dprintf(2, "error: %s:%d:%d: conflicting declaration of function '%s' (a generic and a non-generic function cannot share a name)\n",
-                       s.filename, s.line, s.col, sema_fn_display(d));
+                       s.filename, s.line, s.col, shown);
+                sema_note_first(s, prev.d, name, shown);
+            } else if (prev.d.body == null && d.body != null) {
+                prev.d = d;
+                List_set<NameEnt>(tab, i, prev);
             }
             return;
         }
         if (sema_streq(sema_sig_of(prev.d), sema_sig_of(d)) == 0) {
             s.had_error = 1;
             dprintf(2, "error: %s:%d:%d: conflicting declaration of function '%s' (%s vs the earlier %s)\n",
-                   s.filename, s.line, s.col, sema_fn_display(d), sema_sig_of(d), sema_sig_of(prev.d));
+                   s.filename, s.line, s.col, shown, sema_sig_of(d), sema_sig_of(prev.d));
+            sema_note_first(s, prev.d, name, shown);
+        } else if (prev.d.body != null && d.body != null) {
+            s.had_error = 1;
+            dprintf(2, "error: %s:%d:%d: redefinition of function '%s'\n", s.filename, s.line, s.col, shown);
+            sema_note_first(s, prev.d, name, shown);
+        } else if (prev.d.body == null && d.body != null) {
+            prev.d = d;
+            List_set<NameEnt>(tab, i, prev);
         }
-        return;                                      // two bodies: reported as a redefinition
+        return;
     }
     if (sema_streq(kind, "variable") == 1 && sema_streq(prev.kind, "variable") == 1) {
         if ((prev.d.is_extern == 1 || d.is_extern == 1) && sema_streq(prev.d.ret_type, d.ret_type) == 1) {
@@ -467,6 +541,7 @@ void sema_declare_top(Sema* s, List<NameEnt>* tab, NameIdx* tix, string name, st
         }
         s.had_error = 1;
         dprintf(2, "error: %s:%d:%d: redefinition of global variable '%s'\n", s.filename, s.line, s.col, name);
+        sema_note_first(s, prev.d, name, name);
         return;
     }
     if (sema_streq(kind, "struct") == 1 && sema_streq(prev.kind, "struct") == 1) {
@@ -475,6 +550,7 @@ void sema_declare_top(Sema* s, List<NameEnt>* tab, NameIdx* tix, string name, st
         }
         s.had_error = 1;
         dprintf(2, "error: %s:%d:%d: redefinition of struct '%s' with different fields\n", s.filename, s.line, s.col, name);
+        sema_note_first(s, prev.d, name, name);
         return;
     }
     if (sema_streq(kind, "type alias") == 1 && sema_streq(prev.kind, "type alias") == 1
@@ -492,6 +568,7 @@ void sema_declare_top(Sema* s, List<NameEnt>* tab, NameIdx* tix, string name, st
     } else {
         dprintf(2, "error: %s:%d:%d: '%s' is declared as both %s and %s\n", s.filename, s.line, s.col, name, sema_article(prev.kind), sema_article(kind));
     }
+    sema_note_first(s, prev.d, name, name);
 }
 
 // "ret(p1, p2)" of an extern with type aliases and classic enums resolved (as C++ compares
