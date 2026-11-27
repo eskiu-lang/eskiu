@@ -89,6 +89,11 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ### Fixed
 
+- `<args>`: an option registered without dashes (`ArgParser_option_int(&p, "w", "width",
+  ...)`) was never matched, silently. A name without dashes now means the same as with
+  them: a one-letter one is the short option (`-w`), a longer one the long option
+  (`--width`).
+
 - A record or array over 16 bytes is copied in memory (memmove, memset or memcpy from a
   constant), never loaded and stored as one value. An assignment such as
   `*self = State{}` of a record holding arrays of records made LLVM build thousands of
