@@ -208,10 +208,11 @@ link (50 ms): about 0.1 s against 4 to 95 s for the compile it replaces. The 45 
 take 25 MB. An edit to a file every test imports (`src/match.esk`, 24 of them) misses
 for each of them.
 
-The compiles are dominated by the back end at `-O2`: `tests/battle_integration.esk` spends
-91 s in `emit-object` (56 s with the released 0.16.3 on LLVM 22), against 3 s in the
-optimizer and 0.2 s in everything before. That is a lead for the back end, separate from
-the cache.
+These numbers were taken before the copies of large records moved to memory (0.17.0): then
+the back end dominated, `tests/battle_integration.esk` spending 91 s in `emit-object`
+(56 s with the released 0.16.3 on LLVM 22). With that change the same file compiles in
+3.8 s at `-O2` (2.0 s optimizing, 1.6 s emitting), and the game's whole `make check` went
+from 1290 s to 168 s with no cache at all.
 
 To measure again: `--time` on one compile shows `cache-key`, `cache hit`/`miss`,
 `cache-copy` or `cache-store`; for a suite, time the commands with an empty

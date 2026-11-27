@@ -1,40 +1,59 @@
-# Eskiu 0.16.3
+# Eskiu 0.17.0
 
-Eskiu 0.16.3 is a security release. It fixes the findings of an audit of 0.16.2: memory
-safety and limits in the standard library, symbolic links and lock records in the package
-manager, compile-time blowups in both compilers, and the playground, editor and CI surfaces.
-Update if you build packages you did not write, serve HTTP with the standard library, or run
-the playground.
+Eskiu 0.17.0 makes the edit, build and test cycle of a large program shorter and clearer.
+A game of 20,000 lines ran its test suite in 21 minutes with 0.16.3 and in under 3 with
+0.17.0, and a rebuild that changes nothing is now close to instant.
 
-## Security
+## Faster builds
 
-- **Standard library.**
-  - `<eventloop>` on Windows and WebAssembly grows its poll set instead of writing past a
-    fixed table (4096 or 1024 descriptors).
-  - `fetch_last_error()` keeps one message per thread; two threads failing at once could
-    corrupt the heap.
-  - The HTTP/1.1 servers and `http_recv` hold a request head to 64 KiB however it is split.
-  - `fs_temp_file` and `fs_temp_dir` reject a prefix with a path separator.
-- **Package manager.**
-  - A web build copies a package's `[web]` assets only from inside the package: symbolic
-    links out of it are skipped.
-  - A native archive whose `lib` directory is a symbolic link, or holds one leading out of
-    the archive, is refused.
-  - `eskiu.toml` rejects control characters in a dependency's `git`, `rev` or `path`, which
-    could add records to `eskiu.lock`.
-- **Compilers.**
-  - Macro expansion stops at 16 MiB of replacement text per file with an error.
-  - A generic async function with many type parameters no longer builds every subset of
-    them. Both compilers.
-- **Editors.** The VS Code extension honors Workspace Trust, and neither it, the language
-  server nor the IntelliJ plugin runs a compiler from a repository you have not trusted.
-- **Playground.** Output is capped as it is read, a program's whole process tree is killed
-  when it ends, and programs run with no network.
-- **CI.** Read-only tokens except where a release is made, actions pinned by commit, store
-  tokens only in the steps that publish.
+- **Large records are copied in memory.** Assigning a struct literal to a big record
+  (`*self = State{}`) or copying one made LLVM build one value per field, and its
+  instruction selection then took up to a minute for a single file at -O2. Such copies
+  are now a `memcpy`/`memset`, as Clang does: the game's slowest test went from 67.5 s to
+  2.4 s.
+- **An object cache, on by default.** A compile reuses the object of an earlier one with
+  the same sources (every imported file, the standard library and packages included),
+  compiler, target and flags; only parsing and the link run again, and the warnings are
+  printed again. Objects live in `~/.eskiu/cache/obj`, at most 1 GiB. `--no-cache` or
+  `ESKIU_NO_CACHE=1` turn it off.
+- **`--time`** prints the time of each compile phase, the link and the total.
 
-`fs_temp_file` and `fs_temp_dir` now fail (EINVAL) for a prefix containing `/` or `\`; other
-code that compiles with 0.16.2 compiles and behaves the same. The full list is in the
+## Testing
+
+- **`eskiuc test`** runs several tests at a time (`-j N`), selects them by name or glob,
+  stops a test after `--timeout` seconds and tells a failed build, a failed test, a
+  timeout and a crash apart. `--json` prints one line per test, for CI and tools.
+
+## Clearer errors
+
+- **A failed `--safe` check says what and where:** `main.esk:12:20: index 7 out of bounds
+  for length 4`, then the program aborts. `--dev` turns on every check and `-Wall`.
+- **A name defined twice** points at the first definition and the module or package it is
+  in, without the cascade of errors that used to follow inside the other module.
+- **A syntax error from a macro** names the macro: `'CLOCK_MONO' is a macro (from <time>)
+  and expands to '6' here`.
+- A keyword used as a name gets one clear message wherever it appears.
+
+## Editors
+
+- VS Code and the language server (Neovim, Helix, Zed, the JetBrains plugin) now share
+  one implementation and check a file in the program it belongs to (the package's `main`),
+  so a file that uses what an earlier import declared no longer shows false errors.
+  Unsaved buffers are checked with the new `--overlay`. Find references and rename cover
+  the whole program.
+
+## Changed
+
+- **Exit codes.** A wrong command line exits with 2 in every command (an unknown option,
+  a bad value), 1 is a failed compile, link or test, 0 success. A failed `--safe` check
+  now ends the program with SIGABRT (exit status 134) instead of SIGTRAP (133).
+- `<args>`: an option registered without dashes (`"w"`, `"width"`) now matches `-w` and
+  `--width`; it used to never match.
+- The browser playground is gone from the site; the quickstart installs the compiler in a
+  minute, and agents run code through the MCP.
+
+Code that compiles with 0.16.3 compiles with 0.17.0. Scripts that check the exit status of
+a `--safe` failure or of a usage error need the new codes. The full list is in the
 [CHANGELOG](https://github.com/eskiu-lang/eskiu/blob/main/CHANGELOG.md).
 
 ## Install

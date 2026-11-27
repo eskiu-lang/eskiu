@@ -217,29 +217,151 @@ figure img { border-radius: 14px; }
 <body><a class="skip-link" href="#main-content">Skip to content</a>
   <header class="top">
     <div class="bar top-in">
-      <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.16.3</span></a>
-      <nav class="nav" aria-label="Main"><div class="nav-g"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-language">Language<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-language"><a href="language.html#language"><b>The language</b><span>Memory, types, errors and C interop</span></a><a href="language.html#compare"><b>How it compares</b><span>The choices behind Eskiu</span></a><a href="language.html#status"><b>Stability and maturity</b><span>What to expect before 1.0</span></a></div></div><div class="nav-g"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-learn">Learn<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-learn"><a href="quickstart.html"><b>Get started</b><span>Install it and run a first program</span></a><a href="the-book-of-eskiu.html"><b>The Book of Eskiu</b><span>The language, chapter by chapter</span></a><a href="agents.html"><b>For agents</b><span>Install, drive and test Eskiu from an agent</span></a></div></div><div class="nav-g cur"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-docs">Documentation<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-docs"><a href="docs/index.html"><b>Reference</b><span>The language, standard library and compiler</span></a><a href="platforms.html"><b>Platforms</b><span>Targets, toolchains and requirements</span></a><a href="docs/stability.html"><b>Stability policy</b><span>Compatibility between releases</span></a><a href="changelog.html" aria-current="page"><b>Release notes</b><span>What changed in each version</span></a></div></div><div class="nav-g"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-ecosystem">Ecosystem<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-ecosystem"><a href="ui.html"><b>Eskiu UI</b><span>Native apps for phones, desktops and the web</span></a><a href="gpu.html"><b>GPU</b><span>Compute, 3D models and machine learning on WebGPU</span></a><a href="packages.html"><b>Packages</b><span>Libraries that extend the language</span></a><a href="showcase.html"><b>Built with Eskiu</b><span>Projects and case studies</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+      <a class="brand" href="index.html"><img src="../assets/logo.png" alt="" />eskiu<span class="v">v0.17.0</span></a>
+      <nav class="nav" aria-label="Main"><div class="nav-g"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-language">Language<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-language"><a href="language.html#language"><b>The language</b><span>Memory, types, errors and C interop</span></a><a href="language.html#compare"><b>How it compares</b><span>The choices behind Eskiu</span></a><a href="language.html#status"><b>Stability and maturity</b><span>What to expect before 1.0</span></a></div></div><div class="nav-g"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-learn">Learn<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-learn"><a href="quickstart.html"><b>Get started</b><span>Install it and run a first program</span></a><a href="the-book-of-eskiu.html"><b>The Book of Eskiu</b><span>The language, chapter by chapter</span></a><a href="agents.html"><b>For agents</b><span>Install, drive and test Eskiu from an agent</span></a></div></div><div class="nav-g cur"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-docs">Documentation<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-docs"><a href="docs/index.html"><b>Reference</b><span>The language, standard library and compiler</span></a><a href="platforms.html"><b>Platforms</b><span>Targets, toolchains and requirements</span></a><a href="docs/patterns.html"><b>Patterns and pitfalls</b><span>Captures, lifetimes, copies, cleanup, the C boundary</span></a><a href="docs/stability.html"><b>Stability policy</b><span>Compatibility between releases</span></a><a href="changelog.html" aria-current="page"><b>Release notes</b><span>What changed in each version</span></a></div></div><div class="nav-g"><button type="button" class="nav-t" aria-expanded="false" aria-controls="nav-ecosystem">Ecosystem<svg viewBox="0 0 10 10" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button><div class="nav-m" id="nav-ecosystem"><a href="ui.html"><b>Eskiu UI</b><span>Native apps for phones, desktops and the web</span></a><a href="gpu.html"><b>GPU</b><span>Compute, 3D models and machine learning on WebGPU</span></a><a href="packages.html"><b>Packages</b><span>Libraries that extend the language</span></a><a href="showcase.html"><b>Built with Eskiu</b><span>Projects and case studies</span></a></div></div><a class="nav-t" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
       <div class="top-right">
-        <a class="btn-install" href="index.html#install">Install 0.16.3</a>
+        <a class="btn-install" href="index.html#install">Install 0.17.0</a>
         <button class="menu-btn" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="drawer">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="10" x2="17" y2="10"/><line x1="3" y1="14" x2="17" y2="14"/></svg>
         </button>
       </div>
     </div>
-    <nav class="drawer" id="drawer" aria-label="Main"><div class="dr-g"><span class="dr-h">Language</span><a href="language.html#language">The language</a><a href="language.html#compare">How it compares</a><a href="language.html#status">Stability and maturity</a></div><div class="dr-g"><span class="dr-h">Learn</span><a href="quickstart.html">Get started</a><a href="the-book-of-eskiu.html">The Book of Eskiu</a><a href="agents.html">For agents</a></div><div class="dr-g"><span class="dr-h">Documentation</span><a href="docs/index.html">Reference</a><a href="platforms.html">Platforms</a><a href="docs/stability.html">Stability policy</a><a href="changelog.html" aria-current="page">Release notes</a></div><div class="dr-g"><span class="dr-h">Ecosystem</span><a href="ui.html">Eskiu UI</a><a href="gpu.html">GPU</a><a href="packages.html">Packages</a><a href="showcase.html">Built with Eskiu</a></div><a class="dr-gh" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
+    <nav class="drawer" id="drawer" aria-label="Main"><div class="dr-g"><span class="dr-h">Language</span><a href="language.html#language">The language</a><a href="language.html#compare">How it compares</a><a href="language.html#status">Stability and maturity</a></div><div class="dr-g"><span class="dr-h">Learn</span><a href="quickstart.html">Get started</a><a href="the-book-of-eskiu.html">The Book of Eskiu</a><a href="agents.html">For agents</a></div><div class="dr-g"><span class="dr-h">Documentation</span><a href="docs/index.html">Reference</a><a href="platforms.html">Platforms</a><a href="docs/patterns.html">Patterns and pitfalls</a><a href="docs/stability.html">Stability policy</a><a href="changelog.html" aria-current="page">Release notes</a></div><div class="dr-g"><span class="dr-h">Ecosystem</span><a href="ui.html">Eskiu UI</a><a href="gpu.html">GPU</a><a href="packages.html">Packages</a><a href="showcase.html">Built with Eskiu</a></div><a class="dr-gh" href="https://github.com/eskiu-lang/eskiu">GitHub</a></nav>
   </header>
   <div class="bar layout has-toc">
-    <aside class="side" aria-label="Documentation"><span class="grp">Language</span><nav><a href="docs/index.html">Overview</a><a href="docs/getting-started.html">Getting started</a><a href="docs/spec.html">Spec</a><a href="docs/grammar.html">Grammar</a><a href="docs/build.html">Tooling</a><a href="docs/stability.html">Stability</a><a href="docs/glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="docs/internals.html">Overview</a><a href="docs/architecture.html">Architecture</a><a href="docs/design.html">Design</a><a href="docs/abi.html">ABI</a><a href="docs/async-design.html">Async</a><a href="docs/self-hosting.html">Self-hosting</a><a href="docs/http2-design.html">HTTP/2</a><a href="docs/api.html">C++ API</a><a href="docs/debugging.html">Debugging</a><a href="docs/contributing.html">Contributing</a><a href="docs/roadmap.html">Roadmap</a></nav></aside>
+    <aside class="side" aria-label="Documentation"><span class="grp">Language</span><nav><a href="docs/index.html">Overview</a><a href="docs/getting-started.html">Getting started</a><a href="docs/spec.html">Spec</a><a href="docs/patterns.html">Patterns</a><a href="docs/grammar.html">Grammar</a><a href="docs/build.html">Tooling</a><a href="docs/stability.html">Stability</a><a href="docs/glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="docs/internals.html">Overview</a><a href="docs/architecture.html">Architecture</a><a href="docs/design.html">Design</a><a href="docs/abi.html">ABI</a><a href="docs/async-design.html">Async</a><a href="docs/self-hosting.html">Self-hosting</a><a href="docs/http2-design.html">HTTP/2</a><a href="docs/api.html">C++ API</a><a href="docs/debugging.html">Debugging</a><a href="docs/contributing.html">Contributing</a><a href="docs/roadmap.html">Roadmap</a></nav></aside>
     <main class="content" id="main-content">
-      <details class="side-m"><summary>Documentation</summary><div class="inner"><span class="grp">Language</span><nav><a href="docs/index.html">Overview</a><a href="docs/getting-started.html">Getting started</a><a href="docs/spec.html">Spec</a><a href="docs/grammar.html">Grammar</a><a href="docs/build.html">Tooling</a><a href="docs/stability.html">Stability</a><a href="docs/glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="docs/internals.html">Overview</a><a href="docs/architecture.html">Architecture</a><a href="docs/design.html">Design</a><a href="docs/abi.html">ABI</a><a href="docs/async-design.html">Async</a><a href="docs/self-hosting.html">Self-hosting</a><a href="docs/http2-design.html">HTTP/2</a><a href="docs/api.html">C++ API</a><a href="docs/debugging.html">Debugging</a><a href="docs/contributing.html">Contributing</a><a href="docs/roadmap.html">Roadmap</a></nav></div></details>
+      <details class="side-m"><summary>Documentation</summary><div class="inner"><span class="grp">Language</span><nav><a href="docs/index.html">Overview</a><a href="docs/getting-started.html">Getting started</a><a href="docs/spec.html">Spec</a><a href="docs/patterns.html">Patterns</a><a href="docs/grammar.html">Grammar</a><a href="docs/build.html">Tooling</a><a href="docs/stability.html">Stability</a><a href="docs/glossary.html">Glossary</a></nav><span class="grp">Compiler internals</span><nav><a href="docs/internals.html">Overview</a><a href="docs/architecture.html">Architecture</a><a href="docs/design.html">Design</a><a href="docs/abi.html">ABI</a><a href="docs/async-design.html">Async</a><a href="docs/self-hosting.html">Self-hosting</a><a href="docs/http2-design.html">HTTP/2</a><a href="docs/api.html">C++ API</a><a href="docs/debugging.html">Debugging</a><a href="docs/contributing.html">Contributing</a><a href="docs/roadmap.html">Roadmap</a></nav></div></details>
 <h1 id="changelog">Changelog</h1>
 <p>All notable changes to Eskiu are documented in this file.</p>
 <p>The format is based on <a href="https://keepachangelog.com/en/1.1.0/">Keep a Changelog</a>, and the
 project follows the compatibility rules in <a href="docs/stability.html">docs/lang/stability.md</a>.</p>
 <hr>
-<h2 id="unreleased">[Unreleased]</h2>
+<h2 id="0170-2026-11-26">[0.17.0] - 2026-11-26</h2>
 <details class="cl-full">
 <summary>Details</summary>
+<h3 id="added">Added</h3>
+<ul>
+<li>
+<p><code>--dev</code>, the profile to develop with: every <code>--safe</code> check and the <code>-Wall</code> lints, at the
+  default <code>-O0</code> (an explicit <code>--safe=LIST</code> or <code>-O&lt;n&gt;</code> still applies). In a package,
+  <code>eskiuc build --dev</code>, <code>eskiuc test --dev</code> and <code>eskiuc run --dev [-- ARGS]</code> use it. Both
+  compilers.</p>
+</li>
+<li>
+<p><code>eskiuc COMMAND --help</code> (or <code>-h</code>) prints the usage of every command (<code>new</code>, <code>add</code>,
+  <code>build</code>, <code>run</code>, <code>test</code>, <code>fetch</code>, <code>fmt</code>, <code>repl</code>, <code>doctor</code>) and does nothing else. <code>fmt
+  --help</code> opened a file named <code>--help</code>, <code>new --help</code> created a package by that name, and
+  <code>build --help</code> and <code>test --help</code> needed an <code>eskiu.toml</code>.</p>
+</li>
+<li>
+<p><code>--time</code> prints the wall time of each compile phase, the link and the total on stderr,
+  as <code>ESKIU_TIME_PHASES=1</code> did (which still works), now with the link and the total.</p>
+</li>
+<li>
+<p>An object cache, on by default (<code>--no-cache</code>, <code>ESKIU_NO_CACHE=1</code> or <code>ESKIU_CACHE=0</code> turn it off): a compile that writes an executable
+  or object file reuses the object of an earlier compile with the same sources (every
+  imported file, the standard library and packages included), compiler, target and flags,
+  so only parsing and the link run again; the warnings are printed again. Objects live in
+  <code>~/.eskiu/cache/obj</code> (<code>ESKIU_CACHE_DIR</code>), at most 1 GiB (<code>ESKIU_CACHE_SIZE</code>), least
+  recently used out first; <code>--no-cache</code> / <code>ESKIU_NO_CACHE=1</code> turn it off. Off by default
+  for now. <code>--time</code> shows hits and misses (docs/dev/compile-speed.md).</p>
+</li>
+<li>
+<p><code>eskiuc test</code> runs several tests at a time (<code>-j N</code>, default half the cores), selects
+  tests by name (<code>eskiuc test inv 'combat_*'</code>), kills a test that runs past <code>--timeout</code>
+  (default 60 s), and prints one JSON object per test with <code>--json</code>. A test ends as
+  <code>pass</code>, <code>fail</code>, <code>build-failed</code>, <code>timeout</code> or <code>crashed</code> (by a signal); its output goes to
+  <code>build/tests/NAME.log</code> and is shown when it fails. Exit code 0 when all pass, 1 when one
+  does not, 2 for a wrong command line.</p>
+</li>
+</ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li>
+<p>A redefinition (struct, union, enum, function, global, type alias, interface, extern) is
+  followed by a note at the earlier declaration, <code>note: FILE:LINE:COL: 'Event' is first
+  defined here</code>, which names the module when that file is a stdlib module's (<code>(in &lt;json&gt;)</code>)
+  or a dependency's (<code>(in package 'ui')</code>); in <code>--diagnostics=json</code> it is a note of the
+  error. The errors that only follow from the clash (a member or argument count written
+  for the other declaration, a method on its result) are no longer reported, and a second
+  function body with another signature is one error, not two. Both compilers.</p>
+</li>
+<li>
+<p>A syntax error at text a macro produced is followed by a note that names the macro,
+  its module and definition, and what it expanded to: <code>const int CLOCK_MONO = 3;</code> after
+  <code>import &lt;time&gt;;</code> gave only <code>Expected declaration, got INT_LIT</code>; now <code>note: ...
+  'CLOCK_MONO' is a macro (from &lt;time&gt;, defined at .../time.esk:53) and expands to '6'
+  here; rename yours or #undef it</code>. Both compilers.</p>
+</li>
+<li>
+<p>A failed <code>--safe</code> check prints one line to stderr with the file, line and column of the
+  operation and what went wrong (<code>main.esk:12:20: index 7 out of bounds for length 4</code>,
+  <code>integer overflow in '+'</code>, <code>null pointer dereference</code>, <code>slice [2..9] out of bounds for
+  length 5</code>), flushes stdout and aborts. It used to trap with no message (SIGTRAP); the
+  program now ends with SIGABRT (exit status 134 in a POSIX shell, 3 on Windows). A
+  <code>--freestanding</code> build still traps without a message. The check itself is unchanged
+  (a compare and a branch); the report is one shared function per object file. Both
+  compilers print the same report.</p>
+</li>
+<li>Under <code>--safe</code>, slicing a raw pointer or a <code>string</code> (<code>p[lo..hi]</code>) checks the pointer for
+  null in the self-hosted compiler too, as <code>eskiuc</code> did.</li>
+<li>Editors: the VS Code extension and the language server (Neovim, Helix, Zed, the
+  IntelliJ plugin) share one implementation (<code>editor/vscode/project.js</code> and
+  <code>features.js</code>), so they find the same program, report the same diagnostics and give the
+  same answers. The server takes the extension's settings (<code>compilerPath</code>,
+  <code>compilerFlags</code>, <code>entryPoint</code>, <code>checkOnType</code>, <code>checkDelay</code>) in <code>initializationOptions</code>
+  or <code>workspace/didChangeConfiguration</code>, waits <code>checkDelay</code> after an edit like the
+  extension, and reports why a rename is refused. The IntelliJ plugin has settings for the
+  entry point, checking while typing and the delay.</li>
+<li>Editors: find references and rename cover every file of the program, from the declaring
+  file or from any file that uses the symbol; a symbol declared outside the program's
+  files (the stdlib, a package) is not renamed.</li>
+<li>Editors: saving a file checks the other open files again (what it declares changes what
+  they see). Columns after non-ASCII text are right (the compiler counts bytes, editors
+  UTF-16 units).</li>
+<li>A wrong command line exits with code 2 in every command, with one message format:
+  <code>error: unknown option '--x' (see 'eskiuc --help')</code>, or <code>error: CMD: ...</code> for a command.
+  An unknown compiler option, a bad option value (<code>-O9</code>, <code>--safe=nope</code>) and a missing
+  input exited with 1. A failed compile, link or test is still 1 (docs/lang/build.md,
+  "Exit codes"). The self-hosted driver does the same.</li>
+</ul>
+<hr>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li>
+<p>A keyword used as a name (<code>in</code>, <code>fn</code>, <code>match</code>, a type name) is reported as <code>expected a
+  name, found keyword 'in'</code> in every position: a for-in loop variable (<code>for (in in xs)</code>)
+  and a lambda's parameter now say so too in both compilers, and the self-hosted compiler
+  no longer says <code>Expected parameter name</code>, <code>Expected struct name</code> or <code>Expected enum
+  member name</code> there; it also puts <code>In struct 'S':</code> before an error in a struct member,
+  as the C++ compiler does.</p>
+</li>
+<li>
+<p><code>&lt;args&gt;</code>: an option registered without dashes (<code>ArgParser_option_int(&amp;p, "w", "width",
+  ...)</code>) was never matched, silently. A name without dashes now means the same as with
+  them: a one-letter one is the short option (<code>-w</code>), a longer one the long option
+  (<code>--width</code>).</p>
+</li>
+<li>
+<p>A record or array over 16 bytes is copied in memory (memmove, memset or memcpy from a
+  constant), never loaded and stored as one value. An assignment such as
+  <code>*self = State{}</code> of a record holding arrays of records made LLVM build thousands of
+  <code>insertvalue</code>s and its instruction selection then took a minute at -O2 for one file of a
+  game (67.5 s to 2.4 s). Programs behave the same.</p>
+</li>
+<li>Editors check a file in its program: the root is the <code>entryPoint</code> setting, else the
+  <code>main</code> of the nearest <code>eskiu.toml</code>, else the top of the file's importers, when it
+  reaches the file through <code>import "..."</code>. A file that used a function declared in a file
+  imported earlier by the program, not by itself, was checked from a sibling that imports
+  it and showed a false "undefined function". Unsaved text is passed with <code>--overlay</code>,
+  also for a file imported indirectly, and only the file's own diagnostics are shown; a
+  syntax error in another file that stops the program is shown as a note instead of a
+  clean file.</li>
+<li><code>--definition-at</code>, <code>--references-at</code> and rename: a local with the name of a function or
+  a global no longer takes the global's place (the function's declaration found nothing
+  and its calls resolved to the local, so a rename changed the local). Both compilers.</li>
+</ul>
 <h3 id="removed">Removed</h3>
 <ul>
 <li>The browser playground: the site's playground page, the home page's link to it and the
@@ -248,7 +370,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
   through the MCP's <code>eskiu_run</code>.</li>
 </ul>
 </details>
-<h2 id="0163-2026-11-23">[0.16.3] - 2026-11-23</h2>
+<h2 id="0163">[0.16.3]</h2>
 <details class="cl-full">
 <summary>Details</summary>
 <h3 id="security">Security</h3>
@@ -330,7 +452,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <h2 id="0162">[0.16.2]</h2>
 <details class="cl-full">
 <summary>Details</summary>
-<h3 id="changed">Changed</h3>
+<h3 id="changed_1">Changed</h3>
 <ul>
 <li>
 <p>A struct, union or array parameter over 16 bytes passes between Eskiu functions as a
@@ -352,7 +474,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
   imports), now get <code>-Wformat</code>, <code>-Wdeprecated</code> and the <code>-Wall</code> checks. Both compilers.</p>
 </li>
 </ul>
-<h3 id="fixed">Fixed</h3>
+<h3 id="fixed_1">Fixed</h3>
 <ul>
 <li>The self-hosted compiler names the location in "cannot assign to read-only location 'b'",
   as eskiuc does.</li>
@@ -364,7 +486,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <h2 id="0161">[0.16.1]</h2>
 <details class="cl-full">
 <summary>Details</summary>
-<h3 id="added">Added</h3>
+<h3 id="added_1">Added</h3>
 <ul>
 <li><code>*T const</code> and <code>const *T const</code>, the star-first spellings of a const pointer (<code>T* const</code>,
   <code>const T* const</code>): the same type, in both compilers. The docs and the Book write pointers
@@ -374,7 +496,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
   function or extern whose last fixed parameter is <code>string fmt</code> (such as ui's <code>textf</code>), as
   it checks printf's. Both compilers.</li>
 </ul>
-<h3 id="fixed_1">Fixed</h3>
+<h3 id="fixed_2">Fixed</h3>
 <ul>
 <li>WebAssembly: a program that throws or catches links with newer emsdks, which no longer link
   in C++ mode by default when the driver is emcc (<code>__cxa_begin_catch</code> and <code>__cxa_end_catch</code>
@@ -393,7 +515,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <h2 id="0160">[0.16.0]</h2>
 <details class="cl-full">
 <summary>Details</summary>
-<h3 id="added_1">Added</h3>
+<h3 id="added_2">Added</h3>
 <ul>
 <li>
 <p>visionOS targets: <code>--target arm64-apple-xros1.0</code> (and <code>-simulator</code>) links through
@@ -413,13 +535,13 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
   large POST).</p>
 </li>
 </ul>
-<h3 id="changed_1">Changed</h3>
+<h3 id="changed_2">Changed</h3>
 <ul>
 <li>The compiler's sources (C++ and the self-hosted compiler) are split into files of about
   600 lines by topic, and the stdlib's larger modules keep their parts in private
   directories (<code>stdlib/_fetch/</code>, <code>stdlib/_json/</code>, ...) that tools skip. No behavior change.</li>
 </ul>
-<h3 id="fixed_2">Fixed</h3>
+<h3 id="fixed_3">Fixed</h3>
 <ul>
 <li>Editors (VS Code, IntelliJ, any LSP client): a file that is a part of a module
   (<code>import "part.esk";</code>) is checked in its module, so it sees the types and names the module
@@ -432,7 +554,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <h2 id="0151">[0.15.1]</h2>
 <details class="cl-full">
 <summary>Details</summary>
-<h3 id="added_2">Added</h3>
+<h3 id="added_3">Added</h3>
 <ul>
 <li><code>install.sh --with-ui</code> (<code>ESKIU_WITH_UI=1</code> for <code>install.ps1</code>) also installs the <code>ui</code> tool
   from eskiu-packages/ui's release, checked against its SHA256SUMS; <code>install.ps1</code> keeps
@@ -453,7 +575,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <li><code>eskiuc build FILE.esk</code> builds that file of the package (an example, a tool) with the
   package's dependencies, to <code>build/FILE</code>, in place of the package's main.</li>
 </ul>
-<h3 id="changed_2">Changed</h3>
+<h3 id="changed_3">Changed</h3>
 <ul>
 <li><code>eskiuc doctor</code> reports SDL3 the way a build gets it: the <code>[native.SDL3]</code> archive of a
   package (the current one or one already fetched), cached or still to download, else the
@@ -463,7 +585,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
   <code>noundef</code>, and a function <code>nounwind</code> when nothing it does can throw. Code at <code>-O2</code> is
   unchanged on the test corpus; <code>-O0</code> objects are about 4% smaller.</li>
 </ul>
-<h3 id="fixed_3">Fixed</h3>
+<h3 id="fixed_4">Fixed</h3>
 <ul>
 <li>Compiling a file of a package directly (<code>eskiuc src/main.esk</code>, what <code>ui</code> runs) used
   <code>eskiu.lock</code> as it was after a dependency was edited in <code>eskiu.toml</code> (switched from git to
@@ -491,7 +613,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <h2 id="0150">[0.15.0]</h2>
 <details class="cl-full">
 <summary>Details</summary>
-<h3 id="added_3">Added</h3>
+<h3 id="added_4">Added</h3>
 <ul>
 <li><code>--diagnostics=json</code> prints errors and warnings on stderr as JSON lines, one object per
   diagnostic: severity, a stable <code>id</code> per kind (<code>undefined-variable</code>), message, file,
@@ -555,7 +677,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <li><code>tests/index.sh</code> prints the test catalog from each test's first comment, and <code>run.sh</code>
   fails on a test without one.</li>
 </ul>
-<h3 id="changed_3">Changed</h3>
+<h3 id="changed_4">Changed</h3>
 <ul>
 <li>The compiler is faster: the <code>ui</code> kit gallery's <code>-O0</code> object (about 47,000 lines of IR,
   nearly all of it the <code>ui</code> library and the stdlib) builds in 0.29 s instead of 0.47 s, and
@@ -593,7 +715,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
   and fails when the editor modes exceed their time budget; a release fails when its
   Windows build does.</li>
 </ul>
-<h3 id="fixed_4">Fixed</h3>
+<h3 id="fixed_5">Fixed</h3>
 <ul>
 <li>The playground's rate limit trusts <code>X-Forwarded-For</code> only from the proxies in
   <code>TRUSTED_PROXIES</code> and takes the first untrusted hop from the right, so a client cannot
@@ -623,7 +745,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <h2 id="0141">[0.14.1]</h2>
 <details class="cl-full">
 <summary>Details</summary>
-<h3 id="added_4">Added</h3>
+<h3 id="added_5">Added</h3>
 <ul>
 <li>Native EIR backends that skip LLVM's code generator: <code>--emit-asm</code> (ARM64), <code>--emit-c</code>
   (C99), <code>--emit-obj</code>, and <code>--backend=eir</code>, which builds through the normal driver
@@ -648,7 +770,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
   <code>start</code>, and <code>Regex_iter</code> / <code>RegexIter_next</code> go through every match as Go's <code>FindAll</code>
   does (after an empty match the search moves on one code point).</li>
 </ul>
-<h3 id="fixed_5">Fixed</h3>
+<h3 id="fixed_6">Fixed</h3>
 <ul>
 <li>A field of a packed struct (<code>packed</code>, <code>#pragma pack(N)</code>, or a struct inside one) was read
   and written with its type's alignment although its address may not have it, which LLVM
@@ -716,7 +838,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 <h2 id="0140">[0.14.0]</h2>
 <details class="cl-full">
 <summary>Details</summary>
-<h3 id="added_5">Added</h3>
+<h3 id="added_6">Added</h3>
 <ul>
 <li><code>catch (_)</code> catches any exception without binding a variable; it is the last catch of a
   <code>try</code>. <code>exception_text()</code>, inside any catch, describes what was caught as the
@@ -728,7 +850,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
   <code>--target</code> build: the archive for the target's platform is fetched and linked as for the
   host.</li>
 </ul>
-<h3 id="fixed_6">Fixed</h3>
+<h3 id="fixed_7">Fixed</h3>
 <ul>
 <li><code>--target x86_64-w64-mingw32</code> passed structs to C functions with the System V convention
   instead of the Windows x64 one, so a call into a DLL could crash. Every <code>--target</code> is now
@@ -864,7 +986,7 @@ project follows the compatibility rules in <a href="docs/stability.html">docs/la
 </ul>
 </details>
     </main>
-    <nav class="toc" aria-label="On this page"><span class="grp">On this page</span><a href="#unreleased">[Unreleased]</a><a href="#0163-2026-11-23">[0.16.3] - 2026-11-23</a><a href="#0162">[0.16.2]</a><a href="#0161">[0.16.1]</a><a href="#0160">[0.16.0]</a><a href="#0151">[0.15.1]</a><a href="#0150">[0.15.0]</a><a href="#0141">[0.14.1]</a><a href="#0140">[0.14.0]</a><a href="#0130">[0.13.0]</a></nav>
+    <nav class="toc" aria-label="On this page"><span class="grp">On this page</span><a href="#0170-2026-11-26">[0.17.0] - 2026-11-26</a><a href="#0163">[0.16.3]</a><a href="#0162">[0.16.2]</a><a href="#0161">[0.16.1]</a><a href="#0160">[0.16.0]</a><a href="#0151">[0.15.1]</a><a href="#0150">[0.15.0]</a><a href="#0141">[0.14.1]</a><a href="#0140">[0.14.0]</a><a href="#0130">[0.13.0]</a></nav>
   </div>
   <footer class="foot">
     <div class="bar foot-in">

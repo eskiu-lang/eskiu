@@ -5,7 +5,7 @@ mistake people make, and the message the compiler gives for it. [spec.md](spec.m
 full rules; the sections below link to them.
 
 Every example here is a test: the working ones are in
-[tests/guide_semantics.esk](../../tests/guide_semantics.esk) (its output is checked on every
+[tests/guide_semantics.esk](https://github.com/eskiu-lang/eskiu/blob/main/tests/guide_semantics.esk) (its output is checked on every
 change, with both compilers), and each mistake is a file in `tests/errors/guide_*.esk` that
 must fail with the message shown.
 

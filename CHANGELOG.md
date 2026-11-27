@@ -7,7 +7,7 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
-## [Unreleased]
+## [0.17.0] - 2026-11-26
 
 ### Added
 
@@ -126,7 +126,7 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
   through the MCP's `eskiu_run`.
 
 
-## [0.16.3] - 2026-11-23
+## [0.16.3]
 
 ### Security
 

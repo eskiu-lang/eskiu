@@ -38,6 +38,8 @@ NAV = [
          "Referencia", "El lenguaje, la biblioteca estándar y el compilador"),
         ("platforms.html", "Platforms", "Targets, toolchains and requirements",
          "Plataformas", "Destinos de compilación, herramientas y requisitos"),
+        ("@docs/patterns.html", "Patterns and pitfalls", "Captures, lifetimes, copies, cleanup, the C boundary",
+         "Patrones y errores comunes", "Capturas, duración, copias, limpieza, la frontera con C"),
         ("@docs/stability.html", "Stability policy", "Compatibility between releases",
          "Política de estabilidad", "Compatibilidad entre versiones"),
         ("@changelog.html", "Release notes", "What changed in each version",

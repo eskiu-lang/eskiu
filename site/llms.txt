@@ -1,6 +1,6 @@
 # Eskiu
 
-> Eskiu is a self-hosting systems language on LLVM, with explicit memory and direct C interop: C's model of memory and calls, plus `Result` and `?`, `defer`, sum types with exhaustive `match`, checked nullable pointers (`?*T`), generics and compiled `async`/`await`, with no runtime. One compiler (`eskiuc`, current version 0.16.3) builds for macOS, Linux, Windows, WebAssembly, iOS, Android, visionOS, 32-bit ARM and bare metal; files run as scripts with `eskiuc run`. Packages add GPU, 3D, AR and machine learning, and the `ui` framework builds native apps for phones, the web and the desktop, with `ui agent` to let a coding agent drive and test them.
+> Eskiu is a self-hosting systems language on LLVM, with explicit memory and direct C interop: C's model of memory and calls, plus `Result` and `?`, `defer`, sum types with exhaustive `match`, checked nullable pointers (`?*T`), generics and compiled `async`/`await`, with no runtime. One compiler (`eskiuc`, current version 0.17.0) builds for macOS, Linux, Windows, WebAssembly, iOS, Android, visionOS, 32-bit ARM and bare metal; files run as scripts with `eskiuc run`. Packages add GPU, 3D, AR and machine learning, and the `ui` framework builds native apps for phones, the web and the desktop, with `ui agent` to let a coding agent drive and test them.
 
 Install with `curl -fsSL https://eskiu-lang.org/install.sh | sh -s -- --with-ui` (the compiler and the ui tool), then run `eskiuc doctor` to see what each kind of build needs. Syntax is close to C: structs with methods called with dot syntax (`String_append(&s, x)` is `s.append(x)`), `let` with type annotations, generics, sum types with exhaustive `match`, `defer`, `?` to propagate errors, and `import <module>;` for the standard library. Memory is manual (`alloc<T>(n)` returns zeroed memory, `free(p)`). `fn`, `in` and `match` are keywords.
 
@@ -16,8 +16,9 @@ MCP server: `https://mcp.eskiu-lang.org/mcp` (remote, no key). It searches the c
 ## Reference
 
 - [Language specification](https://eskiu-lang.org/docs/spec.html): every construct and its rules
+- [Patterns and pitfalls](https://eskiu-lang.org/docs/patterns.html): captures, pointer lifetimes, ownership, copies, initialization and the C boundary, with the compiler's message for each common mistake
 - [Grammar](https://eskiu-lang.org/docs/grammar.html)
-- [Build and tooling](https://eskiu-lang.org/docs/build.html): `eskiuc` flags, packages (`eskiu.toml`, `eskiuc add`, `eskiuc test`), cross-compilation
+- [Build and tooling](https://eskiu-lang.org/docs/build.html): `eskiuc` flags, `--dev`, `--time`, the object cache, exit codes, packages (`eskiu.toml`, `eskiuc add`, `eskiuc test` with `-j`, filters and `--json`), cross-compilation
 - [C interop and ABIs](https://eskiu-lang.org/docs/abi.html): `extern`, structs by value, `export` and `--emit-header`
 - [Stability policy](https://eskiu-lang.org/docs/stability.html)
 - [Diagnostic ids](https://github.com/eskiu-lang/eskiu/blob/main/docs/dev/diagnostic-ids.txt): the stable ids of `--diagnostics=json`
