@@ -263,6 +263,19 @@ string pp_expand(string input, List<PPMacro>* tbl, List<string>* expanding, *int
                             continue;
                         }
                     }
+                    if (ctx.depth == 0 && pp_clen(res) > 0) {
+                        List_push<int>(&ctx.u_out, String_len(&out));
+                        List_push<int>(&ctx.u_len, pp_clen(res));
+                        int src_at = i + col_shift;
+                        if (src_at < 0) {
+                            src_at = 0;
+                        }
+                        List_push<int>(&ctx.u_src, src_at);
+                        List_push<string>(&ctx.u_name, id);
+                        List_push<string>(&ctx.u_text, res);
+                        List_push<string>(&ctx.u_file, mac.file);
+                        List_push<int>(&ctx.u_line, mac.line);
+                    }
                     String_append(&out, res);
                     i = after;
                     continue;

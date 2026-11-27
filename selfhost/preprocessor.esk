@@ -27,6 +27,8 @@ struct PPMacro {
     int is_function;
     List<string> params;
     string body;
+    string file;    // where it was #defined ("": predefined)
+    int line;
 }
 
 struct PPCond {
@@ -317,6 +319,25 @@ struct PPCtx {
     int open_call;   // an unterminated call at the top level (its args continue on the next line)
     int trailing_fn; // a function-like macro name ends the top-level text: its `(` may start a later line
     PPBudget* budget; // the file's macro budget, or null
+    // The top-level macro uses replaced in this text (PPExpandCtx::uses): output offset
+    // and length, source offset, name, replacement, and where the macro was defined.
+    List<int> u_out;
+    List<int> u_len;
+    List<int> u_src;
+    List<string> u_name;
+    List<string> u_text;
+    List<string> u_file;
+    List<int> u_line;
+}
+
+void pp_ctx_uses_init(PPCtx* c) {
+    List_init<int>(&c.u_out, 2);
+    List_init<int>(&c.u_len, 2);
+    List_init<int>(&c.u_src, 2);
+    List_init<string>(&c.u_name, 2);
+    List_init<string>(&c.u_text, 2);
+    List_init<string>(&c.u_file, 2);
+    List_init<int>(&c.u_line, 2);
 }
 
 void pp_ctx_init(PPCtx* c) {
@@ -327,6 +348,7 @@ void pp_ctx_init(PPCtx* c) {
     c.open_call = 0;
     c.trailing_fn = 0;
     c.budget = null;
+    pp_ctx_uses_init(c);
 }
 
 // Count `k` more bytes of replacement text (mirrors the C++ `charge`): 0, and the
@@ -437,6 +459,95 @@ string pp_itoa(int v) {
     String_init(&s, 12);
     String_from_int(&s, v);
     return (string)String_cstr(&s);
+}
+
+// The macro uses replaced in each file (mirrors PPExpansion / ppExpansionAt): where the
+// replacement sits in the expanded text, the use's source column, the macro and where it
+// was defined, so a parse error at a token a macro produced can name the macro.
+List<string> g_ppx_file;
+List<int> g_ppx_line;
+List<int> g_ppx_col;
+List<int> g_ppx_len;
+List<int> g_ppx_src;
+List<string> g_ppx_name;
+List<string> g_ppx_text;
+List<string> g_ppx_def_file;
+List<int> g_ppx_def_line;
+int g_ppx_ready;
+
+// Forget the uses recorded for `file` (it is preprocessed again).
+void ppx_clear(string file) {
+    if (g_ppx_ready == 0) {
+        g_ppx_ready = 1;
+        List_init<string>(&g_ppx_file, 16);
+        List_init<int>(&g_ppx_line, 16);
+        List_init<int>(&g_ppx_col, 16);
+        List_init<int>(&g_ppx_len, 16);
+        List_init<int>(&g_ppx_src, 16);
+        List_init<string>(&g_ppx_name, 16);
+        List_init<string>(&g_ppx_text, 16);
+        List_init<string>(&g_ppx_def_file, 16);
+        List_init<int>(&g_ppx_def_line, 16);
+    }
+    for (k in 0..List_len<string>(&g_ppx_file)) {
+        if (pp_eq(List_get<string>(&g_ppx_file, k), file) == 1) {
+            List_set<string>(&g_ppx_file, k, "");
+        }
+    }
+}
+
+// The recorded use of `file` that produced the text at line:col, or -1.
+int ppx_at(string file, int line, int col) {
+    if (g_ppx_ready == 0) {
+        return 0 - 1;
+    }
+    for (k in 0..List_len<string>(&g_ppx_file)) {
+        int c0 = List_get<int>(&g_ppx_col, k);
+        if (List_get<int>(&g_ppx_line, k) == line && col >= c0 && col < c0 + List_get<int>(&g_ppx_len, k)
+            && pp_eq(List_get<string>(&g_ppx_file, k), file) == 1) {
+            return k;
+        }
+    }
+    return 0 - 1;
+}
+
+// Line and column of offset `pos` in `text`, which starts at line0:col0 (ppLineCol).
+void ppx_line_col(string text, int pos, int line0, int col0, *int line, *int col) {
+    line[0] = line0;
+    col[0] = col0 + pos;
+    int k = 0;
+    while (k < pos && text[k] != 0) {
+        if ((int)text[k] == 10) {
+            line[0] = line[0] + 1;
+            col[0] = pos - k;
+        }
+        k = k + 1;
+    }
+}
+
+// Record the uses `ctx` collected for a line of `file` whose expansion is `expanded`
+// (at line_no, after `lead` bytes) and whose source text is `src`, then clear them.
+void ppx_record(PPCtx* ctx, string file, int line_no, int lead, string expanded, int out0, string src, int src0) {
+    for (k in 0..List_len<int>(&ctx.u_out)) {
+        int ol = 0;
+        int oc = 0;
+        int sl = 0;
+        int sc = 0;
+        ppx_line_col(expanded, out0 + List_get<int>(&ctx.u_out, k), line_no, lead + 1, &ol, &oc);
+        ppx_line_col(src, src0 + List_get<int>(&ctx.u_src, k), line_no, lead + 1, &sl, &sc);
+        if (sl == ol) {   // a call spanning lines has no single place
+            List_push<string>(&g_ppx_file, file);
+            List_push<int>(&g_ppx_line, ol);
+            List_push<int>(&g_ppx_col, oc);
+            List_push<int>(&g_ppx_len, List_get<int>(&ctx.u_len, k));
+            List_push<int>(&g_ppx_src, sc);
+            List_push<string>(&g_ppx_name, List_get<string>(&ctx.u_name, k));
+            List_push<string>(&g_ppx_text, pp_trim(List_get<string>(&ctx.u_text, k)));
+            List_push<string>(&g_ppx_def_file, List_get<string>(&ctx.u_file, k));
+            List_push<int>(&g_ppx_def_line, List_get<int>(&ctx.u_line, k));
+        }
+    }
+    pp_ctx_uses_init(ctx);
 }
 
 // The rest of preprocessor.esk, in these parts (imported in order):

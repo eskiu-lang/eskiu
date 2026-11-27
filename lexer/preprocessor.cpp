@@ -24,6 +24,27 @@
 #include "pp_expand.h"
 #include "pp_cond.h"
 
+static std::map<std::string, std::vector<PPExpansion>>& ppExpansionTable() {
+    static std::map<std::string, std::vector<PPExpansion>> table;
+    return table;
+}
+
+const PPExpansion* ppExpansionAt(const std::string& file, int line, int col) {
+    auto it = ppExpansionTable().find(file);
+    if (it == ppExpansionTable().end()) return nullptr;
+    for (const PPExpansion& x : it->second)
+        if (x.line == line && col >= x.col && col < x.col + x.len) return &x;
+    return nullptr;
+}
+
+// Line and column of offset `pos` in `text`, which starts at line `line0`, column `col0`.
+static void ppLineCol(const std::string& text, size_t pos, int line0, int col0, int& line, int& col) {
+    line = line0;
+    col = col0 + (int)pos;
+    for (size_t k = 0; k < pos && k < text.size(); ++k)
+        if (text[k] == '\n') { line++; col = (int)(pos - k); }
+}
+
 void preprocess(const std::string& src,
                        std::map<std::string, Macro>& defines,
                        std::string& result,
@@ -36,6 +57,8 @@ void preprocess(const std::string& src,
     Macro fileMacro; fileMacro.body = ppFileLiteral(filename);
     defines["__FILE__"] = fileMacro;
     const std::string fileLabel = filename.empty() ? "<input>" : filename;
+    std::vector<PPExpansion>& uses = ppExpansionTable()[filename];
+    uses.clear();
     PPBudget budget;
     auto ppError = [&](int ln, int col, const std::string& msg) {
         std::cerr << "error: " << fileLabel << ":" << ln << ":" << col << ": " << msg << std::endl;
@@ -107,6 +130,8 @@ void preprocess(const std::string& src,
                     while (p < rest.size() && (std::isalnum((unsigned char)rest[p]) || rest[p]=='_')) p++;
                     std::string name = rest.substr(0, p);
                     Macro mac;
+                    mac.file = filename;
+                    mac.line = lineNo;
                     if (p < rest.size() && rest[p] == '(') {        // function-like
                         mac.isFunction = true;
                         size_t q = p + 1; std::string cur;
@@ -227,6 +252,19 @@ void preprocess(const std::string& src,
                 break;
             }
             inString = strOpen || ppEndsInString(line, blkStart);
+            for (const auto& u : ctx.uses) {
+                PPExpansion x;
+                int srcLine = 0;
+                ppLineCol(expanded, u.outPos, lineNo, (int)lead.size() + 1, x.line, x.col);
+                ppLineCol(line, u.srcPos, lineNo, (int)lead.size() + 1, srcLine, x.srcCol);
+                if (srcLine != x.line) continue;   // a call spanning lines: no single place
+                x.len = (int)u.outLen;
+                x.name = u.name;
+                x.text = ppTrim(u.text);
+                x.file = u.mac->file;
+                x.defLine = u.mac->line;
+                uses.push_back(std::move(x));
+            }
             if (!ctx.err.empty()) ppError(lineNo, (int)(ctx.errCol + lead.size()), ctx.err);
             if (budget.hit && !budget.reported) {
                 budget.reported = true;

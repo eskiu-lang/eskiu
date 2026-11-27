@@ -14,6 +14,8 @@ struct Macro {
     bool isFunction = false;
     std::vector<std::string> params;
     std::string body;
+    std::string file;   // where it was #defined (empty: predefined)
+    int line = 0;
 };
 
 // Called by the preprocessor for each `import` met on an active line, in textual

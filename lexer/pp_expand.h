@@ -87,6 +87,10 @@ struct PPExpandCtx {
     // after it): its `(` may start a following line, as in C.
     bool trailingFnName = false;
     PPBudget* budget = nullptr;
+    // The top-level macro uses replaced in this text: output offset and length, source
+    // offset, name, macro and replacement.
+    struct Use { size_t outPos, outLen, srcPos; std::string name; const Macro* mac; std::string text; };
+    std::vector<Use> uses;
 };
 
 static bool ppIdentStart(char c) { return std::isalpha((unsigned char)c) || c == '_'; }
@@ -281,6 +285,9 @@ static std::string ppExpand(const std::string& input,
                             continue;
                         }
                     }
+                    if (ctx && ctx->depth == 0 && !res.empty())
+                        ctx->uses.push_back({out.size(), res.size(), (size_t)std::max(0LL, (long long)i + colShift),
+                                             id, &mac, res});
                     out += res; i = after; continue;
                 }
             }

@@ -14,6 +14,8 @@ List<PPMacro>* pp_table() {
             om.name = g_pp_os;
             om.is_function = 0;
             List_init<string>(&om.params, 1);
+            om.file = "";
+            om.line = 0;
             om.body = "1";
             pp_define(&g_pp_tbl, om);
         }
@@ -27,6 +29,8 @@ List<PPMacro>* pp_table() {
             am.name = g_pp_arch;
             am.is_function = 0;
             List_init<string>(&am.params, 1);
+            am.file = "";
+            am.line = 0;
             am.body = "1";
             pp_define(&g_pp_tbl, am);
         }
@@ -37,6 +41,8 @@ List<PPMacro>* pp_table() {
         xm.name = List_get<string>(&g_pp_predef, pdi);
         xm.is_function = 0;
         List_init<string>(&xm.params, 1);
+        xm.file = "";
+        xm.line = 0;
         xm.body = "1";
         pp_define(&g_pp_tbl, xm);
         pdi = pdi + 1;
@@ -57,8 +63,11 @@ string pp_run(string src, int len, string filename, *int had_err) {
     fm.name = "__FILE__";
     fm.is_function = 0;
     List_init<string>(&fm.params, 1);
+    fm.file = "";
+    fm.line = 0;
     fm.body = pp_file_literal(filename);
     pp_define(tblp, fm);
+    ppx_clear(filename);
 
     List<PPCond> stack;
     List_init<PPCond>(&stack, 8);
@@ -179,6 +188,8 @@ string pp_run(string src, int len, string filename, *int had_err) {
                     mac.is_function = 0;
                     List_init<string>(&mac.params, 2);
                     mac.body = "";
+                    mac.file = filename;
+                    mac.line = line_no;
                     if (q < rn && (int)rest[q] == 40) {           // function-like
                         mac.is_function = 1;
                         int r = q + 1;
@@ -361,6 +372,7 @@ string pp_run(string src, int len, string filename, *int had_err) {
                 ln = ln - lead;
             }
             int blk_line = in_block;
+            int line_out0 = String_len(&out);
             // Refresh __LINE__ for this logical line, then expand.
             String nb;
             String_init(&nb, 12);
@@ -369,6 +381,8 @@ string pp_run(string src, int len, string filename, *int had_err) {
             lm.name = "__LINE__";
             lm.is_function = 0;
             List_init<string>(&lm.params, 1);
+            lm.file = "";
+            lm.line = 0;
             lm.body = (string)String_cstr(&nb);
             pp_define(tblp, lm);
 
@@ -422,7 +436,12 @@ string pp_run(string src, int len, string filename, *int had_err) {
                     }
                     k = k + 1;
                 }
+                int piece_out = String_len(&out) - line_out0;
                 String_append(&out, expanded);
+                if (List_len<int>(&ctx.u_out) > 0) {
+                    string line_out = pp_sub((string)String_cstr(&out), line_out0, String_len(&out) - line_out0);
+                    ppx_record(&ctx, filename, line_no, lead, line_out, piece_out, ls, s0);
+                }
                 if (e0 < ln) {
                     String_push(&out, (char)0);
                 }
