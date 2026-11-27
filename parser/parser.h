@@ -26,6 +26,9 @@ struct PackageRoots {
     std::map<std::string, std::string> roots;
 };
 extern PackageRoots packageRoots;
+// "<time>" for a file of stdlib module time, "package 'ui'" for a file of dependency ui,
+// else "" (named in the notes after a redefinition or a macro-made parse error).
+std::string moduleLabelOf(const std::string& file, const std::string& stdlibRoot);
 
 struct ImportCache {
     std::string stdlibPath;

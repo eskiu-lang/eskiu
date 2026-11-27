@@ -59,6 +59,7 @@ set(SOURCES
     parser/parse_decl.cpp
     parser/parse_stmt.cpp
     parser/parse_expr.cpp
+    parser/parse_notes.cpp
     ast/ast.cpp
     ast/ast_printer.cpp
     sema/type.cpp

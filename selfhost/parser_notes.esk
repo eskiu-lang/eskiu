@@ -1,0 +1,76 @@
+// parser_notes.esk: the module a file belongs to, and the note after a syntax error at
+// text a macro produced (part of parser.esk, imported in order; mirrors parse_notes.cpp).
+
+// Whether `file` is inside directory `dir`.
+int file_under(string file, string dir) {
+    int n = cstr_len(dir);
+    if (n == 0 || cstr_len(file) <= n + 1 || (int)file[n] != 47) {
+        return 0;
+    }
+    int i = 0;
+    while (i < n) {
+        if (file[i] != dir[i]) {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+// "<time>" for a file of stdlib module time, "package 'ui'" for a file of dependency ui,
+// else "" (mirrors moduleLabelOf).
+string module_label_of(string file) {
+    int i = 0;
+    while (i < List_len<string>(&g_pkg_roots)) {
+        if (file_under(file, List_get<string>(&g_pkg_roots, i)) == 1) {
+            return str_concat("package '", str_concat(List_get<string>(&g_pkg_names, i), "'"));
+        }
+        i = i + 1;
+    }
+    string lib = "stdlib";
+    if (g_stdlib_root != null) {
+        if (g_stdlib_root[0] != 0) {
+            lib = str_concat(g_stdlib_root, "/stdlib");
+        }
+    }
+    int n = cstr_len(lib);
+    int fl = cstr_len(file);
+    if (file_under(file, lib) == 1 && fl > n + 5 && str_eq(p_sub(file, fl - 4, fl), ".esk") == 1) {
+        return str_concat("<", str_concat(p_sub(file, n + 1, fl - 4), ">"));
+    }
+    return "";
+}
+
+// The note after a syntax error at a token a macro produced (mirrors macroNote).
+void p_macro_note(string file, int xi) {
+    uint8[32] nb;
+    string name = List_get<string>(&g_ppx_name, xi);
+    string text = List_get<string>(&g_ppx_text, xi);
+    if (cstr_len(text) > 40) {
+        text = str_concat(p_sub(text, 0, 37), "...");
+    }
+    lx_puts_err("note: ");
+    lx_puts_err(file);
+    sprintf((string)&nb[0], ":%d:%d: '", List_get<int>(&g_ppx_line, xi), List_get<int>(&g_ppx_src, xi));
+    lx_puts_err((string)&nb[0]);
+    lx_puts_err(name);
+    string def = List_get<string>(&g_ppx_def_file, xi);
+    if (def == null || def[0] == 0) {
+        lx_puts_err("' is a predefined macro");
+    } else {
+        lx_puts_err("' is a macro (");
+        string from = module_label_of(def);
+        if (from[0] != 0) {
+            lx_puts_err("from ");
+            lx_puts_err(from);
+            lx_puts_err(", ");
+        }
+        lx_puts_err("defined at ");
+        lx_puts_err(def);
+        sprintf((string)&nb[0], ":%d)", List_get<int>(&g_ppx_def_line, xi));
+        lx_puts_err((string)&nb[0]);
+    }
+    lx_puts_err(" and expands to '");
+    lx_puts_err(text);
+    lx_puts_err("' here; rename yours or #undef it\n");
+}

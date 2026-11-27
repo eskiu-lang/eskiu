@@ -529,6 +529,8 @@ std::vector<DeclPtr> Parser::parseProgram() {
     auto recover = [&](const std::exception& e) {
         std::cerr << "error: " << (filename.empty() ? "<input>" : filename) << ":"
                   << errLine << ":" << errCol << ": " << e.what() << std::endl;
+        if (const PPExpansion* x = ppExpansionAt(filename, errLine, errCol))
+            std::cerr << macroNote(filename.empty() ? "<input>" : filename, *x, stdlibPath) << std::endl;
         if (firstErrorLine() == 0) { firstErrorLine() = errLine; firstErrorCol() = errCol; firstErrorFile() = filename; }
         hadError = true;
         skipToNextDecl(declStart);

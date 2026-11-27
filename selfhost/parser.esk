@@ -565,6 +565,7 @@ void p_take_pragma(Parser* p) {
 
 // The rest of parser.esk, in these parts (imported in order):
 import "parser_core.esk";
+import "parser_notes.esk";
 import "parser_expr.esk";
 import "parser_postfix.esk";
 import "parser_stmt.esk";

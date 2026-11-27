@@ -138,6 +138,17 @@ void p_report(Parser* p, Token t, string msg) {
     lx_puts_err((string)&nb[0]);
     lx_puts_err(msg);
     lx_puts_err("\n");
+    string pf = "";
+    if (p.file != null) {
+        pf = p.file;
+    }
+    int xi = ppx_at(pf, t.line, t.col);
+    if (xi >= 0) {
+        if (pf[0] == 0) {
+            pf = "<input>";
+        }
+        p_macro_note(pf, xi);
+    }
     exit(1);
 }
 

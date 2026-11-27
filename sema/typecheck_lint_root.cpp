@@ -32,15 +32,8 @@ bool TypeChecker::lintsDecl(const Decl* d) {
 }
 
 std::string TypeChecker::moduleOfFile(const std::string& file) {
-    auto under = [&](const std::string& dir) {
-        return file.size() > dir.size() + 1 && file.compare(0, dir.size(), dir) == 0 && file[dir.size()] == '/';
-    };
-    for (const auto& [name, root] : packageRoots.roots)
-        if (!root.empty() && under(root)) return " (in package '" + name + "')";
-    std::string lib = stdlibRoot.empty() ? "stdlib" : stdlibRoot + "/stdlib";
-    if (under(lib) && file.size() > lib.size() + 5 && file.compare(file.size() - 4, 4, ".esk") == 0)
-        return " (in <" + file.substr(lib.size() + 1, file.size() - lib.size() - 5) + ">)";
-    return "";
+    std::string label = moduleLabelOf(file, stdlibRoot);
+    return label.empty() ? "" : " (in " + label + ")";
 }
 
 void TypeChecker::noteFirstDefined(Decl* prev, const std::string& name, const std::string& shown) {
