@@ -41,6 +41,14 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ### Changed
 
+- A redefinition (struct, union, enum, function, global, type alias, interface, extern) is
+  followed by a note at the earlier declaration, `note: FILE:LINE:COL: 'Event' is first
+  defined here`, which names the module when that file is a stdlib module's (`(in <json>)`)
+  or a dependency's (`(in package 'ui')`); in `--diagnostics=json` it is a note of the
+  error. The errors that only follow from the clash (a member or argument count written
+  for the other declaration, a method on its result) are no longer reported, and a second
+  function body with another signature is one error, not two. Both compilers.
+
 - A failed `--safe` check prints one line to stderr with the file, line and column of the
   operation and what went wrong (`main.esk:12:20: index 7 out of bounds for length 4`,
   `integer overflow in '+'`, `null pointer dereference`, `slice [2..9] out of bounds for

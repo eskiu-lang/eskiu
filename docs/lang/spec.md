@@ -2438,6 +2438,15 @@ import <util>;          // package util, no module named
 
 All declarations in the imported file (functions, structs, templates, externs) become available in the importing file.
 
+The program and its imports share one top-level namespace, so a struct, function, global, enum, union, interface or type alias the program declares with the name of one in an imported module (a stdlib module or a package) is a redefinition, whichever comes first. The error is followed by a note at the other declaration, naming its module:
+
+```
+error: app.esk:3:8: redefinition of struct 'Event' with different fields
+note: ui/src/events.esk:12:8: 'Event' is first defined here (in package 'ui')
+```
+
+The errors that would only follow from the clash (a member or an argument count that fits the other declaration) are not reported. Rename the program's declaration to resolve it.
+
 ### 12.2 Deduplication
 
 Each file is parsed and processed at most once per compilation, regardless of how many files import it. Files are identified by their canonical path, so two different relative spellings of the same file (a diamond import) count as one. Circular imports are detected and do not cause infinite loops.
