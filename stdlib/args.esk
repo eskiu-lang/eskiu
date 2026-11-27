@@ -25,6 +25,11 @@
 // a digit. A repeated option keeps every value (ArgParser_get returns the last,
 // ArgParser_get_all all of them); a repeated flag counts (ArgParser_count, for -vvv).
 //
+// Option names are written with their dashes ("-v", "--verbose"). A name given
+// without them means the same: a one-letter one is the short name ("v" is "-v")
+// and a longer one the long name ("verbose" is "--verbose"), whichever of the two
+// parameters it is passed in.
+//
 // Positional arguments are bound in declaration order to the ones declared with
 // ArgParser_argument; an ARGS_MANY one (it must come last) takes all that remain. A
 // program that declares none accepts any positionals (read them with
@@ -63,6 +68,8 @@ struct _ArgSpec {
     string metavar;
     string def;             // default value, or null
     String def_buf;         // owns the text of an int default
+    String short_buf;       // own the dashed spellings of names given without dashes
+    String long_buf;
     string help;
     int mode;               // arguments: ARGS_REQUIRED | ARGS_MANY
     int count;              // times given
@@ -96,6 +103,8 @@ void ArgParser_free(ArgParser* p) {
         *_ArgSpec s = List_get<*_ArgSpec>(&p.specs, i);
         List_free<string>(&s.values);
         s.def_buf.free();
+        s.short_buf.free();
+        s.long_buf.free();
         free((*void)s);
     }
     List_free<*_ArgSpec>(&p.specs);
@@ -105,9 +114,48 @@ void ArgParser_free(ArgParser* p) {
     p.error.free();
 }
 
+// The length of `name`, or -1 when it is a name without dashes ("v", "verbose").
+int _args_bare_len(string name) {
+    if (name == null || name[0] == 0 || name[0] == '-') {
+        return -1;
+    }
+    int n = 0;
+    while (name[n] != 0) {
+        n++;
+    }
+    return n;
+}
+
 *_ArgSpec _args_add(ArgParser* p, int kind, string short_name, string long_name, string help) {
     *_ArgSpec s = alloc<_ArgSpec>(1);
     s.kind = kind;
+    // A name without dashes: one letter is a short name, a longer one a long name.
+    string[2] names;
+    names[0] = short_name;
+    names[1] = long_name;
+    short_name = null;
+    long_name = null;
+    for (i in 0..2) {
+        string nm = names[i];
+        int bare = _args_bare_len(nm);
+        if (bare == 1) {
+            s.short_buf.init(4);
+            String_appendf(&s.short_buf, "-%s", nm);
+            nm = s.short_buf.cstr();
+        } else if (bare > 1) {
+            s.long_buf.init(bare + 3);
+            String_appendf(&s.long_buf, "--%s", nm);
+            nm = s.long_buf.cstr();
+        }
+        if (nm == null) {
+            continue;
+        }
+        if (bare == 1 || (bare < 0 && i == 0)) {
+            short_name = nm;
+        } else {
+            long_name = nm;
+        }
+    }
     s.short_name = short_name;
     s.long_name = long_name;
     s.help = help;
