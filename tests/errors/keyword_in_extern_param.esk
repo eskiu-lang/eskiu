@@ -1,0 +1,7 @@
+// EXPECT-ERROR: expected a name, found keyword 'in'
+// `in` (the for-in keyword) as the name of an extern's parameter is named as a keyword.
+extern int put(int in);
+
+int main() {
+    return 0;
+}

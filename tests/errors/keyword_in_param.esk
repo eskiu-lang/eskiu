@@ -1,0 +1,9 @@
+// EXPECT-ERROR: expected a name, found keyword 'in'
+// `in` (the for-in keyword) as the name of a parameter is named as a keyword.
+int twice(int in) {
+    return 2;
+}
+
+int main() {
+    return twice(1);
+}

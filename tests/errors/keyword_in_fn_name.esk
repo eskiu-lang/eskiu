@@ -1,0 +1,9 @@
+// EXPECT-ERROR: expected a name, found keyword 'in'
+// `in` (the for-in keyword) as the name of a function is named as a keyword.
+int in() {
+    return 0;
+}
+
+int main() {
+    return 0;
+}

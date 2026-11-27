@@ -1,0 +1,7 @@
+// EXPECT-ERROR: expected a name, found keyword 'in'
+// `in` (the for-in keyword) as the name of an enum member is named as a keyword.
+enum Dir { in, out }
+
+int main() {
+    return 0;
+}

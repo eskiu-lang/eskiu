@@ -1,0 +1,6 @@
+// EXPECT-ERROR: expected a name, found keyword 'in'
+// `in` (the for-in keyword) as the name of a lambda's parameter is named as a keyword.
+int main() {
+    fn(int)->int f = int(int in) { return 1; };
+    return f(1);
+}

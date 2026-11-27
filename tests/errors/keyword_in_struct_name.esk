@@ -1,0 +1,9 @@
+// EXPECT-ERROR: expected a name, found keyword 'in'
+// `in` (the for-in keyword) as the name of a struct is named as a keyword.
+struct in {
+    int x;
+}
+
+int main() {
+    return 0;
+}

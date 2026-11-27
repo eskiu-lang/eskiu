@@ -1,0 +1,12 @@
+// EXPECT-ERROR: expected a name, found keyword 'in'
+// `in` (the for-in keyword) as the name of an inline method's parameter is named as a keyword.
+struct S {
+    int x;
+    int at(int in) {
+        return self.x;
+    }
+}
+
+int main() {
+    return 0;
+}
