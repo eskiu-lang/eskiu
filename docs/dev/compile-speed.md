@@ -163,7 +163,11 @@ the parse, which runs on a hit too.
 
 **Entries and writes.** `KEY.o` and `KEY.meta` (what the link needs: whether the program
 uses the C++ exception runtime or threads, the macOS version of the object, and the
-warnings) in `$ESKIU_CACHE_DIR`, else `$ESKIU_HOME/cache/obj`, else `~/.eskiu/cache/obj`.
+warnings) in `$ESKIU_CACHE_DIR`, else the package's `.eskiu-cache` (the nearest directory up
+from the root file with an `eskiu.toml`), else the user's cache directory
+(`objcache::userDirectory()`: `~/Library/Caches/eskiu/obj`, `~/.cache/eskiu/obj`,
+`%LOCALAPPDATA%/eskiu/cache/obj`). A package's objects serve only it (the key covers every
+source), so they live and go with it.
 Each file is written to a unique temporary file and renamed into place, the object first,
 so concurrent builds (`make -j`, `eskiuc test -j`) never see half an entry; two builds of
 the same key write the same bytes. A reader that cannot copy the object (evicted meanwhile)

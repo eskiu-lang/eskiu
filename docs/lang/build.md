@@ -328,9 +328,19 @@ compile are printed again on a reuse.
 |---|---|
 | (default), `--cache` | Use the cache. |
 | `--no-cache`, `ESKIU_NO_CACHE=1`, `ESKIU_CACHE=0` | Do not use it (the variables reach every compile of a Makefile). |
-| `ESKIU_CACHE_DIR=DIR` | Keep the objects in `DIR` (default `$ESKIU_HOME/cache/obj`, that is `~/.eskiu/cache/obj`). |
+| `ESKIU_CACHE_DIR=DIR` | Keep the objects in `DIR` instead of the default places below. |
 | `ESKIU_CACHE_SIZE=MIB` | Size limit in MiB (default 1024); past it the least recently used objects are removed. |
 
+Where the objects go, without `ESKIU_CACHE_DIR`:
+
+- A program in a package (the nearest directory up from its root file with an `eskiu.toml`)
+  keeps them in the package's `.eskiu-cache` directory. The directory holds a `.gitignore`
+  that ignores it, so git never shows it, and removing the package removes its cache.
+- Any other file keeps them in the user's cache directory: `~/Library/Caches/eskiu/obj` on
+  macOS, `$XDG_CACHE_HOME/eskiu/obj` (else `~/.cache/eskiu/obj`) on Linux,
+  `%LOCALAPPDATA%\eskiu\cache\obj` on Windows.
+
+Each cache directory also has a `CACHEDIR.TAG`, which backup tools that honor it skip.
 `--time` shows whether the compile was a `cache hit` or a `cache miss`. Deleting the
 directory empties the cache. See [compile speed](../dev/compile-speed.md#the-object-cache)
 for the key and measurements.

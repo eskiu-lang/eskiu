@@ -7,6 +7,17 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- The object cache moves out of `~/.eskiu`. A program in a package (a directory with an
+  `eskiu.toml`) keeps its objects in the package's `.eskiu-cache` directory, which ignores
+  itself in git; any other file uses the platform's cache directory
+  (`~/Library/Caches/eskiu` on macOS, `~/.cache/eskiu` on Linux, `%LOCALAPPDATA%\eskiu\cache`
+  on Windows). `ESKIU_CACHE_DIR` still overrides both. The old `~/.eskiu/cache/obj` is no
+  longer used and can be deleted.
+
 ## [0.17.0] - 2026-11-26
 
 ### Added
