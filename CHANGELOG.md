@@ -7,17 +7,6 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 
 ---
 
-## [Unreleased]
-
-### Changed
-
-- The object cache moves out of `~/.eskiu`. A program in a package (a directory with an
-  `eskiu.toml`) keeps its objects in the package's `.eskiu-cache` directory, which ignores
-  itself in git; any other file uses the platform's cache directory
-  (`~/Library/Caches/eskiu` on macOS, `~/.cache/eskiu` on Linux, `%LOCALAPPDATA%\eskiu\cache`
-  on Windows). `ESKIU_CACHE_DIR` still overrides both. The old `~/.eskiu/cache/obj` is no
-  longer used and can be deleted.
-
 ## [0.17.0] - 2026-11-26
 
 ### Added
@@ -38,10 +27,13 @@ project follows the compatibility rules in [docs/lang/stability.md](docs/lang/st
 - An object cache, on by default (`--no-cache`, `ESKIU_NO_CACHE=1` or `ESKIU_CACHE=0` turn it off): a compile that writes an executable
   or object file reuses the object of an earlier compile with the same sources (every
   imported file, the standard library and packages included), compiler, target and flags,
-  so only parsing and the link run again; the warnings are printed again. Objects live in
-  `~/.eskiu/cache/obj` (`ESKIU_CACHE_DIR`), at most 1 GiB (`ESKIU_CACHE_SIZE`), least
-  recently used out first; `--no-cache` / `ESKIU_NO_CACHE=1` turn it off. Off by default
-  for now. `--time` shows hits and misses (docs/dev/compile-speed.md).
+  so only parsing and the link run again; the warnings are printed again. A program in a
+  package (a directory with an `eskiu.toml`) keeps its objects in the package's
+  `.eskiu-cache` directory, which ignores itself in git; any other file uses the platform's
+  cache directory (`~/Library/Caches/eskiu` on macOS, `~/.cache/eskiu` on Linux,
+  `%LOCALAPPDATA%\eskiu\cache` on Windows); `ESKIU_CACHE_DIR` overrides both. At most 1 GiB
+  per directory (`ESKIU_CACHE_SIZE`), least recently used out first. `--time` shows hits and
+  misses (docs/dev/compile-speed.md).
 
 - `eskiuc test` runs several tests at a time (`-j N`, default half the cores), selects
   tests by name (`eskiuc test inv 'combat_*'`), kills a test that runs past `--timeout`

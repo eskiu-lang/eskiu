@@ -14,8 +14,10 @@ A game of 20,000 lines ran its test suite in 21 minutes with 0.16.3 and in under
 - **An object cache, on by default.** A compile reuses the object of an earlier one with
   the same sources (every imported file, the standard library and packages included),
   compiler, target and flags; only parsing and the link run again, and the warnings are
-  printed again. Objects live in `~/.eskiu/cache/obj`, at most 1 GiB. `--no-cache` or
-  `ESKIU_NO_CACHE=1` turn it off.
+  printed again. A package keeps its objects in its own `.eskiu-cache` directory (ignored
+  by git on its own); a file outside a package uses the platform's cache directory
+  (`~/Library/Caches/eskiu` on macOS, `~/.cache/eskiu` on Linux). At most 1 GiB each.
+  `--no-cache` or `ESKIU_NO_CACHE=1` turn it off.
 - **`--time`** prints the time of each compile phase, the link and the total.
 
 ## Testing
